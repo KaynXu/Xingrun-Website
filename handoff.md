@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-06-04
+最后更新：2026-06-05
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-05 已把错题练习里“挖空复盘 / 下次提醒”的 fallback 逻辑和生成 prompt 收紧到“先做题目分析、再写引导式挖空”的口径：`ai_processor.py` 现在会在低信息或泛化文案命中时，先按题型（几何 / 代数 / 函数 / 微积分 / 力学 / 概率统计 / 通用）提取题目目标、条件锚点、入口动作和缺失连接桥，再生成两段老师式引导；同时把“认真审题 / 理解题意 / 注意关键步骤 / 多练类似题目”这类未绑定本题数学对象的泛话术纳入低信息识别。前端 `frontend/scripts/renderWrongQuestionPracticeSheetPdf.mjs` 的本地兜底也同步改成同口径，避免后端替换后前端又回退成旧模板；`tests/test_ai_processor_prompt.py` 与 `frontend/src/render-wrong-question-practice-sheet-pdf.test.ts` 已补回归，proof 用临时脚本跑通 `python3 -m py_compile ai_processor.py`、后端 23 条定向 unittest、前端 15 条 PDF renderer 测试和 `git diff --check`。
 - 2026-06-04 已按用户要求直接调用生产后端后台上传数据，为 `2020级·六年级·1班·衔接` 在查询范围 `2026-06-01 00:00:00` 到 `2026-06-05 00:00:00` 内生成按学生拆分的错题练习 PDF，不等待题目识别成功：真实命中的是 `2026-06-02` 这一天的 8 条上传记录，学生为 `谢雨彤` 4 条、`李迎萌` 4 条；这批记录都因线上识图服务 `403 access_denied` 卡在 `recognition_status='failed'`，所以本轮按 `docs/wrong-questions/wrong-question-review-workflow.md` 的四段结构，用原图和学生自述错因确定性生成练习。输出目录 `output/pdf/衔接一班-2026-06-02错题练习PDF-20260602-20260602/`，其中 `2020级·六年级·1班·衔接-谢雨彤-2026-06-02错题练习-20260602-20260602.pdf` 与 `2020级·六年级·1班·衔接-李迎萌-2026-06-02错题练习-20260602-20260602.pdf` 各 1 份，同时生成 zip `output/pdf/衔接一班-2026-06-02错题练习PDF-20260602-20260602.zip`。proof：题量 `8=4+4`，两份 PDF 分别约 `518KB/514KB`、各 `9` 页，zip 约 `728KB`；raw `$ / rac / mathbbR / ldots / \frac` 计数均为 `0`，并人工抽查两份 PDF 第 2 页确认 `原题 / 原图 -> 方法提醒 -> 挖空复盘` 存在，第 3/5/9 页为独立 `订正区`。
 - 2026-06-04 已按 `docs/wrong-questions/wrong-question-review-workflow.md` 的最新口径为邓老师班学生 `袁予晴` 单独试生成 1 份错题复习 PDF，这次不走旧的学生错题库直出链，而是基于生产库 `class_id=46 / student_id=58` 的 `wechat_mp + recognized + active` 错题，在精确日期范围 `2026-04-28 00:00:00` 到 `2026-05-03 00:00:00` 内抽出 13 题，用临时脚本在仓库外确定性组装四段结构 `原题 / 原图 -> 方法提醒 -> 挖空复盘 -> 订正区` 后渲染。成品位于 `output/pdf/袁予晴-2026-04-28至2026-05-02错题复习PDF-20260428-20260502/2021级·五年级·2班-袁予晴-2026-04-28至2026-05-02错题复习-20260428-20260502.pdf`，proof 显示 `records_total=13`、按日 `2026-04-28:11 / 2026-05-02:2`、PDF `27` 页 `6017396 bytes`、raw `$ / rac / mathbbR / ldots / \frac` 计数均为 `0`，并人工抽查了第 2 / 14 / 26 页文本，确认四段结构标题实际存在。当前仍是仓库外临时生成器验证版，尚未把这套“最新工作流 -> 可复用正式脚本/路由”固化进项目代码。
 - 2026-06-04 已把本地 `develop` 安全集成到 `master` 并部署到生产：先确认原功能分支 `codex/ssh-production-data-check` 未进主线后，将其合并进 `develop` 并推送，再将 `develop` 合并进 `master`，解决 `app.py`、`frontend/src/App.tsx`、`handoff.md` 三处冲突；合并后修掉 `frontend/src/App.tsx` 里 `apiFetch` 重复导出的 merge 问题。release proof 通过：`py_compile`、错题练习后端定向测试 66 条、前端错题 PDF renderer 测试 14 条、`npm --prefix frontend run build`、非二进制 staged diff check 全绿。生产机 `/home/ubuntu/Xingrun-Website` 已拉到 `92f01db03 Merge branch 'develop'`，前端 build 成功，`pm2 restart xingrun` 后 `xingrun` online，`127.0.0.1:5001` 已监听，健康检查返回 `HTTP/1.1 302 FOUND -> http://127.0.0.1:3000`。

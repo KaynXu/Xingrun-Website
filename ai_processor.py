@@ -377,12 +377,16 @@ items 中每一项必须包含：
 2.a 如果输入里提供了 reflection_summary、question_structured、knowledge_tags，就优先把它们当成这道题的主信息脊柱；child_reason_text、cause_note 和 topic_category 作为兼容补充，不要忽略更完整的结构化反思。
 2.b 内容证据优先级固定为：student_transcript > student_reason_text/学生原答案 > question_text/OCR/图片线索 > standard_solution > knowledge_tags/reflection_summary > 通用题型经验。高优先级信息存在时，不要绕开它去套低优先级标签。
 2.c 错因复盘必须优先基于 student_transcript。如果 student_transcript 存在，先判断学生真实卡点：他在哪一步误解、遗漏、跳步，或把哪个条件没有翻译成数学关系；必须结合本题条件解释。没有录音转录时，只能根据题目条件、学生文字、标准解法和常见题型写“本题常见卡点是”“最容易漏的是”，不得写成“学生一定是……”。
+2.c.1 当 student_transcript 缺失、student_reason_text 缺失或过于模糊、OCR 识别不完整、题干只剩图片线索、或错因解析失败时，自动进入 fallback 模式。fallback 模式下，不要直接输出“认真审题”“注意关键步骤”“下次多练”这类通用反思。
+2.c.2 fallback 模式下，你必须先在内部完整过一遍这道题的做题分析：这道题的目标是什么、题目给了哪些关键条件、每个条件通常能推出什么、哪些条件之间需要建立联系、第一步应该先看什么、学生最可能卡在哪里、这题真正考的是哪类思维。这个内部分析只用于生成引导式挖空，不要把整段解析原样输出给学生。
+2.c.3 fallback 模式产出的挖空复盘，重点要引导学生回答“看到这个条件，我应该想到什么”“这个条件能推出什么关系”“当前目标和已知条件之间缺了哪座桥”“我应该先找角度关系、长度关系、函数关系、受力关系还是代数关系”，不要只带学生重复计算。
 2.d 下次提醒不是复述本题答案，而是总结可迁移的题型动作。几何题要优先把平行、垂直、等角、60°、辅助点分别翻译成可用关系；方程、函数、行程等题也要写成下次先做什么、先检查什么、如何触发正确方法。
 2.e 挖空复盘必须从错因复盘和下次提醒里抽取关键数学动作、关键条件或题型框架。禁止出现“我这题错在 ______”“下次我要先看 ______”“我要注意 ______”“这一步需要先看清 ______”这类没有上下文的空格；每个空格前后必须让学生知道要填什么。
 2.f structured_content.blank_review_blocks 必须稳定包含“错因复盘”和“下次提醒”两类 block；可以用更具体标题，但 title 或 lines 里必须看得出这两类用途。
 2.g 整体语气要像老师把学生重新带回题目，不像在写分析报告。优先写“先看什么、先判断什么、再把什么改写成什么、最后检查什么”，少写“你的问题是……”“本次目标是……”这类评语句。
 2.h 每道题至少给学生一个清晰的“入口动作”。读完方法提醒后，学生应该知道这题重做时第一步先写什么、先圈什么、先判断什么。
 2.i method_hint_lines、reason_blank_prompt、improvement_summary_prompt 都优先写成动作链，不要只写判断句。尽量出现“先……再……最后……”或“先由……推出……，再把……改写成……，最后检查……”这种可执行顺序。
+2.j 不同题型不要共用同一套 fallback 话术。至少按下面的入口来组织引导：几何题先看角、平行、垂直、相似、圆、辅助线、面积关系；代数题先看目标式、已知式、变形方向、因式分解、代换关系；函数题先看定义域、图像特征、交点、单调性、极值、参数意义；微积分题先看求导/积分对象、变量关系、边界条件、几何意义；力学题先看受力、运动状态、约束条件、方向、守恒或方程选择；概率统计题先看事件定义、条件概率、分布类型、独立性、样本空间。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
 5. 两个书写区都要以挖空题为主，不要把其中任何一个写成纯叙述、开放作文题或老师提示语。
@@ -452,9 +456,9 @@ WRONG_QUESTION_PRACTICE_PACK_VARIANT_REVIEW_PROMPT = """你是错题练习变式
 后续再用一句话说明原因。"""
 
 WRONG_QUESTION_PRACTICE_SCHEMA_VERSION = "wrong_question_practice_schema.v1"
-WRONG_QUESTION_PRACTICE_PROMPT_VERSION = "wrong_question_practice_prompt.2026-06-03"
-WRONG_QUESTION_PRACTICE_TEMPLATE_VERSION = "wrong_question_practice_template.2026-06-03"
-WRONG_QUESTION_PRACTICE_RULE_VERSION = "wrong_question_practice_rules.2026-06-03"
+WRONG_QUESTION_PRACTICE_PROMPT_VERSION = "wrong_question_practice_prompt.2026-06-05"
+WRONG_QUESTION_PRACTICE_TEMPLATE_VERSION = "wrong_question_practice_template.2026-06-05"
+WRONG_QUESTION_PRACTICE_RULE_VERSION = "wrong_question_practice_rules.2026-06-05"
 
 WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT = """你是老师微信沟通助手。
 你会收到学生本周错题概况，请写一段老师可以直接发给家长的微信。
@@ -856,7 +860,8 @@ def _extract_prompt_title_and_lines(prompt: str) -> tuple[str, list[str]]:
 
 
 def _is_low_information_wrong_question_cloze(text: object) -> bool:
-    normalized = re.sub(r"\s+", "", str(text or "").strip())
+    raw_text = str(text or "").strip()
+    normalized = re.sub(r"\s+", "", raw_text)
     if not normalized:
         return False
     low_information_patterns = [
@@ -869,6 +874,19 @@ def _is_low_information_wrong_question_cloze(text: object) -> bool:
         "做完后我要检查______",
     ]
     if any(pattern in normalized for pattern in low_information_patterns):
+        return True
+    generic_guidance_patterns = [
+        "认真审题",
+        "理解题意",
+        "先理解题意",
+        "关键步骤",
+        "题目条件",
+        "注意条件",
+        "注意计算细节",
+        "检查关键条件",
+        "多练类似题目",
+    ]
+    if any(pattern in raw_text for pattern in generic_guidance_patterns) and not _contains_specific_math_anchor(raw_text):
         return True
     return "______" in normalized and len(normalized.replace("______", "")) <= 8
 
@@ -883,6 +901,282 @@ def _first_non_empty_text(*values: object) -> str:
         if text:
             return text
     return ""
+
+
+def _shorten_wrong_question_text(value: object, limit: int = 28) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(limit - 1, 1)].rstrip()}…"
+
+
+def _dedupe_non_empty_texts(values: list[str], *, limit: int = 4) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        deduped.append(text)
+        seen.add(text)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _contains_specific_math_anchor(text: object) -> bool:
+    raw_text = str(text or "").strip()
+    if not raw_text:
+        return False
+    if re.search(r"[A-Z]{1,3}|\d|[=<>≤≥⊥∥∠△□○%+\-×÷/\\^]", raw_text):
+        return True
+    specific_keywords = [
+        "垂直",
+        "平行",
+        "等角",
+        "相似",
+        "辅助线",
+        "面积",
+        "角平分线",
+        "切线",
+        "分母",
+        "因式",
+        "代换",
+        "移项",
+        "方程",
+        "定义域",
+        "单调",
+        "交点",
+        "极值",
+        "导数",
+        "积分",
+        "受力",
+        "守恒",
+        "样本空间",
+        "条件概率",
+        "分布",
+        "速度",
+        "位移",
+    ]
+    return any(keyword in raw_text for keyword in specific_keywords)
+
+
+def _is_weak_wrong_question_anchor(text: object) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return True
+    if re.fullmatch(r"[xyzamn]", normalized):
+        return True
+    return normalized in {"条件", "关系", "目标", "题目条件"}
+
+
+def _combine_wrong_question_analysis_text(context: dict) -> str:
+    question_structured = context.get("question_structured") if isinstance(context.get("question_structured"), dict) else {}
+    knowledge_tags = context.get("knowledge_tags") if isinstance(context.get("knowledge_tags"), list) else []
+    parts = [
+        str(context.get("question_text") or "").strip(),
+        str(question_structured.get("stem") or "").strip(),
+        str(context.get("topic_category") or "").strip(),
+        " ".join(str(tag or "").strip() for tag in knowledge_tags if str(tag or "").strip()),
+        str(context.get("standard_solution") or "").strip(),
+    ]
+    return "\n".join(part for part in parts if part)
+
+
+def _infer_wrong_question_practice_kind(context: dict) -> str:
+    analysis_text = _combine_wrong_question_analysis_text(context)
+    if context.get("is_geometry"):
+        return "geometry"
+
+    rules = [
+        ("calculus", ["导数", "积分", "极限", "微分", "切线斜率", "变化率", "导函数"]),
+        ("mechanics", ["受力", "牛顿", "加速度", "位移", "速度变化", "约束条件", "守恒", "动量", "能量", "功率"]),
+        ("probability", ["概率", "统计", "随机", "样本空间", "条件概率", "独立", "分布", "期望", "方差", "频率"]),
+        ("function", ["函数", "定义域", "值域", "图像", "单调", "极值", "零点", "交点", "参数", "斜率"]),
+        ("algebra", ["方程", "代数", "因式", "分母", "配方", "代换", "移项", "根式", "整式", "分式", "化简", "求值"]),
+        ("geometry", ["垂直", "平行", "等角", "相似", "圆", "辅助线", "面积", "角平分线", "切线", "三角形"]),
+    ]
+    for kind, keywords in rules:
+        if any(keyword in analysis_text for keyword in keywords):
+            return kind
+    if re.search(r"[A-Z]{1,3}\s*[⊥∥]|∠[A-Z]{1,3}|△[A-Z]{3}", analysis_text):
+        return "geometry"
+    return "generic"
+
+
+def _extract_wrong_question_goal(context: dict, kind: str) -> str:
+    question_structured = context.get("question_structured") if isinstance(context.get("question_structured"), dict) else {}
+    question_text = _first_non_empty_text(context.get("question_text"), question_structured.get("stem"))
+    for pattern in [
+        r"(求证[^。；，,\n]+)",
+        r"(证明[^。；，,\n]+)",
+        r"(求[^。；，,\n]+)",
+        r"(解[^。；，,\n]+)",
+        r"(化简[^。；，,\n]+)",
+        r"(比较[^。；，,\n]+)",
+        r"(判断[^。；，,\n]+)",
+    ]:
+        match = re.search(pattern, question_text)
+        if match:
+            return _shorten_wrong_question_text(match.group(1), limit=22)
+
+    defaults = {
+        "geometry": "找到图上能连到目标的关系",
+        "algebra": "把已知式稳稳变到目标式",
+        "function": "判断函数关系或参数范围",
+        "calculus": "判断变化关系或边界条件",
+        "mechanics": "连起受力、状态和方程",
+        "probability": "先定事件关系再下手计算",
+        "generic": "先把已知和目标连起来",
+    }
+    return defaults.get(kind, defaults["generic"])
+
+
+def _extract_wrong_question_condition_anchors(context: dict, kind: str) -> list[str]:
+    analysis_text = _combine_wrong_question_analysis_text(context)
+    knowledge_tags = context.get("knowledge_tags") if isinstance(context.get("knowledge_tags"), list) else []
+    matches: list[str] = []
+
+    for pattern in [
+        r"[A-Z]{1,3}\s*⊥\s*[A-Z]{1,3}",
+        r"[A-Z]{1,3}\s*∥\s*[A-Z]{1,3}",
+        r"∠[A-Z]{1,3}\s*=\s*∠[A-Z]{1,3}",
+        r"\b\d+°",
+        r"\b[xyzamn]\b",
+        r"f\([^)]*\)",
+    ]:
+        matches.extend(match.group(0).replace(" ", "") for match in re.finditer(pattern, analysis_text))
+
+    keyword_map = {
+        "geometry": ["垂直", "平行", "等角", "相似", "圆", "辅助线", "面积", "角平分线", "切线", "中点"],
+        "algebra": ["分母", "因式", "代换", "移项", "配方", "未知数", "比例", "同类项", "根式", "方程"],
+        "function": ["定义域", "图像", "交点", "单调", "极值", "参数", "零点", "自变量", "函数值"],
+        "calculus": ["导数", "积分", "边界条件", "变化率", "切线", "极值", "单调", "几何意义"],
+        "mechanics": ["受力", "速度", "加速度", "位移", "方向", "守恒", "约束条件", "平衡", "运动状态"],
+        "probability": ["事件", "条件概率", "样本空间", "独立", "分布", "频率", "均值", "方差"],
+        "generic": ["条件", "关系", "目标"],
+    }
+    for keyword in keyword_map.get(kind, keyword_map["generic"]):
+        if keyword in analysis_text:
+            matches.append(keyword)
+
+    matches.extend(str(tag or "").strip() for tag in knowledge_tags if str(tag or "").strip())
+    topic_anchor = str(context.get("topic_category") or "").strip()
+    if topic_anchor:
+        matches.append(topic_anchor)
+
+    return _dedupe_non_empty_texts(matches, limit=4)
+
+
+def _build_wrong_question_guided_analysis(context: dict) -> dict:
+    kind = _infer_wrong_question_practice_kind(context)
+    goal = _extract_wrong_question_goal(context, kind)
+    conditions = _extract_wrong_question_condition_anchors(context, kind)
+    topic_anchor = _first_non_empty_text(context.get("topic_category"), "同类题")
+    focus_source = _first_non_empty_text(
+        context.get("student_transcript"),
+        context.get("student_reason_text"),
+        context.get("cause_note"),
+        (
+            context.get("reflection_summary", {}).get("unknown_step")
+            if isinstance(context.get("reflection_summary"), dict)
+            else ""
+        ),
+    )
+    focus_hint = _shorten_wrong_question_text(focus_source, limit=24)
+    primary_condition = conditions[0] if conditions else ""
+    secondary_condition = conditions[1] if len(conditions) > 1 else ""
+    condition_pair = (
+        f"{primary_condition} 和 {secondary_condition}"
+        if primary_condition and secondary_condition and primary_condition != secondary_condition
+        else primary_condition
+    )
+
+    profiles = {
+        "geometry": {
+            "reason_title": "【图上先找关系】",
+            "reminder_title": "【下次先连条件】",
+            "default_pair": "图上的已知角和辅助线",
+            "focus_condition": primary_condition or "垂直、平行或等角",
+            "relation_bucket": "角度、长度、相似或辅助线关系",
+            "start_action": "先在图上标出已知角、直角或对应边",
+            "bridge_bucket": "角度、长度、相似还是辅助线",
+        },
+        "algebra": {
+            "reason_title": "【式子先看方向】",
+            "reminder_title": "【下次先找变形】",
+            "default_pair": "已知式和目标式",
+            "focus_condition": primary_condition or "分母、因式或代换条件",
+            "relation_bucket": "等式、变形或代换关系",
+            "start_action": "先盯住目标式和已知式差在哪一步",
+            "bridge_bucket": "移项、去分母、因式还是代换",
+        },
+        "function": {
+            "reason_title": "【先盯定义域和图像】",
+            "reminder_title": "【下次先看函数桥】",
+            "default_pair": "定义域和图像特征",
+            "focus_condition": primary_condition or "定义域、单调或参数条件",
+            "relation_bucket": "单调、交点或参数关系",
+            "start_action": "先圈出自变量范围和图像线索",
+            "bridge_bucket": "定义域、图像、单调还是参数",
+        },
+        "calculus": {
+            "reason_title": "【先看对象和边界】",
+            "reminder_title": "【下次先定变化关系】",
+            "default_pair": "求导对象和边界条件",
+            "focus_condition": primary_condition or "导数、积分或边界条件",
+            "relation_bucket": "变化率、单调或几何意义",
+            "start_action": "先看要求导还是积分，再圈边界条件",
+            "bridge_bucket": "变化率、单调、边界还是几何意义",
+        },
+        "mechanics": {
+            "reason_title": "【先画受力和状态】",
+            "reminder_title": "【下次先选方程】",
+            "default_pair": "受力情况和运动状态",
+            "focus_condition": primary_condition or "受力、方向或约束条件",
+            "relation_bucket": "受力、守恒或运动方程",
+            "start_action": "先分清受力、方向和当前运动状态",
+            "bridge_bucket": "受力、守恒、位移还是速度关系",
+        },
+        "probability": {
+            "reason_title": "【先定事件和样本】",
+            "reminder_title": "【下次先拆事件】",
+            "default_pair": "事件定义和样本空间",
+            "focus_condition": primary_condition or "事件、条件概率或分布信息",
+            "relation_bucket": "事件、独立性或分布关系",
+            "start_action": "先把事件和样本空间写清楚",
+            "bridge_bucket": "事件、独立、条件概率还是分布",
+        },
+        "generic": {
+            "reason_title": "【先把条件连起来】",
+            "reminder_title": "【下次先找入口】",
+            "default_pair": "题目条件和目标",
+            "focus_condition": primary_condition or "关键条件",
+            "relation_bucket": "条件和目标之间的数学关系",
+            "start_action": "先圈出已知和问题在问什么",
+            "bridge_bucket": "条件、关系、式子还是图形线索",
+        },
+    }
+    profile = profiles.get(kind, profiles["generic"])
+    topic_phrase = topic_anchor if topic_anchor.endswith("题") else f"{topic_anchor}题"
+    if not condition_pair:
+        condition_pair = profile["default_pair"]
+    focus_condition = profile["focus_condition"] if _is_weak_wrong_question_anchor(primary_condition) else primary_condition
+
+    return {
+        "kind": kind,
+        "goal": goal,
+        "topic_anchor": topic_anchor,
+        "topic_phrase": topic_phrase,
+        "focus_hint": focus_hint,
+        "condition_pair": condition_pair,
+        "focus_condition": focus_condition,
+        "relation_bucket": profile["relation_bucket"],
+        "start_action": profile["start_action"],
+        "bridge_bucket": profile["bridge_bucket"],
+        "reason_title": profile["reason_title"],
+        "reminder_title": profile["reminder_title"],
+    }
 
 
 def _pick_condition_anchor(context: dict) -> str:
@@ -900,45 +1194,45 @@ def _build_contextual_wrong_question_practice_blocks(context: dict) -> list[dict
     knowledge_tags = context.get("knowledge_tags") if isinstance(context.get("knowledge_tags"), list) else []
     student_transcript = str(context.get("student_transcript") or "").strip()
     reason_text = str(context.get("student_reason_text") or context.get("child_reason_text") or "").strip()
-    why_wrong = _first_non_empty_text(reflection.get("why_wrong"), context.get("cause_note"), context.get("primary_error_type"))
-    unknown_step = _first_non_empty_text(reflection.get("unknown_step"), context.get("cause_note"), context.get("topic_category"))
-    help_preference = _first_non_empty_text(reflection.get("help_preference"), context.get("topic_category"))
-    condition_anchor = _pick_condition_anchor(context)
-    topic_anchor = _first_non_empty_text(context.get("topic_category"), "同类题")
+    why_wrong = _first_non_empty_text(reflection.get("why_wrong"), context.get("cause_note"))
+    unknown_step = _first_non_empty_text(reflection.get("unknown_step"), context.get("topic_category"))
+    help_preference = _first_non_empty_text(reflection.get("help_preference"))
     tag_anchor = "、".join(str(tag or "").strip() for tag in knowledge_tags[:3] if str(tag or "").strip())
+    analysis = _build_wrong_question_guided_analysis(context)
+    condition_anchor = _pick_condition_anchor(context)
+    source_anchor = _first_non_empty_text(student_transcript, reason_text, why_wrong, unknown_step)
+    source_prefix = f"先回到“{_shorten_wrong_question_text(source_anchor, limit=22)}”这一步，" if source_anchor else ""
+    condition_pair = analysis["condition_pair"] or condition_anchor
+    focus_condition = analysis["focus_condition"] or condition_anchor
 
-    if student_transcript:
-        reason_line = (
-            f"先回到你录音里提到的“{student_transcript}”，这一步要先把 {condition_anchor} "
-            "翻译成 ______。"
-        )
-    elif why_wrong:
-        reason_line = f"这类题别急着算，先把 {condition_anchor} 翻译成 ______；本题最容易卡在 {why_wrong}。"
-    elif reason_text:
-        reason_line = f"先回到你写下的“{reason_text}”，把 {condition_anchor} 对应到 ______，再继续往下推。"
-    else:
-        reason_line = f"本题信息还不完整，先回到原图和题干，确认 {condition_anchor} 表示的 ______。"
-
-    if unknown_step and unknown_step not in reason_line:
-        reason_second_line = f"别急着算，先说清“{unknown_step}”对应的是 ______，再写下一步。"
-    else:
-        reason_second_line = f"看到 {condition_anchor} 时，先标出 ______，再继续找关系。"
+    reason_line = (
+        f"{source_prefix}当目标是“{analysis['goal']}”时，先看 {condition_pair}，"
+        "想它们之间可能连出 ______。"
+    )
+    reason_second_line = (
+        f"这题先别急着算，关键是把 {focus_condition} "
+        f"翻成可用的 ______，再决定下一步。"
+    )
 
     if help_preference:
-        reminder_line = f"下次遇到 {topic_anchor} 题，先按“{help_preference}”检查 ______，再下笔。"
-    elif tag_anchor:
-        reminder_line = f"下次遇到 {topic_anchor} 题，先把 {tag_anchor} 这些条件分别翻译成 ______。"
+        reminder_line = (
+            f"下次遇到 {analysis['topic_phrase']}，先按“{_shorten_wrong_question_text(help_preference, limit=18)}”的顺序，"
+            f"{analysis['start_action']}，再找 ______。"
+        )
     else:
-        reminder_line = f"下次遇到同类题，先把已知条件翻译成图上或式子里的 ______。"
+        reminder_line = (
+            f"下次遇到 {analysis['topic_phrase']}，我先{analysis['start_action']}，"
+            "先找 ______，再下笔。"
+        )
 
-    if tag_anchor:
-        reminder_second_line = f"再问自己：{tag_anchor} 是在提示角度、长度、比例还是 ______。"
-    else:
-        reminder_second_line = "如果只有图片信息，先请老师确认关键条件，再补完整 ______。"
+    bridge_source = tag_anchor or analysis["bridge_bucket"]
+    reminder_second_line = (
+        f"如果一时接不上，就回头问自己：现在缺的是 {bridge_source} 里的哪一座 ______。"
+    )
 
     return [
-        {"title": "错因复盘", "lines": [reason_line, reason_second_line]},
-        {"title": "下次提醒", "lines": [reminder_line, reminder_second_line]},
+        {"title": analysis["reason_title"], "lines": [reason_line, reason_second_line]},
+        {"title": analysis["reminder_title"], "lines": [reminder_line, reminder_second_line]},
     ]
 
 
