@@ -986,6 +986,8 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
                 item.get("reflection_summary_snapshot"),
             ),
             "erased_image_url_snapshot": str(item.get("erased_image_url_snapshot") or "").strip(),
+            "question_surface_mode": str(item.get("question_surface_mode") or "").strip(),
+            "image_source": "",
             "image_data_url": "",
             "practiceItemId": practice_item_id,
             "itemType": str(item.get("item_type") or "real").strip() or "real",
@@ -1000,14 +1002,18 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
         if diagram_data_url:
             normalized_item["image_data_url"] = diagram_data_url
             normalized_item["diagram_type"] = diagram_type
+            normalized_item["image_source"] = "generated_diagram"
         else:
-            image_url = str(item.get("erased_image_url_snapshot") or item.get("image_url_snapshot") or "")
+            erased_image_url = str(item.get("erased_image_url_snapshot") or "").strip()
+            original_image_url = str(item.get("image_url_snapshot") or "").strip()
+            image_url = erased_image_url or original_image_url
             image_bytes = _fetch_wrong_question_image_bytes(image_url)
             if image_bytes:
                 encoded_bytes = base64.b64encode(image_bytes).decode("ascii")
                 normalized_item["image_data_url"] = (
                     f"data:{_guess_wrong_question_image_mime_type(image_url)};base64,{encoded_bytes}"
                 )
+                normalized_item["image_source"] = "erased" if erased_image_url else "original"
 
         browser_items.append(normalized_item)
 

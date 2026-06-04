@@ -248,7 +248,7 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
 });
 
-test('buildDocumentMarkup renders original image for non-geometry practice items when image data exists', async () => {
+test('buildDocumentMarkup prefers generated question text over original image when image is not marked clean', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
     className: '六年级 1 班',
@@ -261,12 +261,37 @@ test('buildDocumentMarkup renders original image for non-geometry practice items
         is_geometry: false,
         question_text_snapshot: '计算 18÷3×2 的结果。',
         image_data_url: 'data:image/png;base64,ZmFrZQ==',
+        image_source: 'original',
       },
     ],
   });
 
   assert.match(markup, /计算 18÷3×2 的结果/);
-  assert.match(markup, /原题图片/);
+  assert.doesNotMatch(markup, /原题图片/);
+  assert.doesNotMatch(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
+});
+
+test('buildDocumentMarkup uses clean original image instead of duplicate generated text', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-3',
+        is_geometry: false,
+        question_text_snapshot: '计算 18÷3×2 的结果。',
+        image_data_url: 'data:image/png;base64,ZmFrZQ==',
+        image_source: 'original',
+        question_surface_mode: 'image_clean',
+      },
+    ],
+  });
+
+  assert.doesNotMatch(markup, /计算 18÷3×2 的结果/);
+  assert.match(markup, /干净原题图片/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
 });
 
