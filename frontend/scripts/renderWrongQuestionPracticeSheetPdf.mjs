@@ -611,18 +611,10 @@ function buildScheduledBody(schedule, answerItems) {
 
 export async function buildDocumentMarkup(payload) {
   const katexCss = await readFile(katexCssPath, 'utf8');
-  const studentName = escapeHtml(payload.studentName || '');
-  const className = escapeHtml(payload.className || '');
-  const teacherName = escapeHtml(payload.teacherName || '');
-  const title = escapeHtml(payload.title || `${studentName} 错题练习`);
+  const title = escapeHtml(payload.title || `${payload.studentName || ''} 错题练习`);
   const items = Array.isArray(payload.items) ? payload.items : [];
   const schedule = Array.isArray(payload.schedule) ? payload.schedule : [];
   const answerItems = Array.isArray(payload.answerItems) ? payload.answerItems : items;
-  const packMeta = payload.packMeta && typeof payload.packMeta === 'object' ? payload.packMeta : {};
-  const scheduledQuestionCount = schedule.reduce(
-    (count, day) => count + (Array.isArray(day.items) ? day.items.length : 0),
-    0,
-  );
   const hasSchedule = schedule.length > 0;
 
   return `
@@ -661,12 +653,6 @@ export async function buildDocumentMarkup(payload) {
             font-size: 24px;
             font-weight: 700;
             color: #0f172a;
-          }
-
-          .cover-meta {
-            margin-top: 8px;
-            color: #475569;
-            font-size: 13px;
           }
 
           .record-page {
@@ -950,19 +936,6 @@ export async function buildDocumentMarkup(payload) {
       <body>
         <section class="cover">
           <div class="cover-title">${title}</div>
-          <div class="cover-meta">学生：${studentName}</div>
-          <div class="cover-meta">班级：${className}</div>
-          <div class="cover-meta">老师：${teacherName}</div>
-          ${
-            hasSchedule
-              ? `
-                <div class="cover-meta">目标：${escapeHtml(packMeta.target || '')}</div>
-                <div class="cover-meta">题量档位：${escapeHtml(packMeta.volume || '')}</div>
-                <div class="cover-meta">生成日期：${escapeHtml(packMeta.generatedDate || '')}</div>
-              `
-              : ''
-          }
-          <div class="cover-meta">题目数量：${hasSchedule ? scheduledQuestionCount : items.length}</div>
         </section>
         ${hasSchedule ? buildScheduledBody(schedule, answerItems) : items.map((item) => buildItemMarkup(item)).join('')}
       </body>

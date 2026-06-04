@@ -44,6 +44,7 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
   assert.match(markup, /xr-latex-preview/);
+  assert.doesNotMatch(markup, /学生：|班级：|老师：|题目数量：/);
 });
 
 test('buildDocumentMarkup prefers structured content for method hints, review blocks, and confirmation copy', async () => {
