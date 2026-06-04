@@ -387,6 +387,9 @@ items 中每一项必须包含：
 2.h 每道题至少给学生一个清晰的“入口动作”。读完方法提醒后，学生应该知道这题重做时第一步先写什么、先圈什么、先判断什么。
 2.i method_hint_lines、reason_blank_prompt、improvement_summary_prompt 都优先写成动作链，不要只写判断句。尽量出现“先……再……最后……”或“先由……推出……，再把……改写成……，最后检查……”这种可执行顺序。
 2.j 不同题型不要共用同一套 fallback 话术。至少按下面的入口来组织引导：几何题先看角、平行、垂直、相似、圆、辅助线、面积关系；代数题先看目标式、已知式、变形方向、因式分解、代换关系；函数题先看定义域、图像特征、交点、单调性、极值、参数意义；微积分题先看求导/积分对象、变量关系、边界条件、几何意义；力学题先看受力、运动状态、约束条件、方向、守恒或方程选择；概率统计题先看事件定义、条件概率、分布类型、独立性、样本空间。
+2.k 按 Humanizer-zh 的规则写字：不要用“此外”“然而”“总的来说”“值得注意的是”“我们需要注意”“本题考察了”“这不仅仅是”这类报告腔或 AI 套话；不要写宣传式、总结式、口号式结尾；直接说这题先看什么、先做什么。
+2.l 如果学生自述只有“不会”“算错了”“看错了”“粗心了”这类空泛词，不要把这些词原样当成引导入口；要回到题目里的具体对象、条件、字母式子或图形关系来写。
+2.m 学生可见文案里不要出现“未分类”“待补充”“需要确认”“同类题经验”这类后台标签词；缺少标签时也要自然改写成“这类代数题”“这类几何题”之类的说法。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
 5. 两个书写区都要以挖空题为主，不要把其中任何一个写成纯叙述、开放作文题或老师提示语。
@@ -813,6 +816,48 @@ def _clean_wrong_question_practice_prompt_text(value: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
+_WRONG_QUESTION_GENERIC_REASON_TEXTS = {
+    "不会",
+    "不太会",
+    "算错了",
+    "看错了",
+    "粗心了",
+    "做错了",
+    "没做出来",
+}
+
+_WRONG_QUESTION_WEAK_TAG_TEXTS = {
+    "未分类",
+    "待补充",
+    "同类题",
+    "同类题经验",
+    "需要确认",
+    "待确认",
+}
+
+_WRONG_QUESTION_HUMANIZER_PREFIX_RE = re.compile(
+    r"^(?:此外|另外|然而|总的来说|值得注意的是|需要注意的是|可以看到|实际上|当然|希望这对你有帮助(?:。|！)?|请告诉我(?:。|！)?)"
+)
+
+_WRONG_QUESTION_HUMANIZER_REPLACEMENTS = [
+    ("这不仅仅是", "这不是"),
+    ("本题考察了", "这题要用到"),
+    ("我们需要注意", "先看"),
+    ("值得注意的是", ""),
+    ("需要注意的是", ""),
+    ("总的来说", ""),
+    ("与此同时", ""),
+    ("希望这对你有帮助。", ""),
+    ("希望这对你有帮助", ""),
+    ("请告诉我。", ""),
+    ("请告诉我", ""),
+    ("这题先别急着算，关键是把", "别急着往下算，先把"),
+    ("如果一时接不上，就回头问自己：现在缺的是", "要是还连不上，就问自己还差哪一步"),
+    ("里的哪一座", "里的哪一步"),
+    ("再决定下一步", "再往下做"),
+]
+
+
 def _normalize_string_list(values: object, *, limit: int = 0) -> list[str]:
     normalized = [
         str(item or "").strip()
@@ -961,13 +1006,62 @@ def _contains_specific_math_anchor(text: object) -> bool:
     return any(keyword in raw_text for keyword in specific_keywords)
 
 
+def _is_generic_wrong_question_reason(text: object) -> bool:
+    normalized = re.sub(r"\s+", "", str(text or "").strip())
+    if not normalized:
+        return True
+    return normalized in _WRONG_QUESTION_GENERIC_REASON_TEXTS
+
+
 def _is_weak_wrong_question_anchor(text: object) -> bool:
     normalized = str(text or "").strip()
     if not normalized:
         return True
     if re.fullmatch(r"[xyzamn]", normalized):
         return True
-    return normalized in {"条件", "关系", "目标", "题目条件"}
+    return normalized in {"条件", "关系", "目标", "题目条件"} or normalized in _WRONG_QUESTION_WEAK_TAG_TEXTS
+
+
+def _default_wrong_question_topic_phrase(kind: str) -> str:
+    return {
+        "geometry": "这类几何题",
+        "algebra": "这类代数题",
+        "function": "这类函数题",
+        "calculus": "这类微积分题",
+        "mechanics": "这类力学题",
+        "probability": "这类概率统计题",
+        "generic": "这类题",
+    }.get(kind, "这类题")
+
+
+def _humanize_wrong_question_copy(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text)
+    text = _WRONG_QUESTION_HUMANIZER_PREFIX_RE.sub("", text).strip(" ，；：")
+    for old, new in _WRONG_QUESTION_HUMANIZER_REPLACEMENTS:
+        text = text.replace(old, new)
+    text = text.replace("先先", "先")
+    text = text.replace("未分类题", "这类题")
+    text = text.replace("未分类", "这类题")
+    text = text.replace("待补充", "这一步")
+    text = text.replace("同类题经验", "这类题")
+    text = text.replace("同类题", "这类题")
+    text = re.sub(r"[，,]{2,}", "，", text)
+    text = re.sub(r"[。]{2,}", "。", text)
+    return text.strip(" ，；")
+
+
+def _humanize_wrong_question_copy_list(values: object, *, limit: int = 0) -> list[str]:
+    normalized: list[str] = []
+    for value in _normalize_string_list(values):
+        text = _humanize_wrong_question_copy(value)
+        if text:
+            normalized.append(text)
+    if limit > 0:
+        return normalized[:limit]
+    return normalized
 
 
 def _combine_wrong_question_analysis_text(context: dict) -> str:
@@ -1038,6 +1132,7 @@ def _extract_wrong_question_condition_anchors(context: dict, kind: str) -> list[
     matches: list[str] = []
 
     for pattern in [
+        r"[A-Za-z]{1,3}\s*=\s*[^，。；\n]+",
         r"[A-Z]{1,3}\s*⊥\s*[A-Z]{1,3}",
         r"[A-Z]{1,3}\s*∥\s*[A-Z]{1,3}",
         r"∠[A-Z]{1,3}\s*=\s*∠[A-Z]{1,3}",
@@ -1060,19 +1155,26 @@ def _extract_wrong_question_condition_anchors(context: dict, kind: str) -> list[
         if keyword in analysis_text:
             matches.append(keyword)
 
-    matches.extend(str(tag or "").strip() for tag in knowledge_tags if str(tag or "").strip())
+    matches.extend(
+        str(tag or "").strip()
+        for tag in knowledge_tags
+        if str(tag or "").strip() and str(tag or "").strip() not in _WRONG_QUESTION_WEAK_TAG_TEXTS
+    )
     topic_anchor = str(context.get("topic_category") or "").strip()
-    if topic_anchor:
+    if topic_anchor and topic_anchor not in _WRONG_QUESTION_WEAK_TAG_TEXTS:
         matches.append(topic_anchor)
 
-    return _dedupe_non_empty_texts(matches, limit=4)
+    filtered_matches = [match for match in matches if not _is_weak_wrong_question_anchor(match)]
+    return _dedupe_non_empty_texts(filtered_matches or matches, limit=4)
 
 
 def _build_wrong_question_guided_analysis(context: dict) -> dict:
     kind = _infer_wrong_question_practice_kind(context)
     goal = _extract_wrong_question_goal(context, kind)
     conditions = _extract_wrong_question_condition_anchors(context, kind)
-    topic_anchor = _first_non_empty_text(context.get("topic_category"), "同类题")
+    raw_topic_anchor = _first_non_empty_text(context.get("topic_category"))
+    topic_phrase = _default_wrong_question_topic_phrase(kind)
+    topic_anchor = raw_topic_anchor if raw_topic_anchor and raw_topic_anchor not in _WRONG_QUESTION_WEAK_TAG_TEXTS else topic_phrase
     focus_source = _first_non_empty_text(
         context.get("student_transcript"),
         context.get("student_reason_text"),
@@ -1158,7 +1260,7 @@ def _build_wrong_question_guided_analysis(context: dict) -> dict:
         },
     }
     profile = profiles.get(kind, profiles["generic"])
-    topic_phrase = topic_anchor if topic_anchor.endswith("题") else f"{topic_anchor}题"
+    normalized_topic_phrase = topic_anchor if topic_anchor == topic_phrase else (topic_anchor if topic_anchor.endswith("题") else f"{topic_anchor}题")
     if not condition_pair:
         condition_pair = profile["default_pair"]
     focus_condition = profile["focus_condition"] if _is_weak_wrong_question_anchor(primary_condition) else primary_condition
@@ -1167,7 +1269,7 @@ def _build_wrong_question_guided_analysis(context: dict) -> dict:
         "kind": kind,
         "goal": goal,
         "topic_anchor": topic_anchor,
-        "topic_phrase": topic_phrase,
+        "topic_phrase": normalized_topic_phrase,
         "focus_hint": focus_hint,
         "condition_pair": condition_pair,
         "focus_condition": focus_condition,
@@ -1196,22 +1298,35 @@ def _build_contextual_wrong_question_practice_blocks(context: dict) -> list[dict
     reason_text = str(context.get("student_reason_text") or context.get("child_reason_text") or "").strip()
     why_wrong = _first_non_empty_text(reflection.get("why_wrong"), context.get("cause_note"))
     unknown_step = _first_non_empty_text(reflection.get("unknown_step"), context.get("topic_category"))
+    if _is_weak_wrong_question_anchor(unknown_step):
+        unknown_step = ""
     help_preference = _first_non_empty_text(reflection.get("help_preference"))
-    tag_anchor = "、".join(str(tag or "").strip() for tag in knowledge_tags[:3] if str(tag or "").strip())
+    tag_anchor = "、".join(
+        str(tag or "").strip()
+        for tag in knowledge_tags[:3]
+        if str(tag or "").strip() and not _is_weak_wrong_question_anchor(tag)
+    )
     analysis = _build_wrong_question_guided_analysis(context)
     condition_anchor = _pick_condition_anchor(context)
-    source_anchor = _first_non_empty_text(student_transcript, reason_text, why_wrong, unknown_step)
+    source_anchor = _first_non_empty_text(
+        "" if _is_generic_wrong_question_reason(student_transcript) else student_transcript,
+        "" if _is_generic_wrong_question_reason(reason_text) else reason_text,
+        why_wrong,
+        unknown_step,
+    )
+    if _is_weak_wrong_question_anchor(source_anchor):
+        source_anchor = ""
     source_prefix = f"先回到“{_shorten_wrong_question_text(source_anchor, limit=22)}”这一步，" if source_anchor else ""
     condition_pair = analysis["condition_pair"] or condition_anchor
     focus_condition = analysis["focus_condition"] or condition_anchor
 
     reason_line = (
-        f"{source_prefix}当目标是“{analysis['goal']}”时，先看 {condition_pair}，"
-        "想它们之间可能连出 ______。"
+        f"{source_prefix}像这题，先看 {condition_pair}，"
+        "想想它们能不能连出 ______。"
     )
     reason_second_line = (
-        f"这题先别急着算，关键是把 {focus_condition} "
-        f"翻成可用的 ______，再决定下一步。"
+        f"别急着往下算，先把 {focus_condition} "
+        f"改成能直接用的 ______，再往下做。"
     )
 
     if help_preference:
@@ -1227,12 +1342,18 @@ def _build_contextual_wrong_question_practice_blocks(context: dict) -> list[dict
 
     bridge_source = tag_anchor or analysis["bridge_bucket"]
     reminder_second_line = (
-        f"如果一时接不上，就回头问自己：现在缺的是 {bridge_source} 里的哪一座 ______。"
+        f"要是还连不上，就问自己：在 {bridge_source} 这里，还差哪一步 ______。"
     )
 
     return [
-        {"title": analysis["reason_title"], "lines": [reason_line, reason_second_line]},
-        {"title": analysis["reminder_title"], "lines": [reminder_line, reminder_second_line]},
+        {
+            "title": _humanize_wrong_question_copy(analysis["reason_title"]),
+            "lines": _humanize_wrong_question_copy_list([reason_line, reason_second_line], limit=2),
+        },
+        {
+            "title": _humanize_wrong_question_copy(analysis["reminder_title"]),
+            "lines": _humanize_wrong_question_copy_list([reminder_line, reminder_second_line], limit=2),
+        },
     ]
 
 
@@ -1251,24 +1372,28 @@ def _normalize_wrong_question_practice_structured_content(
     reason_title, reason_lines = _extract_prompt_title_and_lines(reason_blank_prompt)
     improvement_title, improvement_lines = _extract_prompt_title_and_lines(improvement_summary_prompt)
 
-    mistake_focus = str(
+    mistake_focus = _humanize_wrong_question_copy(
+        str(
         structured_source.get("mistake_focus")
         or structured_source.get("mistakeFocus")
         or reason_title
         or ""
     ).strip()
-    review_goal = str(
+    )
+    review_goal = _humanize_wrong_question_copy(
+        str(
         structured_source.get("review_goal")
         or structured_source.get("reviewGoal")
         or improvement_title
         or ""
     ).strip()
-    method_hint_lines = _normalize_string_list(
+    )
+    method_hint_lines = _humanize_wrong_question_copy_list(
         structured_source.get("method_hint_lines") or structured_source.get("methodHintLines"),
         limit=3,
     )
     if not method_hint_lines and pitfall_reminder:
-        method_hint_lines = [str(pitfall_reminder).strip()]
+        method_hint_lines = [_humanize_wrong_question_copy(str(pitfall_reminder).strip())]
 
     raw_blocks = structured_source.get("blank_review_blocks") or structured_source.get("blankReviewBlocks")
     normalized_blocks = []
@@ -1279,28 +1404,27 @@ def _normalize_wrong_question_practice_structured_content(
             block_lines = _normalize_string_list(block.get("lines"), limit=2)
             if block_title or block_lines:
                 normalized_blocks.append(
-                    {
-                        "title": block_title,
-                        "lines": block_lines,
-                    }
+                    {"title": _humanize_wrong_question_copy(block_title), "lines": _humanize_wrong_question_copy_list(block_lines, limit=2)}
                 )
     if not normalized_blocks:
         fallback_blocks = []
         if reason_title or reason_lines:
-            fallback_blocks.append({"title": reason_title, "lines": reason_lines[:2]})
+            fallback_blocks.append({"title": _humanize_wrong_question_copy(reason_title), "lines": _humanize_wrong_question_copy_list(reason_lines[:2], limit=2)})
         if improvement_title or improvement_lines:
-            fallback_blocks.append({"title": improvement_title, "lines": improvement_lines[:2]})
+            fallback_blocks.append({"title": _humanize_wrong_question_copy(improvement_title), "lines": _humanize_wrong_question_copy_list(improvement_lines[:2], limit=2)})
         normalized_blocks = [block for block in fallback_blocks if block["title"] or block["lines"]]
     if any(_has_low_information_wrong_question_cloze(block.get("lines")) for block in normalized_blocks):
         contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context or {})
         if contextual_blocks:
             normalized_blocks = contextual_blocks
 
-    teacher_feedback = str(
+    teacher_feedback = _humanize_wrong_question_copy(
+        str(
         structured_source.get("teacher_feedback")
         or structured_source.get("teacherFeedback")
         or ""
     ).strip()
+    )
     confirmation_reasons = _normalize_string_list(
         structured_source.get("confirmation_reasons") or structured_source.get("confirmationReasons"),
     )
@@ -1370,6 +1494,8 @@ def _normalize_wrong_question_practice_sheet_material(
                 reason_body = "\n".join(contextual_blocks[0]["lines"])
             while reason_body.count("______") < 2:
                 reason_body = f"{reason_body.rstrip('。')} ______。"
+            reason_title = _humanize_wrong_question_copy(reason_title)
+            reason_body = _humanize_wrong_question_copy(reason_body)
             reason_blank_prompt = (
                 f"{reason_title}\n{reason_body}".strip()
                 if reason_title
@@ -1384,6 +1510,8 @@ def _normalize_wrong_question_practice_sheet_material(
                     contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context)
                     improvement_title = contextual_blocks[1]["title"]
                     improvement_body = "\n".join(contextual_blocks[1]["lines"])
+                improvement_title = _humanize_wrong_question_copy(improvement_title)
+                improvement_body = _humanize_wrong_question_copy(improvement_body)
                 improvement_summary_prompt = f"{improvement_title}\n{improvement_body}".strip()
             else:
                 improvement_body = improvement_lines[0]
@@ -1393,7 +1521,7 @@ def _normalize_wrong_question_practice_sheet_material(
                         f"{contextual_blocks[1]['title']}\n" + "\n".join(contextual_blocks[1]["lines"])
                     ).strip()
                 else:
-                    improvement_summary_prompt = improvement_body
+                    improvement_summary_prompt = _humanize_wrong_question_copy(improvement_body)
 
         if (
             not wrong_question_record_id
