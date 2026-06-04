@@ -209,6 +209,27 @@ def _wrong_question_erased_image_path_for_record(record_id: str) -> Path:
     return ERASED_IMAGE_DIR / f"{safe_record_id}.png"
 
 
+def _erased_image_has_meaningful_change(source_bytes: bytes, erased_bytes: bytes) -> bool:
+    if not source_bytes or not erased_bytes or source_bytes == erased_bytes:
+        return False
+    try:
+        from PIL import Image, ImageChops
+
+        source_image = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+        erased_image = Image.open(io.BytesIO(erased_bytes)).convert("RGB")
+        if source_image.size != erased_image.size:
+            erased_image = erased_image.resize(source_image.size)
+        diff = ImageChops.difference(source_image, erased_image)
+        pixels = diff.getdata()
+        total_pixels = source_image.size[0] * source_image.size[1]
+        if total_pixels <= 0:
+            return False
+        changed_pixels = sum(1 for pixel in pixels if max(pixel) > 8)
+        return (changed_pixels / total_pixels) >= 0.0025
+    except Exception:
+        return source_bytes != erased_bytes
+
+
 def ensure_erased_wrong_question_images_for_practice_items(items: list[dict]) -> list[dict]:
     prepared_items: list[dict] = []
     for item in items or []:
@@ -227,12 +248,14 @@ def ensure_erased_wrong_question_images_for_practice_items(items: list[dict]) ->
 
         erased_path = _wrong_question_erased_image_path_for_record(record_id)
         try:
+            source_bytes = _fetch_upload_image_bytes(image_url)
             if not erased_path.exists():
-                source_bytes = _fetch_upload_image_bytes(image_url)
                 erased_bytes = _erase_wrong_question_image_bytes(source_bytes)
-                if erased_bytes:
+                if _erased_image_has_meaningful_change(source_bytes, erased_bytes):
                     erased_path.parent.mkdir(parents=True, exist_ok=True)
                     erased_path.write_bytes(erased_bytes)
+            elif not _erased_image_has_meaningful_change(source_bytes, erased_path.read_bytes()):
+                erased_path.unlink(missing_ok=True)
             if erased_path.exists():
                 prepared_item["erased_image_url_snapshot"] = str(erased_path)
         except Exception:
