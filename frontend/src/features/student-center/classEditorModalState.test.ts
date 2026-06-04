@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ClassFormValues, ClassInviteInfo, ClassItem, UserItem } from './model';
-import { buildClassEditorModalState } from './classEditorModalState';
+import { buildClassEditorModalState, shouldShowTeacherResultsPanel } from './classEditorModalState';
 
 const gradeGroups = {
   小奥: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
@@ -212,4 +212,30 @@ test('buildClassEditorModalState assembles editing modal state and falls back to
   assert.equal(state.editing.studentError, '新增失败');
   assert.equal(state.editing.studentDraftName, '新学生');
   assert.equal(state.editing.canEditTeacherBinding, true);
+});
+
+test('teacher result panel stays visible for pinned filters and search text', () => {
+  assert.equal(shouldShowTeacherResultsPanel({
+    searchText: '',
+    pinnedFilterLayer: 'subject',
+    hoverActive: false,
+  }), true);
+
+  assert.equal(shouldShowTeacherResultsPanel({
+    searchText: '曹',
+    pinnedFilterLayer: null,
+    hoverActive: false,
+  }), true);
+
+  assert.equal(shouldShowTeacherResultsPanel({
+    searchText: '',
+    pinnedFilterLayer: null,
+    hoverActive: true,
+  }), true);
+
+  assert.equal(shouldShowTeacherResultsPanel({
+    searchText: '',
+    pinnedFilterLayer: null,
+    hoverActive: false,
+  }), false);
 });

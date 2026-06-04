@@ -24,9 +24,9 @@ test('class management fetches and resets class invite codes', () => {
   assert.match(studentCenterSource, /executeClassInviteResetRequest\(classId, apiFetch\)/);
   assert.match(classInviteRulesSource, /apiFetch<ClassInviteInfo>\(request\.endpoint\)/);
   assert.match(classInviteRulesSource, /apiFetch<ClassInviteInfo>\(request\.endpoint, request\.init\)/);
-  assert.match(classEditorModalSource, /家长绑定邀请码/);
-  assert.match(classEditorModalSource, /当前邀请码/);
-  assert.match(classEditorModalSource, /微信小程序里绑定该班级/);
+  assert.match(classEditorModalSource, /邀请码：/);
+  assert.match(classEditorModalSource, /getClassInviteCopyButtonLabel/);
+  assert.match(classEditorModalSource, /actions\.onResetClassInvite/);
 });
 
 test('class management uses scoped floating filters and compact clickable cards', () => {
@@ -68,11 +68,11 @@ test('class management editor uses structured naming and duplicate protection', 
   assert.ok(classPageBlock);
   assert.match(studentCenterSource, /academicGradeOptions/);
   assert.match(studentCenterSource, /const studentCenterGradeOptions = \[\.\.\.academicGradeOptions\]/);
-  assert.match(classPageBlock[0], /buildClassDisplayName\(form\)/);
+  assert.match(classSaveRulesSource, /buildClassDisplayName\(\{ \.\.\.form, cohort_year: inferredCohortYear, selected_student_names: selectedStudentNames \}\)/);
   assert.match(classPageBlock[0], /findDuplicateClass\(classes, classId, payload\)/);
   assert.match(classPageBlock[0], /已存在相同学科、学段、年级、班号和入学年份的班级/);
   assert.match(classPageBlock[0], /入学年份/);
-  assert.match(classPageBlock[0], /2025级·四年级·1班/);
+  assert.match(classEditorModalSource, /名称预览：\{editing\.displayNamePreview\}/);
   assert.match(classPageBlock[0], /保存更改/);
   assert.doesNotMatch(classPageBlock[0], /span className="text-slate-500 dark:text-slate-400">显示入学级<\/span>/);
 });
