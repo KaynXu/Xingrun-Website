@@ -19,6 +19,7 @@ import re
 import subprocess
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from PIL import Image as PILImage
@@ -497,6 +498,16 @@ def _fetch_wrong_question_image_bytes(image_url: str, image_rotation_degrees: ob
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
         return None
+    parsed_url = urllib.parse.urlparse(normalized_image_url)
+    if parsed_url.scheme in {"", "file"}:
+        local_path = Path(urllib.request.url2pathname(parsed_url.path if parsed_url.scheme == "file" else normalized_image_url))
+        if not local_path.exists() or not local_path.is_file():
+            return None
+        try:
+            image_bytes = local_path.read_bytes()
+        except OSError:
+            return None
+        return _rotate_wrong_question_image_bytes(image_bytes, image_rotation_degrees)
     try:
         with urllib.request.urlopen(normalized_image_url, timeout=10) as response:
             image_bytes = response.read()
@@ -974,6 +985,7 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
                 "reflection_summary_snapshot_json",
                 item.get("reflection_summary_snapshot"),
             ),
+            "erased_image_url_snapshot": str(item.get("erased_image_url_snapshot") or "").strip(),
             "image_data_url": "",
             "practiceItemId": practice_item_id,
             "itemType": str(item.get("item_type") or "real").strip() or "real",
@@ -989,7 +1001,7 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
             normalized_item["image_data_url"] = diagram_data_url
             normalized_item["diagram_type"] = diagram_type
         else:
-            image_url = str(item.get("image_url_snapshot") or "")
+            image_url = str(item.get("erased_image_url_snapshot") or item.get("image_url_snapshot") or "")
             image_bytes = _fetch_wrong_question_image_bytes(image_url)
             if image_bytes:
                 encoded_bytes = base64.b64encode(image_bytes).decode("ascii")

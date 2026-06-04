@@ -186,6 +186,8 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
                      "next_step": "以后先圈出乘除法，再按先乘除后加减的顺序逐步计算。",
                  },
              ), \
+             patch("wrong_question_upload_worker._fetch_upload_image_bytes", return_value=b"original-image"), \
+             patch("wrong_question_upload_worker._erase_wrong_question_image_bytes", return_value=b"erased-image"), \
              patch("wrong_question_upload_worker._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
             result = process_wechat_wrong_question_upload_task(task["id"])
 
@@ -217,7 +219,10 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(run["source"], "wechat_mp")
         self.assertEqual(run["student_id"], self.student["id"])
         self.assertEqual(run["teacher_user_id"], self.owner_id)
-        self.assertEqual(lesson_manager.list_wrong_question_assets(run["id"])[0]["asset_role"], "original_upload")
+        assets = lesson_manager.list_wrong_question_assets(run["id"])
+        self.assertEqual(assets[0]["asset_role"], "original_upload")
+        self.assertEqual(assets[1]["asset_role"], "erased_question_image")
+        self.assertTrue(Path(assets[1]["storage_path"]).exists())
 
     def test_staff_and_parent_can_update_wrong_question_topic_category(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
