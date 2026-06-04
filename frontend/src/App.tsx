@@ -640,7 +640,9 @@ export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentK
   return null;
 }
 
-function apiUploadFormWithProgress<T = unknown>(
+// --- API helper ---
+
+export function apiUploadFormWithProgress<T = unknown>(
   path: string,
   body: FormData,
   onProgress: (progress: number) => void,
@@ -9981,7 +9983,7 @@ export const LandingPage = ({
                 transition={{ delay: 0.18, duration: 0.72, ease: [0.16, 1, 0.3, 1] }}
                 className="mt-8 max-w-4xl text-4xl font-black leading-[1.02] tracking-tight text-slate-950 sm:text-6xl md:text-7xl dark:text-white"
               >
-                Starain，用 AI 赋能教育机构。
+                用ai创造教育
               </motion.h1>
 
               <motion.p

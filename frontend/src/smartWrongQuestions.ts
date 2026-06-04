@@ -26,6 +26,13 @@ export interface WrongQuestionReviewDraft {
   topicCategory?: string;
   isMastered?: boolean;
   questionText?: string;
+  needsTeacherConfirmation?: boolean;
+  confirmationReasons?: string[];
+  reflectionWhyWrong?: string;
+  reflectionUnknownStep?: string;
+  reflectionHelpPreference?: string;
+  reflectionMode?: string;
+  reflectionSessionEntrypoint?: string;
 }
 
 export interface WrongQuestionReviewPayload {
@@ -39,9 +46,75 @@ export interface WrongQuestionReviewPayload {
   topicCategory?: string;
   is_mastered?: boolean;
   question_text?: string;
+  needs_teacher_confirmation?: boolean;
+  confirmation_reasons_json?: string[];
+  confirmation_action?: string;
+  reflection_summary_json?: Record<string, unknown>;
 }
 
 export type WrongQuestionMappingStatus = 'mapped' | 'unmapped' | 'ambiguous' | 'needs_review';
+
+export interface WrongQuestionArchiveContext {
+  source: string;
+  ingestionRunId: string;
+  ingestionRunUrl: string;
+  chatSessionId: string;
+  chatSessionUrl: string;
+}
+
+export interface WrongQuestionGenerationMetadata {
+  schemaVersion: string;
+  promptVersion: string;
+  templateVersion: string;
+  ruleVersion: string;
+  provider: string;
+  modelVersion: string;
+  entrypoint: string;
+  scope?: string;
+  ingestionEntrypoint?: string;
+  archiveSource?: string;
+}
+
+export interface WrongQuestionReflectionSummary {
+  schemaVersion?: string;
+  mode: string;
+  summaryText: string;
+  whyWrong?: string;
+  unknownStep?: string;
+  helpPreference?: string;
+  answeredStages: string[];
+  sessionEntrypoint?: string;
+}
+
+export interface WrongQuestionMasteryTracking {
+  practiceSheetCount: number;
+  followupCount: number;
+  latestPracticeSheetId?: number | null;
+  latestPracticeStatus?: string;
+  latestPracticeCreatedAt?: string;
+  latestPracticePdfPath?: string;
+  latestFollowupOutcome?: string;
+  latestFollowupCompletedAt?: string;
+  latestFollowupSummary?: string;
+  relatedTopicCategories: string[];
+  relatedErrorTypes: string[];
+}
+
+export interface WrongQuestionMasteryAssessment {
+  status: string;
+  label: string;
+  score: number;
+  suggestedAction: string;
+  practiceSheetCount: number;
+  followupCount: number;
+  latestPracticeStatus?: string;
+  latestFollowupOutcome?: string;
+  sameTopicActiveCount: number;
+  sameErrorActiveCount: number;
+  repeatedActiveCount: number;
+  manualIsMastered: boolean;
+  evidence: string[];
+}
 
 export interface WrongQuestionRecord {
   id: string;
@@ -78,6 +151,79 @@ export interface WrongQuestionRecord {
   teacherComment: string;
   reviewStatus: string;
   analysis: WrongQuestionAnalysis;
+  detailUrl?: string;
+  ingestionRunId?: string;
+  chatSessionId?: string;
+  archiveContext?: WrongQuestionArchiveContext;
+  needsTeacherConfirmation?: boolean;
+  confirmationReasons?: string[];
+  confirmationStatus?: string;
+  confirmationReviewedBy?: number | null;
+  confirmationReviewedAt?: string;
+  confirmationReviewerName?: string;
+  reflectionSummary?: WrongQuestionReflectionSummary;
+  generationMetadata?: WrongQuestionGenerationMetadata;
+  masteryTracking?: WrongQuestionMasteryTracking;
+  masteryAssessment?: WrongQuestionMasteryAssessment;
+  linkedIngestionRun?: WrongQuestionIngestionRun;
+  linkedChatSession?: WrongQuestionChatSession;
+}
+
+export interface WrongQuestionIngestionAsset {
+  id: number;
+  ingestionRunId: string;
+  assetRole: string;
+  storagePath: string;
+  fileUrl: string;
+  mimeType: string;
+  pageNumber: number;
+  width: number;
+  height: number;
+  metadataJson: string;
+}
+
+export interface WrongQuestionIngestionRun {
+  id: string;
+  source: string;
+  status: string;
+  currentStep: string;
+  classId: number | null;
+  studentId: number | null;
+  teacherUserId: number | null;
+  chatSessionId: string;
+  originalFilename: string;
+  mimeType: string;
+  metadataJson: string;
+  errorMessage: string;
+  createdAt: string;
+  detailUrl: string;
+  assets: WrongQuestionIngestionAsset[];
+  records: WrongQuestionRecord[];
+}
+
+export interface WrongQuestionChatMessage {
+  id: number;
+  sessionId: string;
+  role: string;
+  stage: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface WrongQuestionChatSession {
+  id: string;
+  status: string;
+  currentStage: string;
+  summaryText: string;
+  metadataJson: string;
+  ingestionRunId: string;
+  classId: number | null;
+  studentId: number | null;
+  teacherUserId: number | null;
+  detailUrl: string;
+  streamUrl: string;
+  messages: WrongQuestionChatMessage[];
+  records: WrongQuestionRecord[];
 }
 
 export interface WrongQuestionFilters {
@@ -86,6 +232,7 @@ export interface WrongQuestionFilters {
   subject?: string;
   teacherName?: string;
   errorType?: string;
+  confirmationState?: string;
 }
 
 export interface WrongQuestionTopicSummary {
@@ -133,6 +280,7 @@ export interface WrongQuestionPracticeSheetSummary {
   questionCount: number;
   status: string;
   createdAt: string;
+  sourceRecordIds: string[];
   pdfPath?: string;
   pdfUrl?: string;
   downloadUrl?: string;
@@ -195,6 +343,9 @@ export type WeeklyWrongQuestionFollowupItem = {
   topicCategories: string[];
   representativeReasonSummaries: string[];
   sourceRecordIds: string[];
+  sourceRecords: WrongQuestionRecord[];
+  repeatedCategory: string;
+  repeatedCategoryCount: number;
   studentLibraryPdfUrl: string;
   message: WeeklyWrongQuestionFollowupMessage | null;
 };
@@ -240,6 +391,8 @@ export interface WeeklyWrongQuestionActivityStudentItem {
   totalQuestionCount: number;
   topicCategories: string[];
   latestCreatedAt: string;
+  sourceRecordIds: string[];
+  sourceRecords: WrongQuestionRecord[];
 }
 
 export interface WeeklyWrongQuestionActivitySummary {
@@ -347,6 +500,251 @@ function pickStringArrayValue(source: Record<string, unknown>, keys: string[]): 
 
 function normalizeStringList(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item ?? '').trim()).filter(Boolean) : [];
+}
+
+function normalizePossiblyJsonStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return normalizeStringList(value);
+  }
+  if (typeof value !== 'string') {
+    return [];
+  }
+  try {
+    return normalizeStringList(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeWrongQuestionGenerationMetadata(rawMetadata: unknown): WrongQuestionGenerationMetadata | undefined {
+  let source = rawMetadata;
+  if (typeof rawMetadata === 'string') {
+    try {
+      source = JSON.parse(rawMetadata);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const metadata: WrongQuestionGenerationMetadata = {
+    schemaVersion: pickStringValue(source, ['schemaVersion', 'schema_version']),
+    promptVersion: pickStringValue(source, ['promptVersion', 'prompt_version']),
+    templateVersion: pickStringValue(source, ['templateVersion', 'template_version']),
+    ruleVersion: pickStringValue(source, ['ruleVersion', 'rule_version']),
+    provider: pickStringValue(source, ['provider']),
+    modelVersion: pickStringValue(source, ['modelVersion', 'model_version']),
+    entrypoint: pickStringValue(source, ['entrypoint']),
+  };
+
+  const scope = pickStringValue(source, ['scope']);
+  if (scope) {
+    metadata.scope = scope;
+  }
+
+  const ingestionEntrypoint = pickStringValue(source, ['ingestionEntrypoint', 'ingestion_entrypoint']);
+  if (ingestionEntrypoint) {
+    metadata.ingestionEntrypoint = ingestionEntrypoint;
+  }
+
+  const archiveSource = pickStringValue(source, ['archiveSource', 'archive_source']);
+  if (archiveSource) {
+    metadata.archiveSource = archiveSource;
+  }
+
+  const hasValue = Object.values(metadata).some((value) => typeof value === 'string' ? value.trim() : Boolean(value));
+  return hasValue ? metadata : undefined;
+}
+
+function normalizeWrongQuestionReflectionSummary(rawSummary: unknown): WrongQuestionReflectionSummary | undefined {
+  let source = rawSummary;
+  if (typeof rawSummary === 'string') {
+    try {
+      source = JSON.parse(rawSummary);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const summary: WrongQuestionReflectionSummary = {
+    mode: pickStringValue(source, ['mode']) || '',
+    summaryText: pickStringValue(source, ['summaryText', 'summary_text']) || '',
+    answeredStages: normalizePossiblyJsonStringList(source.answered_stages ?? source.answeredStages),
+  };
+
+  const schemaVersion = pickStringValue(source, ['schemaVersion', 'schema_version']);
+  if (schemaVersion) {
+    summary.schemaVersion = schemaVersion;
+  }
+
+  const whyWrong = pickStringValue(source, ['whyWrong', 'why_wrong']);
+  if (whyWrong) {
+    summary.whyWrong = whyWrong;
+  }
+
+  const unknownStep = pickStringValue(source, ['unknownStep', 'unknown_step']);
+  if (unknownStep) {
+    summary.unknownStep = unknownStep;
+  }
+
+  const helpPreference = pickStringValue(source, ['helpPreference', 'help_preference']);
+  if (helpPreference) {
+    summary.helpPreference = helpPreference;
+  }
+
+  const sessionEntrypoint = pickStringValue(source, ['sessionEntrypoint', 'session_entrypoint']);
+  if (sessionEntrypoint) {
+    summary.sessionEntrypoint = sessionEntrypoint;
+  }
+
+  const hasValue = Boolean(summary.mode)
+    || Boolean(summary.summaryText)
+    || summary.answeredStages.length > 0
+    || Boolean(summary.schemaVersion)
+    || Boolean(summary.whyWrong)
+    || Boolean(summary.unknownStep)
+    || Boolean(summary.helpPreference)
+    || Boolean(summary.sessionEntrypoint);
+  return hasValue ? summary : undefined;
+}
+
+function normalizeWrongQuestionMasteryTracking(rawTracking: unknown): WrongQuestionMasteryTracking | undefined {
+  let source = rawTracking;
+  if (typeof rawTracking === 'string') {
+    try {
+      source = JSON.parse(rawTracking);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const tracking: WrongQuestionMasteryTracking = {
+    practiceSheetCount: pickNumberValue(source, ['practiceSheetCount', 'practice_sheet_count']) ?? 0,
+    followupCount: pickNumberValue(source, ['followupCount', 'followup_count']) ?? 0,
+    relatedTopicCategories: normalizePossiblyJsonStringList(
+      source.related_topic_categories ?? source.relatedTopicCategories,
+    ),
+    relatedErrorTypes: normalizePossiblyJsonStringList(
+      source.related_error_types ?? source.relatedErrorTypes,
+    ),
+  };
+
+  const latestPracticeSheetId = pickNumberValue(source, ['latestPracticeSheetId', 'latest_practice_sheet_id']);
+  if (latestPracticeSheetId !== null) {
+    tracking.latestPracticeSheetId = latestPracticeSheetId;
+  }
+
+  const latestPracticeStatus = pickStringValue(source, ['latestPracticeStatus', 'latest_practice_status']);
+  if (latestPracticeStatus) {
+    tracking.latestPracticeStatus = latestPracticeStatus;
+  }
+
+  const latestPracticeCreatedAt = pickStringValue(source, ['latestPracticeCreatedAt', 'latest_practice_created_at']);
+  if (latestPracticeCreatedAt) {
+    tracking.latestPracticeCreatedAt = latestPracticeCreatedAt;
+  }
+
+  const latestPracticePdfPath = pickStringValue(source, ['latestPracticePdfPath', 'latest_practice_pdf_path']);
+  if (latestPracticePdfPath) {
+    tracking.latestPracticePdfPath = latestPracticePdfPath;
+  }
+
+  const latestFollowupOutcome = pickStringValue(source, ['latestFollowupOutcome', 'latest_followup_outcome']);
+  if (latestFollowupOutcome) {
+    tracking.latestFollowupOutcome = latestFollowupOutcome;
+  }
+
+  const latestFollowupCompletedAt = pickStringValue(source, ['latestFollowupCompletedAt', 'latest_followup_completed_at']);
+  if (latestFollowupCompletedAt) {
+    tracking.latestFollowupCompletedAt = latestFollowupCompletedAt;
+  }
+
+  const latestFollowupSummary = pickStringValue(source, ['latestFollowupSummary', 'latest_followup_summary']);
+  if (latestFollowupSummary) {
+    tracking.latestFollowupSummary = latestFollowupSummary;
+  }
+
+  const hasValue = tracking.practiceSheetCount > 0
+    || tracking.followupCount > 0
+    || tracking.relatedTopicCategories.length > 0
+    || tracking.relatedErrorTypes.length > 0
+    || typeof tracking.latestPracticeSheetId === 'number'
+    || Boolean(tracking.latestPracticeStatus)
+    || Boolean(tracking.latestPracticeCreatedAt)
+    || Boolean(tracking.latestPracticePdfPath)
+    || Boolean(tracking.latestFollowupOutcome)
+    || Boolean(tracking.latestFollowupCompletedAt)
+    || Boolean(tracking.latestFollowupSummary);
+  return hasValue ? tracking : undefined;
+}
+
+function normalizeWrongQuestionMasteryAssessment(rawAssessment: unknown): WrongQuestionMasteryAssessment | undefined {
+  let source = rawAssessment;
+  if (typeof rawAssessment === 'string') {
+    try {
+      source = JSON.parse(rawAssessment);
+    } catch {
+      source = null;
+    }
+  }
+  if (!isObjectRecord(source)) {
+    return undefined;
+  }
+
+  const status = pickStringValue(source, ['status']) || '';
+  const label = pickStringValue(source, ['label']) || '';
+  const suggestedAction = pickStringValue(source, ['suggestedAction', 'suggested_action']) || '';
+  const score = pickNumberValue(source, ['score']) ?? 0;
+  const practiceSheetCount = pickNumberValue(source, ['practiceSheetCount', 'practice_sheet_count']) ?? 0;
+  const followupCount = pickNumberValue(source, ['followupCount', 'followup_count']) ?? 0;
+  const sameTopicActiveCount = pickNumberValue(source, ['sameTopicActiveCount', 'same_topic_active_count']) ?? 0;
+  const sameErrorActiveCount = pickNumberValue(source, ['sameErrorActiveCount', 'same_error_active_count']) ?? 0;
+  const repeatedActiveCount = pickNumberValue(source, ['repeatedActiveCount', 'repeated_active_count']) ?? 0;
+  const manualIsMastered = pickBooleanValue(source, ['manualIsMastered', 'manual_is_mastered']) ?? false;
+  const evidence = normalizePossiblyJsonStringList(source.evidence);
+  const latestPracticeStatus = pickStringValue(source, ['latestPracticeStatus', 'latest_practice_status']);
+  const latestFollowupOutcome = pickStringValue(source, ['latestFollowupOutcome', 'latest_followup_outcome']);
+
+  const hasValue = Boolean(status)
+    || Boolean(label)
+    || Boolean(suggestedAction)
+    || score > 0
+    || practiceSheetCount > 0
+    || followupCount > 0
+    || sameTopicActiveCount > 0
+    || sameErrorActiveCount > 0
+    || repeatedActiveCount > 0
+    || manualIsMastered
+    || evidence.length > 0
+    || Boolean(latestPracticeStatus)
+    || Boolean(latestFollowupOutcome);
+  if (!hasValue) {
+    return undefined;
+  }
+
+  return {
+    status,
+    label,
+    score,
+    suggestedAction,
+    practiceSheetCount,
+    followupCount,
+    latestPracticeStatus: latestPracticeStatus || undefined,
+    latestFollowupOutcome: latestFollowupOutcome || undefined,
+    sameTopicActiveCount,
+    sameErrorActiveCount,
+    repeatedActiveCount,
+    manualIsMastered,
+    evidence,
+  };
 }
 
 function normalizeWrongQuestionTopicCategory(value = ''): string {
@@ -603,6 +1001,112 @@ export function normalizeWrongQuestionRecord(rawRecord: unknown, fallbackIndex =
     record.studentLibraryPdfPath = studentLibraryPdfPath;
   }
 
+  const detailUrl = pickStringValue(source, ['detailUrl', 'detail_url']);
+  if (detailUrl) {
+    record.detailUrl = detailUrl;
+  }
+
+  const ingestionRunId = pickStringValue(source, ['ingestionRunId', 'ingestion_run_id']);
+  if (ingestionRunId) {
+    record.ingestionRunId = ingestionRunId;
+  }
+
+  const chatSessionId = pickStringValue(source, ['chatSessionId', 'chat_session_id']);
+  if (chatSessionId) {
+    record.chatSessionId = chatSessionId;
+  }
+
+  const needsTeacherConfirmation = pickBooleanValue(source, ['needsTeacherConfirmation', 'needs_teacher_confirmation']);
+  if (needsTeacherConfirmation !== null) {
+    record.needsTeacherConfirmation = needsTeacherConfirmation;
+  }
+
+  const confirmationReasons = normalizePossiblyJsonStringList(source.confirmation_reasons_json ?? source.confirmationReasonsJson);
+  if (confirmationReasons.length > 0) {
+    record.confirmationReasons = confirmationReasons;
+  }
+
+  const confirmationStatus = pickStringValue(source, ['confirmationStatus', 'confirmation_status']);
+  if (confirmationStatus) {
+    record.confirmationStatus = confirmationStatus;
+  }
+
+  const confirmationReviewedBy = pickNumberValue(source, ['confirmationReviewedBy', 'confirmation_reviewed_by']);
+  if (confirmationReviewedBy !== null) {
+    record.confirmationReviewedBy = confirmationReviewedBy;
+  }
+
+  const confirmationReviewedAt = pickStringValue(source, ['confirmationReviewedAt', 'confirmation_reviewed_at']);
+  if (confirmationReviewedAt) {
+    record.confirmationReviewedAt = confirmationReviewedAt;
+  }
+
+  const confirmationReviewerName = pickStringValue(source, ['confirmationReviewerName', 'confirmation_reviewer_name']);
+  if (confirmationReviewerName) {
+    record.confirmationReviewerName = confirmationReviewerName;
+  }
+
+  const reflectionSummary = normalizeWrongQuestionReflectionSummary(
+    source.reflection_summary ?? source.reflectionSummary ?? source.reflection_summary_json,
+  );
+  if (reflectionSummary) {
+    record.reflectionSummary = reflectionSummary;
+  }
+
+  const generationMetadata = normalizeWrongQuestionGenerationMetadata(
+    source.generation_metadata ?? source.generationMetadata ?? source.generation_metadata_json,
+  );
+  if (generationMetadata) {
+    record.generationMetadata = generationMetadata;
+  }
+
+  const masteryTracking = normalizeWrongQuestionMasteryTracking(
+    source.mastery_tracking ?? source.masteryTracking ?? source.mastery_tracking_json,
+  );
+  if (masteryTracking) {
+    record.masteryTracking = masteryTracking;
+  }
+
+  const masteryAssessment = normalizeWrongQuestionMasteryAssessment(
+    source.mastery_assessment ?? source.masteryAssessment ?? source.mastery_assessment_json,
+  );
+  if (masteryAssessment) {
+    record.masteryAssessment = masteryAssessment;
+  }
+
+  const archiveContextCandidate = isObjectRecord(source.archive_context)
+    ? source.archive_context
+    : isObjectRecord(source.archiveContext)
+      ? source.archiveContext
+      : null;
+  if (archiveContextCandidate) {
+    record.archiveContext = {
+      source: pickStringValue(archiveContextCandidate, ['source']),
+      ingestionRunId: pickStringValue(archiveContextCandidate, ['ingestionRunId', 'ingestion_run_id']),
+      ingestionRunUrl: pickStringValue(archiveContextCandidate, ['ingestionRunUrl', 'ingestion_run_url']),
+      chatSessionId: pickStringValue(archiveContextCandidate, ['chatSessionId', 'chat_session_id']),
+      chatSessionUrl: pickStringValue(archiveContextCandidate, ['chatSessionUrl', 'chat_session_url']),
+    };
+  }
+
+  const linkedIngestionRunCandidate = isObjectRecord(source.linked_ingestion_run)
+    ? source.linked_ingestion_run
+    : isObjectRecord(source.linkedIngestionRun)
+      ? source.linkedIngestionRun
+      : null;
+  if (linkedIngestionRunCandidate) {
+    record.linkedIngestionRun = normalizeWrongQuestionIngestionRun(linkedIngestionRunCandidate);
+  }
+
+  const linkedChatSessionCandidate = isObjectRecord(source.linked_chat_session)
+    ? source.linked_chat_session
+    : isObjectRecord(source.linkedChatSession)
+      ? source.linkedChatSession
+      : null;
+  if (linkedChatSessionCandidate) {
+    record.linkedChatSession = normalizeWrongQuestionChatSession(linkedChatSessionCandidate);
+  }
+
   return record;
 }
 
@@ -610,6 +1114,58 @@ function normalizeDraftList(values: string[]): string[] {
   return values
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function buildWrongQuestionReflectionSummaryPayload(draft: WrongQuestionReviewDraft): Record<string, unknown> | undefined {
+  const whyWrong = draft.reflectionWhyWrong?.trim() ?? '';
+  const unknownStep = draft.reflectionUnknownStep?.trim() ?? '';
+  const helpPreference = draft.reflectionHelpPreference?.trim() ?? '';
+  const answeredStages: string[] = [];
+  if (whyWrong) {
+    answeredStages.push('ask_why_wrong');
+  }
+  if (unknownStep) {
+    answeredStages.push('ask_unknown_step');
+  }
+  if (helpPreference) {
+    answeredStages.push('ask_help_mode');
+  }
+  const summaryParts: string[] = [];
+  if (whyWrong) {
+    summaryParts.push(`错因自述：${whyWrong}`);
+  }
+  if (unknownStep) {
+    summaryParts.push(`卡点：${unknownStep}`);
+  }
+  if (helpPreference) {
+    summaryParts.push(`期望支持：${helpPreference}`);
+  }
+  const summaryText = summaryParts.join('；');
+  const mode = draft.reflectionMode?.trim() || '';
+  const sessionEntrypoint = draft.reflectionSessionEntrypoint?.trim() || '';
+  if (!summaryText && !mode && !sessionEntrypoint && answeredStages.length === 0) {
+    return undefined;
+  }
+
+  const payload: Record<string, unknown> = {
+    schema_version: 'wrong_question_reflection_summary.v1',
+    mode: mode || 'archive_reflection',
+    summary_text: summaryText,
+    answered_stages: answeredStages,
+  };
+  if (whyWrong) {
+    payload.why_wrong = whyWrong;
+  }
+  if (unknownStep) {
+    payload.unknown_step = unknownStep;
+  }
+  if (helpPreference) {
+    payload.help_preference = helpPreference;
+  }
+  if (sessionEntrypoint) {
+    payload.session_entrypoint = sessionEntrypoint;
+  }
+  return payload;
 }
 
 export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): WrongQuestionReviewDraft {
@@ -627,15 +1183,27 @@ export function buildWrongQuestionReviewDraft(record: WrongQuestionRecord): Wron
     reviewStatus: record.reviewStatus.trim() || (isWechatMiniProgramWrongQuestionRecord(record) ? 'pending' : ''),
   };
 
-  if (isWechatMiniProgramWrongQuestionRecord(record)) {
+  if (isWechatMiniProgramWrongQuestionRecord(record) || record.source === 'ai_chat') {
     draft.isMastered = Boolean(record.isMastered);
+  }
+  if (isWechatMiniProgramWrongQuestionRecord(record)) {
     if (isPrimarySchoolWrongQuestionRecord(record)) {
       draft.topicCategory = normalizeWrongQuestionTopicCategory(record.topicCategory ?? record.analysis.topicCategory ?? '');
     }
   }
 
-  if (isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) {
+  if ((isWechatMiniProgramWrongQuestionRecord(record) && !record.isGeometry) || record.source === 'ai_chat') {
     draft.questionText = record.questionText?.trim() ?? '';
+  }
+
+  if (record.source === 'ai_chat') {
+    draft.needsTeacherConfirmation = Boolean(record.needsTeacherConfirmation);
+    draft.confirmationReasons = normalizeDraftList(record.confirmationReasons ?? []);
+    draft.reflectionWhyWrong = record.reflectionSummary?.whyWrong?.trim() || record.childReasonText?.trim() || '';
+    draft.reflectionUnknownStep = record.reflectionSummary?.unknownStep?.trim() || record.reasonCoreIssue?.trim() || '';
+    draft.reflectionHelpPreference = record.reflectionSummary?.helpPreference?.trim() || record.reasonNextStep?.trim() || '';
+    draft.reflectionMode = record.reflectionSummary?.mode?.trim() || 'archive_reflection';
+    draft.reflectionSessionEntrypoint = record.reflectionSummary?.sessionEntrypoint?.trim() || '';
   }
 
   return draft;
@@ -662,6 +1230,18 @@ export function buildWrongQuestionReviewPayload(draft: WrongQuestionReviewDraft)
 
   if (typeof draft.questionText === 'string') {
     payload.question_text = draft.questionText.trim();
+  }
+
+  if (typeof draft.needsTeacherConfirmation === 'boolean') {
+    payload.needs_teacher_confirmation = draft.needsTeacherConfirmation;
+    payload.confirmation_reasons_json = draft.needsTeacherConfirmation
+      ? normalizeDraftList(draft.confirmationReasons ?? [])
+      : [];
+  }
+
+  const reflectionSummaryPayload = buildWrongQuestionReflectionSummaryPayload(draft);
+  if (reflectionSummaryPayload) {
+    payload.reflection_summary_json = reflectionSummaryPayload;
   }
 
   return payload;
@@ -725,8 +1305,23 @@ export function applyWrongQuestionReviewDraft(record: WrongQuestionRecord, draft
     reviewStatus: payload.reviewStatus || record.reviewStatus,
     isMastered: typeof payload.is_mastered === 'boolean' ? payload.is_mastered : record.isMastered,
     questionText: typeof payload.question_text === 'string' ? payload.question_text : record.questionText,
+    needsTeacherConfirmation: typeof payload.needs_teacher_confirmation === 'boolean'
+      ? payload.needs_teacher_confirmation
+      : record.needsTeacherConfirmation,
+    confirmationReasons: Array.isArray(payload.confirmation_reasons_json)
+      ? payload.confirmation_reasons_json
+      : record.confirmationReasons,
     analysis: nextAnalysis,
   };
+  if (isObjectRecord(payload.reflection_summary_json)) {
+    const reflectionSummary = normalizeWrongQuestionReflectionSummary(payload.reflection_summary_json);
+    if (reflectionSummary) {
+      nextRecord.reflectionSummary = reflectionSummary;
+      nextRecord.childReasonText = reflectionSummary.whyWrong ?? '';
+      nextRecord.reasonCoreIssue = reflectionSummary.unknownStep ?? '';
+      nextRecord.reasonNextStep = reflectionSummary.helpPreference ?? '';
+    }
+  }
   if (payload.topicCategory) {
     nextRecord.topicCategory = payload.topicCategory;
   }
@@ -754,6 +1349,15 @@ export function resolveSavedWrongQuestionRecord(
     const hasReviewStatus = hasOwnKey(responseSource, ['status']);
     const hasMastered = hasOwnKey(responseSource, ['is_mastered', 'archive_status', 'archiveStatus']);
     const hasTopicCategory = hasOwnKey(responseSource, ['topicCategory', 'topic_category']);
+    const hasNeedsTeacherConfirmation = hasOwnKey(responseSource, ['needsTeacherConfirmation', 'needs_teacher_confirmation']);
+    const hasConfirmationReasons = hasOwnKey(responseSource, ['confirmationReasons', 'confirmation_reasons_json', 'confirmationReasonsJson']);
+    const hasConfirmationStatus = hasOwnKey(responseSource, ['confirmationStatus', 'confirmation_status']);
+    const hasConfirmationReviewedBy = hasOwnKey(responseSource, ['confirmationReviewedBy', 'confirmation_reviewed_by']);
+    const hasConfirmationReviewedAt = hasOwnKey(responseSource, ['confirmationReviewedAt', 'confirmation_reviewed_at']);
+    const hasConfirmationReviewerName = hasOwnKey(responseSource, ['confirmationReviewerName', 'confirmation_reviewer_name']);
+    const hasGenerationMetadata = hasOwnKey(responseSource, ['generationMetadata', 'generation_metadata', 'generation_metadata_json']);
+    const hasMasteryTracking = hasOwnKey(responseSource, ['masteryTracking', 'mastery_tracking', 'mastery_tracking_json']);
+    const hasMasteryAssessment = hasOwnKey(responseSource, ['masteryAssessment', 'mastery_assessment', 'mastery_assessment_json']);
 
     return {
       ...normalizedResponse,
@@ -778,6 +1382,33 @@ export function resolveSavedWrongQuestionRecord(
       reviewStatus: hasReviewStatus ? normalizedResponse.reviewStatus : currentRecord.reviewStatus,
       isMastered: hasMastered ? normalizedResponse.isMastered : currentRecord.isMastered,
       topicCategory: hasTopicCategory ? normalizedResponse.topicCategory : currentRecord.topicCategory,
+      needsTeacherConfirmation: hasNeedsTeacherConfirmation
+        ? normalizedResponse.needsTeacherConfirmation
+        : currentRecord.needsTeacherConfirmation,
+      confirmationReasons: hasConfirmationReasons
+        ? normalizedResponse.confirmationReasons
+        : currentRecord.confirmationReasons,
+      confirmationStatus: hasConfirmationStatus
+        ? normalizedResponse.confirmationStatus
+        : currentRecord.confirmationStatus,
+      confirmationReviewedBy: hasConfirmationReviewedBy
+        ? normalizedResponse.confirmationReviewedBy
+        : currentRecord.confirmationReviewedBy,
+      confirmationReviewedAt: hasConfirmationReviewedAt
+        ? normalizedResponse.confirmationReviewedAt
+        : currentRecord.confirmationReviewedAt,
+      confirmationReviewerName: hasConfirmationReviewerName
+        ? normalizedResponse.confirmationReviewerName
+        : currentRecord.confirmationReviewerName,
+      generationMetadata: hasGenerationMetadata
+        ? normalizedResponse.generationMetadata
+        : currentRecord.generationMetadata,
+      masteryTracking: hasMasteryTracking
+        ? normalizedResponse.masteryTracking
+        : currentRecord.masteryTracking,
+      masteryAssessment: hasMasteryAssessment
+        ? normalizedResponse.masteryAssessment
+        : currentRecord.masteryAssessment,
     };
   }
 
@@ -955,6 +1586,75 @@ export function buildMemberStudentNotebookSummaries(
   return Array.from(buckets.values()).sort((left, right) => right.latestCreatedAt.localeCompare(left.latestCreatedAt));
 }
 
+export function normalizeWrongQuestionIngestionAsset(rawAsset: unknown): WrongQuestionIngestionAsset {
+  const source = isObjectRecord(rawAsset) ? rawAsset : {};
+  return {
+    id: pickNumberValue(source, ['id']) ?? 0,
+    ingestionRunId: pickStringValue(source, ['ingestionRunId', 'ingestion_run_id']),
+    assetRole: pickStringValue(source, ['assetRole', 'asset_role']),
+    storagePath: pickStringValue(source, ['storagePath', 'storage_path']),
+    fileUrl: pickStringValue(source, ['fileUrl', 'file_url']),
+    mimeType: pickStringValue(source, ['mimeType', 'mime_type']),
+    pageNumber: pickNumberValue(source, ['pageNumber', 'page_number']) ?? 0,
+    width: pickNumberValue(source, ['width']) ?? 0,
+    height: pickNumberValue(source, ['height']) ?? 0,
+    metadataJson: pickStringValue(source, ['metadataJson', 'metadata_json']),
+  };
+}
+
+export function normalizeWrongQuestionIngestionRun(rawRun: unknown): WrongQuestionIngestionRun {
+  const source = isObjectRecord(rawRun) ? rawRun : {};
+  return {
+    id: pickStringValue(source, ['id']),
+    source: pickStringValue(source, ['source']),
+    status: pickStringValue(source, ['status']),
+    currentStep: pickStringValue(source, ['currentStep', 'current_step']),
+    classId: pickNumberValue(source, ['classId', 'class_id']),
+    studentId: pickNumberValue(source, ['studentId', 'student_id']),
+    teacherUserId: pickNumberValue(source, ['teacherUserId', 'teacher_user_id']),
+    chatSessionId: pickStringValue(source, ['chatSessionId', 'chat_session_id']),
+    originalFilename: pickStringValue(source, ['originalFilename', 'original_filename']),
+    mimeType: pickStringValue(source, ['mimeType', 'mime_type']),
+    metadataJson: pickStringValue(source, ['metadataJson', 'metadata_json']),
+    errorMessage: pickStringValue(source, ['errorMessage', 'error_message']),
+    createdAt: pickStringValue(source, ['createdAt', 'created_at']),
+    detailUrl: pickStringValue(source, ['detailUrl', 'detail_url']),
+    assets: Array.isArray(source.assets) ? source.assets.map((item) => normalizeWrongQuestionIngestionAsset(item)) : [],
+    records: Array.isArray(source.records) ? source.records.map((item, index) => normalizeWrongQuestionRecord(item, index)) : [],
+  };
+}
+
+export function normalizeWrongQuestionChatMessage(rawMessage: unknown): WrongQuestionChatMessage {
+  const source = isObjectRecord(rawMessage) ? rawMessage : {};
+  return {
+    id: pickNumberValue(source, ['id']) ?? 0,
+    sessionId: pickStringValue(source, ['sessionId', 'session_id']),
+    role: pickStringValue(source, ['role']),
+    stage: pickStringValue(source, ['stage']),
+    content: pickStringValue(source, ['content']),
+    createdAt: pickStringValue(source, ['createdAt', 'created_at']),
+  };
+}
+
+export function normalizeWrongQuestionChatSession(rawSession: unknown): WrongQuestionChatSession {
+  const source = isObjectRecord(rawSession) ? rawSession : {};
+  return {
+    id: pickStringValue(source, ['id']),
+    status: pickStringValue(source, ['status']),
+    currentStage: pickStringValue(source, ['currentStage', 'current_stage']),
+    summaryText: pickStringValue(source, ['summaryText', 'summary_text']),
+    metadataJson: pickStringValue(source, ['metadataJson', 'metadata_json']),
+    ingestionRunId: pickStringValue(source, ['ingestionRunId', 'ingestion_run_id']),
+    classId: pickNumberValue(source, ['classId', 'class_id']),
+    studentId: pickNumberValue(source, ['studentId', 'student_id']),
+    teacherUserId: pickNumberValue(source, ['teacherUserId', 'teacher_user_id']),
+    detailUrl: pickStringValue(source, ['detailUrl', 'detail_url']),
+    streamUrl: pickStringValue(source, ['streamUrl', 'stream_url']),
+    messages: Array.isArray(source.messages) ? source.messages.map((item) => normalizeWrongQuestionChatMessage(item)) : [],
+    records: Array.isArray(source.records) ? source.records.map((item, index) => normalizeWrongQuestionRecord(item, index)) : [],
+  };
+}
+
 export function buildWrongQuestionQuery(filters: WrongQuestionFilters): string {
   const parts: string[] = [];
 
@@ -991,6 +1691,61 @@ export function buildWrongQuestionReviewPath(recordId: string, roomId?: string):
   return `/api/wrong-questions/${encodeURIComponent(recordId)}/review${buildWrongQuestionRoomQuery(roomId)}`;
 }
 
+export function buildWrongQuestionIngestionListPath(params: {
+  source?: string;
+  status?: string;
+  classId?: number | null;
+  studentId?: number | null;
+  chatSessionId?: string;
+  limit?: number;
+}): string {
+  const search = new URLSearchParams();
+  if (params.source?.trim()) {
+    search.set('source', params.source.trim());
+  }
+  if (params.status?.trim()) {
+    search.set('status', params.status.trim());
+  }
+  if (typeof params.classId === 'number' && Number.isFinite(params.classId) && params.classId > 0) {
+    search.set('class_id', String(params.classId));
+  }
+  if (typeof params.studentId === 'number' && Number.isFinite(params.studentId) && params.studentId > 0) {
+    search.set('student_id', String(params.studentId));
+  }
+  if (params.chatSessionId?.trim()) {
+    search.set('chat_session_id', params.chatSessionId.trim());
+  }
+  if (typeof params.limit === 'number' && Number.isFinite(params.limit) && params.limit > 0) {
+    search.set('limit', String(params.limit));
+  }
+  const query = search.toString();
+  return query ? `/api/wrong-question-ingestions?${query}` : '/api/wrong-question-ingestions';
+}
+
+export function buildWrongQuestionIngestionCreatePath(): string {
+  return '/api/wrong-question-ingestions';
+}
+
+export function buildWrongQuestionIngestionAssetUploadPath(runId: string): string {
+  return `/api/wrong-question-ingestions/${encodeURIComponent(runId)}/assets/upload`;
+}
+
+export function buildWrongQuestionChatDetailPath(sessionId: string): string {
+  return `/api/wrong-question-chats/${encodeURIComponent(sessionId)}`;
+}
+
+export function buildWrongQuestionChatStreamPath(sessionId: string): string {
+  return `/api/wrong-question-chats/${encodeURIComponent(sessionId)}/stream`;
+}
+
+export function buildWrongQuestionChatReopenPath(recordId: string): string {
+  return `/api/wrong-questions/${encodeURIComponent(recordId)}/reopen-chat`;
+}
+
+export function buildWrongQuestionChatFollowupPath(recordId: string): string {
+  return `/api/wrong-questions/${encodeURIComponent(recordId)}/followup-chat`;
+}
+
 export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): WeeklyWrongQuestionFollowupResponse {
   const source = isObjectRecord(payload) ? payload : {};
   const rawItems = Array.isArray(source.items) ? source.items : [];
@@ -1018,6 +1773,11 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
         topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
         representativeReasonSummaries: normalizeStringList(item.representative_reason_summaries ?? item.representativeReasonSummaries),
         sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
+        sourceRecords: Array.isArray(item.source_records ?? item.sourceRecords)
+          ? (item.source_records ?? item.sourceRecords).map((record, index) => normalizeWrongQuestionRecord(record, index))
+          : [],
+        repeatedCategory: String(item.repeated_category ?? item.repeatedCategory ?? ''),
+        repeatedCategoryCount: pickNumberValue(item, ['repeated_category_count', 'repeatedCategoryCount']) ?? 0,
         studentLibraryPdfUrl: String(item.student_library_pdf_url ?? item.studentLibraryPdfUrl ?? ''),
         message: rawMessage
           ? {
@@ -1098,6 +1858,10 @@ export function normalizeWeeklyWrongQuestionActivitySummaryResponse(payload: unk
       totalQuestionCount: pickNumberValue(item, ['total_question_count', 'totalQuestionCount']) ?? 0,
       topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
       latestCreatedAt: String(item.latest_created_at ?? item.latestCreatedAt ?? ''),
+      sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
+      sourceRecords: Array.isArray(item.source_records ?? item.sourceRecords)
+        ? (item.source_records ?? item.sourceRecords).filter(isObjectRecord).map((record, index) => normalizeWrongQuestionRecord(record, index))
+        : [],
     })),
   };
 }
@@ -1108,6 +1872,7 @@ export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): W
   const pdfUrl = pickStringValue(source, ['pdfUrl', 'pdf_url']);
   const downloadUrl = pickStringValue(source, ['downloadUrl', 'download_url']);
   const generationError = pickStringValue(source, ['generationError', 'generation_error']);
+  const sourceRecordIds = pickStringArrayValue(source, ['sourceRecordIds', 'source_record_ids', 'source_record_ids_json']);
   const sheet: WrongQuestionPracticeSheetSummary = {
     id: pickNumberValue(source, ['id']) ?? 0,
     studentId: pickNumberValue(source, ['studentId', 'student_id']),
@@ -1118,6 +1883,7 @@ export function normalizeWrongQuestionPracticeSheetSummary(rawSheet: unknown): W
     questionCount: pickNumberValue(source, ['questionCount', 'question_count']) ?? 0,
     status: pickStringValue(source, ['status']) || 'pending',
     createdAt: pickStringValue(source, ['createdAt', 'created_at']),
+    sourceRecordIds,
   };
 
   if (pdfPath) {

@@ -19,6 +19,7 @@ import re
 import subprocess
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from PIL import Image as PILImage
@@ -497,6 +498,16 @@ def _fetch_wrong_question_image_bytes(image_url: str, image_rotation_degrees: ob
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
         return None
+    parsed_url = urllib.parse.urlparse(normalized_image_url)
+    if parsed_url.scheme in {"", "file"}:
+        local_path = Path(urllib.request.url2pathname(parsed_url.path if parsed_url.scheme == "file" else normalized_image_url))
+        if not local_path.exists() or not local_path.is_file():
+            return None
+        try:
+            image_bytes = local_path.read_bytes()
+        except OSError:
+            return None
+        return _rotate_wrong_question_image_bytes(image_bytes, image_rotation_degrees)
     try:
         with urllib.request.urlopen(normalized_image_url, timeout=10) as response:
             image_bytes = response.read()
@@ -957,6 +968,26 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
             "ai_hint": str(item.get("ai_hint") or ""),
             "reason_blank_prompt": str(item.get("reason_blank_prompt") or ""),
             "improvement_summary_prompt": str(item.get("improvement_summary_prompt") or ""),
+            "structured_content": (
+                item.get("structured_content")
+                if isinstance(item.get("structured_content"), dict)
+                else {}
+            ),
+            "question_structured_snapshot_json": item.get(
+                "question_structured_snapshot_json",
+                item.get("question_structured_snapshot"),
+            ),
+            "knowledge_tags_snapshot_json": item.get(
+                "knowledge_tags_snapshot_json",
+                item.get("knowledge_tags_snapshot"),
+            ),
+            "reflection_summary_snapshot_json": item.get(
+                "reflection_summary_snapshot_json",
+                item.get("reflection_summary_snapshot"),
+            ),
+            "erased_image_url_snapshot": str(item.get("erased_image_url_snapshot") or "").strip(),
+            "question_surface_mode": str(item.get("question_surface_mode") or "").strip(),
+            "image_source": "",
             "image_data_url": "",
             "practiceItemId": practice_item_id,
             "itemType": str(item.get("item_type") or "real").strip() or "real",
@@ -971,14 +1002,18 @@ def _build_browser_wrong_question_practice_items(items: list[dict]) -> list[dict
         if diagram_data_url:
             normalized_item["image_data_url"] = diagram_data_url
             normalized_item["diagram_type"] = diagram_type
-        elif normalized_item["is_geometry"]:
-            image_url = str(item.get("image_url_snapshot") or "")
+            normalized_item["image_source"] = "generated_diagram"
+        else:
+            erased_image_url = str(item.get("erased_image_url_snapshot") or "").strip()
+            original_image_url = str(item.get("image_url_snapshot") or "").strip()
+            image_url = erased_image_url or original_image_url
             image_bytes = _fetch_wrong_question_image_bytes(image_url)
             if image_bytes:
                 encoded_bytes = base64.b64encode(image_bytes).decode("ascii")
                 normalized_item["image_data_url"] = (
                     f"data:{_guess_wrong_question_image_mime_type(image_url)};base64,{encoded_bytes}"
                 )
+                normalized_item["image_source"] = "erased" if erased_image_url else "original"
 
         browser_items.append(normalized_item)
 

@@ -109,6 +109,57 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
         self.assertIsNotNone(saved)
         return saved
 
+    def _recognized_ai_chat_record(
+        self,
+        *,
+        created_at: str,
+        topic_category: str = "计算",
+        question_text: str = "计算 12/18 的最简分数。",
+    ) -> dict:
+        session_id = f"weekly-followup-api-{created_at.replace(' ', '-').replace(':', '-')}"
+        run = lesson_manager.create_wrong_question_ingestion_run(
+            organization_id=self.owner["organization_id"],
+            source="ai_chat",
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            chat_session_id=session_id,
+            status="archived",
+            current_step="archived",
+        )
+        lesson_manager.create_wrong_question_chat_session(
+            session_id=session_id,
+            organization_id=self.owner["organization_id"],
+            ingestion_run_id=run["id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            status="archived",
+            current_stage="ready_to_archive",
+            summary_text="错因自述：约分时没有同时除以公因数。",
+        )
+        record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            image_url="https://files.example.com/weekly-ai-chat.png",
+            recognition_status="recognized",
+            topic_category=topic_category,
+            question_text=question_text,
+            child_raw_reason_text="我知道要约分，但总是漏掉最大公因数。",
+            ingestion_run_id=run["id"],
+            chat_session_id=session_id,
+            knowledge_tags_json=[topic_category, "约分"],
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                (created_at, record["id"]),
+            )
+        return record
+
     def test_get_weekly_followups_returns_students_without_miniprogram_key(self):
         response = self.client.get(
             f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
@@ -132,6 +183,31 @@ class WeeklyWrongQuestionFollowupApiTestCase(unittest.TestCase):
             f"/api/wechat/student-libraries/{self.student['id']}",
         )
         self.assertNotIn("miniprogram", item)
+
+    def test_get_weekly_followups_includes_ai_chat_archive_sources_and_repeated_signals(self):
+        ai_chat_record = self._recognized_ai_chat_record(
+            created_at="2026-04-10 15:30:00",
+            topic_category="计算",
+        )
+
+        response = self.client.get(
+            f"/api/wrong-question-followups/weekly?class_id={self.class_id}&week_start=2026-04-08",
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        item = payload["items"][0]
+        self.assertEqual(item["source_record_ids"], [ai_chat_record["id"], self.record["id"]])
+        self.assertEqual(item["repeated_category"], "计算")
+        self.assertEqual(item["repeated_category_count"], 2)
+        self.assertEqual(len(item["source_records"]), 2)
+        self.assertEqual(item["source_records"][0]["source"], "ai_chat")
+        self.assertEqual(item["source_records"][0]["chat_session_id"], ai_chat_record["chat_session_id"])
+        self.assertEqual(
+            item["source_records"][0]["archive_context"]["chat_session_url"],
+            f"/api/wrong-question-chats/{ai_chat_record['chat_session_id']}",
+        )
 
     def test_get_weekly_class_pdf_archive_downloads_zip_with_ready_practice_sheet_pdf(self):
         pdf_path = Path(self.temp_dir.name) / "practice.pdf"
@@ -503,6 +579,59 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
             )
         return record
 
+    def _recognized_ai_chat_record(
+        self,
+        *,
+        student_id: int,
+        image_url: str,
+        created_at: str,
+        topic_category: str = "计算",
+        child_raw_reason_text: str = "",
+    ) -> dict:
+        session_id = f"weekly-followup-data-{student_id}-{created_at.replace(' ', '-').replace(':', '-')}"
+        run = lesson_manager.create_wrong_question_ingestion_run(
+            organization_id=self.organization_id,
+            source="ai_chat",
+            class_id=self.class_id,
+            student_id=student_id,
+            teacher_user_id=self.teacher_user_id,
+            chat_session_id=session_id,
+            status="archived",
+            current_step="archived",
+        )
+        lesson_manager.create_wrong_question_chat_session(
+            session_id=session_id,
+            organization_id=self.organization_id,
+            ingestion_run_id=run["id"],
+            class_id=self.class_id,
+            student_id=student_id,
+            teacher_user_id=self.teacher_user_id,
+            status="archived",
+            current_stage="ready_to_archive",
+            summary_text="错因自述：方法步骤还不稳定。",
+        )
+        record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            student_id=student_id,
+            teacher_user_id=self.teacher_user_id,
+            image_url=image_url,
+            recognition_status="recognized",
+            topic_category=topic_category,
+            question_text="请继续复盘这道同类题。",
+            child_raw_reason_text=child_raw_reason_text,
+            ingestion_run_id=run["id"],
+            chat_session_id=session_id,
+            knowledge_tags_json=[topic_category],
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE wrong_question_submissions SET created_at=? WHERE id=?",
+                (created_at, record["id"]),
+            )
+        return record
+
     def _ready_practice_sheet(self, *, record: dict, created_at: str, pdf_path: str = "/tmp/practice.pdf") -> dict:
         sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
             created_by=self.teacher_user_id,
@@ -614,6 +743,13 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
             topic_category="几何",
             secondary_error_summary="辅助线思路不稳定",
         )
+        alice_ai_chat = self._recognized_ai_chat_record(
+            student_id=self.alice["id"],
+            image_url="https://files.example.com/alice-ai-chat.png",
+            created_at="2026-04-10 08:30:00",
+            topic_category="计算",
+            child_raw_reason_text="复盘后还是会在通分时漏步骤。",
+        )
         archived = self._recognized_record(
             binding_id=self.alice_binding["id"],
             image_url="https://files.example.com/alice-archived.png",
@@ -651,12 +787,18 @@ class WeeklyWrongQuestionFollowupTestCase(unittest.TestCase):
         self.assertEqual(alice_summary["student_id"], self.alice["id"])
         self.assertEqual(alice_summary["teacher_user_id"], self.teacher_user_id)
         self.assertEqual(alice_summary["teacher_name"], "平台管理员")
-        self.assertEqual(alice_summary["weekly_question_count"], 2)
-        self.assertEqual(alice_summary["total_active_question_count"], 3)
+        self.assertEqual(alice_summary["weekly_question_count"], 3)
+        self.assertEqual(alice_summary["total_active_question_count"], 4)
         self.assertEqual(alice_summary["topic_categories"], ["应用题", "计算"])
-        self.assertEqual(alice_summary["representative_reason_summaries"], ["没有圈出单位一", "分数通分漏乘分子"])
-        self.assertEqual(alice_summary["latest_created_at"], "2026-04-08 10:00:00")
-        self.assertEqual(alice_summary["source_record_ids"], [alice_week_two["id"], alice_week_one["id"]])
+        self.assertEqual(
+            alice_summary["representative_reason_summaries"],
+            ["复盘后还是会在通分时漏步骤。", "没有圈出单位一", "分数通分漏乘分子"],
+        )
+        self.assertEqual(alice_summary["latest_created_at"], "2026-04-10 08:30:00")
+        self.assertEqual(alice_summary["source_record_ids"], [alice_ai_chat["id"], alice_week_two["id"], alice_week_one["id"]])
+        self.assertEqual(alice_summary["repeated_category"], "计算")
+        self.assertEqual(alice_summary["repeated_category_count"], 2)
+        self.assertEqual(alice_summary["source_records"][0]["source"], "ai_chat")
 
         bob_summary = students[1]
         self.assertEqual(bob_summary["weekly_question_count"], 1)

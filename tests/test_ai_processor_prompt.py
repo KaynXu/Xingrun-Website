@@ -164,12 +164,26 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
     def test_wrong_question_practice_prompt_focuses_on_reflection_not_solution(self):
         self.assertIn("不要单独生成“下次提醒”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn(
+            "student_transcript > student_reason_text/学生原答案 > question_text/OCR/图片线索 > standard_solution > knowledge_tags/reflection_summary > 通用题型经验",
+            ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT,
+        )
+        self.assertIn("错因复盘必须优先基于 student_transcript", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("没有录音转录时", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("禁止出现“我这题错在 ______”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("第一行是这个书写区的小标题", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("structured_content: object", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("method_hint_lines", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("blank_review_blocks", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("标准答案和关键步骤只允许放在 answer、key_steps、pitfall_reminder 字段里", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("answer: string", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("key_steps: array[string]", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("pitfall_reminder: string", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("题目内容必须用于提取本题的对象、条件、问法或符号", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("topic_category 当成知识点靶心", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("不要只写“错因”“计算错因”“方法问题”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("【相遇关系辨析】", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("【分类讨论补全】", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("优先把孩子语音/文字里提到的具体遗漏、误判、步骤顺序写进填空句", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("像复习计划里的填空题一样", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("定义域 [m-4,3m]", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
@@ -179,6 +193,10 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("不要在挖空题后面再追加纯写字线", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("不要把孩子没说过或题目里没明确给出的细节硬写成确定事实", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("只需要围绕错因做轻引导", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("整体语气要像老师把学生重新带回题目", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("至少给学生一个清晰的“入口动作”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("优先写成动作链", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("先……再……最后……", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertNotIn("ai_hint", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
 
     def test_practice_pack_variant_prompt_requires_same_reason_questions(self):
@@ -200,6 +218,218 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         source = (Path(ai_processor.__file__).resolve().parent / "pdf_engine.py").read_text(encoding="utf-8")
         self.assertNotIn('Paragraph("AI 提示"', source)
         self.assertNotIn('Paragraph("下次提醒"', source)
+
+    def test_wrong_question_practice_material_payload_includes_topic_category(self):
+        fake_client = _FakeClient(
+            {
+                "title": "去分母错题练习",
+                "items": [
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "reason_blank_prompt": "【去分母检查】\n这题先给等式两边每一项同乘 ______，容易漏乘的是 ______。",
+                        "improvement_summary_prompt": "【下次先标分母】\n下次做去分母题，我先圈出 ______，再检查 ______ 是否同乘。",
+                        "answer": "x=7",
+                        "key_steps": ["两边同乘 2", "解得 x=7"],
+                        "pitfall_reminder": "不要漏乘常数项。",
+                    }
+                ],
+            }
+        )
+        with patch("ai_processor._get_client", return_value=fake_client):
+            result = ai_processor.generate_wrong_question_practice_sheet_material(
+                student_name="Alice",
+                class_name="六年级 9 班",
+                teacher_name="Kayn",
+                items=[
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "question_order": 1,
+                        "question_text_snapshot": "解方程 $\\frac{x-1}{2}=3$。",
+                        "child_reason_text_snapshot": "我去分母时漏乘右边常数",
+                        "child_reason_transcript_snapshot": "我录音里说，我只乘了左边，右边的 3 忘记乘 2。",
+                        "image_url_snapshot": "https://files.example.com/equation.png",
+                        "primary_error_type_snapshot": "知识点问题",
+                        "cause_note_snapshot": "去分母时常数项漏乘",
+                        "topic_category_snapshot": "一元一次方程去分母",
+                        "question_structured_snapshot_json": {
+                            "stem": "解方程 (x-1)/2=3",
+                            "subject": "math",
+                        },
+                        "knowledge_tags_snapshot_json": ["一元一次方程", "去分母"],
+                        "reflection_summary_snapshot_json": {
+                            "schema_version": "wrong_question_reflection_summary.v1",
+                            "mode": "archive_reflection",
+                            "why_wrong": "我去分母时漏乘右边常数",
+                            "unknown_step": "不知道等式右边也要同乘 2",
+                            "help_preference": "先提醒我要两边一起乘",
+                            "summary_text": "错因自述：我去分母时漏乘右边常数；卡点：不知道等式右边也要同乘 2；期望支持：先提醒我要两边一起乘",
+                        },
+                    }
+                ],
+            )
+
+        user_payload = json.loads(fake_client.chat.completions.last_kwargs["messages"][1]["content"])
+        self.assertEqual(user_payload["items"][0]["topic_category"], "一元一次方程去分母")
+        self.assertEqual(user_payload["items"][0]["student_transcript"], "我录音里说，我只乘了左边，右边的 3 忘记乘 2。")
+        self.assertEqual(user_payload["items"][0]["student_reason_text"], "我去分母时漏乘右边常数")
+        self.assertEqual(user_payload["items"][0]["image_url"], "https://files.example.com/equation.png")
+        self.assertTrue(user_payload["items"][0]["image_available"])
+        self.assertEqual(user_payload["items"][0]["student_answer"], "")
+        self.assertEqual(user_payload["items"][0]["standard_solution"], "")
+        self.assertEqual(user_payload["items"][0]["question_structured"]["stem"], "解方程 (x-1)/2=3")
+        self.assertEqual(user_payload["items"][0]["knowledge_tags"], ["一元一次方程", "去分母"])
+        self.assertEqual(user_payload["items"][0]["reflection_summary"]["unknown_step"], "不知道等式右边也要同乘 2")
+        self.assertEqual(result["generation_metadata"]["schema_version"], ai_processor.WRONG_QUESTION_PRACTICE_SCHEMA_VERSION)
+        self.assertEqual(result["generation_metadata"]["provider"], "deepseek")
+        self.assertEqual(
+            result["items"][0]["generation_metadata"]["wrong_question_record_id"],
+            "record-1",
+        )
+        self.assertEqual(result["items"][0]["structured_content"]["mistake_focus"], "【去分母检查】")
+        self.assertEqual(result["items"][0]["structured_content"]["review_goal"], "【下次先标分母】")
+        self.assertEqual(
+            result["items"][0]["structured_content"]["blank_review_blocks"][0]["lines"][0],
+            "这题先给等式两边每一项同乘 ______，容易漏乘的是 ______。",
+        )
+
+    def test_wrong_question_practice_material_replaces_low_information_cloze_with_context(self):
+        fake_client = _FakeClient(
+            {
+                "title": "几何错题练习",
+                "items": [
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "reason_blank_prompt": "错因复盘\n我这题错在 ______。",
+                        "improvement_summary_prompt": "下次提醒\n下次我要先看 ______。",
+                        "structured_content": {
+                            "mistake_focus": "几何关系没翻译",
+                            "review_goal": "先把垂直和等角转成可用关系",
+                            "method_hint_lines": ["先标出垂直带来的直角。"],
+                            "blank_review_blocks": [
+                                {"title": "错因复盘", "lines": ["我这题错在 ______。"]},
+                                {"title": "下次提醒", "lines": ["下次我要先看 ______。"]},
+                            ],
+                        },
+                        "answer": "略",
+                        "key_steps": ["先标角", "再找关系"],
+                        "pitfall_reminder": "不要只凭图形感觉判断。",
+                    }
+                ],
+            }
+        )
+
+        with patch("ai_processor._get_client", return_value=fake_client):
+            result = ai_processor.generate_wrong_question_practice_sheet_material(
+                student_name="Alice",
+                class_name="七年级 4 班",
+                teacher_name="何老师",
+                items=[
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "question_order": 1,
+                        "is_geometry": True,
+                        "question_text_snapshot": "已知 CE⊥AD，∠CDA=∠BAC，求证角度关系。",
+                        "child_reason_text_snapshot": "我没有看清辅助线",
+                        "child_reason_transcript_snapshot": "我说不出来 E 点为什么要连到 AD，也没想到垂直能变成直角。",
+                        "image_url_snapshot": "https://files.example.com/geometry.png",
+                        "primary_error_type_snapshot": "审题问题",
+                        "cause_note_snapshot": "看到垂直没有转成直角关系",
+                        "topic_category_snapshot": "几何辅助线",
+                        "knowledge_tags_snapshot_json": ["垂直", "等角", "辅助线"],
+                        "reflection_summary_snapshot_json": {
+                            "why_wrong": "没有把 CE⊥AD 翻译成直角关系",
+                            "unknown_step": "不知道 E 点是为了制造什么关系",
+                            "help_preference": "先提醒我标垂直和等角",
+                        },
+                    }
+                ],
+            )
+
+        blocks = result["items"][0]["structured_content"]["blank_review_blocks"]
+        joined = "\n".join(line for block in blocks for line in block["lines"])
+        self.assertNotIn("我这题错在 ______", joined)
+        self.assertNotIn("下次我要先看 ______", joined)
+        self.assertIn("E 点为什么要连到 AD", joined)
+        self.assertIn("CE⊥AD", joined)
+        self.assertIn("垂直", joined)
+        self.assertIn("先回到", joined)
+        self.assertIn("别急着算", joined)
+
+    def test_wrong_question_practice_material_keeps_explicit_structured_content(self):
+        fake_client = _FakeClient(
+            {
+                "title": "相遇错题练习",
+                "items": [
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "reason_blank_prompt": "【相遇关系辨析】\n先补出总路程和 ______ 的对应关系。",
+                        "improvement_summary_prompt": "【下次先标关系】\n下次先标出 ______，再判断谁和谁相向而行。",
+                        "structured_content": {
+                            "mistake_focus": "速度和时间对应关系写反",
+                            "review_goal": "先标相遇关系再列式",
+                            "method_hint_lines": ["先把总路程和速度和对应起来。", "再检查时间是不是同一段。"],
+                            "blank_review_blocks": [
+                                {
+                                    "title": "相遇关系补全",
+                                    "lines": ["先补出总路程和 ______ 的对应关系。"],
+                                }
+                            ],
+                            "teacher_feedback": "可继续追问单位。",
+                            "confirmation_reasons": ["needs_unit_check"],
+                        },
+                        "answer": "12 千米",
+                        "key_steps": ["列出相遇总路程=速度和×时间", "代入并求解"],
+                        "pitfall_reminder": "不要把单人速度直接当总速度。",
+                    }
+                ],
+            }
+        )
+        with patch("ai_processor._get_client", return_value=fake_client):
+            result = ai_processor.generate_wrong_question_practice_sheet_material(
+                student_name="Alice",
+                class_name="六年级 9 班",
+                teacher_name="Kayn",
+                items=[
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "question_order": 1,
+                        "question_text_snapshot": "甲乙相向而行。",
+                        "child_reason_text_snapshot": "我把速度和时间对应错了",
+                        "primary_error_type_snapshot": "方法问题",
+                        "cause_note_snapshot": "相遇总路程列反",
+                        "topic_category_snapshot": "行程",
+                    }
+                ],
+            )
+
+        self.assertEqual(
+            result["items"][0]["structured_content"]["mistake_focus"],
+            "速度和时间对应关系写反",
+        )
+        self.assertEqual(
+            result["items"][0]["structured_content"]["method_hint_lines"],
+            ["先把总路程和速度和对应起来。", "再检查时间是不是同一段。"],
+        )
+        self.assertEqual(
+            result["items"][0]["structured_content"]["confirmation_reasons"],
+            ["needs_unit_check"],
+        )
+        self.assertEqual(
+            result["items"][0]["generation_metadata"]["prompt_version"],
+            ai_processor.WRONG_QUESTION_PRACTICE_PROMPT_VERSION,
+        )
+        self.assertEqual(
+            result["items"][0]["generation_metadata"]["model_version"],
+            "deepseek-v4-pro",
+        )
+
+    def test_wrong_question_practice_prompt_bans_template_copy_and_bullets(self):
+        prompt = ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT
+
+        self.assertIn("不要出现“本题重点修正”", prompt)
+        self.assertIn("不要出现“订正时先补全”", prompt)
+        self.assertIn("不要使用项目符号", prompt)
+        self.assertIn("像老师手写给学生的一两句短提醒", prompt)
 
     def test_wrong_question_recognition_uses_vision_model_when_text_provider_is_deepseek(self):
         fake_client = _FakeClient(

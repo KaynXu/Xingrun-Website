@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -186,14 +187,18 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
                      "next_step": "以后先圈出乘除法，再按先乘除后加减的顺序逐步计算。",
                  },
              ), \
+             patch("wrong_question_upload_worker._fetch_upload_image_bytes", return_value=b"original-image"), \
+             patch("wrong_question_upload_worker._erase_wrong_question_image_bytes", return_value=b"erased-image"), \
              patch("wrong_question_upload_worker._rebuild_student_wrong_question_library", return_value="/tmp/student-1.pdf"):
             result = process_wechat_wrong_question_upload_task(task["id"])
 
         self.assertEqual(result["status"], "ready")
         refreshed = lesson_manager.get_wechat_wrong_question_upload_task(task["id"])
         self.assertEqual(refreshed["status"], "ready")
+        self.assertNotEqual(refreshed["ingestion_run_id"], "")
         record = lesson_manager.get_wechat_wrong_question_submission(refreshed["record_id"])
         self.assertEqual(record["source"], "wechat_mp")
+        self.assertEqual(record["ingestion_run_id"], refreshed["ingestion_run_id"])
         self.assertEqual(record["teacher_user_id"], self.owner_id)
         self.assertEqual(record["class_id"], self.class_id)
         self.assertEqual(record["student_id"], self.student["id"])
@@ -208,6 +213,88 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(record["topic_category"], "周期问题")
         self.assertEqual(record["image_rotation_degrees"], 90)
         self.assertEqual(record["student_library_pdf_path"], "/tmp/student-1.pdf")
+        run = lesson_manager.get_wrong_question_ingestion_run(refreshed["ingestion_run_id"])
+        self.assertIsNotNone(run)
+        self.assertEqual(run["status"], "archived")
+        self.assertEqual(run["current_step"], "archived")
+        self.assertEqual(run["source"], "wechat_mp")
+        self.assertEqual(run["student_id"], self.student["id"])
+        self.assertEqual(run["teacher_user_id"], self.owner_id)
+        assets = lesson_manager.list_wrong_question_assets(run["id"])
+        self.assertEqual(assets[0]["asset_role"], "original_upload")
+        self.assertEqual(assets[1]["asset_role"], "erased_question_image")
+        self.assertTrue(Path(assets[1]["storage_path"]).exists())
+
+    def test_erasure_helper_can_use_external_python_runtime(self):
+        from wrong_question_upload_worker import _erase_wrong_question_image_bytes
+
+        script_path = self.base / "fake_erase.py"
+        script_path.write_text(
+            "from pathlib import Path\n"
+            "import sys\n"
+            "Path(sys.argv[2]).write_bytes(b'erased:' + Path(sys.argv[1]).read_bytes())\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "XR_ERROR_CORRECTION_PYTHON": sys.executable,
+                "XR_ERROR_CORRECTION_ERASE_SCRIPT": str(script_path),
+            },
+        ):
+            self.assertEqual(_erase_wrong_question_image_bytes(b"original"), b"erased:original")
+
+    def test_practice_item_erasure_helper_backfills_existing_record_image(self):
+        from wrong_question_upload_worker import ensure_erased_wrong_question_images_for_practice_items
+
+        source_path = self.base / "source.png"
+        source_path.write_bytes(b"source-image" * 100)
+        erased_dir = self.base / "erased"
+
+        with patch("wrong_question_upload_worker.ERASED_IMAGE_DIR", erased_dir), patch(
+            "wrong_question_upload_worker._erase_wrong_question_image_bytes",
+            return_value=b"erased-image" * 100,
+        ) as mock_erase:
+            prepared = ensure_erased_wrong_question_images_for_practice_items(
+                [
+                    {
+                        "wrong_question_record_id": "wechat-existing-record",
+                        "image_url_snapshot": str(source_path),
+                        "erased_image_url_snapshot": "",
+                    }
+                ]
+            )
+
+        self.assertEqual(len(prepared), 1)
+        erased_path = Path(prepared[0]["erased_image_url_snapshot"])
+        self.assertEqual(erased_path, erased_dir / "wechat-existing-record.png")
+        self.assertEqual(erased_path.read_bytes(), b"erased-image" * 100)
+        mock_erase.assert_called_once_with(b"source-image" * 100)
+
+    def test_practice_item_erasure_helper_rejects_unchanged_model_output(self):
+        from wrong_question_upload_worker import ensure_erased_wrong_question_images_for_practice_items
+
+        source_path = self.base / "source.png"
+        source_path.write_bytes(b"same-image" * 100)
+        erased_dir = self.base / "erased"
+
+        with patch("wrong_question_upload_worker.ERASED_IMAGE_DIR", erased_dir), patch(
+            "wrong_question_upload_worker._erase_wrong_question_image_bytes",
+            return_value=b"same-image" * 100,
+        ):
+            prepared = ensure_erased_wrong_question_images_for_practice_items(
+                [
+                    {
+                        "wrong_question_record_id": "wechat-unchanged-record",
+                        "image_url_snapshot": str(source_path),
+                        "erased_image_url_snapshot": "",
+                    }
+                ]
+            )
+
+        self.assertEqual(prepared[0]["erased_image_url_snapshot"], "")
+        self.assertFalse((erased_dir / "wechat-unchanged-record.png").exists())
 
     def test_staff_and_parent_can_update_wrong_question_topic_category(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
@@ -295,10 +382,16 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         refreshed = lesson_manager.get_wechat_wrong_question_upload_task(task["id"])
         self.assertEqual(refreshed["status"], "failed")
         self.assertEqual(refreshed["error_message"], "题目识别失败")
+        self.assertNotEqual(refreshed["ingestion_run_id"], "")
         self.assertNotEqual(refreshed["record_id"], "")
         record = lesson_manager.get_wechat_wrong_question_submission(refreshed["record_id"])
         self.assertEqual(record["recognition_status"], "failed")
         self.assertEqual(record["recognition_error"], "题目识别失败")
+        self.assertEqual(record["ingestion_run_id"], refreshed["ingestion_run_id"])
+        run = lesson_manager.get_wrong_question_ingestion_run(refreshed["ingestion_run_id"])
+        self.assertIsNotNone(run)
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["current_step"], "failed")
 
     def test_worker_keeps_network_recognition_failure_retryable_without_empty_record(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
@@ -323,8 +416,13 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["retryable"], 1)
+        self.assertNotEqual(result["ingestion_run_id"], "")
         self.assertEqual(result["record_id"], "")
         self.assertEqual(result["error_message"], "[Errno 101] Network is unreachable")
+        run = lesson_manager.get_wrong_question_ingestion_run(result["ingestion_run_id"])
+        self.assertIsNotNone(run)
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["current_step"], "failed")
 
         submissions = lesson_manager.list_wechat_wrong_question_submissions()
         self.assertEqual(submissions, [])

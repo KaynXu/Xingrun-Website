@@ -477,6 +477,7 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         self.assertEqual(task["child_raw_reason_text"], "我把单位换算漏掉了")
         self.assertEqual(task["child_reason_input_mode"], "voice")
         self.assertEqual(task["child_reason_audio_url"], "https://files.example.com/reason.m4a")
+        self.assertEqual(task["ingestion_run_id"], "")
         self.assertEqual(task["record_id"], "")
         self.assertEqual(task["error_message"], "")
 
@@ -514,11 +515,13 @@ class WeChatParentUploadDataTestCase(unittest.TestCase):
         updated = lesson_manager.update_wechat_wrong_question_upload_task(
             task["id"],
             status="ready",
+            ingestion_run_id="wqrun-upload-1",
             record_id="wechat-record-1",
             error_message="",
         )
 
         self.assertEqual(updated["status"], "ready")
+        self.assertEqual(updated["ingestion_run_id"], "wqrun-upload-1")
         self.assertEqual(updated["record_id"], "wechat-record-1")
         self.assertEqual(updated["error_message"], "")
 

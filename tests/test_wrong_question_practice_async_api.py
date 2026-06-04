@@ -36,6 +36,7 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
             binding_id=binding["id"],
             image_url="https://files.example.com/practice-worker.png",
             child_raw_reason_text="我把乘法顺序放错了",
+            child_reason_transcript="我录音里说，我总是先算加法，没有先处理乘法。",
             primary_error_type="细节问题",
             secondary_error_summary="运算顺序判断不稳定",
             recognition_status="recognized",
@@ -51,6 +52,45 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
     def tearDown(self):
         gc.collect()
         self.temp_dir.cleanup()
+
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
+    @patch("wrong_question_upload_worker.ensure_erased_wrong_question_images_for_practice_items")
+    @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", return_value="/tmp/practice-sheet.pdf")
+    @patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_backfills_erased_images_before_pdf(
+        self,
+        mock_generate_material,
+        mock_generate_pdf,
+        mock_ensure_erased,
+        _mock_credits,
+        mock_finalize,
+    ):
+        mock_generate_material.return_value = {
+            "title": "Alice 错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": self.record["id"],
+                    "reason_blank_prompt": "先把真正错因写出来\n这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "再想想以后怎么做\n下次再碰到这种题时，你准备先检查哪里？",
+                }
+            ],
+        }
+        mock_ensure_erased.side_effect = lambda items: [
+            {**items[0], "erased_image_url_snapshot": "/tmp/erased-practice-worker.png"}
+        ]
+
+        app_module._run_wrong_question_practice_generation_job(
+            sheet_id=self.sheet["id"],
+            user={"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+        )
+
+        material_kwargs = mock_generate_material.call_args.kwargs
+        self.assertEqual(material_kwargs["items"][0]["image_url_snapshot"], "https://files.example.com/practice-worker.png")
+        mock_ensure_erased.assert_called_once()
+        pdf_kwargs = mock_generate_pdf.call_args.kwargs
+        self.assertEqual(pdf_kwargs["items"][0]["erased_image_url_snapshot"], "/tmp/erased-practice-worker.png")
+        mock_finalize.assert_called_once()
 
     @patch("app.finalize_ai_charge")
     @patch("app.ensure_feature_credits_available")
@@ -96,7 +136,65 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(material_kwargs["teacher_name"], self.owner["display_name"])
         self.assertEqual(material_kwargs["items"][0]["wrong_question_record_id"], self.record["id"])
         self.assertEqual(material_kwargs["items"][0]["question_text_snapshot"], "计算 $2+3\\times4$ 的结果。")
+        self.assertEqual(material_kwargs["items"][0]["image_url_snapshot"], "https://files.example.com/practice-worker.png")
+        self.assertEqual(
+            material_kwargs["items"][0]["child_reason_transcript_snapshot"],
+            "我录音里说，我总是先算加法，没有先处理乘法。",
+        )
         self.assertTrue(material_kwargs["include_usage"])
+        mock_generate_pdf.assert_called_once()
+        mock_finalize.assert_called_once()
+
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
+    @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", return_value="/tmp/practice-chat-sheet.pdf")
+    @patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_generates_pdf_for_ai_chat_record_sheet(
+        self,
+        mock_generate_material,
+        mock_generate_pdf,
+        _mock_credits,
+        mock_finalize,
+    ):
+        ai_chat_record = lesson_manager.create_wrong_question_submission(
+            source="ai_chat",
+            organization_id=self.owner["organization_id"],
+            class_id=self.class_id,
+            student_id=self.student["id"],
+            teacher_user_id=self.owner["id"],
+            image_url="https://files.example.com/practice-worker-chat.png",
+            recognition_status="recognized",
+            question_text="解方程 $x+5=12$。",
+            child_raw_reason_text="我移项时把符号看反了",
+        )
+        ai_chat_sheet = lesson_manager.create_pending_wrong_question_practice_sheet(
+            created_by=self.owner["id"],
+            selected_records=[lesson_manager.get_wechat_wrong_question_submission(ai_chat_record["id"])],
+        )
+        mock_generate_material.return_value = {
+            "title": "Alice 错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": ai_chat_record["id"],
+                    "reason_blank_prompt": "先把真正错因写出来\n这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "再想想以后怎么做\n下次再碰到这种题时，你准备先检查哪里？",
+                }
+            ],
+        }
+
+        app_module._run_wrong_question_practice_generation_job(
+            sheet_id=ai_chat_sheet["id"],
+            user={"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+        )
+
+        saved = lesson_manager.get_wrong_question_practice_sheet(ai_chat_sheet["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["status"], "ready")
+        self.assertEqual(saved["pdf_path"], "/tmp/practice-chat-sheet.pdf")
+        material_kwargs = mock_generate_material.call_args.kwargs
+        self.assertEqual(material_kwargs["items"][0]["wrong_question_record_id"], ai_chat_record["id"])
+        self.assertEqual(material_kwargs["items"][0]["source"], "ai_chat")
+        self.assertEqual(material_kwargs["items"][0]["question_text_snapshot"], "解方程 $x+5=12$。")
         mock_generate_pdf.assert_called_once()
         mock_finalize.assert_called_once()
 

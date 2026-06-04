@@ -40,7 +40,10 @@ function escapeHtml(value) {
 }
 
 function buildQuestionBlock(item) {
-  const preview = buildWrongQuestionLatexPreviewModel(item.question_text_snapshot || '');
+  const preview = buildWrongQuestionLatexPreviewModel(formatQuestionTextForPractice(item.question_text_snapshot || ''));
+  const hasQuestionText = Boolean(preview.html);
+  const imageSource = String(item.image_source || item.imageSource || '').trim();
+  const surfaceMode = String(item.question_surface_mode || item.questionSurfaceMode || '').trim();
   const questionTextBlock = preview.html
     ? `
       <div class="question-latex-card">
@@ -51,29 +54,41 @@ function buildQuestionBlock(item) {
     `
     : '';
 
+  const buildImageBlock = (title, extraClass = 'source-image-card') => `
+      <div class="geometry-card ${extraClass}">
+        <div class="geometry-title">${title}</div>
+        <img src="${item.image_data_url}" alt="${title}" class="geometry-image source-image" />
+      </div>
+    `;
+
   if (item.image_data_url && item.diagram_type) {
     return `
       ${questionTextBlock}
-      <div class="geometry-card">
+      <div class="geometry-card generated-diagram-card">
         <div class="geometry-title">生成图像</div>
-        <img src="${item.image_data_url}" alt="生成图像" class="geometry-image" />
+        <img src="${item.image_data_url}" alt="生成图像" class="geometry-image generated-diagram-image" />
       </div>
     `;
   }
 
-  if (item.is_geometry) {
-    if (item.image_data_url) {
-      return `
-        ${questionTextBlock}
-        <div class="geometry-card">
-          <div class="geometry-title">几何原题图片</div>
-          <img src="${item.image_data_url}" alt="几何原题图片" class="geometry-image" />
-        </div>
-      `;
-    }
+  if (item.image_data_url && surfaceMode === 'image_clean') {
+    const imageTitle = item.is_geometry ? '干净几何原题图片' : '干净原题图片';
+    return buildImageBlock(imageTitle);
+  }
 
+  if (hasQuestionText) {
+    return questionTextBlock;
+  }
+
+  if (item.image_data_url) {
+    const imageTitle = imageSource === 'erased'
+      ? (item.is_geometry ? '擦除后几何原题图片' : '擦除后原题图片')
+      : (item.is_geometry ? '几何原题图片' : '原题图片');
+    return buildImageBlock(imageTitle);
+  }
+
+  if (item.is_geometry) {
     return `
-      ${questionTextBlock}
       <div class="geometry-card">
         <div class="geometry-title">几何原题图片</div>
         <div class="geometry-placeholder">图片暂时无法载入，已保留原图记录。</div>
@@ -95,6 +110,38 @@ function buildLatexTextBlock(value) {
   return preview.html || escapeHtml(value || '');
 }
 
+function normalizePossiblyJsonStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizePossiblyJsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value;
+  }
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function normalizePromptText(prompt) {
   return String(prompt ?? '')
     .replaceAll('\\r\\n', '\n')
@@ -102,6 +149,31 @@ function normalizePromptText(prompt) {
     .replaceAll('\\n', '\n')
     .replaceAll('\r\n', '\n')
     .replaceAll('\r', '\n');
+}
+
+function firstNonEmptyText(...values) {
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (text) {
+      return text;
+    }
+  }
+  return '';
+}
+
+function formatQuestionTextForPractice(value) {
+  const text = normalizePromptText(value);
+  const hasCompactChoices =
+    /(?:^|\s)A[.．、]\s*\S+[\s\S]*\sB[.．、]\s*\S+[\s\S]*\sC[.．、]\s*\S+[\s\S]*\sD[.．、]\s*\S+/.test(text);
+
+  if (!hasCompactChoices) {
+    return text;
+  }
+
+  return text
+    .replace(/([^\n])\s+(A[.．、]\s*)/g, '$1\n$2')
+    .replace(/[ \t]+(?=[BCD][.．、]\s*)/g, '\n')
+    .replace(/(^|\n)([ABCD])[.．、]\s*/g, '$1$2. ');
 }
 
 function stripPromptHeading(value) {
@@ -129,24 +201,320 @@ function renderPromptHtml(prompt) {
     .replaceAll('\n', '<br />');
 }
 
-function buildWritingSection(reasonPrompt, improvementPrompt, title = '') {
+function normalizeStructuredContent(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const structured = source.structured_content && typeof source.structured_content === 'object'
+    ? source.structured_content
+    : (source.structuredContent && typeof source.structuredContent === 'object' ? source.structuredContent : {});
+  const blankReviewBlocks = Array.isArray(structured.blank_review_blocks)
+    ? structured.blank_review_blocks
+    : (Array.isArray(structured.blankReviewBlocks) ? structured.blankReviewBlocks : []);
+
+  return {
+    mistakeFocus: String(structured.mistake_focus ?? structured.mistakeFocus ?? '').trim(),
+    reviewGoal: String(structured.review_goal ?? structured.reviewGoal ?? '').trim(),
+    methodHintLines: Array.isArray(structured.method_hint_lines)
+      ? structured.method_hint_lines.map((line) => String(line || '').trim()).filter(Boolean)
+      : (Array.isArray(structured.methodHintLines)
+        ? structured.methodHintLines.map((line) => String(line || '').trim()).filter(Boolean)
+        : []),
+    blankReviewBlocks: blankReviewBlocks
+      .map((block) => {
+        const sourceBlock = block && typeof block === 'object' ? block : {};
+        const lines = Array.isArray(sourceBlock.lines)
+          ? sourceBlock.lines.map((line) => String(line || '').trim()).filter(Boolean)
+          : [];
+        return {
+          title: String(sourceBlock.title || '').trim(),
+          lines,
+        };
+      })
+      .filter((block) => block.title || block.lines.length > 0),
+    teacherFeedback: String(structured.teacher_feedback ?? structured.teacherFeedback ?? '').trim(),
+    redoGuidanceLines: Array.isArray(structured.redo_guidance_lines)
+      ? structured.redo_guidance_lines.map((line) => String(line || '').trim()).filter(Boolean)
+      : (Array.isArray(structured.redoGuidanceLines)
+        ? structured.redoGuidanceLines.map((line) => String(line || '').trim()).filter(Boolean)
+        : []),
+    confirmationReasons: normalizePossiblyJsonStringList(
+      structured.confirmation_reasons
+      ?? structured.confirmationReasons
+      ?? source.confirmation_reasons
+      ?? source.confirmation_reasons_json
+      ?? source.confirmationReasons
+      ?? source.confirmationReasonsJson,
+    ),
+  };
+}
+
+function isLowInformationClozeText(text) {
+  const normalized = String(text || '').replace(/\s+/g, '').trim();
+  if (!normalized) {
+    return false;
+  }
+  const patterns = [
+    '我这题错在______',
+    '我错在______',
+    '下次我要先看______',
+    '下次我会先______',
+    '我要注意______',
+    '这一步需要先看清______',
+    '做完后我要检查______',
+  ];
+  if (patterns.some((pattern) => normalized.includes(pattern))) {
+    return true;
+  }
+  return normalized.includes('______') && normalized.replaceAll('______', '').length <= 8;
+}
+
+function hasLowInformationClozeLines(lines) {
+  return lines.some((line) => isLowInformationClozeText(line));
+}
+
+function normalizeReflectionSummary(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const reflection = normalizePossiblyJsonObject(
+    source.reflection_summary_snapshot_json
+    ?? source.reflectionSummarySnapshot
+    ?? source.reflection_summary_snapshot
+    ?? source.reflectionSummary,
+  );
+  return {
+    whyWrong: String(reflection.why_wrong ?? reflection.whyWrong ?? '').trim(),
+    unknownStep: String(reflection.unknown_step ?? reflection.unknownStep ?? '').trim(),
+    helpPreference: String(reflection.help_preference ?? reflection.helpPreference ?? '').trim(),
+    summaryText: String(reflection.summary_text ?? reflection.summaryText ?? '').trim(),
+  };
+}
+
+function normalizeQuestionStructured(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const structured = normalizePossiblyJsonObject(
+    source.question_structured_snapshot_json
+    ?? source.questionStructuredSnapshot
+    ?? source.question_structured_snapshot
+    ?? source.questionStructured,
+  );
+  return {
+    stem: String(structured.stem ?? '').trim(),
+    subject: String(structured.subject ?? '').trim(),
+  };
+}
+
+function normalizeKnowledgeTags(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  return normalizePossiblyJsonStringList(
+    source.knowledge_tags_snapshot_json
+    ?? source.knowledgeTagsSnapshot
+    ?? source.knowledge_tags_snapshot
+    ?? source.knowledgeTags,
+  );
+}
+
+function buildReflectionFallbackMethodHints(item) {
+  const reflection = normalizeReflectionSummary(item);
+  const questionStructured = normalizeQuestionStructured(item);
+  const knowledgeTags = normalizeKnowledgeTags(item);
+  const hintLines = [];
+
+  if (knowledgeTags.length > 0) {
+    hintLines.push(`先回到 ${knowledgeTags.slice(0, 2).join(' / ')} 这组知识点。`);
+  } else if (questionStructured.subject) {
+    hintLines.push(`先回到这道${questionStructured.subject}题对应的基础规则。`);
+  }
+  if (reflection.unknownStep) {
+    hintLines.push(`先补清：${reflection.unknownStep}`);
+  }
+  if (reflection.helpPreference) {
+    hintLines.push(`这次先按“${reflection.helpPreference}”的方式复盘。`);
+  }
+
+  return hintLines.slice(0, 3);
+}
+
+function buildGuidingMethodLines(item) {
+  const structured = normalizeStructuredContent(item);
+  const hintLines = structured.methodHintLines.length > 0
+    ? structured.methodHintLines
+    : buildReflectionFallbackMethodHints(item);
+  const merged = [...hintLines];
+  if (structured.teacherFeedback) {
+    const duplicated = merged.some((line) => line.includes(structured.teacherFeedback) || structured.teacherFeedback.includes(line));
+    if (!duplicated) {
+      merged.push(structured.teacherFeedback);
+    }
+  }
+  if (merged.length === 0) {
+    merged.push('先把题目里的已知条件和问法分开圈出来，再决定第一步用哪个关系。');
+  }
+  return merged.slice(0, 3);
+}
+
+function buildQuestionSummaryText(item) {
+  const reflection = normalizeReflectionSummary(item);
+  const structured = normalizeStructuredContent(item);
+  const questionStructured = normalizeQuestionStructured(item);
+  const questionText = normalizePromptText(item.question_text_snapshot || item.question_text || '').trim();
+  const studentReason = firstNonEmptyText(
+    item.child_reason_transcript_snapshot,
+    item.student_transcript,
+    item.child_reason_text_snapshot,
+    item.student_reason_text,
+  );
+  const reasonAnchor = firstNonEmptyText(studentReason, reflection.whyWrong, structured.mistakeFocus);
+  const guidanceLines = buildGuidingMethodLines(item);
+
+  if (reasonAnchor && guidanceLines.length > 0) {
+    return `先回到“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这个入口，再按这题的起手顺序往下走：${guidanceLines[0]}`;
+  }
+  if (guidanceLines.length > 0) {
+    return guidanceLines[0];
+  }
+  if (reasonAnchor) {
+    return `先回到“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这个卡点，再看题目第一步要用什么关系。`;
+  }
+  if (questionStructured.stem) {
+    return `先把题目里“${questionStructured.stem}”这一步重新读清。`;
+  }
+  if (questionText) {
+    return '先把题目在问什么、已知什么重新圈出来，再决定第一步从哪里下手。';
+  }
+  return '';
+}
+
+function buildQuestionSummarySection(item) {
+  const summaryText = buildQuestionSummaryText(item);
+  if (!summaryText) {
+    return '';
+  }
+  return `
+    <section class="summary-card">
+      <div class="section-title">题干摘要</div>
+      <div class="summary-copy">${buildLatexTextBlock(summaryText)}</div>
+    </section>
+  `;
+}
+
+function buildLegacyWritingBlocks(reasonPrompt, improvementPrompt) {
   const sections = [
     extractWritingPromptBody(reasonPrompt),
     extractWritingPromptBody(improvementPrompt),
   ].filter(Boolean);
 
-  if (sections.length === 0) {
+  return sections.map((section) => ({
+    title: '',
+    rawText: section,
+    contentHtml: renderPromptHtml(section),
+    kind: 'legacy',
+  }));
+}
+
+function buildReflectionWritingBlocks(item) {
+  const reflection = normalizeReflectionSummary(item);
+  const knowledgeTags = normalizeKnowledgeTags(item);
+  const questionStructured = normalizeQuestionStructured(item);
+  const topic = knowledgeTags.slice(0, 2).join(' / ') || questionStructured.subject || '同类题';
+  const blocks = [];
+
+  if (reflection.whyWrong || reflection.unknownStep || questionStructured.stem) {
+    const lines = [];
+    if (reflection.whyWrong) {
+      lines.push(`本题复盘时，先把“${reflection.whyWrong}”对应到 ______。`);
+    }
+    if (reflection.unknownStep) {
+      lines.push(`我卡住的步骤是“${reflection.unknownStep}”，这里要先补清 ______。`);
+    } else if (questionStructured.stem) {
+      lines.push(`先回到题干“${questionStructured.stem}”，找出最关键的 ______。`);
+    }
+    blocks.push({
+      title: '错因复盘',
+      contentHtml: lines.map((line) => renderPromptHtml(line)).join('<br />'),
+      kind: 'reflection',
+    });
+  }
+
+  if (reflection.helpPreference || knowledgeTags.length > 0 || questionStructured.subject) {
+    const lines = [];
+    if (reflection.helpPreference) {
+      lines.push(`下次遇到${topic}题，先按“${reflection.helpPreference}”检查 ______。`);
+    } else {
+      lines.push(`下次遇到${topic}题，先把题目条件翻译成可用的 ______。`);
+    }
+    if (knowledgeTags.length > 0) {
+      lines.push(`看到 ${knowledgeTags.slice(0, 3).join('、')} 时，先判断它提示的是角度、数量、关系还是 ______。`);
+    }
+    blocks.push({
+      title: '下次提醒',
+      contentHtml: lines.map((line) => renderPromptHtml(line)).join('<br />'),
+      kind: 'reflection',
+    });
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({
+      title: '错因复盘',
+      contentHtml: renderPromptHtml('本题信息还不完整，先回到原题确认关键条件和 ______。'),
+      kind: 'reflection',
+    });
+    blocks.push({
+      title: '下次提醒',
+      contentHtml: renderPromptHtml('下次遇到同类题，先把题目条件翻译成可用的 ______。'),
+      kind: 'reflection',
+    });
+  }
+
+  return blocks;
+}
+
+function buildMethodHintSection(item) {
+  const hintLines = buildGuidingMethodLines(item);
+  if (hintLines.length === 0) {
+    return '';
+  }
+  return `
+    <section class="method-hint-card">
+      <div class="section-title">方法提醒</div>
+      <div class="method-hint-list">
+        ${hintLines.map((line) => `<div class="method-hint-line">${buildLatexTextBlock(line)}</div>`).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function shouldShowWritingBlockTitle(title) {
+  return !['', '错因复盘', '下次提醒'].includes(String(title || '').trim());
+}
+
+function buildWritingSection(item, title = '挖空复盘') {
+  const structured = normalizeStructuredContent(item);
+  let blocks = structured.blankReviewBlocks.length > 0 && !structured.blankReviewBlocks.some((block) => hasLowInformationClozeLines(block.lines))
+    ? structured.blankReviewBlocks.map((block) => ({
+      title: block.title,
+      contentHtml: block.lines.map((line) => renderPromptHtml(line)).join('<br />'),
+      kind: 'structured',
+    }))
+    : buildLegacyWritingBlocks(item.reason_blank_prompt || '', item.improvement_summary_prompt || '');
+
+  if (blocks.some((block) => isLowInformationClozeText(block.contentHtml))) {
+    blocks = buildReflectionWritingBlocks(item);
+  }
+  if (blocks.some((block) => isLowInformationClozeText(block.rawText))) {
+    blocks = buildReflectionWritingBlocks(item);
+  }
+
+  if (blocks.length === 0) {
     return '';
   }
 
   return `
     <section class="writing-card">
-      ${title ? `<div class="writing-title">${escapeHtml(title)}</div>` : ''}
-      ${sections
+      ${title ? `<div class="section-title">${escapeHtml(title)}</div>` : ''}
+      ${blocks
         .map(
-          (section) => `
+          (block) => `
             <div class="writing-prompt-block">
-              <div class="writing-prompt">${renderPromptHtml(section)}</div>
+              ${shouldShowWritingBlockTitle(block.title) ? `<div class="writing-prompt-title">${escapeHtml(block.title)}</div>` : ''}
+              <div class="writing-prompt">${block.contentHtml}</div>
             </div>
           `,
         )
@@ -158,9 +526,9 @@ function buildWritingSection(reasonPrompt, improvementPrompt, title = '') {
 function buildRedoWorkArea() {
   return `
     <section class="redo-work-area">
-      <div class="redo-work-label">重做这题</div>
+      <div class="section-title">订正区</div>
       <div class="redo-lines">
-        ${Array.from({ length: 12 }, () => '<div class="redo-line"></div>').join('')}
+        ${Array.from({ length: 14 }, () => '<div class="redo-line"></div>').join('')}
       </div>
     </section>
   `;
@@ -172,10 +540,11 @@ function buildItemMarkup(item) {
       <div class="record-header">
         <div class="record-index">第 ${escapeHtml(item.question_order || '')} 题</div>
       </div>
-      <div class="record-label">题目内容</div>
+      <div class="record-label">原题 / 原图</div>
       ${buildQuestionBlock(item)}
-
-      ${buildWritingSection(item.reason_blank_prompt || '', item.improvement_summary_prompt || '')}
+      ${buildQuestionSummarySection(item)}
+      ${buildMethodHintSection(item)}
+      ${buildWritingSection(item)}
       ${buildRedoWorkArea()}
     </section>
   `;
@@ -183,12 +552,7 @@ function buildItemMarkup(item) {
 
 function buildScheduledItemMarkup(item, label) {
   const trainingGoal = String(item.trainingGoal || '').trim();
-  const writingSection = buildWritingSection(
-    item.reason_blank_prompt || '',
-    item.improvement_summary_prompt || '',
-    '错题复习',
-  );
-  const redoLabel = item.itemType === 'variant' ? '重做变式' : '重做原题';
+  const writingSection = buildWritingSection(item, '挖空复盘');
   return `
     <section class="record-page">
       <div class="record-header">
@@ -196,9 +560,11 @@ function buildScheduledItemMarkup(item, label) {
         <div class="record-type">${escapeHtml(item.itemType === 'variant' ? '变式题' : '原错题')}</div>
       </div>
       ${trainingGoal ? `<div class="pack-goal">训练目标：${escapeHtml(trainingGoal)}</div>` : ''}
-      ${writingSection}
-      <div class="record-label redo-question-label">${redoLabel}</div>
+      <div class="record-label">原题 / 原图</div>
       ${buildQuestionBlock(item)}
+      ${buildQuestionSummarySection(item)}
+      ${buildMethodHintSection(item)}
+      ${writingSection}
       ${buildRedoWorkArea()}
     </section>
   `;
@@ -259,18 +625,10 @@ function buildScheduledBody(schedule, answerItems) {
 
 export async function buildDocumentMarkup(payload) {
   const katexCss = await readFile(katexCssPath, 'utf8');
-  const studentName = escapeHtml(payload.studentName || '');
-  const className = escapeHtml(payload.className || '');
-  const teacherName = escapeHtml(payload.teacherName || '');
-  const title = escapeHtml(payload.title || `${studentName} 错题练习`);
+  const title = escapeHtml(payload.title || `${payload.studentName || ''} 错题练习`);
   const items = Array.isArray(payload.items) ? payload.items : [];
   const schedule = Array.isArray(payload.schedule) ? payload.schedule : [];
   const answerItems = Array.isArray(payload.answerItems) ? payload.answerItems : items;
-  const packMeta = payload.packMeta && typeof payload.packMeta === 'object' ? payload.packMeta : {};
-  const scheduledQuestionCount = schedule.reduce(
-    (count, day) => count + (Array.isArray(day.items) ? day.items.length : 0),
-    0,
-  );
   const hasSchedule = schedule.length > 0;
 
   return `
@@ -311,33 +669,21 @@ export async function buildDocumentMarkup(payload) {
             color: #0f172a;
           }
 
-          .cover-meta {
-            margin-top: 8px;
-            color: #475569;
-            font-size: 13px;
-          }
-
           .record-page {
-            page-break-before: always;
-            min-height: 265mm;
-            display: flex;
-            flex-direction: column;
-          }
-
-          .record-page:first-of-type {
-            page-break-before: auto;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
           }
 
           .record-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 14px;
+            gap: 8px;
+            margin-bottom: 8px;
           }
 
           .record-index {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -349,14 +695,14 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .record-label {
-            margin-bottom: 10px;
+            margin-bottom: 6px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
           }
 
           .pack-goal {
-            margin: 0 0 12px;
+            margin: 0 0 10px;
             padding: 10px 12px;
             border: 1px solid #dbeafe;
             border-radius: 10px;
@@ -367,47 +713,87 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .geometry-card,
-          .writing-card {
+          .summary-card,
+          .writing-card,
+          .method-hint-card {
+            break-inside: avoid;
+            page-break-inside: avoid;
             border: 1px solid #dbe2ea;
             border-radius: 10px;
-            padding: 16px;
+            padding: 10px 12px;
             background: #ffffff;
           }
 
           .question-latex-card {
-            border: 1px solid #dbeafe;
-            border-radius: 18px;
-            padding: 16px;
-            background: #f4fbff;
+            border: 1px solid #dbe2ea;
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: #ffffff;
           }
 
           .question-latex-preview-frame {
-            border: 1px solid #dbeafe;
-            border-radius: 18px;
+            border: none;
+            border-radius: 0;
             background: #ffffff;
-            padding: 14px 16px;
+            padding: 0;
+          }
+
+          .summary-card {
+            margin-top: 6px;
+          }
+
+          .summary-copy {
+            color: #334155;
+            font-size: 13px;
+            line-height: 1.92;
           }
 
           .writing-card {
-            margin-top: 14px;
-            min-height: 82mm;
-            padding-bottom: 22px;
+            margin-top: 6px;
+            min-height: 0;
+            padding-bottom: 10px;
           }
 
-          .writing-title {
-            margin-bottom: 12px;
+          .section-title {
+            margin-bottom: 8px;
             font-size: 13px;
             font-weight: 700;
             color: #334155;
           }
 
+          .method-hint-card {
+            margin-top: 6px;
+          }
+
+          .method-hint-line {
+            font-size: 14px;
+            line-height: 1.98;
+            color: #334155;
+          }
+
+          .method-hint-line + .method-hint-line {
+            margin-top: 4px;
+          }
+
           .writing-prompt-block + .writing-prompt-block {
-            margin-top: 18px;
+            margin-top: 8px;
+          }
+
+          .writing-prompt-block {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .writing-prompt-title {
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
           }
 
           .writing-prompt {
             font-size: 14px;
-            line-height: 1.8;
+            line-height: 2;
             color: #334155;
             white-space: pre-wrap;
             word-break: break-word;
@@ -415,7 +801,7 @@ export async function buildDocumentMarkup(payload) {
 
           .blank-gap {
             display: inline-block;
-            min-width: 13em;
+            min-width: 11.5em;
             height: 1.2em;
             margin: 0 0.2em;
             vertical-align: -0.2em;
@@ -423,33 +809,20 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .redo-work-area {
-            flex: 1;
-            min-height: 88mm;
-            margin-top: 18px;
-            display: flex;
-            flex-direction: column;
-          }
-
-          .redo-work-label {
-            margin-bottom: 10px;
-            font-size: 12px;
-            font-weight: 700;
-            color: #64748b;
-          }
-
-          .redo-question-label {
-            margin-top: 18px;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            min-height: 0;
+            margin-top: 8px;
           }
 
           .redo-lines {
-            flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            gap: 4px;
           }
 
           .redo-line {
-            min-height: 16px;
+            min-height: 13px;
             border-bottom: 1px solid #cbd5e1;
           }
 
@@ -460,8 +833,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .xr-latex-preview {
-            font-size: 16px;
-            line-height: 1.8;
+            font-size: 15px;
+            line-height: 1.96;
             word-break: break-word;
           }
 
@@ -470,10 +843,10 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .xr-latex-preview .xr-latex-display {
-            margin: 14px 0;
+            margin: 10px 0;
             overflow-x: auto;
             overflow-y: hidden;
-            padding: 4px 0;
+            padding: 2px 0;
           }
 
           .xr-latex-preview .xr-latex-error-source {
@@ -489,8 +862,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .geometry-title {
-            margin-bottom: 12px;
-            font-size: 14px;
+            margin-bottom: 6px;
+            font-size: 13px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -498,11 +871,18 @@ export async function buildDocumentMarkup(payload) {
           .geometry-image {
             display: block;
             max-width: 100%;
-            max-height: 220mm;
             margin: 0 auto;
             object-fit: contain;
-            border-radius: 12px;
+            border-radius: 10px;
             background: #ffffff;
+          }
+
+          .source-image {
+            max-height: 66mm;
+          }
+
+          .generated-diagram-image {
+            max-height: 96mm;
           }
 
           .answer-section {
@@ -570,19 +950,6 @@ export async function buildDocumentMarkup(payload) {
       <body>
         <section class="cover">
           <div class="cover-title">${title}</div>
-          <div class="cover-meta">学生：${studentName}</div>
-          <div class="cover-meta">班级：${className}</div>
-          <div class="cover-meta">老师：${teacherName}</div>
-          ${
-            hasSchedule
-              ? `
-                <div class="cover-meta">目标：${escapeHtml(packMeta.target || '')}</div>
-                <div class="cover-meta">题量档位：${escapeHtml(packMeta.volume || '')}</div>
-                <div class="cover-meta">生成日期：${escapeHtml(packMeta.generatedDate || '')}</div>
-              `
-              : ''
-          }
-          <div class="cover-meta">题目数量：${hasSchedule ? scheduledQuestionCount : items.length}</div>
         </section>
         ${hasSchedule ? buildScheduledBody(schedule, answerItems) : items.map((item) => buildItemMarkup(item)).join('')}
       </body>

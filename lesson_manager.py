@@ -109,6 +109,26 @@ def _topic_category_matches(candidate: str, query: str) -> bool:
     return len(query_key) >= 2 and query_key in candidate_key
 
 
+def _normalize_json_storage_value(
+    value: object,
+    *,
+    field_name: str,
+    default: str,
+) -> str:
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    text = str(value).strip()
+    if not text:
+        return default
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} must be valid JSON") from exc
+    return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+
 GRADE_NUMERAL_MAP = {
     1: "一",
     2: "二",
@@ -1614,8 +1634,13 @@ def _drop_legacy_table_if_exists(conn: sqlite3.Connection, table: str) -> None:
 
 
 def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sqlite3.Connection) -> None:
-    columns = [row[1] for row in conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()]
-    if "parent_note" not in columns and "teacher_comment" not in columns:
+    column_rows = conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()
+    columns = [row[1] for row in column_rows]
+    notnull_by_column = {row[1]: row[3] for row in column_rows}
+    needs_multisource_rebuild = bool(notnull_by_column.get("parent_wechat_account_id")) or bool(
+        notnull_by_column.get("binding_id")
+    )
+    if "parent_note" not in columns and "teacher_comment" not in columns and not needs_multisource_rebuild:
         return
 
     copy_columns = [
@@ -1652,6 +1677,15 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             "diagram_spec_json",
             "recognition_error",
             "student_library_pdf_path",
+            "ingestion_run_id",
+            "chat_session_id",
+            "question_structured_json",
+            "knowledge_tags_json",
+            "reflection_summary_json",
+            "generation_metadata_json",
+            "mastery_tracking_json",
+            "needs_teacher_confirmation",
+            "confirmation_reasons_json",
             "created_at",
             "updated_at",
         ]
@@ -1670,8 +1704,8 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             id                        TEXT PRIMARY KEY,
             organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             source                    TEXT NOT NULL DEFAULT 'wechat_mp',
-            parent_wechat_account_id  INTEGER NOT NULL REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
-            binding_id                INTEGER NOT NULL REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
+            parent_wechat_account_id  INTEGER REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+            binding_id                INTEGER REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
             class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
             student_id                INTEGER NOT NULL REFERENCES students(id),
             teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
@@ -1698,6 +1732,18 @@ def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sq
             diagram_spec_json         TEXT NOT NULL DEFAULT '',
             recognition_error         TEXT NOT NULL DEFAULT '',
             student_library_pdf_path  TEXT NOT NULL DEFAULT '',
+            ingestion_run_id          TEXT NOT NULL DEFAULT '',
+            chat_session_id           TEXT NOT NULL DEFAULT '',
+            question_structured_json  TEXT NOT NULL DEFAULT '',
+            knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
+            reflection_summary_json   TEXT NOT NULL DEFAULT '{}',
+            generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
+            mastery_tracking_json     TEXT NOT NULL DEFAULT '{}',
+            needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
+            confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
+            confirmation_status      TEXT NOT NULL DEFAULT '',
+            confirmation_reviewed_by INTEGER,
+            confirmation_reviewed_at TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         )
@@ -2410,8 +2456,8 @@ def init_db():
             id                        TEXT PRIMARY KEY,
             organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             source                    TEXT NOT NULL DEFAULT 'wechat_mp',
-            parent_wechat_account_id  INTEGER NOT NULL REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
-            binding_id                INTEGER NOT NULL REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
+            parent_wechat_account_id  INTEGER REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+            binding_id                INTEGER REFERENCES parent_student_bindings(id) ON DELETE CASCADE,
             class_id                  INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
             student_id                INTEGER NOT NULL REFERENCES students(id),
             teacher_user_id           INTEGER NOT NULL REFERENCES users(id),
@@ -2438,6 +2484,78 @@ def init_db():
             diagram_spec_json         TEXT NOT NULL DEFAULT '',
             recognition_error         TEXT NOT NULL DEFAULT '',
             student_library_pdf_path  TEXT NOT NULL DEFAULT '',
+            ingestion_run_id          TEXT NOT NULL DEFAULT '',
+            chat_session_id           TEXT NOT NULL DEFAULT '',
+            question_structured_json  TEXT NOT NULL DEFAULT '',
+            knowledge_tags_json       TEXT NOT NULL DEFAULT '[]',
+            reflection_summary_json   TEXT NOT NULL DEFAULT '{}',
+            generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
+            mastery_tracking_json     TEXT NOT NULL DEFAULT '{}',
+            needs_teacher_confirmation INTEGER NOT NULL DEFAULT 0,
+            confirmation_reasons_json TEXT NOT NULL DEFAULT '[]',
+            confirmation_status      TEXT NOT NULL DEFAULT '',
+            confirmation_reviewed_by INTEGER,
+            confirmation_reviewed_at TEXT NOT NULL DEFAULT '',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_ingestion_runs (
+            id                        TEXT PRIMARY KEY,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            source                    TEXT NOT NULL DEFAULT 'workspace',
+            class_id                  INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER REFERENCES students(id),
+            teacher_user_id           INTEGER REFERENCES users(id),
+            parent_wechat_account_id  INTEGER REFERENCES parent_wechat_accounts(id) ON DELETE CASCADE,
+            chat_session_id           TEXT NOT NULL DEFAULT '',
+            status                    TEXT NOT NULL DEFAULT 'pending',
+            current_step              TEXT NOT NULL DEFAULT 'uploaded',
+            original_filename         TEXT NOT NULL DEFAULT '',
+            mime_type                 TEXT NOT NULL DEFAULT '',
+            error_message             TEXT NOT NULL DEFAULT '',
+            metadata_json             TEXT NOT NULL DEFAULT '{}',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_assets (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            ingestion_run_id          TEXT NOT NULL REFERENCES wrong_question_ingestion_runs(id) ON DELETE CASCADE,
+            asset_role                TEXT NOT NULL,
+            storage_path              TEXT NOT NULL DEFAULT '',
+            file_url                  TEXT NOT NULL DEFAULT '',
+            mime_type                 TEXT NOT NULL DEFAULT '',
+            page_number               INTEGER NOT NULL DEFAULT 0,
+            width                     INTEGER NOT NULL DEFAULT 0,
+            height                    INTEGER NOT NULL DEFAULT 0,
+            metadata_json             TEXT NOT NULL DEFAULT '{}',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_chat_sessions (
+            id                        TEXT PRIMARY KEY,
+            organization_id           INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            ingestion_run_id          TEXT NOT NULL DEFAULT '' REFERENCES wrong_question_ingestion_runs(id) ON DELETE SET DEFAULT,
+            class_id                  INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+            student_id                INTEGER REFERENCES students(id),
+            teacher_user_id           INTEGER REFERENCES users(id),
+            status                    TEXT NOT NULL DEFAULT 'active',
+            current_stage             TEXT NOT NULL DEFAULT 'ask_why_wrong',
+            summary_text              TEXT NOT NULL DEFAULT '',
+            metadata_json             TEXT NOT NULL DEFAULT '{}',
+            created_at                TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS wrong_question_chat_messages (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id                TEXT NOT NULL REFERENCES wrong_question_chat_sessions(id) ON DELETE CASCADE,
+            role                      TEXT NOT NULL,
+            stage                     TEXT NOT NULL DEFAULT '',
+            content                   TEXT NOT NULL,
+            metadata_json             TEXT NOT NULL DEFAULT '{}',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -2456,6 +2574,7 @@ def init_db():
             child_reason_audio_url    TEXT NOT NULL DEFAULT '',
             topic_category            TEXT NOT NULL DEFAULT '未分类',
             status                    TEXT NOT NULL DEFAULT 'pending',
+            ingestion_run_id          TEXT NOT NULL DEFAULT '',
             record_id                 TEXT NOT NULL DEFAULT '',
             error_message             TEXT NOT NULL DEFAULT '',
             retryable                 INTEGER NOT NULL DEFAULT 0,
@@ -2476,6 +2595,7 @@ def init_db():
             question_count            INTEGER NOT NULL DEFAULT 0,
             status                    TEXT NOT NULL DEFAULT 'pending',
             pdf_path                  TEXT NOT NULL DEFAULT '',
+            generation_metadata_json  TEXT NOT NULL DEFAULT '{}',
             generation_error          TEXT NOT NULL DEFAULT '',
             created_at                TEXT DEFAULT (datetime('now','localtime')),
             updated_at                TEXT DEFAULT (datetime('now','localtime'))
@@ -2490,14 +2610,22 @@ def init_db():
             is_geometry                   INTEGER NOT NULL DEFAULT 0,
             question_text_snapshot        TEXT NOT NULL DEFAULT '',
             image_url_snapshot            TEXT NOT NULL DEFAULT '',
+            erased_image_url_snapshot     TEXT NOT NULL DEFAULT '',
             diagram_type_snapshot         TEXT NOT NULL DEFAULT '',
             diagram_spec_json_snapshot    TEXT NOT NULL DEFAULT '',
             child_reason_text_snapshot    TEXT NOT NULL DEFAULT '',
+            child_reason_transcript_snapshot TEXT NOT NULL DEFAULT '',
             primary_error_type_snapshot   TEXT NOT NULL DEFAULT '',
             cause_note_snapshot           TEXT NOT NULL DEFAULT '',
+            topic_category_snapshot       TEXT NOT NULL DEFAULT '',
+            question_structured_snapshot_json TEXT NOT NULL DEFAULT '',
+            knowledge_tags_snapshot_json  TEXT NOT NULL DEFAULT '[]',
+            reflection_summary_snapshot_json TEXT NOT NULL DEFAULT '{}',
             ai_hint                       TEXT NOT NULL DEFAULT '',
             reason_blank_prompt           TEXT NOT NULL DEFAULT '',
             improvement_summary_prompt    TEXT NOT NULL DEFAULT '',
+            structured_content_json       TEXT NOT NULL DEFAULT '{}',
+            generation_metadata_json      TEXT NOT NULL DEFAULT '{}',
             created_at                    TEXT DEFAULT (datetime('now','localtime')),
             updated_at                    TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -2835,10 +2963,34 @@ def init_db():
         _ensure_column(conn, "wrong_question_submissions", "diagram_spec_json", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "recognition_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "student_library_pdf_path", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "ingestion_run_id", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "chat_session_id", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "question_structured_json", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "knowledge_tags_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_submissions", "reflection_summary_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "wrong_question_submissions", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "wrong_question_submissions", "mastery_tracking_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "wrong_question_submissions", "needs_teacher_confirmation", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "wrong_question_submissions", "confirmation_reasons_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_submissions", "confirmation_status", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_by", "INTEGER")
+        _ensure_column(conn, "wrong_question_submissions", "confirmation_reviewed_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_ingestion_runs", "current_step", "TEXT NOT NULL DEFAULT 'uploaded'")
+        _ensure_column(conn, "wrong_question_practice_sheets", "source_record_ids_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_practice_sheets", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_type_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "erased_image_url_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_practice_sheet_items", "diagram_spec_json_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "child_reason_transcript_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "topic_category_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "question_structured_snapshot_json", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "knowledge_tags_snapshot_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "reflection_summary_snapshot_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "structured_content_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "wrong_question_practice_sheet_items", "generation_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         _ensure_column(conn, "weekly_wrong_question_followup_messages", "source_sheet_id", "INTEGER DEFAULT NULL")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "topic_category", "TEXT NOT NULL DEFAULT '未分类'")
+        _ensure_column(conn, "wechat_wrong_question_upload_tasks", "ingestion_run_id", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wechat_wrong_question_upload_tasks", "retryable", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_schedules", "start_offset_minutes", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "course_calendar_custom_items", "note", "TEXT NOT NULL DEFAULT ''")
@@ -2878,6 +3030,18 @@ def init_db():
             ON wrong_question_submissions (
                 organization_id, class_id, source, recognition_status, archive_status, created_at, student_id
             );
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_ingestion_runs_lookup
+            ON wrong_question_ingestion_runs (organization_id, source, status, created_at);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_assets_run_role
+            ON wrong_question_assets (ingestion_run_id, asset_role, page_number, id);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_chat_sessions_lookup
+            ON wrong_question_chat_sessions (organization_id, class_id, student_id, status, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_wrong_question_chat_messages_session
+            ON wrong_question_chat_messages (session_id, id);
 
             CREATE INDEX IF NOT EXISTS idx_wechat_wrong_question_upload_tasks_parent_status
             ON wechat_wrong_question_upload_tasks (parent_wechat_account_id, status, created_at);
@@ -7316,8 +7480,8 @@ def create_wechat_wrong_question_upload_task(
                 class_id, student_id, teacher_user_id, image_url,
                 child_raw_reason_text, child_reason_input_mode, child_reason_audio_url,
                 topic_category,
-                status, record_id, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+                status, ingestion_run_id, record_id, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '', '')
             """,
             (
                 binding_row["organization_id"],
@@ -7370,6 +7534,7 @@ def update_wechat_wrong_question_upload_task(
     task_id: int,
     *,
     status: str,
+    ingestion_run_id: str | None = None,
     record_id: str = "",
     error_message: str = "",
     retryable: Optional[bool] = None,
@@ -7379,42 +7544,31 @@ def update_wechat_wrong_question_upload_task(
         raise ValueError("upload task status is invalid")
 
     with get_conn() as conn:
-        if retryable is None:
-            conn.execute(
-                """
-                UPDATE wechat_wrong_question_upload_tasks
-                SET status=?,
-                    record_id=?,
-                    error_message=?,
-                    updated_at=datetime('now','localtime')
-                WHERE id=?
-                """,
-                (
-                    normalized_status,
-                    (record_id or "").strip(),
-                    (error_message or "").strip(),
-                    int(task_id or 0),
-                ),
-            )
-        else:
-            conn.execute(
-                """
-                UPDATE wechat_wrong_question_upload_tasks
-                SET status=?,
-                    record_id=?,
-                    error_message=?,
-                    retryable=?,
-                    updated_at=datetime('now','localtime')
-                WHERE id=?
-                """,
-                (
-                    normalized_status,
-                    (record_id or "").strip(),
-                    (error_message or "").strip(),
-                    1 if retryable else 0,
-                    int(task_id or 0),
-                ),
-            )
+        assignments = [
+            "status=?",
+            "record_id=?",
+            "error_message=?",
+        ]
+        params: list[object] = [
+            normalized_status,
+            (record_id or "").strip(),
+            (error_message or "").strip(),
+        ]
+        if ingestion_run_id is not None:
+            assignments.append("ingestion_run_id=?")
+            params.append((ingestion_run_id or "").strip())
+        if retryable is not None:
+            assignments.append("retryable=?")
+            params.append(1 if retryable else 0)
+        conn.execute(
+            f"""
+            UPDATE wechat_wrong_question_upload_tasks
+            SET {", ".join(assignments)},
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (*params, int(task_id or 0)),
+        )
         refreshed = conn.execute(
             "SELECT * FROM wechat_wrong_question_upload_tasks WHERE id=?",
             (int(task_id or 0),),
@@ -7422,9 +7576,446 @@ def update_wechat_wrong_question_upload_task(
     return dict(refreshed) if refreshed else None
 
 
-def create_wechat_wrong_question_submission(
+def create_wrong_question_ingestion_run(
     *,
-    binding_id: int,
+    organization_id: int,
+    source: str = "workspace",
+    class_id: int | None = None,
+    student_id: int | None = None,
+    teacher_user_id: int | None = None,
+    parent_wechat_account_id: int | None = None,
+    chat_session_id: str = "",
+    status: str = "pending",
+    current_step: str = "",
+    original_filename: str = "",
+    mime_type: str = "",
+    error_message: str = "",
+    metadata_json: object = None,
+) -> dict:
+    normalized_source = (source or "workspace").strip() or "workspace"
+    normalized_status = (status or "pending").strip() or "pending"
+    normalized_current_step = (current_step or "").strip() or {
+        "pending": "uploaded",
+        "processing": "processing",
+        "ocr_ready": "ocr_completed",
+        "split_ready": "split_completed",
+        "archived": "archived",
+        "failed": "failed",
+    }.get(normalized_status, "uploaded")
+    record_id = f"wqrun-{secrets.token_hex(8)}"
+    normalized_metadata_json = _normalize_json_storage_value(
+        metadata_json,
+        field_name="metadata_json",
+        default="{}",
+    )
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO wrong_question_ingestion_runs (
+                id, organization_id, source, class_id, student_id, teacher_user_id,
+                parent_wechat_account_id, chat_session_id, status, current_step, original_filename,
+                mime_type, error_message, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                int(organization_id or 0),
+                normalized_source,
+                int(class_id) if class_id is not None else None,
+                int(student_id) if student_id is not None else None,
+                int(teacher_user_id) if teacher_user_id is not None else None,
+                int(parent_wechat_account_id) if parent_wechat_account_id is not None else None,
+                (chat_session_id or "").strip(),
+                normalized_status,
+                normalized_current_step,
+                (original_filename or "").strip(),
+                (mime_type or "").strip(),
+                (error_message or "").strip(),
+                normalized_metadata_json,
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wrong_question_ingestion_runs WHERE id=?",
+            (record_id,),
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def get_wrong_question_ingestion_run(run_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM wrong_question_ingestion_runs WHERE id=?",
+            ((run_id or "").strip(),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_wrong_question_ingestion_run(
+    run_id: str,
+    *,
+    status: str | None = None,
+    current_step: str | None = None,
+    chat_session_id: str | None = None,
+    error_message: str | None = None,
+    metadata_json: object = None,
+) -> Optional[dict]:
+    assignments: list[str] = []
+    params: list[object] = []
+    if status is not None:
+        assignments.append("status=?")
+        params.append((status or "pending").strip() or "pending")
+    if current_step is not None:
+        assignments.append("current_step=?")
+        params.append((current_step or "").strip() or "uploaded")
+    if chat_session_id is not None:
+        assignments.append("chat_session_id=?")
+        params.append((chat_session_id or "").strip())
+    if error_message is not None:
+        assignments.append("error_message=?")
+        params.append((error_message or "").strip())
+    if metadata_json is not None:
+        assignments.append("metadata_json=?")
+        params.append(
+            _normalize_json_storage_value(
+                metadata_json,
+                field_name="metadata_json",
+                default="{}",
+            )
+        )
+    if not assignments:
+        return get_wrong_question_ingestion_run(run_id)
+
+    with get_conn() as conn:
+        conn.execute(
+            f"""
+            UPDATE wrong_question_ingestion_runs
+            SET {", ".join(assignments)},
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (*params, (run_id or "").strip()),
+        )
+        refreshed = conn.execute(
+            "SELECT * FROM wrong_question_ingestion_runs WHERE id=?",
+            ((run_id or "").strip(),),
+        ).fetchone()
+    return dict(refreshed) if refreshed else None
+
+
+def list_wrong_question_ingestion_runs(
+    *,
+    organization_id: int,
+    source: str | None = None,
+    status: str | None = None,
+    class_id: int | None = None,
+    student_id: int | None = None,
+    teacher_user_id: int | None = None,
+    chat_session_id: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    normalized_limit = max(1, min(int(limit or 50), 200))
+    where_clauses = ["organization_id=?"]
+    params: list[object] = [int(organization_id or 0)]
+    if source is not None and str(source).strip():
+        where_clauses.append("source=?")
+        params.append(str(source).strip())
+    if status is not None and str(status).strip():
+        where_clauses.append("status=?")
+        params.append(str(status).strip())
+    if class_id is not None:
+        where_clauses.append("class_id=?")
+        params.append(int(class_id))
+    if student_id is not None:
+        where_clauses.append("student_id=?")
+        params.append(int(student_id))
+    if teacher_user_id is not None:
+        where_clauses.append("teacher_user_id=?")
+        params.append(int(teacher_user_id))
+    if chat_session_id is not None and str(chat_session_id).strip():
+        where_clauses.append("chat_session_id=?")
+        params.append(str(chat_session_id).strip())
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM wrong_question_ingestion_runs
+            WHERE {" AND ".join(where_clauses)}
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (*params, normalized_limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def create_wrong_question_asset(
+    *,
+    ingestion_run_id: str,
+    asset_role: str,
+    storage_path: str = "",
+    file_url: str = "",
+    mime_type: str = "",
+    page_number: int = 0,
+    width: int = 0,
+    height: int = 0,
+    metadata_json: object = None,
+) -> dict:
+    normalized_run_id = (ingestion_run_id or "").strip()
+    if not normalized_run_id:
+        raise ValueError("ingestion_run_id is required")
+    normalized_asset_role = (asset_role or "").strip()
+    if not normalized_asset_role:
+        raise ValueError("asset_role is required")
+    normalized_metadata_json = _normalize_json_storage_value(
+        metadata_json,
+        field_name="metadata_json",
+        default="{}",
+    )
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO wrong_question_assets (
+                ingestion_run_id, asset_role, storage_path, file_url, mime_type,
+                page_number, width, height, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_run_id,
+                normalized_asset_role,
+                (storage_path or "").strip(),
+                (file_url or "").strip(),
+                (mime_type or "").strip(),
+                int(page_number or 0),
+                int(width or 0),
+                int(height or 0),
+                normalized_metadata_json,
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wrong_question_assets WHERE id=last_insert_rowid()",
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def list_wrong_question_assets(ingestion_run_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_assets
+            WHERE ingestion_run_id=?
+            ORDER BY page_number ASC, id ASC
+            """,
+            ((ingestion_run_id or "").strip(),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _resolve_erased_wrong_question_image_url_for_record(
+    conn: sqlite3.Connection,
+    record: dict,
+) -> str:
+    for key in ("erased_image_url", "erased_image_url_snapshot", "clean_image_url"):
+        direct_url = str(record.get(key) or "").strip()
+        if direct_url:
+            return direct_url
+
+    ingestion_run_id = str(record.get("ingestion_run_id") or "").strip()
+    if not ingestion_run_id:
+        return ""
+
+    row = conn.execute(
+        """
+        SELECT file_url, storage_path
+        FROM wrong_question_assets
+        WHERE ingestion_run_id=?
+          AND asset_role IN ('erased_question_image', 'erased_upload', 'erased_image')
+        ORDER BY page_number ASC, id DESC
+        LIMIT 1
+        """,
+        (ingestion_run_id,),
+    ).fetchone()
+    if not row:
+        return ""
+    return str(row["file_url"] or row["storage_path"] or "").strip()
+
+
+def create_wrong_question_chat_session(
+    *,
+    session_id: str,
+    organization_id: int,
+    ingestion_run_id: str = "",
+    class_id: int | None = None,
+    student_id: int | None = None,
+    teacher_user_id: int | None = None,
+    status: str = "active",
+    current_stage: str = "ask_why_wrong",
+    summary_text: str = "",
+    metadata_json: object = None,
+) -> dict:
+    normalized_session_id = (session_id or "").strip()
+    if not normalized_session_id:
+        raise ValueError("session_id is required")
+    normalized_metadata_json = _normalize_json_storage_value(
+        metadata_json,
+        field_name="metadata_json",
+        default="{}",
+    )
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO wrong_question_chat_sessions (
+                id, organization_id, ingestion_run_id, class_id, student_id,
+                teacher_user_id, status, current_stage, summary_text, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_session_id,
+                int(organization_id or 0),
+                (ingestion_run_id or "").strip(),
+                int(class_id) if class_id is not None else None,
+                int(student_id) if student_id is not None else None,
+                int(teacher_user_id) if teacher_user_id is not None else None,
+                (status or "active").strip() or "active",
+                (current_stage or "ask_why_wrong").strip() or "ask_why_wrong",
+                (summary_text or "").strip(),
+                normalized_metadata_json,
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wrong_question_chat_sessions WHERE id=?",
+            (normalized_session_id,),
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def get_wrong_question_chat_session(session_id: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM wrong_question_chat_sessions WHERE id=?",
+            ((session_id or "").strip(),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_wrong_question_chat_session(
+    session_id: str,
+    *,
+    ingestion_run_id: str | None = None,
+    status: str | None = None,
+    current_stage: str | None = None,
+    summary_text: str | None = None,
+    metadata_json: object = None,
+) -> Optional[dict]:
+    assignments: list[str] = []
+    params: list[object] = []
+    if ingestion_run_id is not None:
+        assignments.append("ingestion_run_id=?")
+        params.append((ingestion_run_id or "").strip())
+    if status is not None:
+        assignments.append("status=?")
+        params.append((status or "active").strip() or "active")
+    if current_stage is not None:
+        assignments.append("current_stage=?")
+        params.append((current_stage or "ask_why_wrong").strip() or "ask_why_wrong")
+    if summary_text is not None:
+        assignments.append("summary_text=?")
+        params.append((summary_text or "").strip())
+    if metadata_json is not None:
+        assignments.append("metadata_json=?")
+        params.append(
+            _normalize_json_storage_value(
+                metadata_json,
+                field_name="metadata_json",
+                default="{}",
+            )
+        )
+    if not assignments:
+        return get_wrong_question_chat_session(session_id)
+
+    with get_conn() as conn:
+        conn.execute(
+            f"""
+            UPDATE wrong_question_chat_sessions
+            SET {", ".join(assignments)},
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (*params, (session_id or "").strip()),
+        )
+        refreshed = conn.execute(
+            "SELECT * FROM wrong_question_chat_sessions WHERE id=?",
+            ((session_id or "").strip(),),
+        ).fetchone()
+    return dict(refreshed) if refreshed else None
+
+
+def create_wrong_question_chat_message(
+    *,
+    session_id: str,
+    role: str,
+    content: str,
+    stage: str = "",
+    metadata_json: object = None,
+) -> dict:
+    normalized_session_id = (session_id or "").strip()
+    if not normalized_session_id:
+        raise ValueError("session_id is required")
+    normalized_role = (role or "").strip().lower()
+    if normalized_role not in {"user", "assistant", "system"}:
+        raise ValueError("role must be user, assistant or system")
+    normalized_content = (content or "").strip()
+    if not normalized_content:
+        raise ValueError("content is required")
+    normalized_metadata_json = _normalize_json_storage_value(
+        metadata_json,
+        field_name="metadata_json",
+        default="{}",
+    )
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO wrong_question_chat_messages (
+                session_id, role, stage, content, metadata_json
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                normalized_session_id,
+                normalized_role,
+                (stage or "").strip(),
+                normalized_content,
+                normalized_metadata_json,
+            ),
+        )
+        created = conn.execute(
+            "SELECT * FROM wrong_question_chat_messages WHERE id=last_insert_rowid()",
+        ).fetchone()
+    return dict(created) if created else {}
+
+
+def list_wrong_question_chat_messages(session_id: str) -> list[dict]:
+    normalized_session_id = (session_id or "").strip()
+    if not normalized_session_id:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM wrong_question_chat_messages
+            WHERE session_id=?
+            ORDER BY id ASC
+            """,
+            (normalized_session_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _normalize_wrong_question_submission_fields(
+    *,
     image_url: str,
     child_raw_reason_text: str = "",
     child_reason_transcript: str = "",
@@ -7445,6 +8036,14 @@ def create_wechat_wrong_question_submission(
     diagram_spec_json: str = "",
     recognition_error: str = "",
     student_library_pdf_path: str = "",
+    ingestion_run_id: str = "",
+    chat_session_id: str = "",
+    question_structured_json: object = None,
+    knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
+    generation_metadata_json: object = None,
+    needs_teacher_confirmation: bool = False,
+    confirmation_reasons_json: object = None,
 ) -> dict:
     normalized_image_url = (image_url or "").strip()
     if not normalized_image_url:
@@ -7480,67 +8079,604 @@ def create_wechat_wrong_question_submission(
                     normalized_diagram_type = str(parsed_diagram_spec.get("type") or "").strip()
             else:
                 normalized_diagram_spec_json = ""
+    return {
+        "image_url": normalized_image_url,
+        "child_raw_reason_text": (child_raw_reason_text or "").strip(),
+        "child_reason_transcript": (child_reason_transcript or child_raw_reason_text or "").strip(),
+        "child_reason_input_mode": normalized_reason_input_mode,
+        "primary_error_type": (primary_error_type or "").strip(),
+        "secondary_error_summary": (secondary_error_summary or "").strip(),
+        "child_reason_core_issue": (child_reason_core_issue or "").strip(),
+        "child_reason_key_omission": (child_reason_key_omission or "").strip(),
+        "child_reason_next_step": (child_reason_next_step or "").strip(),
+        "topic_category": normalized_topic_category,
+        "recognition_status": (recognition_status or "pending").strip() or "pending",
+        "is_geometry": 1 if is_geometry else 0,
+        "image_rotation_degrees": normalized_image_rotation_degrees,
+        "question_text": (question_text or "").strip(),
+        "question_text_source": (question_text_source or "ai").strip() or "ai",
+        "diagram_type": normalized_diagram_type,
+        "diagram_spec_json": normalized_diagram_spec_json,
+        "recognition_error": (recognition_error or "").strip(),
+        "student_library_pdf_path": (student_library_pdf_path or "").strip(),
+        "ingestion_run_id": (ingestion_run_id or "").strip(),
+        "chat_session_id": (chat_session_id or "").strip(),
+        "question_structured_json": _normalize_json_storage_value(
+            question_structured_json,
+            field_name="question_structured_json",
+            default="",
+        ),
+        "knowledge_tags_json": _normalize_json_storage_value(
+            knowledge_tags_json,
+            field_name="knowledge_tags_json",
+            default="[]",
+        ),
+        "reflection_summary_json": _normalize_json_storage_value(
+            reflection_summary_json,
+            field_name="reflection_summary_json",
+            default="{}",
+        ),
+        "generation_metadata_json": _normalize_json_storage_value(
+            generation_metadata_json,
+            field_name="generation_metadata_json",
+            default="{}",
+        ),
+        "mastery_tracking_json": "{}",
+        "needs_teacher_confirmation": 1 if needs_teacher_confirmation else 0,
+        "confirmation_reasons_json": _normalize_json_storage_value(
+            confirmation_reasons_json,
+            field_name="confirmation_reasons_json",
+            default="[]",
+        ),
+    }
+
+
+def _create_wrong_question_submission_record(
+    conn: sqlite3.Connection,
+    *,
+    source: str,
+    organization_id: int,
+    parent_wechat_account_id: int | None,
+    binding_id: int | None,
+    class_id: int,
+    student_id: int,
+    teacher_user_id: int,
+    normalized_payload: dict,
+) -> dict:
+    source_prefix = {
+        "wechat_mp": "wechat",
+        "workspace": "workspace",
+        "ai_chat": "aichat",
+    }.get(source, "wq")
+    record_id = f"{source_prefix}-{secrets.token_hex(8)}"
+    conn.execute(
+        """
+        INSERT INTO wrong_question_submissions (
+            id, organization_id, source, parent_wechat_account_id, binding_id,
+            class_id, student_id, teacher_user_id, image_url,
+            child_raw_reason_text, child_reason_transcript, child_reason_input_mode,
+            primary_error_type, secondary_error_summary,
+            child_reason_core_issue, child_reason_key_omission, child_reason_next_step,
+            topic_category, archive_status, status,
+            recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
+            question_text_source, diagram_type, diagram_spec_json, recognition_error, student_library_pdf_path,
+            ingestion_run_id, chat_session_id, question_structured_json, knowledge_tags_json, reflection_summary_json, generation_metadata_json, mastery_tracking_json,
+            needs_teacher_confirmation, confirmation_reasons_json,
+            confirmation_status, confirmation_reviewed_by, confirmation_reviewed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            record_id,
+            int(organization_id or 0),
+            source,
+            int(parent_wechat_account_id) if parent_wechat_account_id is not None else None,
+            int(binding_id) if binding_id is not None else None,
+            int(class_id or 0),
+            int(student_id or 0),
+            int(teacher_user_id or 0),
+            normalized_payload["image_url"],
+            normalized_payload["child_raw_reason_text"],
+            normalized_payload["child_reason_transcript"],
+            normalized_payload["child_reason_input_mode"],
+            normalized_payload["primary_error_type"],
+            normalized_payload["secondary_error_summary"],
+            normalized_payload["child_reason_core_issue"],
+            normalized_payload["child_reason_key_omission"],
+            normalized_payload["child_reason_next_step"],
+            normalized_payload["topic_category"],
+            normalized_payload["recognition_status"],
+            normalized_payload["is_geometry"],
+            normalized_payload["image_rotation_degrees"],
+            normalized_payload["question_text"],
+            normalized_payload["question_text_source"],
+            normalized_payload["diagram_type"],
+            normalized_payload["diagram_spec_json"],
+            normalized_payload["recognition_error"],
+            normalized_payload["student_library_pdf_path"],
+            normalized_payload["ingestion_run_id"],
+            normalized_payload["chat_session_id"],
+            normalized_payload["question_structured_json"],
+            normalized_payload["knowledge_tags_json"],
+            normalized_payload["reflection_summary_json"],
+            normalized_payload["generation_metadata_json"],
+            normalized_payload["mastery_tracking_json"],
+            normalized_payload["needs_teacher_confirmation"],
+            normalized_payload["confirmation_reasons_json"],
+            "pending" if normalized_payload["needs_teacher_confirmation"] else "not_required",
+            None,
+            "",
+        ),
+    )
+    created = conn.execute(
+        "SELECT * FROM wrong_question_submissions WHERE id=?",
+        (record_id,),
+    ).fetchone()
+    return dict(created) if created else {}
+
+
+def create_wrong_question_submission(
+    *,
+    source: str,
+    image_url: str,
+    organization_id: int | None = None,
+    parent_wechat_account_id: int | None = None,
+    binding_id: int | None = None,
+    class_id: int | None = None,
+    student_id: int | None = None,
+    teacher_user_id: int | None = None,
+    child_raw_reason_text: str = "",
+    child_reason_transcript: str = "",
+    child_reason_input_mode: str = "text",
+    primary_error_type: str = "",
+    secondary_error_summary: str = "",
+    child_reason_core_issue: str = "",
+    child_reason_key_omission: str = "",
+    child_reason_next_step: str = "",
+    topic_category: str = PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED,
+    recognition_status: str = "pending",
+    is_geometry: bool = False,
+    image_rotation_degrees: int = 0,
+    question_text: str = "",
+    question_text_source: str = "ai",
+    diagram_type: str = "",
+    diagram_spec: dict | None = None,
+    diagram_spec_json: str = "",
+    recognition_error: str = "",
+    student_library_pdf_path: str = "",
+    ingestion_run_id: str = "",
+    chat_session_id: str = "",
+    question_structured_json: object = None,
+    knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
+    generation_metadata_json: object = None,
+    needs_teacher_confirmation: bool = False,
+    confirmation_reasons_json: object = None,
+) -> dict:
+    normalized_source = (source or "wechat_mp").strip() or "wechat_mp"
+    normalized_payload = _normalize_wrong_question_submission_fields(
+        image_url=image_url,
+        child_raw_reason_text=child_raw_reason_text,
+        child_reason_transcript=child_reason_transcript,
+        child_reason_input_mode=child_reason_input_mode,
+        primary_error_type=primary_error_type,
+        secondary_error_summary=secondary_error_summary,
+        child_reason_core_issue=child_reason_core_issue,
+        child_reason_key_omission=child_reason_key_omission,
+        child_reason_next_step=child_reason_next_step,
+        topic_category=topic_category,
+        recognition_status=recognition_status,
+        is_geometry=is_geometry,
+        image_rotation_degrees=image_rotation_degrees,
+        question_text=question_text,
+        question_text_source=question_text_source,
+        diagram_type=diagram_type,
+        diagram_spec=diagram_spec,
+        diagram_spec_json=diagram_spec_json,
+        recognition_error=recognition_error,
+        student_library_pdf_path=student_library_pdf_path,
+        ingestion_run_id=ingestion_run_id,
+        chat_session_id=chat_session_id,
+        question_structured_json=question_structured_json,
+        knowledge_tags_json=knowledge_tags_json,
+        reflection_summary_json=reflection_summary_json,
+        generation_metadata_json=generation_metadata_json,
+        needs_teacher_confirmation=needs_teacher_confirmation,
+        confirmation_reasons_json=confirmation_reasons_json,
+    )
 
     with get_conn() as conn:
-        binding_row = conn.execute(
-            """
-            SELECT *
-            FROM parent_student_bindings
-            WHERE id=? AND status='active'
-            """,
-            (binding_id,),
-        ).fetchone()
-        if not binding_row:
-            raise LookupError("binding not found")
+        if normalized_source == "wechat_mp":
+            if binding_id is None:
+                raise ValueError("binding_id is required for wechat_mp source")
+            binding_row = conn.execute(
+                """
+                SELECT *
+                FROM parent_student_bindings
+                WHERE id=? AND status='active'
+                """,
+                (binding_id,),
+            ).fetchone()
+            if not binding_row:
+                raise LookupError("binding not found")
+            return _create_wrong_question_submission_record(
+                conn,
+                source=normalized_source,
+                organization_id=int(binding_row["organization_id"]),
+                parent_wechat_account_id=int(binding_row["parent_wechat_account_id"]),
+                binding_id=int(binding_row["id"]),
+                class_id=int(binding_row["class_id"]),
+                student_id=int(binding_row["student_id"]),
+                teacher_user_id=int(binding_row["teacher_user_id"]),
+                normalized_payload=normalized_payload,
+            )
 
-        record_id = f"wechat-{secrets.token_hex(8)}"
+        required_field_values = {
+            "organization_id": organization_id,
+            "class_id": class_id,
+            "student_id": student_id,
+            "teacher_user_id": teacher_user_id,
+        }
+        missing_fields = [field_name for field_name, field_value in required_field_values.items() if field_value is None]
+        if missing_fields:
+            raise ValueError(f"missing required fields for {normalized_source} source: {', '.join(missing_fields)}")
+        return _create_wrong_question_submission_record(
+            conn,
+            source=normalized_source,
+            organization_id=int(organization_id or 0),
+            parent_wechat_account_id=parent_wechat_account_id,
+            binding_id=binding_id,
+            class_id=int(class_id or 0),
+            student_id=int(student_id or 0),
+            teacher_user_id=int(teacher_user_id or 0),
+            normalized_payload=normalized_payload,
+        )
+
+
+def create_wechat_wrong_question_submission(
+    *,
+    binding_id: int,
+    image_url: str,
+    child_raw_reason_text: str = "",
+    child_reason_transcript: str = "",
+    child_reason_input_mode: str = "text",
+    primary_error_type: str = "",
+    secondary_error_summary: str = "",
+    child_reason_core_issue: str = "",
+    child_reason_key_omission: str = "",
+    child_reason_next_step: str = "",
+    topic_category: str = PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED,
+    recognition_status: str = "pending",
+    is_geometry: bool = False,
+    image_rotation_degrees: int = 0,
+    question_text: str = "",
+    question_text_source: str = "ai",
+    diagram_type: str = "",
+    diagram_spec: dict | None = None,
+    diagram_spec_json: str = "",
+    recognition_error: str = "",
+    student_library_pdf_path: str = "",
+    ingestion_run_id: str = "",
+    chat_session_id: str = "",
+    question_structured_json: object = None,
+    knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
+    generation_metadata_json: object = None,
+    needs_teacher_confirmation: bool = False,
+    confirmation_reasons_json: object = None,
+) -> dict:
+    return create_wrong_question_submission(
+        source="wechat_mp",
+        binding_id=binding_id,
+        image_url=image_url,
+        child_raw_reason_text=child_raw_reason_text,
+        child_reason_transcript=child_reason_transcript,
+        child_reason_input_mode=child_reason_input_mode,
+        primary_error_type=primary_error_type,
+        secondary_error_summary=secondary_error_summary,
+        child_reason_core_issue=child_reason_core_issue,
+        child_reason_key_omission=child_reason_key_omission,
+        child_reason_next_step=child_reason_next_step,
+        topic_category=topic_category,
+        recognition_status=recognition_status,
+        is_geometry=is_geometry,
+        image_rotation_degrees=image_rotation_degrees,
+        question_text=question_text,
+        question_text_source=question_text_source,
+        diagram_type=diagram_type,
+        diagram_spec=diagram_spec,
+        diagram_spec_json=diagram_spec_json,
+        recognition_error=recognition_error,
+        student_library_pdf_path=student_library_pdf_path,
+        ingestion_run_id=ingestion_run_id,
+        chat_session_id=chat_session_id,
+        question_structured_json=question_structured_json,
+        knowledge_tags_json=knowledge_tags_json,
+        reflection_summary_json=reflection_summary_json,
+        generation_metadata_json=generation_metadata_json,
+        needs_teacher_confirmation=needs_teacher_confirmation,
+        confirmation_reasons_json=confirmation_reasons_json,
+    )
+
+
+def update_wrong_question_submission_from_chat_archive(
+    record_id: str,
+    *,
+    chat_session_id: str | None = None,
+    child_raw_reason_text: str | None = None,
+    child_reason_transcript: str | None = None,
+    child_reason_core_issue: str | None = None,
+    child_reason_next_step: str | None = None,
+    topic_category: str | None = None,
+    question_text: str | None = None,
+    question_text_source: str | None = None,
+    question_structured_json: object = None,
+    knowledge_tags_json: object = None,
+    reflection_summary_json: object = None,
+    generation_metadata_json: object = None,
+    needs_teacher_confirmation: bool | None = None,
+    confirmation_reasons_json: object = None,
+    preserve_existing_confirmation_review: bool = False,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        if not row:
+            return None
+
+        next_chat_session_id = (
+            str(chat_session_id).strip()
+            if chat_session_id is not None
+            else str(row["chat_session_id"] or "").strip()
+        )
+        next_child_raw_reason_text = (
+            str(child_raw_reason_text).strip()
+            if child_raw_reason_text is not None
+            else str(row["child_raw_reason_text"] or "").strip()
+        )
+        next_child_reason_transcript = (
+            str(child_reason_transcript).strip()
+            if child_reason_transcript is not None
+            else str(row["child_reason_transcript"] or "").strip()
+        )
+        next_child_reason_core_issue = (
+            str(child_reason_core_issue).strip()
+            if child_reason_core_issue is not None
+            else str(row["child_reason_core_issue"] or "").strip()
+        )
+        next_child_reason_next_step = (
+            str(child_reason_next_step).strip()
+            if child_reason_next_step is not None
+            else str(row["child_reason_next_step"] or "").strip()
+        )
+        next_topic_category = normalize_primary_wrong_question_topic_category(
+            topic_category if topic_category is not None else str(row["topic_category"] or "")
+        )
+        next_question_text = (
+            str(question_text).strip()
+            if question_text is not None
+            else str(row["question_text"] or "").strip()
+        )
+        next_question_text_source = (
+            str(question_text_source).strip()
+            if question_text_source is not None
+            else str(row["question_text_source"] or "").strip()
+        ) or "ai"
+        next_question_structured_json = (
+            _normalize_json_storage_value(
+                question_structured_json,
+                field_name="question_structured_json",
+                default="",
+            )
+            if question_structured_json is not None
+            else str(row["question_structured_json"] or "")
+        )
+        next_knowledge_tags_json = (
+            _normalize_json_storage_value(
+                knowledge_tags_json,
+                field_name="knowledge_tags_json",
+                default="[]",
+            )
+            if knowledge_tags_json is not None
+            else str(row["knowledge_tags_json"] or "[]")
+        )
+        next_reflection_summary_json = (
+            _normalize_json_storage_value(
+                reflection_summary_json,
+                field_name="reflection_summary_json",
+                default="{}",
+            )
+            if reflection_summary_json is not None
+            else str(row["reflection_summary_json"] or "{}")
+        )
+        next_generation_metadata_json = (
+            _normalize_json_storage_value(
+                generation_metadata_json,
+                field_name="generation_metadata_json",
+                default="{}",
+            )
+            if generation_metadata_json is not None
+            else str(row["generation_metadata_json"] or "{}")
+        )
+        next_confirmation_state = (
+            bool(needs_teacher_confirmation)
+            if needs_teacher_confirmation is not None
+            else bool(row["needs_teacher_confirmation"])
+        )
+        next_confirmation_reasons_json = (
+            _normalize_json_storage_value(
+                confirmation_reasons_json,
+                field_name="confirmation_reasons_json",
+                default="[]",
+            )
+            if confirmation_reasons_json is not None
+            else str(row["confirmation_reasons_json"] or "[]")
+        )
+        if not next_confirmation_state:
+            next_confirmation_reasons_json = "[]"
+
+        next_confirmation_status = str(row["confirmation_status"] or "").strip()
+        if next_confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
+            if bool(row["needs_teacher_confirmation"]):
+                next_confirmation_status = "pending"
+            elif row["confirmation_reviewed_by"] is not None or str(row["confirmation_reviewed_at"] or "").strip():
+                next_confirmation_status = "confirmed"
+            else:
+                next_confirmation_status = "not_required"
+        next_confirmation_reviewed_by = row["confirmation_reviewed_by"]
+        next_confirmation_reviewed_at = str(row["confirmation_reviewed_at"] or "").strip()
+
+        if next_confirmation_state:
+            next_confirmation_status = "pending"
+            next_confirmation_reviewed_by = None
+            next_confirmation_reviewed_at = ""
+        elif preserve_existing_confirmation_review and next_confirmation_status in {"confirmed", "not_required"}:
+            next_confirmation_status = next_confirmation_status
+        else:
+            next_confirmation_status = "not_required"
+            next_confirmation_reviewed_by = None
+            next_confirmation_reviewed_at = ""
+
         conn.execute(
             """
-            INSERT INTO wrong_question_submissions (
-                id, organization_id, source, parent_wechat_account_id, binding_id,
-                class_id, student_id, teacher_user_id, image_url,
-                child_raw_reason_text, child_reason_transcript, child_reason_input_mode,
-                primary_error_type, secondary_error_summary,
-                child_reason_core_issue, child_reason_key_omission, child_reason_next_step,
-                topic_category, archive_status, status,
-                recognition_status, is_geometry, image_rotation_degrees, question_text, question_text_edited,
-                question_text_source, diagram_type, diagram_spec_json, recognition_error, student_library_pdf_path
-            ) VALUES (?, ?, 'wechat_mp', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+            UPDATE wrong_question_submissions
+            SET chat_session_id=?,
+                child_raw_reason_text=?,
+                child_reason_transcript=?,
+                child_reason_core_issue=?,
+                child_reason_next_step=?,
+                topic_category=?,
+                question_text=?,
+                question_text_source=?,
+                question_structured_json=?,
+                knowledge_tags_json=?,
+                reflection_summary_json=?,
+                generation_metadata_json=?,
+                needs_teacher_confirmation=?,
+                confirmation_reasons_json=?,
+                confirmation_status=?,
+                confirmation_reviewed_by=?,
+                confirmation_reviewed_at=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
             """,
             (
+                next_chat_session_id,
+                next_child_raw_reason_text,
+                next_child_reason_transcript,
+                next_child_reason_core_issue,
+                next_child_reason_next_step,
+                next_topic_category,
+                next_question_text,
+                next_question_text_source,
+                next_question_structured_json,
+                next_knowledge_tags_json,
+                next_reflection_summary_json,
+                next_generation_metadata_json,
+                1 if next_confirmation_state else 0,
+                next_confirmation_reasons_json,
+                next_confirmation_status,
+                next_confirmation_reviewed_by,
+                next_confirmation_reviewed_at,
                 record_id,
-                binding_row["organization_id"],
-                binding_row["parent_wechat_account_id"],
-                binding_id,
-                binding_row["class_id"],
-                binding_row["student_id"],
-                binding_row["teacher_user_id"],
-                normalized_image_url,
-                (child_raw_reason_text or "").strip(),
-                (child_reason_transcript or child_raw_reason_text or "").strip(),
-                normalized_reason_input_mode,
-                (primary_error_type or "").strip(),
-                (secondary_error_summary or "").strip(),
-                (child_reason_core_issue or "").strip(),
-                (child_reason_key_omission or "").strip(),
-                (child_reason_next_step or "").strip(),
-                normalized_topic_category,
-                (recognition_status or "pending").strip() or "pending",
-                1 if is_geometry else 0,
-                normalized_image_rotation_degrees,
-                (question_text or "").strip(),
-                (question_text_source or "ai").strip() or "ai",
-                normalized_diagram_type,
-                normalized_diagram_spec_json,
-                (recognition_error or "").strip(),
-                (student_library_pdf_path or "").strip(),
             ),
         )
-        created = conn.execute(
-            "SELECT * FROM wrong_question_submissions WHERE id=?",
-            (record_id,),
-        ).fetchone()
-    return dict(created) if created else {}
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
+
+
+WRONG_QUESTION_MASTERY_FOLLOWUP_OUTCOMES = {
+    "still_confused",
+    "needs_another_practice",
+    "likely_mastered",
+}
+WRONG_QUESTION_MASTERY_TRACKING_FOLLOWUP_KEYS = (
+    "followup_count",
+    "latest_followup_session_id",
+    "latest_followup_outcome",
+    "latest_followup_completed_at",
+    "latest_followup_summary",
+)
+
+
+def _normalize_wrong_question_mastery_followup_outcome(value: object) -> str:
+    normalized = str(value or "").strip()
+    return normalized if normalized in WRONG_QUESTION_MASTERY_FOLLOWUP_OUTCOMES else ""
+
+
+def _load_wrong_question_mastery_tracking_dict(raw_tracking: object) -> dict:
+    if isinstance(raw_tracking, dict):
+        return dict(raw_tracking)
+    if isinstance(raw_tracking, str):
+        try:
+            parsed = json.loads(raw_tracking or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _preserve_wrong_question_mastery_followup_tracking(existing_tracking: dict) -> dict:
+    preserved: dict[str, object] = {}
+    if not isinstance(existing_tracking, dict):
+        return preserved
+    for key in WRONG_QUESTION_MASTERY_TRACKING_FOLLOWUP_KEYS:
+        if key in existing_tracking:
+            preserved[key] = existing_tracking[key]
+    return preserved
+
+
+def update_wrong_question_submission_mastery_followup(
+    record_id: str,
+    *,
+    session_id: str,
+    outcome: str,
+    summary_text: str,
+) -> Optional[dict]:
+    normalized_record_id = str(record_id or "").strip()
+    normalized_session_id = str(session_id or "").strip()
+    normalized_outcome = _normalize_wrong_question_mastery_followup_outcome(outcome)
+    if not normalized_record_id or not normalized_session_id or not normalized_outcome:
+        return None
+
+    with get_conn() as conn:
+        row = _fetch_wechat_wrong_question_submission_row_by_id(conn, normalized_record_id)
+        if not row:
+            return None
+
+        tracking = _load_wrong_question_mastery_tracking_dict(row["mastery_tracking_json"])
+        previous_session_id = str(tracking.get("latest_followup_session_id") or "").strip()
+        try:
+            followup_count = int(tracking.get("followup_count") or 0)
+        except (TypeError, ValueError):
+            followup_count = 0
+        if previous_session_id != normalized_session_id:
+            followup_count += 1
+        elif followup_count <= 0:
+            followup_count = 1
+
+        tracking["followup_count"] = followup_count
+        tracking["latest_followup_session_id"] = normalized_session_id
+        tracking["latest_followup_outcome"] = normalized_outcome
+        tracking["latest_followup_completed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        normalized_summary_text = str(summary_text or "").strip()
+        if normalized_summary_text:
+            tracking["latest_followup_summary"] = normalized_summary_text
+        else:
+            tracking.pop("latest_followup_summary", None)
+
+        conn.execute(
+            """
+            UPDATE wrong_question_submissions
+            SET mastery_tracking_json=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                json.dumps(tracking, ensure_ascii=False, separators=(",", ":")),
+                normalized_record_id,
+            ),
+        )
+        refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, normalized_record_id)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def update_wechat_wrong_question_question_text(
@@ -7570,10 +8706,203 @@ def update_wechat_wrong_question_question_text(
             ),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
-def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> Optional[dict]:
+def _load_wrong_question_mastery_repeat_signal_counts(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+) -> dict:
+    topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
+    if topic_category == PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED:
+        topic_category = ""
+    error_type = str(row["primary_error_type"] or "").strip()
+    counts = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN ?<>'' AND peer.topic_category=? THEN 1 ELSE 0 END) AS same_topic_active_count,
+            SUM(CASE WHEN ?<>'' AND peer.primary_error_type=? THEN 1 ELSE 0 END) AS same_error_active_count,
+            SUM(
+                CASE
+                    WHEN ((?<>'' AND peer.topic_category=?) OR (?<>'' AND peer.primary_error_type=?))
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS repeated_active_count
+        FROM wrong_question_submissions peer
+        WHERE peer.student_id=?
+          AND peer.id<>?
+          AND peer.archive_status='active'
+          AND peer.recognition_status='recognized'
+        """,
+        (
+            topic_category,
+            topic_category,
+            error_type,
+            error_type,
+            topic_category,
+            topic_category,
+            error_type,
+            error_type,
+            int(row["student_id"] or 0),
+            str(row["id"] or "").strip(),
+        ),
+    ).fetchone()
+    return {
+        "same_topic_active_count": int((counts["same_topic_active_count"] if counts else 0) or 0),
+        "same_error_active_count": int((counts["same_error_active_count"] if counts else 0) or 0),
+        "repeated_active_count": int((counts["repeated_active_count"] if counts else 0) or 0),
+    }
+
+
+def _build_wrong_question_mastery_assessment(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    mastery_tracking: dict,
+    confirmation_status: str,
+) -> dict:
+    tracking = mastery_tracking if isinstance(mastery_tracking, dict) else {}
+    repeat_counts = _load_wrong_question_mastery_repeat_signal_counts(conn, row)
+    practice_sheet_count = int(tracking.get("practice_sheet_count") or 0)
+    latest_practice_status = str(tracking.get("latest_practice_status") or "").strip()
+    latest_practice_created_at = str(tracking.get("latest_practice_created_at") or "").strip()
+    followup_count = int(tracking.get("followup_count") or 0)
+    latest_followup_outcome = _normalize_wrong_question_mastery_followup_outcome(
+        tracking.get("latest_followup_outcome")
+    )
+    latest_followup_completed_at = str(tracking.get("latest_followup_completed_at") or "").strip()
+    is_manually_mastered = str(row["archive_status"] or "").strip() == "archived"
+    followup_is_current = bool(
+        latest_followup_outcome
+        and (
+            not latest_practice_created_at
+            or latest_followup_completed_at >= latest_practice_created_at
+        )
+    )
+
+    status = "monitor"
+    label = "继续跟进"
+    score = 2
+    suggested_action = "follow_up"
+
+    if confirmation_status == "returned":
+        status = "returned_for_rework"
+        label = "待补充"
+        score = 0
+        suggested_action = "continue_rework_chat"
+    elif confirmation_status == "pending":
+        status = "needs_teacher_review"
+        label = "待老师确认"
+        score = 0
+        suggested_action = "teacher_review"
+    elif is_manually_mastered and repeat_counts["repeated_active_count"] > 0:
+        status = "relapsed"
+        label = "疑似复发"
+        score = 1
+        suggested_action = "follow_up"
+    elif is_manually_mastered:
+        status = "mastered"
+        label = "已掌握"
+        score = 4
+        suggested_action = "monitor"
+    elif followup_is_current and latest_followup_outcome == "still_confused":
+        status = "still_confused"
+        label = "仍未掌握"
+        score = 1
+        suggested_action = "continue_follow_up"
+    elif followup_is_current and latest_followup_outcome == "needs_another_practice":
+        status = "needs_practice"
+        label = "需要再练"
+        score = 1
+        suggested_action = "create_practice"
+    elif followup_is_current and latest_followup_outcome == "likely_mastered":
+        status = "likely_mastered"
+        label = "大概率已掌握"
+        score = 3
+        suggested_action = "review_mastery"
+    elif latest_practice_status in {"pending", "generating"}:
+        status = "practice_in_progress"
+        label = "练习生成中"
+        score = 1
+        suggested_action = "wait_practice"
+    elif latest_practice_status == "failed":
+        status = "needs_practice"
+        label = "需重新出练习"
+        score = 1
+        suggested_action = "retry_practice"
+    elif practice_sheet_count <= 0:
+        status = "needs_practice"
+        label = "需进入再练"
+        score = 1
+        suggested_action = "create_practice"
+    elif repeat_counts["repeated_active_count"] > 0:
+        status = "watch"
+        label = "仍需观察"
+        score = 2
+        suggested_action = "follow_up"
+    elif latest_practice_status in {"ready", "partial_failed"}:
+        status = "ready_for_mastery_review"
+        label = "待确认是否掌握"
+        score = 3
+        suggested_action = "review_mastery"
+
+    evidence: list[str] = []
+    if confirmation_status == "returned":
+        evidence.append("老师已退回，需先补充后再确认。")
+    elif confirmation_status == "pending":
+        evidence.append("当前仍在老师复核队列中。")
+
+    if is_manually_mastered:
+        evidence.append("老师已手动标记为已掌握。")
+
+    if practice_sheet_count > 0:
+        evidence.append(f"已进入 {practice_sheet_count} 次再练链路。")
+    else:
+        evidence.append("还没有进入再练链路。")
+
+    if followup_count > 0:
+        evidence.append(f"已完成 {followup_count} 次掌握追问。")
+
+    if latest_practice_status in {"ready", "partial_failed"}:
+        evidence.append("最近一次再练已生成，可结合完成情况判断是否掌握。")
+    elif latest_practice_status in {"pending", "generating"}:
+        evidence.append("最近一次再练仍在生成中。")
+    elif latest_practice_status == "failed":
+        evidence.append("最近一次再练生成失败，需要重新发起。")
+
+    if latest_followup_outcome == "still_confused":
+        evidence.append("最近一次掌握追问结论：学生仍然卡在关键步骤。")
+    elif latest_followup_outcome == "needs_another_practice":
+        evidence.append("最近一次掌握追问结论：需要再来一轮同类练习。")
+    elif latest_followup_outcome == "likely_mastered":
+        evidence.append("最近一次掌握追问结论：学生大概率已经掌握。")
+
+    if repeat_counts["same_topic_active_count"] > 0:
+        evidence.append(f"同专题未掌握错题还有 {repeat_counts['same_topic_active_count']} 条。")
+    if repeat_counts["same_error_active_count"] > 0:
+        evidence.append(f"同错因未掌握错题还有 {repeat_counts['same_error_active_count']} 条。")
+
+    return {
+        "status": status,
+        "label": label,
+        "score": score,
+        "suggested_action": suggested_action,
+        "practice_sheet_count": practice_sheet_count,
+        "latest_practice_status": latest_practice_status,
+        "followup_count": followup_count,
+        "latest_followup_outcome": latest_followup_outcome,
+        "same_topic_active_count": repeat_counts["same_topic_active_count"],
+        "same_error_active_count": repeat_counts["same_error_active_count"],
+        "repeated_active_count": repeat_counts["repeated_active_count"],
+        "manual_is_mastered": is_manually_mastered,
+        "evidence": evidence,
+    }
+
+
+def _serialize_wechat_wrong_question_submission_row(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row | None,
+) -> Optional[dict]:
     if not row:
         return None
 
@@ -7594,6 +8923,97 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
     except json.JSONDecodeError:
         diagram_spec = None
     payload["diagram_spec"] = diagram_spec if isinstance(diagram_spec, dict) else None
+    try:
+        question_structured = json.loads(str(row["question_structured_json"] or "")) if row["question_structured_json"] else None
+    except json.JSONDecodeError:
+        question_structured = None
+    payload["question_structured"] = question_structured if isinstance(question_structured, dict) else None
+    try:
+        knowledge_tags = json.loads(str(row["knowledge_tags_json"] or "[]"))
+    except json.JSONDecodeError:
+        knowledge_tags = []
+    normalized_knowledge_tags = [
+        str(item or "").strip()
+        for item in (knowledge_tags if isinstance(knowledge_tags, list) else [])
+        if str(item or "").strip()
+    ]
+    try:
+        confirmation_reasons = json.loads(str(row["confirmation_reasons_json"] or "[]"))
+    except json.JSONDecodeError:
+        confirmation_reasons = []
+    normalized_confirmation_reasons = [
+        str(item or "").strip()
+        for item in (confirmation_reasons if isinstance(confirmation_reasons, list) else [])
+        if str(item or "").strip()
+    ]
+    try:
+        reflection_summary = json.loads(str(row["reflection_summary_json"] or "{}"))
+    except json.JSONDecodeError:
+        reflection_summary = {}
+    if not isinstance(reflection_summary, dict):
+        reflection_summary = {}
+    if not reflection_summary:
+        fallback_reflection_summary = {}
+        child_raw_reason_text = str(row["child_raw_reason_text"] or "").strip()
+        child_reason_core_issue = str(row["child_reason_core_issue"] or "").strip()
+        child_reason_next_step = str(row["child_reason_next_step"] or "").strip()
+        child_reason_transcript = str(row["child_reason_transcript"] or "").strip()
+        if child_raw_reason_text:
+            fallback_reflection_summary["why_wrong"] = child_raw_reason_text
+        if child_reason_core_issue:
+            fallback_reflection_summary["unknown_step"] = child_reason_core_issue
+        if child_reason_next_step:
+            fallback_reflection_summary["help_preference"] = child_reason_next_step
+        if child_reason_transcript:
+            fallback_reflection_summary["summary_text"] = child_reason_transcript
+        answered_stages = []
+        if child_raw_reason_text:
+            answered_stages.append("ask_why_wrong")
+        if child_reason_core_issue:
+            answered_stages.append("ask_unknown_step")
+        if child_reason_next_step:
+            answered_stages.append("ask_help_mode")
+        if answered_stages:
+            fallback_reflection_summary["answered_stages"] = answered_stages
+        if fallback_reflection_summary:
+            fallback_reflection_summary["mode"] = "archive_reflection"
+            fallback_reflection_summary["schema_version"] = "wrong_question_reflection_summary.v1"
+            reflection_summary = fallback_reflection_summary
+    try:
+        generation_metadata = json.loads(str(row["generation_metadata_json"] or "{}"))
+    except json.JSONDecodeError:
+        generation_metadata = {}
+    try:
+        mastery_tracking = json.loads(str(row["mastery_tracking_json"] or "{}"))
+    except json.JSONDecodeError:
+        mastery_tracking = {}
+    confirmation_status = str(row["confirmation_status"] or "").strip()
+    if confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
+        if row["needs_teacher_confirmation"]:
+            confirmation_status = "pending"
+        elif row["confirmation_reviewed_by"] is not None or str(row["confirmation_reviewed_at"] or "").strip():
+            confirmation_status = "confirmed"
+        else:
+            confirmation_status = "not_required"
+    payload["knowledge_tags"] = normalized_knowledge_tags
+    payload["reflection_summary"] = reflection_summary
+    payload["generation_metadata"] = generation_metadata if isinstance(generation_metadata, dict) else {}
+    payload["mastery_tracking"] = mastery_tracking if isinstance(mastery_tracking, dict) else {}
+    payload["mastery_assessment"] = _build_wrong_question_mastery_assessment(
+        conn,
+        row,
+        payload["mastery_tracking"],
+        confirmation_status,
+    )
+    payload["confirmation_reasons"] = normalized_confirmation_reasons
+    payload["confirmation_status"] = confirmation_status
+    payload["confirmation_reviewed_by"] = (
+        int(row["confirmation_reviewed_by"])
+        if row["confirmation_reviewed_by"] is not None
+        else None
+    )
+    payload["confirmation_reviewed_at"] = str(row["confirmation_reviewed_at"] or "").strip()
+    payload["confirmation_reviewer_name"] = str(row["confirmation_reviewer_display_name"] or "").strip()
     topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category"] or ""))
     payload["topic_category"] = topic_category
     payload["topicCategory"] = topic_category
@@ -7605,6 +9025,8 @@ def _serialize_wechat_wrong_question_submission_row(row: sqlite3.Row | None) -> 
         "error_type": str(row["primary_error_type"] or ""),
         "selected_error_type": str(row["primary_error_type"] or ""),
         "student_note": str(row["secondary_error_summary"] or ""),
+        "knowledge_points": normalized_knowledge_tags,
+        "selected_knowledge_points": normalized_knowledge_tags,
         "core_issue": str(row["child_reason_core_issue"] or ""),
         "key_omission": str(row["child_reason_key_omission"] or ""),
         "next_step": str(row["child_reason_next_step"] or ""),
@@ -7625,11 +9047,13 @@ def _fetch_wechat_wrong_question_submission_row_by_id(
             c.name AS class_display_name,
             c.grade AS grade,
             s.name AS student_name,
-            u.display_name AS teacher_display_name
+            u.display_name AS teacher_display_name,
+            reviewer.display_name AS confirmation_reviewer_display_name
         FROM wrong_question_submissions wqs
         JOIN classes c ON c.id = wqs.class_id
         JOIN students s ON s.id = wqs.student_id
         JOIN users u ON u.id = wqs.teacher_user_id
+        LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
         WHERE wqs.id=?
         """,
         (record_id,),
@@ -7645,22 +9069,24 @@ def list_wechat_wrong_question_submissions() -> list[dict]:
                 c.name AS class_display_name,
                 c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """
         ).fetchall()
-    return [
-        item
-        for item in (
-            _serialize_wechat_wrong_question_submission_row(row)
-            for row in rows
-        )
-        if item is not None
-    ]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def list_wechat_wrong_question_submissions_for_parent_student(
@@ -7676,30 +9102,100 @@ def list_wechat_wrong_question_submissions_for_parent_student(
                 c.name AS class_display_name,
                 c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             WHERE wqs.student_id=?
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """,
             (student_id,),
         ).fetchall()
-    return [
-        item
-        for item in (
-            _serialize_wechat_wrong_question_submission_row(row)
-            for row in rows
-        )
-        if item is not None
-    ]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def get_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(row)
+        return _serialize_wechat_wrong_question_submission_row(conn, row)
+
+
+def list_wrong_question_submissions_for_chat_session(chat_session_id: str) -> list[dict]:
+    normalized_session_id = (chat_session_id or "").strip()
+    if not normalized_session_id:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                c.grade AS grade,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
+            WHERE wqs.chat_session_id=?
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """,
+            (normalized_session_id,),
+        ).fetchall()
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
+
+
+def list_wrong_question_submissions_for_ingestion_run(ingestion_run_id: str) -> list[dict]:
+    normalized_run_id = (ingestion_run_id or "").strip()
+    if not normalized_run_id:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                wqs.*,
+                c.name AS class_display_name,
+                c.grade AS grade,
+                s.name AS student_name,
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
+            FROM wrong_question_submissions wqs
+            JOIN classes c ON c.id = wqs.class_id
+            JOIN students s ON s.id = wqs.student_id
+            JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
+            WHERE wqs.ingestion_run_id=?
+            ORDER BY wqs.created_at DESC, wqs.id DESC
+            """,
+            (normalized_run_id,),
+        ).fetchall()
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
@@ -7709,21 +9205,30 @@ def list_student_wrong_question_library_records(student_id: int) -> list[dict]:
             SELECT
                 wqs.*,
                 c.name AS class_display_name,
+                c.grade AS grade,
                 s.name AS student_name,
-                u.display_name AS teacher_display_name
+                u.display_name AS teacher_display_name,
+                reviewer.display_name AS confirmation_reviewer_display_name
             FROM wrong_question_submissions wqs
             JOIN classes c ON c.id = wqs.class_id
             JOIN students s ON s.id = wqs.student_id
             JOIN users u ON u.id = wqs.teacher_user_id
+            LEFT JOIN users reviewer ON reviewer.id = wqs.confirmation_reviewed_by
             WHERE wqs.student_id=?
-              AND wqs.source='wechat_mp'
               AND wqs.recognition_status='recognized'
               AND wqs.archive_status='active'
             ORDER BY wqs.created_at DESC, wqs.id DESC
             """,
             (student_id,),
         ).fetchall()
-    return [dict(row) for row in rows]
+        return [
+            item
+            for item in (
+                _serialize_wechat_wrong_question_submission_row(conn, row)
+                for row in rows
+            )
+            if item is not None
+        ]
 
 
 def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[dict]:
@@ -7741,7 +9246,7 @@ def attach_student_library_pdf_path(record_id: str, pdf_path: str) -> Optional[d
             ((pdf_path or "").strip(), record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def set_student_wrong_question_library_pdf_path(student_id: int, pdf_path: str) -> None:
@@ -7762,7 +9267,7 @@ def delete_wechat_wrong_question_submission(record_id: str) -> Optional[dict]:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
         if not row:
             return None
-        serialized = _serialize_wechat_wrong_question_submission_row(row)
+        serialized = _serialize_wechat_wrong_question_submission_row(conn, row)
         conn.execute("DELETE FROM wrong_question_submissions WHERE id=?", (record_id,))
     return serialized
 
@@ -7787,7 +9292,7 @@ def set_wechat_wrong_question_archive_status(record_id: str, archive_status: str
             (normalized_status, normalized_status, record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def update_wechat_wrong_question_topic_category(record_id: str, *, topic_category: str) -> Optional[dict]:
@@ -7806,7 +9311,7 @@ def update_wechat_wrong_question_topic_category(record_id: str, *, topic_categor
             (normalized_topic_category, record_id),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def list_primary_topic_category_suggestions(
@@ -7848,28 +9353,267 @@ def list_primary_topic_category_suggestions(
     return suggestions
 
 
-def save_wechat_wrong_question_review(record_id: str, payload: dict) -> Optional[dict]:
+def save_wechat_wrong_question_review(record_id: str, payload: dict, *, reviewer_user_id: int | None = None) -> Optional[dict]:
+    def normalize_reflection_summary(value: object) -> dict:
+        source = value
+        if isinstance(value, str):
+            try:
+                source = json.loads(value)
+            except json.JSONDecodeError:
+                source = {}
+        if not isinstance(source, dict):
+            return {}
+
+        why_wrong = str(source.get("why_wrong") or source.get("whyWrong") or "").strip()
+        unknown_step = str(source.get("unknown_step") or source.get("unknownStep") or "").strip()
+        help_preference = str(source.get("help_preference") or source.get("helpPreference") or "").strip()
+        mode = str(source.get("mode") or "").strip()
+        summary_text = str(source.get("summary_text") or source.get("summaryText") or "").strip()
+        session_entrypoint = str(source.get("session_entrypoint") or source.get("sessionEntrypoint") or "").strip()
+        raw_answered_stages = source.get("answered_stages")
+        if not isinstance(raw_answered_stages, list):
+            raw_answered_stages = source.get("answeredStages")
+        answered_stages = [
+            str(item or "").strip()
+            for item in (raw_answered_stages if isinstance(raw_answered_stages, list) else [])
+            if str(item or "").strip()
+        ]
+        if not answered_stages:
+            if why_wrong:
+                answered_stages.append("ask_why_wrong")
+            if unknown_step:
+                answered_stages.append("ask_unknown_step")
+            if help_preference:
+                answered_stages.append("ask_help_mode")
+        if not summary_text:
+            parts: list[str] = []
+            if why_wrong:
+                parts.append(f"错因自述：{why_wrong}")
+            if unknown_step:
+                parts.append(f"卡点：{unknown_step}")
+            if help_preference:
+                parts.append(f"期望支持：{help_preference}")
+            summary_text = "；".join(parts)
+        if not any([summary_text, why_wrong, unknown_step, help_preference, answered_stages, mode, session_entrypoint]):
+            return {}
+        normalized = {
+            "schema_version": "wrong_question_reflection_summary.v1",
+            "mode": mode or "archive_reflection",
+            "summary_text": summary_text,
+            "answered_stages": answered_stages,
+        }
+        if why_wrong:
+            normalized["why_wrong"] = why_wrong
+        if unknown_step:
+            normalized["unknown_step"] = unknown_step
+        if help_preference:
+            normalized["help_preference"] = help_preference
+        if session_entrypoint:
+            normalized["session_entrypoint"] = session_entrypoint
+        return normalized
+
     raw_is_mastered = payload.get("is_mastered")
     normalized_is_mastered = bool(raw_is_mastered)
     if isinstance(raw_is_mastered, str):
         normalized_is_mastered = raw_is_mastered.strip().lower() in {"1", "true", "yes", "on"}
 
+    def normalize_string_list(value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item or "").strip() for item in value if str(item or "").strip()]
+
+    def normalize_optional_boolean(value: object) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return None
+
+    has_selected_error_type = "selectedErrorType" in payload or "selected_error_type" in payload
+    selected_error_type = str(
+        payload.get("selectedErrorType")
+        if "selectedErrorType" in payload
+        else payload.get("selected_error_type")
+        or ""
+    ).strip()
+    has_student_note = "studentNote" in payload or "student_note" in payload
+    student_note = str(
+        payload.get("studentNote")
+        if "studentNote" in payload
+        else payload.get("student_note")
+        or ""
+    ).strip()
+    has_selected_knowledge_points = "selectedKnowledgePoints" in payload or "selected_knowledge_points" in payload
+    selected_knowledge_points = normalize_string_list(
+        payload.get("selectedKnowledgePoints")
+        if "selectedKnowledgePoints" in payload
+        else payload.get("selected_knowledge_points")
+    )
+    has_confirmation_state = "needs_teacher_confirmation" in payload or "needsTeacherConfirmation" in payload
+    raw_confirmation_state = (
+        payload.get("needs_teacher_confirmation")
+        if "needs_teacher_confirmation" in payload
+        else payload.get("needsTeacherConfirmation")
+    )
+    normalized_confirmation_state = normalize_optional_boolean(raw_confirmation_state)
+    confirmation_reasons_payload = (
+        payload.get("confirmation_reasons_json")
+        if "confirmation_reasons_json" in payload
+        else payload.get("confirmationReasons")
+    )
+    normalized_confirmation_reasons = normalize_string_list(confirmation_reasons_payload)
+    has_reflection_summary = "reflection_summary_json" in payload or "reflectionSummary" in payload
+    reflection_summary_payload = (
+        payload.get("reflection_summary_json")
+        if "reflection_summary_json" in payload
+        else payload.get("reflectionSummary")
+    )
+    normalized_reflection_summary = normalize_reflection_summary(reflection_summary_payload)
+    confirmation_action = str(
+        payload.get("confirmation_action")
+        if "confirmation_action" in payload
+        else payload.get("confirmationAction")
+        or ""
+    ).strip()
+    if confirmation_action not in {"", "save", "confirm", "edit_then_confirm", "return_for_rework"}:
+        confirmation_action = ""
+
     with get_conn() as conn:
         row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
         if not row:
             return None
+        if not has_selected_error_type:
+            selected_error_type = str(row["primary_error_type"] or "").strip()
+        if not has_student_note:
+            student_note = str(row["secondary_error_summary"] or "").strip()
+        if not has_selected_knowledge_points:
+            try:
+                existing_knowledge_tags = json.loads(str(row["knowledge_tags_json"] or "[]"))
+            except json.JSONDecodeError:
+                existing_knowledge_tags = []
+            selected_knowledge_points = normalize_string_list(existing_knowledge_tags)
+        try:
+            existing_confirmation_reasons = json.loads(str(row["confirmation_reasons_json"] or "[]"))
+        except json.JSONDecodeError:
+            existing_confirmation_reasons = []
+        existing_reflection_summary = normalize_reflection_summary(str(row["reflection_summary_json"] or "{}"))
+        next_confirmation_state = bool(row["needs_teacher_confirmation"])
+        next_confirmation_reasons = normalized_confirmation_reasons
+        if has_confirmation_state and normalized_confirmation_state is not None:
+            next_confirmation_state = normalized_confirmation_state
+            if not next_confirmation_state:
+                next_confirmation_reasons = []
+        elif not normalized_confirmation_reasons:
+            next_confirmation_reasons = normalize_string_list(existing_confirmation_reasons)
+
+        next_confirmation_status = str(row["confirmation_status"] or "").strip()
+        if next_confirmation_status not in {"pending", "confirmed", "returned", "not_required"}:
+            if bool(row["needs_teacher_confirmation"]):
+                next_confirmation_status = "pending"
+            elif row["confirmation_reviewed_by"] is not None or str(row["confirmation_reviewed_at"] or "").strip():
+                next_confirmation_status = "confirmed"
+            else:
+                next_confirmation_status = "not_required"
+        next_confirmation_reviewed_by = int(row["confirmation_reviewed_by"]) if row["confirmation_reviewed_by"] is not None else None
+        next_confirmation_reviewed_at = str(row["confirmation_reviewed_at"] or "").strip()
+        reviewed_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if confirmation_action in {"confirm", "edit_then_confirm"}:
+            next_confirmation_state = False
+            next_confirmation_reasons = []
+            next_confirmation_status = "confirmed"
+            next_confirmation_reviewed_by = int(reviewer_user_id) if reviewer_user_id is not None else next_confirmation_reviewed_by
+            next_confirmation_reviewed_at = reviewed_timestamp
+        elif confirmation_action == "return_for_rework":
+            next_confirmation_state = True
+            if not next_confirmation_reasons:
+                next_confirmation_reasons = normalize_string_list(existing_confirmation_reasons)
+            next_confirmation_status = "returned"
+            next_confirmation_reviewed_by = int(reviewer_user_id) if reviewer_user_id is not None else next_confirmation_reviewed_by
+            next_confirmation_reviewed_at = reviewed_timestamp
+        elif has_confirmation_state and normalized_confirmation_state is not None:
+            if next_confirmation_state:
+                next_confirmation_status = "returned" if next_confirmation_status == "returned" else "pending"
+            else:
+                next_confirmation_status = "confirmed"
+                next_confirmation_reviewed_by = int(reviewer_user_id) if reviewer_user_id is not None else next_confirmation_reviewed_by
+                next_confirmation_reviewed_at = reviewed_timestamp
+        else:
+            if next_confirmation_state:
+                next_confirmation_status = next_confirmation_status if next_confirmation_status in {"pending", "returned"} else "pending"
+            elif next_confirmation_status != "confirmed":
+                next_confirmation_status = "not_required"
+        next_reflection_summary = normalized_reflection_summary if has_reflection_summary else existing_reflection_summary
+        if has_reflection_summary:
+            next_child_reason_text = str(next_reflection_summary.get("why_wrong") or "").strip()
+            next_child_reason_transcript = str(next_reflection_summary.get("summary_text") or "").strip()
+            next_child_reason_core_issue = str(next_reflection_summary.get("unknown_step") or "").strip()
+            next_child_reason_next_step = str(next_reflection_summary.get("help_preference") or "").strip()
+        else:
+            next_child_reason_text = str(
+                next_reflection_summary.get("why_wrong")
+                or row["child_raw_reason_text"]
+                or ""
+            ).strip()
+            next_child_reason_transcript = str(
+                next_reflection_summary.get("summary_text")
+                or row["child_reason_transcript"]
+                or ""
+            ).strip()
+            next_child_reason_core_issue = str(
+                next_reflection_summary.get("unknown_step")
+                or row["child_reason_core_issue"]
+                or ""
+            ).strip()
+            next_child_reason_next_step = str(
+                next_reflection_summary.get("help_preference")
+                or row["child_reason_next_step"]
+                or ""
+            ).strip()
         conn.execute(
             """
             UPDATE wrong_question_submissions
             SET archive_status=?,
                 archived_at=CASE WHEN ?='archived' THEN datetime('now','localtime') ELSE '' END,
+                primary_error_type=?,
+                secondary_error_summary=?,
+                child_raw_reason_text=?,
+                child_reason_transcript=?,
+                child_reason_core_issue=?,
+                child_reason_next_step=?,
+                knowledge_tags_json=?,
+                reflection_summary_json=?,
+                needs_teacher_confirmation=?,
+                confirmation_reasons_json=?,
+                confirmation_status=?,
+                confirmation_reviewed_by=?,
+                confirmation_reviewed_at=?,
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            ("archived" if normalized_is_mastered else "active", "archived" if normalized_is_mastered else "active", record_id),
+            (
+                "archived" if normalized_is_mastered else "active",
+                "archived" if normalized_is_mastered else "active",
+                selected_error_type,
+                student_note,
+                next_child_reason_text,
+                next_child_reason_transcript,
+                next_child_reason_core_issue,
+                next_child_reason_next_step,
+                json.dumps(selected_knowledge_points, ensure_ascii=False, separators=(",", ":")),
+                json.dumps(next_reflection_summary, ensure_ascii=False, separators=(",", ":")),
+                1 if next_confirmation_state else 0,
+                json.dumps(next_confirmation_reasons, ensure_ascii=False, separators=(",", ":")),
+                next_confirmation_status,
+                next_confirmation_reviewed_by,
+                next_confirmation_reviewed_at,
+                record_id,
+            ),
         )
         refreshed = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
-    return _serialize_wechat_wrong_question_submission_row(refreshed)
+        return _serialize_wechat_wrong_question_submission_row(conn, refreshed)
 
 
 def _serialize_weekly_wrong_question_followup_message_row(row: sqlite3.Row | None) -> Optional[dict]:
@@ -8104,6 +9848,90 @@ def _weekly_followup_reason_from_category(category: str, count: int, practiced_r
     return f"{category}可练错题{count}道，且最近一周没有练过。"
 
 
+def _serialize_weekly_followup_source_records(record_ids: list[str]) -> list[dict]:
+    serialized_records: list[dict] = []
+    seen_ids: set[str] = set()
+    for record_id in record_ids:
+        normalized_record_id = str(record_id or "").strip()
+        if not normalized_record_id or normalized_record_id in seen_ids:
+            continue
+        seen_ids.add(normalized_record_id)
+        record = get_wechat_wrong_question_submission(normalized_record_id)
+        if record:
+            serialized_records.append(record)
+    return serialized_records
+
+
+def _can_start_wrong_question_mastery_followup_record(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if str(record.get("source") or "").strip() != "ai_chat":
+        return False
+    confirmation_status = str(record.get("confirmation_status") or "").strip()
+    if confirmation_status not in {"confirmed", "not_required"}:
+        return False
+    mastery_tracking = record.get("mastery_tracking") if isinstance(record.get("mastery_tracking"), dict) else {}
+    mastery_assessment = record.get("mastery_assessment") if isinstance(record.get("mastery_assessment"), dict) else {}
+    practice_sheet_count = int(
+        mastery_tracking.get("practice_sheet_count")
+        or mastery_assessment.get("practice_sheet_count")
+        or 0
+    )
+    if practice_sheet_count <= 0:
+        return False
+    latest_practice_status = str(
+        mastery_assessment.get("latest_practice_status")
+        or mastery_tracking.get("latest_practice_status")
+        or ""
+    ).strip()
+    return latest_practice_status not in {"pending", "generating"}
+
+
+def _load_weekly_activity_summary_student_source_records(
+    *,
+    student_ids: list[int],
+    organization_id: int | None = None,
+) -> dict[int, list[dict]]:
+    normalized_student_ids = [
+        int(student_id)
+        for student_id in student_ids
+        if isinstance(student_id, int) and student_id > 0
+    ]
+    if not normalized_student_ids:
+        return {}
+    placeholders = ",".join("?" for _ in normalized_student_ids)
+    params: list[object] = ["ai_chat", *normalized_student_ids]
+    filters = [
+        "source=?",
+        f"student_id IN ({placeholders})",
+    ]
+    if organization_id is not None:
+        filters.append("organization_id=?")
+        params.append(int(organization_id or 0))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT id, student_id
+            FROM wrong_question_submissions
+            WHERE {" AND ".join(filters)}
+            ORDER BY created_at DESC, id DESC
+            """,
+            params,
+        ).fetchall()
+    source_records_by_student_id: dict[int, list[dict]] = {
+        student_id: []
+        for student_id in normalized_student_ids
+    }
+    for row in rows:
+        student_id = int(row["student_id"] or 0)
+        if student_id <= 0 or source_records_by_student_id.get(student_id):
+            continue
+        record = get_wechat_wrong_question_submission(str(row["id"] or "").strip())
+        if record and _can_start_wrong_question_mastery_followup_record(record):
+            source_records_by_student_id[student_id] = [record]
+    return source_records_by_student_id
+
+
 def list_weekly_wrong_question_followup_students(
     *,
     organization_id: int,
@@ -8164,7 +9992,7 @@ def list_weekly_wrong_question_followup_students(
             JOIN users u ON u.id = wqs.teacher_user_id
             WHERE wqs.organization_id=?
               AND wqs.class_id=?
-              AND wqs.source='wechat_mp'
+              AND wqs.source IN ('wechat_mp', 'ai_chat')
               AND wqs.recognition_status='recognized'
               AND wqs.created_at >= ?
               AND wqs.created_at <= ?
@@ -8183,7 +10011,7 @@ def list_weekly_wrong_question_followup_students(
             FROM wrong_question_submissions
             WHERE organization_id=?
               AND class_id=?
-              AND source='wechat_mp'
+              AND source IN ('wechat_mp', 'ai_chat')
               AND recognition_status='recognized'
               AND archive_status='active'
             GROUP BY student_id
@@ -8275,6 +10103,8 @@ def list_weekly_wrong_question_followup_students(
 
         recommended_category = ""
         recommendation_reason = ""
+        repeated_category = ""
+        repeated_category_count = 0
         if candidates:
             grouped_by_category: dict[str, list[sqlite3.Row]] = {}
             for candidate in candidates:
@@ -8298,6 +10128,17 @@ def list_weekly_wrong_question_followup_students(
                     len(recommended_rows),
                     recommended_category in practiced_categories,
                 )
+            repeated_ranked = sorted(
+                (
+                    (category, len(rows))
+                    for category, rows in grouped_by_category.items()
+                    if len(rows) >= 2
+                ),
+                key=lambda item: (item[1], item[0]),
+                reverse=True,
+            )
+            if repeated_ranked:
+                repeated_category, repeated_category_count = repeated_ranked[0]
 
         if sheet:
             status = "has_practice_sheet"
@@ -8342,6 +10183,9 @@ def list_weekly_wrong_question_followup_students(
                 "representative_reason_summaries": output_reasons,
                 "latest_created_at": latest_created_at,
                 "source_record_ids": output_source_record_ids,
+                "source_records": _serialize_weekly_followup_source_records(output_source_record_ids),
+                "repeated_category": repeated_category,
+                "repeated_category_count": repeated_category_count,
             }
         )
     return students
@@ -8495,6 +10339,10 @@ def list_weekly_wrong_question_activity_summary(
     for teacher_user_id, item in teacher_items_by_id.items():
         item["class_count"] = len(teacher_class_ids.get(teacher_user_id, set()))
         item["involved_student_count"] = len(teacher_student_ids.get(teacher_user_id, set()))
+    student_source_records_by_id = _load_weekly_activity_summary_student_source_records(
+        student_ids=list(student_items_by_id.keys()),
+        organization_id=organization_id,
+    )
     for student_id_value, item in student_items_by_id.items():
         topic_counts = student_topic_counts.get(student_id_value, {})
         item["topic_categories"] = [
@@ -8504,6 +10352,13 @@ def list_weekly_wrong_question_activity_summary(
                 key=lambda topic_item: (-int(topic_item[1] or 0), str(topic_item[0] or "")),
             )[:3]
         ] or [PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED]
+        source_records = student_source_records_by_id.get(student_id_value) or []
+        item["source_record_ids"] = [
+            str(record.get("id") or "").strip()
+            for record in source_records
+            if str(record.get("id") or "").strip()
+        ]
+        item["source_records"] = source_records
 
     class_items = sorted(
         class_items_by_id.values(),
@@ -8551,6 +10406,23 @@ def _serialize_wrong_question_practice_sheet_row(row: sqlite3.Row | None) -> Opt
         return None
     payload = dict(row)
     payload["question_count"] = int(payload.get("question_count") or 0)
+    try:
+        source_record_ids = json.loads(str(payload.get("source_record_ids_json") or "[]"))
+    except (TypeError, json.JSONDecodeError):
+        source_record_ids = []
+    payload["source_record_ids"] = [
+        str(record_id).strip()
+        for record_id in source_record_ids
+        if str(record_id).strip()
+    ] if isinstance(source_record_ids, list) else []
+    try:
+        payload["generation_metadata"] = (
+            json.loads(str(payload.get("generation_metadata_json") or "{}"))
+            if payload.get("generation_metadata_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["generation_metadata"] = {}
     return payload
 
 
@@ -8560,7 +10432,141 @@ def _serialize_wrong_question_practice_sheet_item_row(row: sqlite3.Row | None) -
     payload = dict(row)
     payload["question_order"] = int(payload.get("question_order") or 0)
     payload["is_geometry"] = bool(payload.get("is_geometry"))
+    payload["child_reason_transcript_snapshot"] = str(payload.get("child_reason_transcript_snapshot") or "").strip()
+    try:
+        payload["question_structured_snapshot"] = (
+            json.loads(str(payload.get("question_structured_snapshot_json") or ""))
+            if payload.get("question_structured_snapshot_json")
+            else None
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["question_structured_snapshot"] = None
+    if not isinstance(payload.get("question_structured_snapshot"), dict):
+        payload["question_structured_snapshot"] = None
+    try:
+        knowledge_tags_snapshot = (
+            json.loads(str(payload.get("knowledge_tags_snapshot_json") or "[]"))
+            if payload.get("knowledge_tags_snapshot_json")
+            else []
+        )
+    except (TypeError, json.JSONDecodeError):
+        knowledge_tags_snapshot = []
+    payload["knowledge_tags_snapshot"] = [
+        str(item or "").strip()
+        for item in (knowledge_tags_snapshot if isinstance(knowledge_tags_snapshot, list) else [])
+        if str(item or "").strip()
+    ]
+    try:
+        payload["reflection_summary_snapshot"] = (
+            json.loads(str(payload.get("reflection_summary_snapshot_json") or "{}"))
+            if payload.get("reflection_summary_snapshot_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["reflection_summary_snapshot"] = {}
+    if not isinstance(payload.get("reflection_summary_snapshot"), dict):
+        payload["reflection_summary_snapshot"] = {}
+    try:
+        payload["structured_content"] = (
+            json.loads(str(payload.get("structured_content_json") or "{}"))
+            if payload.get("structured_content_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["structured_content"] = {}
+    try:
+        payload["generation_metadata"] = (
+            json.loads(str(payload.get("generation_metadata_json") or "{}"))
+            if payload.get("generation_metadata_json")
+            else {}
+        )
+    except (TypeError, json.JSONDecodeError):
+        payload["generation_metadata"] = {}
     return payload
+
+
+def _build_wrong_question_mastery_tracking_payload(
+    conn: sqlite3.Connection,
+    record_id: str,
+) -> dict:
+    existing_row = _fetch_wechat_wrong_question_submission_row_by_id(conn, record_id)
+    existing_tracking = _load_wrong_question_mastery_tracking_dict(
+        existing_row["mastery_tracking_json"] if existing_row else "{}"
+    )
+    payload = _preserve_wrong_question_mastery_followup_tracking(existing_tracking)
+    rows = conn.execute(
+        """
+        SELECT
+            sheet.id,
+            sheet.status,
+            sheet.pdf_path,
+            sheet.created_at,
+            item.topic_category_snapshot,
+            item.primary_error_type_snapshot
+        FROM wrong_question_practice_sheet_items item
+        JOIN wrong_question_practice_sheets sheet ON sheet.id = item.sheet_id
+        WHERE item.wrong_question_record_id=?
+        ORDER BY sheet.created_at DESC, sheet.id DESC, item.question_order ASC, item.id ASC
+        """,
+        (str(record_id or "").strip(),),
+    ).fetchall()
+    if not rows:
+        return payload
+
+    unique_sheet_ids: list[int] = []
+    seen_sheet_ids: set[int] = set()
+    related_topic_categories: list[str] = []
+    seen_topics: set[str] = set()
+    related_error_types: list[str] = []
+    seen_error_types: set[str] = set()
+
+    for row in rows:
+        sheet_id = int(row["id"])
+        if sheet_id not in seen_sheet_ids:
+            unique_sheet_ids.append(sheet_id)
+            seen_sheet_ids.add(sheet_id)
+        topic_category = normalize_primary_wrong_question_topic_category(str(row["topic_category_snapshot"] or ""))
+        if topic_category and topic_category != PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED and topic_category not in seen_topics:
+            related_topic_categories.append(topic_category)
+            seen_topics.add(topic_category)
+        error_type = str(row["primary_error_type_snapshot"] or "").strip()
+        if error_type and error_type not in seen_error_types:
+            related_error_types.append(error_type)
+            seen_error_types.add(error_type)
+
+    latest = rows[0]
+    payload.update({
+        "practice_sheet_count": len(unique_sheet_ids),
+        "latest_practice_sheet_id": int(latest["id"]),
+        "latest_practice_status": str(latest["status"] or "").strip(),
+        "latest_practice_created_at": str(latest["created_at"] or "").strip(),
+        "latest_practice_pdf_path": str(latest["pdf_path"] or "").strip(),
+        "related_topic_categories": related_topic_categories,
+        "related_error_types": related_error_types,
+    })
+    return payload
+
+
+def _refresh_wrong_question_submission_mastery_tracking(
+    conn: sqlite3.Connection,
+    record_id: str,
+) -> None:
+    normalized_record_id = str(record_id or "").strip()
+    if not normalized_record_id:
+        return
+    payload = _build_wrong_question_mastery_tracking_payload(conn, normalized_record_id)
+    conn.execute(
+        """
+        UPDATE wrong_question_submissions
+        SET mastery_tracking_json=?,
+            updated_at=datetime('now','localtime')
+        WHERE id=?
+        """,
+        (
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) if payload else "{}",
+            normalized_record_id,
+        ),
+    )
 
 
 PRACTICE_PACK_MODE_OPTIONS = {"topic", "reason"}
@@ -8718,6 +10724,11 @@ def create_pending_wrong_question_practice_sheet(
         if int(record.get("student_id") or 0) != student_id:
             raise ValueError("selected records must belong to the same student")
 
+    linked_record_ids = [
+        str(record.get("id") or "").strip()
+        for record in selected_records
+        if str(record.get("id") or "").strip()
+    ]
     with get_conn() as conn:
         cursor = conn.execute(
             """
@@ -8733,8 +10744,10 @@ def create_pending_wrong_question_practice_sheet(
                 question_count,
                 status,
                 pdf_path,
+                source_record_ids_json,
+                generation_metadata_json,
                 generation_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', '')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', ?, '{}', '')
             """,
             (
                 organization_id,
@@ -8746,10 +10759,12 @@ def create_pending_wrong_question_practice_sheet(
                 class_name_snapshot,
                 teacher_name_snapshot,
                 len(selected_records),
+                json.dumps(linked_record_ids, ensure_ascii=False),
             ),
         )
         sheet_id = int(cursor.lastrowid)
         for index, record in enumerate(selected_records, start=1):
+            linked_record_id = str(record.get("id") or "").strip()
             conn.execute(
                 """
                 INSERT INTO wrong_question_practice_sheet_items (
@@ -8760,28 +10775,54 @@ def create_pending_wrong_question_practice_sheet(
                     is_geometry,
                     question_text_snapshot,
                     image_url_snapshot,
+                    erased_image_url_snapshot,
                     diagram_type_snapshot,
                     diagram_spec_json_snapshot,
                     child_reason_text_snapshot,
+                    child_reason_transcript_snapshot,
                     primary_error_type_snapshot,
-                    cause_note_snapshot
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    cause_note_snapshot,
+                    topic_category_snapshot,
+                    question_structured_snapshot_json,
+                    knowledge_tags_snapshot_json,
+                    reflection_summary_snapshot_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sheet_id,
                     index,
-                    str(record.get("id") or "").strip(),
+                    linked_record_id,
                     str(record.get("source") or "wechat_mp").strip() or "wechat_mp",
                     1 if bool(record.get("is_geometry")) else 0,
                     str(record.get("question_text") or "").strip(),
                     str(record.get("image_url") or "").strip(),
+                    _resolve_erased_wrong_question_image_url_for_record(conn, record),
                     str(record.get("diagram_type") or "").strip(),
                     str(record.get("diagram_spec_json") or "").strip(),
                     str(record.get("child_raw_reason_text") or "").strip(),
+                    str(record.get("child_reason_transcript") or "").strip(),
                     str(record.get("primary_error_type") or "").strip(),
                     str(record.get("secondary_error_summary") or "").strip(),
+                    str(record.get("topic_category") or "").strip(),
+                    _normalize_json_storage_value(
+                        record.get("question_structured_json", record.get("question_structured")),
+                        field_name="question_structured_snapshot_json",
+                        default="",
+                    ),
+                    _normalize_json_storage_value(
+                        record.get("knowledge_tags_json", record.get("knowledge_tags")),
+                        field_name="knowledge_tags_snapshot_json",
+                        default="[]",
+                    ),
+                    _normalize_json_storage_value(
+                        record.get("reflection_summary_json", record.get("reflection_summary")),
+                        field_name="reflection_summary_snapshot_json",
+                        default="{}",
+                    ),
                 ),
             )
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
         saved = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
     serialized = _serialize_wrong_question_practice_sheet_row(saved)
     return serialized if serialized is not None else {}
@@ -8842,7 +10883,21 @@ def delete_wrong_question_practice_sheet(sheet_id: int) -> Optional[dict]:
         if not sheet_row:
             return None
         serialized = get_wrong_question_practice_sheet(sheet_id)
+        linked_record_ids = [
+            str(row["wrong_question_record_id"] or "").strip()
+            for row in conn.execute(
+                """
+                SELECT wrong_question_record_id
+                FROM wrong_question_practice_sheet_items
+                WHERE sheet_id=?
+                """,
+                (sheet_id,),
+            ).fetchall()
+            if str(row["wrong_question_record_id"] or "").strip()
+        ]
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE id=?", (sheet_id,))
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
     return serialized
 
 
@@ -8851,6 +10906,7 @@ def mark_wrong_question_practice_sheet_succeeded(
     *,
     generated_items: list[dict],
     pdf_path: str,
+    generation_metadata: object = None,
 ) -> Optional[dict]:
     generated_item_by_record_id = {
         str(item.get("wrong_question_record_id") or "").strip(): item
@@ -8858,6 +10914,7 @@ def mark_wrong_question_practice_sheet_succeeded(
         if str(item.get("wrong_question_record_id") or "").strip()
     }
 
+    linked_record_ids: list[str] = []
     with get_conn() as conn:
         sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
         if not sheet_row:
@@ -8878,12 +10935,16 @@ def mark_wrong_question_practice_sheet_succeeded(
             generated = generated_item_by_record_id.get(wrong_question_record_id)
             if not generated:
                 raise ValueError("generated_items do not match selected records")
+            if wrong_question_record_id:
+                linked_record_ids.append(wrong_question_record_id)
             conn.execute(
                 """
                 UPDATE wrong_question_practice_sheet_items
                 SET ai_hint=?,
                     reason_blank_prompt=?,
                     improvement_summary_prompt=?,
+                    structured_content_json=?,
+                    generation_metadata_json=?,
                     updated_at=datetime('now','localtime')
                 WHERE id=?
                 """,
@@ -8891,6 +10952,16 @@ def mark_wrong_question_practice_sheet_succeeded(
                     str(generated.get("ai_hint") or "").strip(),
                     str(generated.get("reason_blank_prompt") or "").strip(),
                     str(generated.get("improvement_summary_prompt") or "").strip(),
+                    _normalize_json_storage_value(
+                        generated.get("structured_content_json", generated.get("structured_content")),
+                        field_name="structured_content_json",
+                        default="{}",
+                    ),
+                    _normalize_json_storage_value(
+                        generated.get("generation_metadata_json", generated.get("generation_metadata")),
+                        field_name="generation_metadata_json",
+                        default="{}",
+                    ),
                     row["id"],
                 ),
             )
@@ -8899,12 +10970,23 @@ def mark_wrong_question_practice_sheet_succeeded(
             UPDATE wrong_question_practice_sheets
             SET status='ready',
                 pdf_path=?,
+                generation_metadata_json=?,
                 generation_error='',
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            ((pdf_path or "").strip(), sheet_id),
+            (
+                (pdf_path or "").strip(),
+                _normalize_json_storage_value(
+                    generation_metadata,
+                    field_name="generation_metadata_json",
+                    default="{}",
+                ),
+                sheet_id,
+            ),
         )
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
     return get_wrong_question_practice_sheet(sheet_id)
 
 
@@ -8913,6 +10995,18 @@ def mark_wrong_question_practice_sheet_failed(sheet_id: int, error_message: str)
         sheet_row = _fetch_wrong_question_practice_sheet_row_by_id(conn, sheet_id)
         if not sheet_row:
             raise LookupError("wrong question practice sheet not found")
+        linked_record_ids = [
+            str(row["wrong_question_record_id"] or "").strip()
+            for row in conn.execute(
+                """
+                SELECT wrong_question_record_id
+                FROM wrong_question_practice_sheet_items
+                WHERE sheet_id=?
+                """,
+                (sheet_id,),
+            ).fetchall()
+            if str(row["wrong_question_record_id"] or "").strip()
+        ]
         conn.execute(
             """
             UPDATE wrong_question_practice_sheets
@@ -8924,6 +11018,8 @@ def mark_wrong_question_practice_sheet_failed(sheet_id: int, error_message: str)
             """,
             (str(error_message or "").strip(), sheet_id),
         )
+        for linked_record_id in linked_record_ids:
+            _refresh_wrong_question_submission_mastery_tracking(conn, linked_record_id)
     return get_wrong_question_practice_sheet(sheet_id)
 
 

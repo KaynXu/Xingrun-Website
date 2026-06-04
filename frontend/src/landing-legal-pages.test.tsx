@@ -21,7 +21,8 @@ test('landing page renders Starain hero branding and a theme-aware grainient her
 
   assert.match(markup, /Starain/);
   assert.match(markup, /学习全流程 AI 平台/);
-  assert.match(markup, /Starain，用 AI 赋能教育机构。/);
+  assert.match(markup, /用ai创造教育/);
+  assert.doesNotMatch(markup, /Starain，用 AI 赋能教育机构。/);
   assert.match(markup, /Starain 正在把日常教学里最常重复的工作整理进同一套平台流程/);
   assert.match(markup, /查看平台方案/);
   assert.match(markup, /href="#features"/);

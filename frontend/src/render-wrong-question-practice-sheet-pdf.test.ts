@@ -36,11 +36,137 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.equal((markup.match(/class="writing-card"/g) || []).length, 1);
   assert.match(markup, /redo-work-area/);
   assert.match(markup, /redo-line/);
-  assert.match(markup, /重做这题/);
+  assert.match(markup, /原题 \/ 原图/);
+  assert.match(markup, /挖空复盘/);
+  assert.match(markup, /订正区/);
+  assert.doesNotMatch(markup, /重做这题/);
   assert.doesNotMatch(markup, /可选/);
   assert.match(markup, /katex/);
   assert.doesNotMatch(markup, /\\frac/);
   assert.match(markup, /xr-latex-preview/);
+  assert.doesNotMatch(markup, /学生：|班级：|老师：|题目数量：/);
+});
+
+test('buildDocumentMarkup prefers structured content for method hints, review blocks, and confirmation copy', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 2,
+        wrong_question_record_id: 'wechat-structured',
+        is_geometry: false,
+        question_text_snapshot: '甲乙相向而行，求相遇时间。',
+        structured_content: {
+          mistake_focus: '速度和时间对应关系写反',
+          review_goal: '先标相遇总路程再列式',
+          method_hint_lines: ['先把总路程和速度和对应起来。', '再检查时间是不是同一段。'],
+          blank_review_blocks: [
+            {
+              title: '相遇关系补全',
+              lines: ['先补出总路程和 ______ 的对应关系。'],
+            },
+          ],
+          teacher_feedback: '可继续追问单位。',
+          confirmation_reasons: ['needs_unit_check', 'teacher_review_required'],
+        },
+        reason_blank_prompt: '旧提示\n这题我错在 ______。',
+        improvement_summary_prompt: '旧提醒\n下次我会先 ______。',
+      },
+    ],
+  });
+
+  assert.match(markup, /题干摘要/);
+  assert.match(markup, /先回到“速度和时间对应关系写反”这个入口/);
+  assert.match(markup, /方法提醒/);
+  assert.match(markup, /先把总路程和速度和对应起来。/);
+  assert.match(markup, /相遇关系补全/);
+  assert.match(markup, /可继续追问单位。/);
+  assert.doesNotMatch(markup, /错因定位：/);
+  assert.doesNotMatch(markup, /本次目标：/);
+  assert.doesNotMatch(markup, /老师提示/);
+  assert.doesNotMatch(markup, /需老师确认/);
+  assert.doesNotMatch(markup, /旧提示/);
+});
+
+test('buildDocumentMarkup falls back to reflection spine when structured content is missing', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-reflection',
+        is_geometry: false,
+        question_text_snapshot: '解方程 $\\frac{x-1}{2}=3$。',
+        reason_blank_prompt: '先复盘这题错因\n我这题错在 ______，因为 ______。',
+        improvement_summary_prompt: '再写下次提醒\n下次我会先 ______，再检查 ______。',
+        question_structured_snapshot_json: {
+          stem: '解方程 (x-1)/2=3',
+          subject: '数学',
+        },
+        knowledge_tags_snapshot_json: ['一元一次方程', '去分母'],
+        reflection_summary_snapshot_json: {
+          schema_version: 'wrong_question_reflection_summary.v1',
+          mode: 'archive_reflection',
+          why_wrong: '我去分母时漏乘了右边常数',
+          unknown_step: '不知道等式右边也要同乘 2',
+          help_preference: '先提醒我要两边一起乘，再让我自己重做',
+        },
+      },
+    ],
+  });
+
+  assert.match(markup, /题干摘要/);
+  assert.match(markup, /先回到“我去分母时漏乘了右边常数”这个入口/);
+  assert.match(markup, /先回到 一元一次方程 \/ 去分母 这组知识点。/);
+  assert.match(markup, /先补清：不知道等式右边也要同乘 2/);
+  assert.doesNotMatch(markup, /错因定位：/);
+  assert.doesNotMatch(markup, /本次目标：/);
+});
+
+test('buildDocumentMarkup replaces low-information writing fallback with reflection context and redo guidance', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '七年级 4 班',
+    teacherName: '何老师',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 5,
+        wrong_question_record_id: 'wechat-low-info',
+        is_geometry: true,
+        question_text_snapshot: '已知 CE⊥AD，∠CDA=∠BAC。',
+        reason_blank_prompt: '错因复盘\n我这题错在 ______。',
+        improvement_summary_prompt: '下次提醒\n下次我要先看 ______。',
+        structured_content: {
+          redo_guidance_lines: ['重新画出 CE⊥AD 这个垂直关系。', '写出 ∠CDA=∠BAC 能触发的等角关系。'],
+        },
+        knowledge_tags_snapshot_json: ['垂直', '等角', '辅助线'],
+        reflection_summary_snapshot_json: {
+          why_wrong: '没有把 CE⊥AD 翻译成直角关系',
+          unknown_step: '不知道 E 点是为了制造什么关系',
+          help_preference: '先提醒我标垂直和等角',
+        },
+      },
+    ],
+  });
+
+  assert.doesNotMatch(markup, /我这题错在/);
+  assert.doesNotMatch(markup, /下次我要先看/);
+  assert.match(markup, /挖空复盘/);
+  assert.match(markup, /没有把 CE⊥AD 翻译成直角关系/);
+  assert.match(markup, /先提醒我标垂直和等角/);
+  assert.doesNotMatch(markup, /重新画出 CE⊥AD 这个垂直关系。/);
+  assert.doesNotMatch(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
+  assert.match(markup, /\.writing-card,[\s\S]*?break-inside: avoid/);
+  assert.match(markup, /\.redo-work-area \{[\s\S]*?break-inside: avoid/);
+  assert.match(markup, /\.writing-prompt-block \{[\s\S]*?break-inside: avoid/);
+  assert.doesNotMatch(markup, /重做这题/);
 });
 
 test('buildDocumentMarkup normalizes literal newline escapes in question and prompt text', async () => {
@@ -65,6 +191,25 @@ test('buildDocumentMarkup normalizes literal newline escapes in question and pro
   assert.match(markup, /\(2\) 若/);
   assert.match(markup, /这道题涉及/);
   assert.match(markup, /接下来我准备先补/);
+});
+
+test('buildDocumentMarkup splits compact multiple-choice options onto separate lines', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '七年级 4 班',
+    teacherName: '何老师',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 22,
+        wrong_question_record_id: 'wechat-choice',
+        is_geometry: false,
+        question_text_snapshot: '22. 设 a=x-2023，b=x-2025，c=x-2024。若 a◇+b◇=16，则 c◇ 的值是（ ） A.6 B.7 C.8 D.9',
+      },
+    ],
+  });
+
+  assert.match(markup, /值是（ ）<br \/>A\. 6<br \/>B\. 7<br \/>C\. 8<br \/>D\. 9/);
 });
 
 test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geometry practice records', async () => {
@@ -95,12 +240,59 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   });
 
   assert.equal((markup.match(/class="question-latex-card"/g) || []).length, 1);
-  assert.equal((markup.match(/class="geometry-card"/g) || []).length, 2);
+  assert.equal((markup.match(/class="geometry-card(?:\s|")/g) || []).length, 2);
   assert.match(markup, /向量 AB 长度为 √\(16\)/);
   assert.match(markup, /class="katex"/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
   assert.match(markup, /图片暂时无法载入，已保留原图记录。/);
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
+});
+
+test('buildDocumentMarkup prefers generated question text over original image when image is not marked clean', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-3',
+        is_geometry: false,
+        question_text_snapshot: '计算 18÷3×2 的结果。',
+        image_data_url: 'data:image/png;base64,ZmFrZQ==',
+        image_source: 'original',
+      },
+    ],
+  });
+
+  assert.match(markup, /计算 18÷3×2 的结果/);
+  assert.doesNotMatch(markup, /原题图片/);
+  assert.doesNotMatch(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
+});
+
+test('buildDocumentMarkup uses clean original image instead of duplicate generated text', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherName: '平台管理员',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 3,
+        wrong_question_record_id: 'wechat-3',
+        is_geometry: false,
+        question_text_snapshot: '计算 18÷3×2 的结果。',
+        image_data_url: 'data:image/png;base64,ZmFrZQ==',
+        image_source: 'original',
+        question_surface_mode: 'image_clean',
+      },
+    ],
+  });
+
+  assert.doesNotMatch(markup, /计算 18÷3×2 的结果/);
+  assert.match(markup, /干净原题图片/);
+  assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
 });
 
 test('buildDocumentMarkup renders generated diagram practice items with question text', async () => {
@@ -164,7 +356,7 @@ test('buildDocumentMarkup renders scheduled answer math through latex preview', 
   assert.doesNotMatch(answerSection, /\$x=2\$/);
 });
 
-test('buildDocumentMarkup puts scheduled error-review blanks before redo questions', async () => {
+test('buildDocumentMarkup keeps scheduled practice pages in the final four-area order', async () => {
   const markup = await buildDocumentMarkup({
     studentName: 'Alice',
     className: '六年级 1 班',
@@ -190,16 +382,25 @@ test('buildDocumentMarkup puts scheduled error-review blanks before redo questio
     answerItems: [],
   });
 
-  const reviewIndex = markup.indexOf('错题复习');
-  const reasonIndex = markup.indexOf('我这题错在');
-  const redoIndex = markup.indexOf('重做原题');
+  const sourceIndex = markup.indexOf('原题 / 原图');
   const questionIndex = markup.indexOf('解方程');
+  const summaryIndex = markup.indexOf('题干摘要');
+  const methodIndex = markup.indexOf('方法提醒');
+  const reviewIndex = markup.indexOf('挖空复盘');
+  const reasonIndex = markup.indexOf('本题信息还不完整');
+  const correctionIndex = markup.indexOf('订正区');
 
+  assert.ok(sourceIndex > -1);
+  assert.ok(questionIndex > sourceIndex);
+  assert.ok(summaryIndex > questionIndex);
+  assert.ok(methodIndex > summaryIndex);
   assert.ok(reviewIndex > -1);
+  assert.ok(reviewIndex > methodIndex);
   assert.ok(reasonIndex > reviewIndex);
-  assert.ok(redoIndex > reasonIndex);
-  assert.ok(questionIndex > redoIndex);
+  assert.ok(correctionIndex > reasonIndex);
   assert.match(markup, /blank-gap/);
+  assert.doesNotMatch(markup, /我这题错在/);
+  assert.doesNotMatch(markup, /重做原题/);
 });
 
 test('buildDocumentMarkup renders latex inside scheduled error-review blanks', async () => {
@@ -228,7 +429,7 @@ test('buildDocumentMarkup renders latex inside scheduled error-review blanks', a
     answerItems: [],
   });
 
-  const reviewSection = markup.slice(markup.indexOf('错题复习'), markup.indexOf('重做原题'));
+  const reviewSection = markup.slice(markup.indexOf('挖空复盘'), markup.indexOf('订正区'));
   assert.match(reviewSection, /class="katex"/);
   assert.doesNotMatch(reviewSection, /\$180\^\\circ/);
   assert.match(reviewSection, /blank-gap/);
