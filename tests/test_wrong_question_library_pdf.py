@@ -850,6 +850,7 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         urlopen.assert_any_call("https://files.example.com/non-geometry-practice.png", timeout=10)
         self.assertRegex(captured_payloads[0]["items"][0]["image_data_url"], r"^data:image/png;base64,")
+        self.assertEqual(captured_payloads[0]["items"][0]["image_source"], "original")
 
     def test_generate_wrong_question_practice_sheet_pdf_prefers_erased_image_snapshot(self):
         items = [
@@ -891,6 +892,7 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
             [call.args for call in urlopen.call_args_list],
         )
         self.assertRegex(captured_payloads[0]["items"][0]["image_data_url"], r"^data:image/png;base64,")
+        self.assertEqual(captured_payloads[0]["items"][0]["image_source"], "erased")
 
     def test_generate_wrong_question_practice_sheet_pdf_reads_local_erased_image_snapshot(self):
         erased_path = self.base / "erased-question.png"
@@ -927,6 +929,7 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertEqual(result, str(output_path.resolve()))
         urlopen.assert_not_called()
         self.assertRegex(captured_payloads[0]["items"][0]["image_data_url"], r"^data:image/png;base64,")
+        self.assertEqual(captured_payloads[0]["items"][0]["image_source"], "erased")
 
 
 if __name__ == "__main__":

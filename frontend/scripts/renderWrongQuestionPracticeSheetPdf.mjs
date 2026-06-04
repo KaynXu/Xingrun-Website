@@ -41,6 +41,9 @@ function escapeHtml(value) {
 
 function buildQuestionBlock(item) {
   const preview = buildWrongQuestionLatexPreviewModel(formatQuestionTextForPractice(item.question_text_snapshot || ''));
+  const hasQuestionText = Boolean(preview.html);
+  const imageSource = String(item.image_source || item.imageSource || '').trim();
+  const surfaceMode = String(item.question_surface_mode || item.questionSurfaceMode || '').trim();
   const questionTextBlock = preview.html
     ? `
       <div class="question-latex-card">
@@ -50,6 +53,13 @@ function buildQuestionBlock(item) {
       </div>
     `
     : '';
+
+  const buildImageBlock = (title, extraClass = 'source-image-card') => `
+      <div class="geometry-card ${extraClass}">
+        <div class="geometry-title">${title}</div>
+        <img src="${item.image_data_url}" alt="${title}" class="geometry-image source-image" />
+      </div>
+    `;
 
   if (item.image_data_url && item.diagram_type) {
     return `
@@ -61,20 +71,24 @@ function buildQuestionBlock(item) {
     `;
   }
 
+  if (item.image_data_url && surfaceMode === 'image_clean') {
+    const imageTitle = item.is_geometry ? '干净几何原题图片' : '干净原题图片';
+    return buildImageBlock(imageTitle);
+  }
+
+  if (hasQuestionText) {
+    return questionTextBlock;
+  }
+
   if (item.image_data_url) {
-    const imageTitle = item.is_geometry ? '几何原题图片' : '原题图片';
-    return `
-      ${questionTextBlock}
-      <div class="geometry-card source-image-card">
-        <div class="geometry-title">${imageTitle}</div>
-        <img src="${item.image_data_url}" alt="${imageTitle}" class="geometry-image source-image" />
-      </div>
-    `;
+    const imageTitle = imageSource === 'erased'
+      ? (item.is_geometry ? '擦除后几何原题图片' : '擦除后原题图片')
+      : (item.is_geometry ? '几何原题图片' : '原题图片');
+    return buildImageBlock(imageTitle);
   }
 
   if (item.is_geometry) {
     return `
-      ${questionTextBlock}
       <div class="geometry-card">
         <div class="geometry-title">几何原题图片</div>
         <div class="geometry-placeholder">图片暂时无法载入，已保留原图记录。</div>
