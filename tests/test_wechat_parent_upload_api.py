@@ -249,12 +249,12 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         from wrong_question_upload_worker import ensure_erased_wrong_question_images_for_practice_items
 
         source_path = self.base / "source.png"
-        source_path.write_bytes(b"source-image")
+        source_path.write_bytes(b"source-image" * 100)
         erased_dir = self.base / "erased"
 
         with patch("wrong_question_upload_worker.ERASED_IMAGE_DIR", erased_dir), patch(
             "wrong_question_upload_worker._erase_wrong_question_image_bytes",
-            return_value=b"erased-image",
+            return_value=b"erased-image" * 100,
         ) as mock_erase:
             prepared = ensure_erased_wrong_question_images_for_practice_items(
                 [
@@ -269,8 +269,32 @@ class WeChatParentUploadApiTestCase(unittest.TestCase):
         self.assertEqual(len(prepared), 1)
         erased_path = Path(prepared[0]["erased_image_url_snapshot"])
         self.assertEqual(erased_path, erased_dir / "wechat-existing-record.png")
-        self.assertEqual(erased_path.read_bytes(), b"erased-image")
-        mock_erase.assert_called_once_with(b"source-image")
+        self.assertEqual(erased_path.read_bytes(), b"erased-image" * 100)
+        mock_erase.assert_called_once_with(b"source-image" * 100)
+
+    def test_practice_item_erasure_helper_rejects_unchanged_model_output(self):
+        from wrong_question_upload_worker import ensure_erased_wrong_question_images_for_practice_items
+
+        source_path = self.base / "source.png"
+        source_path.write_bytes(b"same-image" * 100)
+        erased_dir = self.base / "erased"
+
+        with patch("wrong_question_upload_worker.ERASED_IMAGE_DIR", erased_dir), patch(
+            "wrong_question_upload_worker._erase_wrong_question_image_bytes",
+            return_value=b"same-image" * 100,
+        ):
+            prepared = ensure_erased_wrong_question_images_for_practice_items(
+                [
+                    {
+                        "wrong_question_record_id": "wechat-unchanged-record",
+                        "image_url_snapshot": str(source_path),
+                        "erased_image_url_snapshot": "",
+                    }
+                ]
+            )
+
+        self.assertEqual(prepared[0]["erased_image_url_snapshot"], "")
+        self.assertFalse((erased_dir / "wechat-unchanged-record.png").exists())
 
     def test_staff_and_parent_can_update_wrong_question_topic_category(self):
         account = lesson_manager.upsert_parent_wechat_account(openid="openid-1")
