@@ -79,7 +79,7 @@ test('buildDocumentMarkup prefers structured content for method hints, review bl
   });
 
   assert.match(markup, /题干摘要/);
-  assert.match(markup, /先回到“速度和时间对应关系写反”这个入口/);
+  assert.match(markup, /先从“速度和时间对应关系写反”这里倒回来/);
   assert.match(markup, /方法提醒/);
   assert.match(markup, /先把总路程和速度和对应起来。/);
   assert.match(markup, /相遇关系补全/);
@@ -122,9 +122,9 @@ test('buildDocumentMarkup falls back to reflection spine when structured content
   });
 
   assert.match(markup, /题干摘要/);
-  assert.match(markup, /当目标是“解方程/);
-  assert.match(markup, /x 和 分母/);
-  assert.match(markup, /翻成可用的/);
+  assert.match(markup, /先从“我去分母时漏乘了右边常数”这里倒回来/);
+  assert.match(markup, /分母 和 方程/);
+  assert.match(markup, /改成能直接用的/);
   assert.match(markup, /先盯住目标式和已知式差在哪一步/);
   assert.doesNotMatch(markup, /错因定位：/);
   assert.doesNotMatch(markup, /本次目标：/);
@@ -160,9 +160,9 @@ test('buildDocumentMarkup replaces low-information writing fallback with reflect
   assert.doesNotMatch(markup, /我这题错在/);
   assert.doesNotMatch(markup, /下次我要先看/);
   assert.match(markup, /挖空复盘/);
-  assert.match(markup, /CE⊥AD 和 ∠CDA=∠BAC/);
-  assert.match(markup, /可能连出/);
-  assert.match(markup, /翻成可用的/);
+  assert.match(markup, /CDA=∠BAC 和 CE⊥AD/);
+  assert.match(markup, /能不能连出/);
+  assert.match(markup, /改成能直接用的/);
   assert.match(markup, /先在图上标出已知角、直角或对应边/);
   assert.doesNotMatch(markup, /重新画出 CE⊥AD 这个垂直关系。/);
   assert.doesNotMatch(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
@@ -194,8 +194,9 @@ test('buildDocumentMarkup replaces generic fallback copy with question-driven gu
 
   assert.doesNotMatch(markup, /先检查题目条件/);
   assert.doesNotMatch(markup, /多练类似题目/);
-  assert.match(markup, /当目标是“比较 f\(x\+1\) 与 f\(2x-1\) 的/);
-  assert.match(markup, /x 和 f\(x\)/);
+  assert.doesNotMatch(markup, /未分类|先先|希望这对你有帮助|本题考察了/);
+  assert.match(markup, /像这题，先看 f\(x\) 和 f\(x\+1\)/);
+  assert.match(markup, /f\(x\) 和 f\(x\+1\)/);
   assert.match(markup, /先圈出自变量范围和图像线索/);
 });
 
@@ -417,7 +418,7 @@ test('buildDocumentMarkup keeps scheduled practice pages in the final four-area 
   const summaryIndex = markup.indexOf('题干摘要');
   const methodIndex = markup.indexOf('方法提醒');
   const reviewIndex = markup.indexOf('挖空复盘');
-  const reasonIndex = markup.indexOf('当目标是“解方程');
+  const reasonIndex = markup.indexOf('像这题，先看 方程');
   const correctionIndex = markup.indexOf('订正区');
 
   assert.ok(sourceIndex > -1);

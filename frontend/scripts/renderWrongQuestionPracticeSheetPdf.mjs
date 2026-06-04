@@ -390,6 +390,9 @@ function containsSpecificMathAnchor(text) {
   return keywords.some((keyword) => rawText.includes(keyword));
 }
 
+const GENERIC_REASON_TEXTS = new Set(['不会', '不太会', '算错了', '看错了', '粗心了', '做错了', '没做出来']);
+const WEAK_TAG_TEXTS = new Set(['未分类', '待补充', '同类题', '同类题经验', '需要确认', '待确认']);
+
 function isWeakWrongQuestionAnchor(text) {
   const normalized = String(text ?? '').trim();
   if (!normalized) {
@@ -398,7 +401,60 @@ function isWeakWrongQuestionAnchor(text) {
   if (/^[xyzamn]$/.test(normalized)) {
     return true;
   }
-  return ['条件', '关系', '目标', '题目条件'].includes(normalized);
+  return ['条件', '关系', '目标', '题目条件'].includes(normalized) || WEAK_TAG_TEXTS.has(normalized);
+}
+
+function isGenericReasonText(text) {
+  const normalized = String(text ?? '').replace(/\s+/g, '').trim();
+  if (!normalized) {
+    return true;
+  }
+  return GENERIC_REASON_TEXTS.has(normalized);
+}
+
+function defaultTopicPhrase(kind) {
+  return {
+    geometry: '这类几何题',
+    algebra: '这类代数题',
+    function: '这类函数题',
+    calculus: '这类微积分题',
+    mechanics: '这类力学题',
+    probability: '这类概率统计题',
+    generic: '这类题',
+  }[kind] || '这类题';
+}
+
+function humanizeWrongQuestionCopy(value) {
+  let text = String(value ?? '').trim();
+  if (!text) {
+    return '';
+  }
+  text = text.replace(/\s+/g, ' ');
+  text = text.replace(/^(?:此外|另外|然而|总的来说|值得注意的是|需要注意的是|可以看到|实际上|当然|希望这对你有帮助[。！]?|请告诉我[。！]?)/, '').trim();
+  const replacements = [
+    ['这不仅仅是', '这不是'],
+    ['本题考察了', '这题要用到'],
+    ['我们需要注意', '先看'],
+    ['值得注意的是', ''],
+    ['需要注意的是', ''],
+    ['总的来说', ''],
+    ['与此同时', ''],
+    ['这题先别急着算，关键是把', '别急着往下算，先把'],
+    ['如果一时接不上，就回头问自己：现在缺的是', '要是还连不上，就问自己还差哪一步'],
+    ['里的哪一座', '里的哪一步'],
+    ['再决定下一步', '再往下做'],
+    ['未分类题', '这类题'],
+    ['未分类', '这类题'],
+    ['待补充', '这一步'],
+    ['同类题经验', '这类题'],
+    ['同类题', '这类题'],
+    ['先先', '先'],
+  ];
+  for (const [oldValue, newValue] of replacements) {
+    text = text.replaceAll(oldValue, newValue);
+  }
+  text = text.replace(/[，,]{2,}/g, '，').replace(/[。]{2,}/g, '。');
+  return text.trim().replace(/^[，；]+|[，；]+$/g, '');
 }
 
 function buildQuestionAnalysisText(item) {
@@ -478,6 +534,7 @@ function extractReflectionConditions(item, kind) {
   const matches = [];
 
   const regexes = [
+    /[A-Za-z]{1,3}\s*=\s*[^，。；\n]+/g,
     /[A-Z]{1,3}\s*⊥\s*[A-Z]{1,3}/g,
     /[A-Z]{1,3}\s*∥\s*[A-Z]{1,3}/g,
     /∠[A-Z]{1,3}\s*=\s*∠[A-Z]{1,3}/g,
@@ -506,25 +563,23 @@ function extractReflectionConditions(item, kind) {
     }
   }
 
-  matches.push(...knowledgeTags);
+  matches.push(...knowledgeTags.filter((tag) => !WEAK_TAG_TEXTS.has(String(tag || '').trim())));
   const topicAnchor = String(item?.topic_category_snapshot ?? item?.topic_category ?? item?.topicCategory ?? '').trim();
-  if (topicAnchor) {
+  if (topicAnchor && !WEAK_TAG_TEXTS.has(topicAnchor)) {
     matches.push(topicAnchor);
   }
 
-  return dedupeNonEmptyTexts(matches, 4);
+  const filteredMatches = matches.filter((match) => !isWeakWrongQuestionAnchor(match));
+  return dedupeNonEmptyTexts(filteredMatches.length > 0 ? filteredMatches : matches, 4);
 }
 
 function buildGuidedReflectionAnalysis(item) {
   const source = item && typeof item === 'object' ? item : {};
   const kind = inferReflectionQuestionKind(source);
   const conditions = extractReflectionConditions(source, kind);
-  const topicAnchor = firstNonEmptyText(
-    source.topic_category_snapshot,
-    source.topic_category,
-    source.topicCategory,
-    '同类题',
-  );
+  const rawTopicAnchor = firstNonEmptyText(source.topic_category_snapshot, source.topic_category, source.topicCategory);
+  const fallbackTopicPhrase = defaultTopicPhrase(kind);
+  const topicAnchor = rawTopicAnchor && !WEAK_TAG_TEXTS.has(rawTopicAnchor) ? rawTopicAnchor : fallbackTopicPhrase;
   const reflection = normalizeReflectionSummary(source);
   const focusSource = firstNonEmptyText(
     source.child_reason_transcript_snapshot,
@@ -600,7 +655,7 @@ function buildGuidedReflectionAnalysis(item) {
     },
   };
   const profile = profiles[kind] || profiles.generic;
-  const topicPhrase = topicAnchor.endsWith('题') ? topicAnchor : `${topicAnchor}题`;
+  const topicPhrase = topicAnchor === fallbackTopicPhrase ? fallbackTopicPhrase : (topicAnchor.endsWith('题') ? topicAnchor : `${topicAnchor}题`);
 
   return {
     goal: extractReflectionGoal(source, kind),
@@ -634,7 +689,7 @@ function buildReflectionFallbackMethodHints(item) {
     hintLines.push(`这次先按“${reflection.helpPreference}”的方式复盘。`);
   }
 
-  return hintLines.slice(0, 3);
+  return hintLines.map((line) => humanizeWrongQuestionCopy(line)).filter(Boolean).slice(0, 3);
 }
 
 function buildGuidingMethodLines(item) {
@@ -652,7 +707,7 @@ function buildGuidingMethodLines(item) {
   if (merged.length === 0) {
     merged.push('先把题目里的已知条件和问法分开圈出来，再决定第一步用哪个关系。');
   }
-  return merged.slice(0, 3);
+  return merged.map((line) => humanizeWrongQuestionCopy(line)).filter(Boolean).slice(0, 3);
 }
 
 function buildQuestionSummaryText(item) {
@@ -661,28 +716,28 @@ function buildQuestionSummaryText(item) {
   const questionStructured = normalizeQuestionStructured(item);
   const questionText = normalizePromptText(item.question_text_snapshot || item.question_text || '').trim();
   const studentReason = firstNonEmptyText(
-    item.child_reason_transcript_snapshot,
-    item.student_transcript,
-    item.child_reason_text_snapshot,
-    item.student_reason_text,
+    isGenericReasonText(item.child_reason_transcript_snapshot) ? '' : item.child_reason_transcript_snapshot,
+    isGenericReasonText(item.student_transcript) ? '' : item.student_transcript,
+    isGenericReasonText(item.child_reason_text_snapshot) ? '' : item.child_reason_text_snapshot,
+    isGenericReasonText(item.student_reason_text) ? '' : item.student_reason_text,
   );
   const reasonAnchor = firstNonEmptyText(studentReason, reflection.whyWrong, structured.mistakeFocus);
   const guidanceLines = buildGuidingMethodLines(item);
 
   if (reasonAnchor && guidanceLines.length > 0) {
-    return `先回到“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这个入口，再按这题的起手顺序往下走：${guidanceLines[0]}`;
+    return humanizeWrongQuestionCopy(`先从“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这里倒回来，这题第一手先做：${guidanceLines[0]}`);
   }
   if (guidanceLines.length > 0) {
-    return guidanceLines[0];
+    return humanizeWrongQuestionCopy(guidanceLines[0]);
   }
   if (reasonAnchor) {
-    return `先回到“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这个卡点，再看题目第一步要用什么关系。`;
+    return humanizeWrongQuestionCopy(`先从“${reasonAnchor.replace(/[。！!？?]$/u, '')}”这里回头看，再想第一步该用什么关系。`);
   }
   if (questionStructured.stem) {
-    return `先把题目里“${questionStructured.stem}”这一步重新读清。`;
+    return humanizeWrongQuestionCopy(`先把题目里“${questionStructured.stem}”这一步重新读清。`);
   }
   if (questionText) {
-    return '先把题目在问什么、已知什么重新圈出来，再决定第一步从哪里下手。';
+    return humanizeWrongQuestionCopy('先把题目在问什么、已知什么重新圈出来，再决定第一步从哪里下手。');
   }
   return '';
 }
@@ -718,24 +773,26 @@ function buildReflectionWritingBlocks(item) {
   const reflection = normalizeReflectionSummary(item);
   const knowledgeTags = normalizeKnowledgeTags(item);
   const analysis = buildGuidedReflectionAnalysis(item);
+  const unknownStep = isWeakWrongQuestionAnchor(reflection.unknownStep) ? '' : reflection.unknownStep;
   const sourceAnchor = firstNonEmptyText(
-    item?.child_reason_transcript_snapshot,
-    item?.student_transcript,
-    item?.child_reason_text_snapshot,
-    item?.student_reason_text,
+    isGenericReasonText(item?.child_reason_transcript_snapshot) ? '' : item?.child_reason_transcript_snapshot,
+    isGenericReasonText(item?.student_transcript) ? '' : item?.student_transcript,
+    isGenericReasonText(item?.child_reason_text_snapshot) ? '' : item?.child_reason_text_snapshot,
+    isGenericReasonText(item?.student_reason_text) ? '' : item?.student_reason_text,
     reflection.whyWrong,
-    reflection.unknownStep,
+    unknownStep,
   );
-  const sourcePrefix = sourceAnchor ? `先回到“${shortenWrongQuestionText(sourceAnchor, 22)}”这一步，` : '';
-  const bridgeSource = knowledgeTags.slice(0, 3).join('、') || analysis.bridgeBucket;
+  const normalizedSourceAnchor = isWeakWrongQuestionAnchor(sourceAnchor) ? '' : sourceAnchor;
+  const sourcePrefix = normalizedSourceAnchor ? `先回到“${shortenWrongQuestionText(normalizedSourceAnchor, 22)}”这一步，` : '';
+  const bridgeSource = knowledgeTags.filter((tag) => !isWeakWrongQuestionAnchor(tag)).slice(0, 3).join('、') || analysis.bridgeBucket;
 
   return [
     {
       title: analysis.reasonTitle,
       contentHtml: [
-        `${sourcePrefix}当目标是“${analysis.goal}”时，先看 ${analysis.conditionPair}，想它们之间可能连出 ______。`,
-        `这题先别急着算，关键是把 ${analysis.focusCondition} 翻成可用的 ______，再决定下一步。`,
-      ].map((line) => renderPromptHtml(line)).join('<br />'),
+        `${sourcePrefix}像这题，先看 ${analysis.conditionPair}，想想它们能不能连出 ______。`,
+        `别急着往下算，先把 ${analysis.focusCondition} 改成能直接用的 ______，再往下做。`,
+      ].map((line) => renderPromptHtml(humanizeWrongQuestionCopy(line))).join('<br />'),
       kind: 'reflection',
     },
     {
@@ -744,8 +801,8 @@ function buildReflectionWritingBlocks(item) {
         reflection.helpPreference
           ? `下次遇到 ${analysis.topicPhrase}，先按“${shortenWrongQuestionText(reflection.helpPreference, 18)}”的顺序，${analysis.startAction}，再找 ______。`
           : `下次遇到 ${analysis.topicPhrase}，我先${analysis.startAction}，先找 ______，再下笔。`,
-        `如果一时接不上，就回头问自己：现在缺的是 ${bridgeSource} 里的哪一座 ______。`,
-      ].map((line) => renderPromptHtml(line)).join('<br />'),
+        `要是还连不上，就问自己：在 ${bridgeSource} 这里，还差哪一步 ______。`,
+      ].map((line) => renderPromptHtml(humanizeWrongQuestionCopy(line))).join('<br />'),
       kind: 'reflection',
     },
   ];
