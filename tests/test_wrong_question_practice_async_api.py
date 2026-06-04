@@ -55,6 +55,45 @@ class WrongQuestionPracticeAsyncApiTestCase(unittest.TestCase):
 
     @patch("app.finalize_ai_charge")
     @patch("app.ensure_feature_credits_available")
+    @patch("wrong_question_upload_worker.ensure_erased_wrong_question_images_for_practice_items")
+    @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", return_value="/tmp/practice-sheet.pdf")
+    @patch("ai_processor.generate_wrong_question_practice_sheet_material")
+    def test_worker_backfills_erased_images_before_pdf(
+        self,
+        mock_generate_material,
+        mock_generate_pdf,
+        mock_ensure_erased,
+        _mock_credits,
+        mock_finalize,
+    ):
+        mock_generate_material.return_value = {
+            "title": "Alice 错题练习",
+            "items": [
+                {
+                    "wrong_question_record_id": self.record["id"],
+                    "reason_blank_prompt": "先把真正错因写出来\n这题我错在 ______，因为我忽略了 ______。",
+                    "improvement_summary_prompt": "再想想以后怎么做\n下次再碰到这种题时，你准备先检查哪里？",
+                }
+            ],
+        }
+        mock_ensure_erased.side_effect = lambda items: [
+            {**items[0], "erased_image_url_snapshot": "/tmp/erased-practice-worker.png"}
+        ]
+
+        app_module._run_wrong_question_practice_generation_job(
+            sheet_id=self.sheet["id"],
+            user={"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+        )
+
+        material_kwargs = mock_generate_material.call_args.kwargs
+        self.assertEqual(material_kwargs["items"][0]["image_url_snapshot"], "https://files.example.com/practice-worker.png")
+        mock_ensure_erased.assert_called_once()
+        pdf_kwargs = mock_generate_pdf.call_args.kwargs
+        self.assertEqual(pdf_kwargs["items"][0]["erased_image_url_snapshot"], "/tmp/erased-practice-worker.png")
+        mock_finalize.assert_called_once()
+
+    @patch("app.finalize_ai_charge")
+    @patch("app.ensure_feature_credits_available")
     @patch("pdf_engine.generate_wrong_question_practice_sheet_pdf", return_value="/tmp/practice-sheet.pdf")
     @patch("ai_processor.generate_wrong_question_practice_sheet_material")
     def test_worker_generates_pdf_and_marks_sheet_ready(
