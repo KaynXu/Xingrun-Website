@@ -1,0 +1,30 @@
+{
+  "student_name": "杨雨晴",
+  "class_name": "2020级·六年级·1班·衔接",
+  "teacher_name": "何姝健",
+  "date_label": "6月5日",
+  "start_ts": "2026-06-05 00:00:00",
+  "end_ts": "2026-06-06 00:00:00",
+  "record_count": 4,
+  "record_ids": [
+    "wechat-e47f05abccf7dabe",
+    "wechat-8b20e1daf3685032",
+    "wechat-6fc08237ac33055a",
+    "wechat-a38623031e17e1f4"
+  ],
+  "record_dates": [
+    "2026-06-05 18:11:30",
+    "2026-06-05 18:14:01",
+    "2026-06-05 18:15:12",
+    "2026-06-05 18:17:01"
+  ],
+  "title": "2020级·六年级·1班·衔接 杨雨晴 6月5日错题复习",
+  "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/杨雨晴-6月5日错题复习PDF-20260605-20260605/2020级·六年级·1班·衔接-杨雨晴-6月5日错题复习-20260605-20260605.pdf",
+  "image_status": {
+    "wechat-e47f05abccf7dabe": "downloaded",
+    "wechat-8b20e1daf3685032": "downloaded",
+    "wechat-6fc08237ac33055a": "downloaded",
+    "wechat-a38623031e17e1f4": "downloaded"
+  },
+  "query_source": "production:/home/ubuntu/Xingrun-Website/data/xingrun.db"
+}
