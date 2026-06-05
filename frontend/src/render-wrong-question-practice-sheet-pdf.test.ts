@@ -79,7 +79,7 @@ test('buildDocumentMarkup prefers structured content for method hints, review bl
   });
 
   assert.match(markup, /题干摘要/);
-  assert.match(markup, /先回到“速度和时间对应关系写反”这个入口/);
+  assert.match(markup, /先从“速度和时间对应关系写反”这里倒回来/);
   assert.match(markup, /方法提醒/);
   assert.match(markup, /先把总路程和速度和对应起来。/);
   assert.match(markup, /相遇关系补全/);
@@ -122,9 +122,10 @@ test('buildDocumentMarkup falls back to reflection spine when structured content
   });
 
   assert.match(markup, /题干摘要/);
-  assert.match(markup, /先回到“我去分母时漏乘了右边常数”这个入口/);
-  assert.match(markup, /先回到 一元一次方程 \/ 去分母 这组知识点。/);
-  assert.match(markup, /先补清：不知道等式右边也要同乘 2/);
+  assert.match(markup, /先从“我去分母时漏乘了右边常数”这里倒回来/);
+  assert.match(markup, /分母 和 方程/);
+  assert.match(markup, /改成能直接用的/);
+  assert.match(markup, /先盯住目标式和已知式差在哪一步/);
   assert.doesNotMatch(markup, /错因定位：/);
   assert.doesNotMatch(markup, /本次目标：/);
 });
@@ -159,14 +160,44 @@ test('buildDocumentMarkup replaces low-information writing fallback with reflect
   assert.doesNotMatch(markup, /我这题错在/);
   assert.doesNotMatch(markup, /下次我要先看/);
   assert.match(markup, /挖空复盘/);
-  assert.match(markup, /没有把 CE⊥AD 翻译成直角关系/);
-  assert.match(markup, /先提醒我标垂直和等角/);
+  assert.match(markup, /CDA=∠BAC 和 CE⊥AD/);
+  assert.match(markup, /能不能连出/);
+  assert.match(markup, /改成能直接用的/);
+  assert.match(markup, /先在图上标出已知角、直角或对应边/);
   assert.doesNotMatch(markup, /重新画出 CE⊥AD 这个垂直关系。/);
   assert.doesNotMatch(markup, /写出 ∠CDA=∠BAC 能触发的等角关系。/);
   assert.match(markup, /\.writing-card,[\s\S]*?break-inside: avoid/);
   assert.match(markup, /\.redo-work-area \{[\s\S]*?break-inside: avoid/);
   assert.match(markup, /\.writing-prompt-block \{[\s\S]*?break-inside: avoid/);
   assert.doesNotMatch(markup, /重做这题/);
+});
+
+test('buildDocumentMarkup replaces generic fallback copy with question-driven guidance', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '九年级 2 班',
+    teacherName: '周老师',
+    title: 'Alice 错题练习',
+    items: [
+      {
+        question_order: 6,
+        wrong_question_record_id: 'wechat-generic-fallback',
+        is_geometry: false,
+        question_text_snapshot: '已知函数 f(x) 在区间 [1,3] 上单调递减，比较 f(x+1) 与 f(2x-1) 的大小。',
+        reason_blank_prompt: '错因复盘\n先检查题目条件，再理解题意。',
+        improvement_summary_prompt: '下次提醒\n注意关键步骤，多练类似题目。',
+        knowledge_tags_snapshot_json: ['定义域', '单调', '函数'],
+        topic_category_snapshot: '函数单调性',
+      },
+    ],
+  });
+
+  assert.doesNotMatch(markup, /先检查题目条件/);
+  assert.doesNotMatch(markup, /多练类似题目/);
+  assert.doesNotMatch(markup, /未分类|先先|希望这对你有帮助|本题考察了/);
+  assert.match(markup, /像这题，先看 f\(x\) 和 f\(x\+1\)/);
+  assert.match(markup, /f\(x\) 和 f\(x\+1\)/);
+  assert.match(markup, /先圈出自变量范围和图像线索/);
 });
 
 test('buildDocumentMarkup normalizes literal newline escapes in question and prompt text', async () => {
@@ -387,7 +418,7 @@ test('buildDocumentMarkup keeps scheduled practice pages in the final four-area 
   const summaryIndex = markup.indexOf('题干摘要');
   const methodIndex = markup.indexOf('方法提醒');
   const reviewIndex = markup.indexOf('挖空复盘');
-  const reasonIndex = markup.indexOf('本题信息还不完整');
+  const reasonIndex = markup.indexOf('像这题，先看 方程');
   const correctionIndex = markup.indexOf('订正区');
 
   assert.ok(sourceIndex > -1);
