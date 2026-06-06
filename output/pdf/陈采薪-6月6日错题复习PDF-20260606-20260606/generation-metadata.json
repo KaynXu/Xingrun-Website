@@ -1,0 +1,29 @@
+{
+  "student_name": "陈采薪",
+  "class_name": "小姝老师小课",
+  "teacher_name": "何姝健",
+  "date_label": "6月6日",
+  "start_ts": "2026-06-06 00:00:00",
+  "end_ts": "2026-06-07 00:00:00",
+  "record_count": 7,
+  "record_ids": [
+    "wechat-f83d4c70f72d43a5",
+    "wechat-7f4f724ed4d2a52f",
+    "wechat-4979fa63e0211d44",
+    "wechat-13adc2e70b41226c",
+    "wechat-25023871c382df2a",
+    "wechat-d70aa9cdbd1b2dd4",
+    "wechat-abd7dcf5aba1f7e5"
+  ],
+  "record_dates": [
+    "2026-06-06 12:09:35",
+    "2026-06-06 12:13:50",
+    "2026-06-06 12:16:32",
+    "2026-06-06 12:18:29",
+    "2026-06-06 12:19:54",
+    "2026-06-06 12:26:14",
+    "2026-06-06 12:38:13"
+  ],
+  "title": "小姝老师小课 陈采薪 6月6日错题复习",
+  "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/陈采薪-6月6日错题复习PDF-20260606-20260606/小姝老师小课-陈采薪-6月6日错题复习-20260606-20260606.pdf"
+}
