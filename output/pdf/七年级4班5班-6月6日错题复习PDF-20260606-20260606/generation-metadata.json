@@ -7,6 +7,8 @@
     14,
     15
   ],
+  "question_surface": "original_uploaded_image_only",
+  "revision_note": "2026-06-07 按用户要求重生成：原题 / 原图区域强制使用家长上传原图，不使用 OCR 题干重排或生成图。",
   "status_rows": [
     {
       "class_id": 14,
