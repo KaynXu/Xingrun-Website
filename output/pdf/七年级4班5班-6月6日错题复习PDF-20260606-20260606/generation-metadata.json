@@ -1,0 +1,112 @@
+{
+  "query_source": "production:/home/ubuntu/Xingrun-Website/data/xingrun.db",
+  "requested_start_ts": "2026-06-06 00:00:00",
+  "requested_end_ts": "2026-06-08 00:00:00",
+  "actual_date_label": "6月6日",
+  "class_ids": [
+    14,
+    15
+  ],
+  "status_rows": [
+    {
+      "class_id": 14,
+      "class_name": "2025级·七年级·4班",
+      "day": "2026-06-06",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 22
+    }
+  ],
+  "students": [
+    {
+      "class_name": "2025级·七年级·4班",
+      "student_name": "张琨旎",
+      "teacher_name": "何姝健",
+      "record_count": 9,
+      "record_ids": [
+        "wechat-a25bc280beae8900",
+        "wechat-5d81ed2465f535b9",
+        "wechat-815a2d86cee2ec7c",
+        "wechat-974d38e683234657",
+        "wechat-d70874f421410022",
+        "wechat-c220171b994132f2",
+        "wechat-71f111f83cae6db5",
+        "wechat-978cfa35e83602df",
+        "wechat-76ac6b2ad1bf435d"
+      ],
+      "record_dates": [
+        "2026-06-06 18:29:58",
+        "2026-06-06 18:30:45",
+        "2026-06-06 18:31:28",
+        "2026-06-06 18:32:06",
+        "2026-06-06 18:32:38",
+        "2026-06-06 18:33:12",
+        "2026-06-06 18:33:43",
+        "2026-06-06 18:34:17",
+        "2026-06-06 18:34:49"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/七年级4班5班-6月6日错题复习PDF-20260606-20260606/2025级·七年级·4班-张琨旎-6月6日错题复习-20260606-20260606.pdf"
+    },
+    {
+      "class_name": "2025级·七年级·4班",
+      "student_name": "彭栎玮",
+      "teacher_name": "何姝健",
+      "record_count": 3,
+      "record_ids": [
+        "wechat-da5dadec66dae462",
+        "wechat-05207b284a699fdf",
+        "wechat-4f97b5bdddb6e84b"
+      ],
+      "record_dates": [
+        "2026-06-06 20:04:25",
+        "2026-06-06 20:04:54",
+        "2026-06-06 20:05:32"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/七年级4班5班-6月6日错题复习PDF-20260606-20260606/2025级·七年级·4班-彭栎玮-6月6日错题复习-20260606-20260606.pdf"
+    },
+    {
+      "class_name": "2025级·七年级·4班",
+      "student_name": "晏语佳",
+      "teacher_name": "何姝健",
+      "record_count": 6,
+      "record_ids": [
+        "wechat-7e8cd6c6c2e39f75",
+        "wechat-4b2072b9838d42ee",
+        "wechat-129b52a3e8f1cd8e",
+        "wechat-dfaf73bc1305bdda",
+        "wechat-233220724445f163",
+        "wechat-efb622da2c0b8e11"
+      ],
+      "record_dates": [
+        "2026-06-06 19:40:15",
+        "2026-06-06 19:41:51",
+        "2026-06-06 19:43:15",
+        "2026-06-06 19:45:03",
+        "2026-06-06 19:47:10",
+        "2026-06-06 19:48:38"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/七年级4班5班-6月6日错题复习PDF-20260606-20260606/2025级·七年级·4班-晏语佳-6月6日错题复习-20260606-20260606.pdf"
+    },
+    {
+      "class_name": "2025级·七年级·4班",
+      "student_name": "蒋贝贝",
+      "teacher_name": "何姝健",
+      "record_count": 4,
+      "record_ids": [
+        "wechat-737ac38bb92cfd10",
+        "wechat-c76de7832c5ac163",
+        "wechat-5c2b7c1ee1531892",
+        "wechat-08e5b22166093e5c"
+      ],
+      "record_dates": [
+        "2026-06-06 22:20:33",
+        "2026-06-06 22:21:05",
+        "2026-06-06 22:21:40",
+        "2026-06-06 22:22:23"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/七年级4班5班-6月6日错题复习PDF-20260606-20260606/2025级·七年级·4班-蒋贝贝-6月6日错题复习-20260606-20260606.pdf"
+    }
+  ]
+}
