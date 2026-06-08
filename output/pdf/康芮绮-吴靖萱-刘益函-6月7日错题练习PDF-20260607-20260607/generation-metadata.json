@@ -1,0 +1,103 @@
+{
+  "query_source": "production:/home/ubuntu/Xingrun-Website/data/xingrun.db",
+  "requested_start_ts": "2026-06-07 00:00:00",
+  "requested_end_ts": "2026-06-09 00:00:00",
+  "requested_date_label": "6月7日至6月8日",
+  "actual_date_label": "6月7日",
+  "question_surface": "original_uploaded_image_only",
+  "requested_name_note": {
+    "吴婧萱": "吴靖萱"
+  },
+  "status_rows": [
+    {
+      "class_id": 15,
+      "class_name": "2025级·七年级·5班",
+      "student_id": 75,
+      "student_name": "刘益函",
+      "day": "2026-06-07",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 2
+    },
+    {
+      "class_id": 14,
+      "class_name": "2025级·七年级·4班",
+      "student_id": 71,
+      "student_name": "吴靖萱",
+      "day": "2026-06-07",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 3
+    },
+    {
+      "class_id": 14,
+      "class_name": "2025级·七年级·4班",
+      "student_id": 70,
+      "student_name": "康芮绮",
+      "day": "2026-06-07",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 3
+    }
+  ],
+  "day8_rows": [],
+  "students": [
+    {
+      "student_name": "康芮绮",
+      "class_name": "2025级·七年级·4班",
+      "teacher_name": "何姝健",
+      "record_count": 3,
+      "record_ids": [
+        "wechat-7b17430a06351f94",
+        "wechat-69aa975529a23671",
+        "wechat-9116e3ace6a052dc"
+      ],
+      "record_dates": [
+        "2026-06-07 17:37:41",
+        "2026-06-07 17:38:10",
+        "2026-06-07 17:38:33"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607/2025级·七年级·4班-康芮绮-6月7日错题练习-20260607-20260607.pdf"
+    },
+    {
+      "student_name": "吴靖萱",
+      "class_name": "2025级·七年级·4班",
+      "teacher_name": "何姝健",
+      "record_count": 3,
+      "record_ids": [
+        "wechat-abdf3d3139288562",
+        "wechat-b05aea3795f0df1d",
+        "wechat-9b4ee900f827769c"
+      ],
+      "record_dates": [
+        "2026-06-07 20:43:23",
+        "2026-06-07 20:43:51",
+        "2026-06-07 20:44:15"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607/2025级·七年级·4班-吴靖萱-6月7日错题练习-20260607-20260607.pdf"
+    },
+    {
+      "student_name": "刘益函",
+      "class_name": "2025级·七年级·5班",
+      "teacher_name": "何姝健",
+      "record_count": 2,
+      "record_ids": [
+        "wechat-f0910fee08202d2b",
+        "wechat-59d0d61191f2a8a2"
+      ],
+      "record_dates": [
+        "2026-06-07 18:30:47",
+        "2026-06-07 18:31:15"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607/2025级·七年级·5班-刘益函-6月7日错题练习-20260607-20260607.pdf"
+    }
+  ],
+  "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607.zip",
+  "revision_note": "题面强制使用家长上传原图；未展示 OCR 题干重排、擦除图或生成图。生产库 2026-06-08 对这三位学生无上传记录。"
+}
