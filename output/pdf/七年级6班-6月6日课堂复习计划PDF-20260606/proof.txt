@@ -1,0 +1,5 @@
+pdf=/Users/xiaodi/Desktop/xingrun.web/output/pdf/七年级6班-6月6日课堂复习计划PDF-20260606/七年级6班-等腰直角三角形模型复习计划-20260606.pdf
+bytes=247198
+pages=8
+missing_keywords=[]
+rendered_pages=p1:page-1.png:834x1179:90682:nonwhite=0.2141; p2:page-2.png:834x1179:84818:nonwhite=0.1584; p3:page-3.png:834x1179:82897:nonwhite=0.0320; p4:page-4.png:834x1179:76450:nonwhite=0.1918; p5:page-5.png:834x1179:80516:nonwhite=0.0589; p6:page-6.png:834x1179:76337:nonwhite=0.0583; p7:page-7.png:834x1179:90847:nonwhite=0.0615; p8:page-8.png:834x1179:79869:nonwhite=0.0591
