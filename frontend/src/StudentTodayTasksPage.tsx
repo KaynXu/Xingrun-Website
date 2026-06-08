@@ -2,11 +2,18 @@ import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   BookOpenCheck,
+  CalendarDays,
   ChevronRight,
+  Clock3,
+  Download,
+  ExternalLink,
   FileText,
   KeyRound,
   Loader2,
+  LogOut,
   RefreshCw,
+  Smile,
+  UserRound,
   Users,
 } from 'lucide-react';
 
@@ -146,9 +153,32 @@ function buildStudentAuthedPath(path: string, token: string): string {
   return `${path}${separator}token=${encodeURIComponent(token)}`;
 }
 
+function getClassSummary(student: StudentReviewTaskStudent | null): string {
+  if (!student?.class_names?.length) {
+    return '未绑定班级';
+  }
+  return student.class_names.slice(0, 2).join(' / ');
+}
+
+function getTaskStepText(task: StudentReviewTask): string {
+  return task.steps.find((step) => step.trim()) || task.review_label || '按老师安排完成今天的复习';
+}
+
+function StudentBrandMark({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={cx('flex items-center gap-3 rounded-2xl border border-sky-100 bg-white/85 px-3 py-2 shadow-sm', compact && 'gap-2 px-2.5 py-2')}>
+      <img src="/logo.png" alt="Starain logo" className={cx('shrink-0 object-contain', compact ? 'h-9 w-9' : 'h-10 w-10')} />
+      <div className={cx('min-w-0', compact && 'hidden sm:block')}>
+        <p className="truncate text-sm font-bold leading-5 text-slate-950">Starain</p>
+        <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-sky-600">学生复习</p>
+      </div>
+    </div>
+  );
+}
+
 export function StudentTodayTasksContent({
-  today: _today,
-  student: _student,
+  today,
+  student,
   loading,
   taskLoading,
   error,
@@ -156,72 +186,221 @@ export function StudentTodayTasksContent({
   activeTask,
   onTaskSelect,
   buildAuthedPath,
-  onLogout: _onLogout,
+  onLogout,
 }: StudentTodayTasksContentProps) {
   const previewPath = activeTask && activeTask.pdf_available
     ? buildStudentTaskPdfPreviewPath(activeTask, buildAuthedPath)
     : '';
+  const studentName = student?.name || '同学';
+  const classSummary = getClassSummary(student);
+  const taskCount = tasks.length;
+  const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.lesson_id === activeTask.lesson_id) : -1;
+  const taskPosition = activeTaskIndex >= 0 ? activeTaskIndex + 1 : taskCount ? 1 : 0;
+  const progressPercent = taskCount ? Math.max(8, (taskPosition / taskCount) * 100) : 0;
+  const activeTaskStep = activeTask ? getTaskStepText(activeTask) : '';
+  const activeDownloadPath = activeTask ? buildAuthedPath(activeTask.pdf_download_url || activeTask.pdf_url) : '';
+  const activeOpenPath = activeTask ? buildAuthedPath(activeTask.pdf_url) : '';
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-950 dark:bg-slate-950 dark:text-slate-50 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <header className="rounded-3xl border border-slate-200 bg-white px-6 py-7 shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
-          <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white">今日复习</h1>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f6fbff_0%,#eef7ff_54%,#f8fbff_100%)] text-slate-950">
+      <div className="mx-auto flex max-w-[92rem] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-4 border-b border-sky-100/80 pb-5 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+              <UserRound size={23} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-bold text-slate-950 sm:text-3xl">你好, {studentName}</h1>
+              <p className="mt-1 text-sm font-medium text-slate-500">专注今天的复习, 进步看得见!</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 sm:ml-auto sm:justify-end">
+            <div className="inline-flex h-11 items-center gap-2 rounded-2xl border border-sky-100 bg-white/80 px-3 text-sm font-semibold text-slate-600 shadow-sm">
+              <CalendarDays size={17} className="text-slate-500" />
+              <span>{today}</span>
+            </div>
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                title="退出登录"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-100 bg-white/80 text-slate-500 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
+              >
+                <LogOut size={18} />
+              </button>
+            )}
+            <StudentBrandMark compact />
+          </div>
         </header>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
             <AlertCircle size={16} />
             <span>{error}</span>
           </div>
         )}
 
-        <section className="grid min-h-[38rem] gap-5 xl:grid-cols-[20rem_minmax(0,1fr)]">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
+        <section className="rounded-2xl border border-sky-100 bg-white/90 p-5 shadow-[0_18px_50px_rgba(47,128,237,0.08)]">
+          <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)_auto] md:items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+                <BookOpenCheck size={23} />
+              </div>
+              <div>
+                <p className="text-xl font-bold text-slate-950">今日复习</p>
+                <p className="mt-1 text-sm font-medium text-slate-500">{classSummary}</p>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-500">
+                <span>{taskCount ? `今天要完成 ${taskCount} 个任务` : '今天没有任务'}</span>
+                <span>{taskCount ? `任务 ${taskPosition}/${taskCount}` : '任务 0/0'}</span>
+              </div>
+              <div className="mt-3 h-2 rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progressPercent}%` }} />
+              </div>
+            </div>
+            <div className="inline-flex items-center gap-2 justify-self-start rounded-2xl bg-cyan-50 px-4 py-2 text-sm font-bold text-sky-700 md:justify-self-end">
+              <span>继续加油!</span>
+              <Smile size={18} className="text-cyan-500" />
+            </div>
+          </div>
+        </section>
+
+        <section className="grid min-h-[40rem] gap-5 xl:grid-cols-[minmax(22rem,34rem)_minmax(0,1fr)]">
+          <aside className="flex min-h-[40rem] flex-col rounded-2xl border border-sky-100 bg-white/95 p-5 shadow-[0_18px_50px_rgba(47,128,237,0.08)]">
             <div className="flex items-center justify-between gap-3 px-1">
-              <p className="text-lg font-bold text-slate-900 dark:text-slate-100">今日任务</p>
+              <div className="flex items-center gap-2">
+                <CalendarDays size={21} className="text-sky-600" />
+                <p className="text-xl font-bold text-slate-950">今天要做</p>
+              </div>
               {taskLoading && <Loader2 size={18} className="animate-spin text-sky-500" />}
             </div>
 
-            <div className="mt-3 space-y-3">
+            <div className="mt-5 flex-1 space-y-4">
               {loading || taskLoading ? (
-                <div className="flex min-h-64 items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                <div className="flex min-h-64 items-center justify-center rounded-2xl border border-dashed border-sky-200 bg-sky-50/60 text-sm font-semibold text-slate-500">
+                  <Loader2 size={18} className="mr-2 animate-spin text-sky-500" />
                   正在加载今日任务
                 </div>
               ) : tasks.length === 0 ? (
-                <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-white/10 dark:bg-white/5">
+                <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-sky-200 bg-sky-50/60 px-6 text-center">
                   <BookOpenCheck size={34} className="text-emerald-500" />
-                  <p className="mt-4 text-base font-semibold text-slate-800 dark:text-slate-100">今天暂无复习任务</p>
+                  <p className="mt-4 text-base font-semibold text-slate-800">今天暂无复习任务</p>
+                  <p className="mt-2 text-sm text-slate-500">可以先整理错题和课堂笔记</p>
                 </div>
               ) : (
-                tasks.map((task) => {
+                tasks.map((task, index) => {
                   const active = activeTask?.lesson_id === task.lesson_id;
+                  const stepText = getTaskStepText(task);
                   return (
                     <button
                       key={`${task.lesson_id}-${task.review_label}`}
                       type="button"
+                      aria-pressed={active}
                       onClick={() => onTaskSelect(task)}
                       className={cx(
-                        'w-full rounded-3xl border p-4 text-left transition',
+                        'group w-full rounded-2xl border p-4 text-left transition',
                         active
-                          ? 'border-sky-300 bg-sky-50 shadow-[0_16px_34px_rgba(14,165,233,0.14)] dark:border-sky-400/40 dark:bg-sky-500/10'
-                          : 'border-slate-200 bg-white hover:border-sky-200 hover:bg-sky-50/70 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/8',
+                          ? 'border-emerald-300 bg-emerald-50/70 shadow-[0_16px_36px_rgba(16,185,129,0.14)]'
+                          : 'border-sky-100 bg-white hover:border-sky-300 hover:bg-sky-50/70',
                       )}
                     >
-                      <p className="truncate text-base font-bold text-slate-900 dark:text-slate-100">{task.lesson_topic || '未命名课程'}</p>
+                      <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-4">
+                        <div className="flex h-full items-center justify-center border-r border-slate-200 pr-3">
+                          <span
+                            className={cx(
+                              'flex h-8 w-8 items-center justify-center rounded-xl border text-sm font-bold',
+                              active
+                                ? 'border-emerald-500 bg-emerald-500 text-white'
+                                : 'border-slate-300 bg-white text-slate-500 group-hover:border-sky-400 group-hover:text-sky-600',
+                            )}
+                          >
+                            {index + 1}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="inline-flex rounded-lg bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">{task.lesson_subject || '复习'}</span>
+                              <p className="mt-2 truncate text-lg font-bold text-slate-950">{task.lesson_topic || '未命名课程'}</p>
+                            </div>
+                            <span className={cx('shrink-0 rounded-xl px-3 py-1 text-xs font-bold', active ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-600 text-white')}>
+                              {active ? '正在预览' : '开始复习'}
+                            </span>
+                          </div>
+                          <p className="mt-2 truncate text-sm font-medium text-slate-500">{task.review_label}</p>
+                          <div className="mt-3 flex flex-wrap gap-3 text-sm font-medium text-slate-500">
+                            <span className="inline-flex items-center gap-1.5">
+                              <Clock3 size={15} />
+                              {task.estimated_time}
+                            </span>
+                            {task.pdf_page && (
+                              <span className="inline-flex items-center gap-1.5">
+                                <FileText size={15} />
+                                第 {task.pdf_page} 页
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-3 line-clamp-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-medium text-slate-600">{stepText}</p>
+                        </div>
+                      </div>
                     </button>
                   );
                 })
               )}
             </div>
-          </div>
 
-          <div className="min-h-[38rem] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900">
+            <div className="mt-5 flex items-center gap-2 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-semibold text-slate-500">
+              <BookOpenCheck size={18} className="text-sky-600" />
+              <span>按顺序完成, 效果更好哦</span>
+            </div>
+          </aside>
+
+          <div className="min-h-[40rem] overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_18px_50px_rgba(47,128,237,0.08)]">
+            <div className="flex min-h-16 flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
+              <div className="mr-auto flex min-w-0 items-center gap-2">
+                <FileText size={21} className="text-slate-700" />
+                <div className="min-w-0">
+                  <p className="truncate text-base font-bold text-slate-950">PDF预览</p>
+                  <p className="truncate text-xs font-semibold text-slate-500">{activeTask?.pdf_filename || activeTask?.lesson_topic || '今日复习资料'}</p>
+                </div>
+              </div>
+              {activeTask?.pdf_page && (
+                <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">第 {activeTask.pdf_page} 页</span>
+              )}
+              <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">自动缩放</span>
+              {activeTask && activeDownloadPath && (
+                <a
+                  href={activeDownloadPath}
+                  title="下载PDF"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition hover:bg-sky-50 hover:text-sky-700"
+                >
+                  <Download size={19} />
+                  <span className="sr-only">下载PDF</span>
+                </a>
+              )}
+              {activeTask && activeOpenPath && (
+                <a
+                  href={activeOpenPath}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="打开PDF"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition hover:bg-sky-50 hover:text-sky-700"
+                >
+                  <ExternalLink size={19} />
+                  <span className="sr-only">打开PDF</span>
+                </a>
+              )}
+            </div>
             {activeTask && previewPath ? (
-              <iframe title={`${activeTask.lesson_topic} PDF`} src={previewPath} className="h-full min-h-[38rem] w-full border-0" />
+              <iframe title={`${activeTask.lesson_topic} PDF`} src={previewPath} className="h-full min-h-[calc(40rem-4rem)] w-full border-0 bg-slate-100" />
             ) : (
-              <div className="flex h-full min-h-[38rem] items-center justify-center bg-slate-100 dark:bg-slate-950">
-                <FileText size={38} className="text-slate-400" />
+              <div className="flex h-full min-h-[calc(40rem-4rem)] flex-col items-center justify-center bg-slate-50 px-6 text-center">
+                <FileText size={42} className="text-slate-400" />
+                <p className="mt-4 text-base font-semibold text-slate-700">选择一个任务后预览资料</p>
+                <p className="mt-2 text-sm text-slate-500">如果 PDF 还没生成, 可以先看任务说明</p>
               </div>
             )}
           </div>
@@ -420,12 +599,17 @@ export function StudentPortalPage({ today }: { today: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 dark:bg-slate-950 dark:text-slate-50 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-xl items-center justify-center">
-        <section className="w-full rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.10)] dark:border-white/10 dark:bg-slate-900 md:p-8">
-          <div className="mb-7">
-            <p className="text-sm font-semibold text-sky-600 dark:text-sky-300">学生端</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">学生端登录</h1>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f6fbff_0%,#eef7ff_58%,#f8fbff_100%)] text-slate-950">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-5 sm:px-6 lg:px-8">
+        <header className="flex justify-end">
+          <StudentBrandMark />
+        </header>
+        <main className="grid flex-1 place-items-center py-8">
+          <section className="w-full max-w-xl rounded-2xl border border-sky-100 bg-white/95 p-5 shadow-[0_24px_80px_rgba(47,128,237,0.12)] md:p-8">
+            <div className="mb-7">
+              <p className="text-sm font-bold text-sky-600">学生端</p>
+              <h1 className="mt-2 text-3xl font-bold text-slate-950">学生端登录</h1>
+              <p className="mt-3 text-sm font-medium text-slate-500">今天打开复习计划, 按顺序完成任务.</p>
           </div>
 
             <div className="flex rounded-2xl bg-slate-100 p-1 text-sm font-semibold dark:bg-white/8">
@@ -554,7 +738,8 @@ export function StudentPortalPage({ today }: { today: string }) {
                 </button>
               </form>
             )}
-        </section>
+          </section>
+        </main>
       </div>
     </div>
   );
