@@ -161,8 +161,6 @@ from lesson_manager import (
     list_wrong_question_submissions_for_chat_session,
     list_wrong_question_assets,
     list_wrong_question_submissions_for_ingestion_run,
-    list_student_review_task_students_for_actor,
-    list_student_review_tasks_for_actor,
     list_student_review_tasks_for_student_account,
     list_students_for_class,
     list_student_class_history,
