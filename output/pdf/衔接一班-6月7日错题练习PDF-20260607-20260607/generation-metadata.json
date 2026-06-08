@@ -1,0 +1,165 @@
+{
+  "class_alias": "衔接一班",
+  "class_id": 17,
+  "date_label": "6月7日",
+  "start_ts": "2026-06-07 00:00:00",
+  "end_ts": "2026-06-09 00:00:00",
+  "query_source": "production:/home/ubuntu/Xingrun-Website/data/xingrun.db",
+  "question_surface": "original_uploaded_image_only",
+  "record_count": 13,
+  "recognized_count": 12,
+  "failed_count": 1,
+  "status_rows": [
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 82,
+      "student_name": "唐语涵",
+      "recognition_status": "failed",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 1
+    },
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 82,
+      "student_name": "唐语涵",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 6
+    },
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 81,
+      "student_name": "张格源",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 3
+    },
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 3
+    }
+  ],
+  "task_rows": [
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 82,
+      "student_name": "唐语涵",
+      "status": "failed",
+      "task_count": 1
+    },
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 82,
+      "student_name": "唐语涵",
+      "status": "ready",
+      "task_count": 6
+    },
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 81,
+      "student_name": "张格源",
+      "status": "ready",
+      "task_count": 3
+    },
+    {
+      "day": "2026-06-07",
+      "class_id": 17,
+      "class_name": "2020级·六年级·1班·衔接",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "status": "ready",
+      "task_count": 3
+    }
+  ],
+  "students": [
+    {
+      "student_name": "唐语涵",
+      "class_name": "2020级·六年级·1班·衔接",
+      "teacher_name": "何姝健",
+      "record_count": 7,
+      "recognized_count": 6,
+      "failed_count": 1,
+      "record_ids": [
+        "wechat-44c2873d504d7029",
+        "wechat-89b3a3b0cec5f465",
+        "wechat-483501dade633851",
+        "wechat-838ce6679719aabe",
+        "wechat-725c0d13d6806bd3",
+        "wechat-0e26f278b109cd08",
+        "wechat-3fc4e7e195345be6"
+      ],
+      "record_dates": [
+        "2026-06-07 20:17:50",
+        "2026-06-07 20:18:41",
+        "2026-06-07 20:18:57",
+        "2026-06-07 20:19:25",
+        "2026-06-07 20:20:46",
+        "2026-06-07 20:20:59",
+        "2026-06-07 20:21:22"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接一班-6月7日错题练习PDF-20260607-20260607/2020级·六年级·1班·衔接-唐语涵-6月7日错题练习-20260607-20260607.pdf"
+    },
+    {
+      "student_name": "张格源",
+      "class_name": "2020级·六年级·1班·衔接",
+      "teacher_name": "何姝健",
+      "record_count": 3,
+      "recognized_count": 3,
+      "failed_count": 0,
+      "record_ids": [
+        "wechat-4e575805bc50f838",
+        "wechat-67fdf7b000267870",
+        "wechat-8c6383faaf8730a8"
+      ],
+      "record_dates": [
+        "2026-06-07 20:36:51",
+        "2026-06-07 20:37:25",
+        "2026-06-07 20:38:11"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接一班-6月7日错题练习PDF-20260607-20260607/2020级·六年级·1班·衔接-张格源-6月7日错题练习-20260607-20260607.pdf"
+    },
+    {
+      "student_name": "李迎萌",
+      "class_name": "2020级·六年级·1班·衔接",
+      "teacher_name": "何姝健",
+      "record_count": 3,
+      "recognized_count": 3,
+      "failed_count": 0,
+      "record_ids": [
+        "wechat-cdd680c5b127d8cc",
+        "wechat-ea651e0dc347de56",
+        "wechat-c86807b34113a571"
+      ],
+      "record_dates": [
+        "2026-06-07 21:24:40",
+        "2026-06-07 21:25:08",
+        "2026-06-07 21:25:34"
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接一班-6月7日错题练习PDF-20260607-20260607/2020级·六年级·1班·衔接-李迎萌-6月7日错题练习-20260607-20260607.pdf"
+    }
+  ],
+  "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接一班-6月7日错题练习PDF-20260607-20260607.zip",
+  "revision_note": "题面强制使用家长上传原图，不使用 OCR 题干重排、擦除图或生成图；识别失败记录也以原图纳入。"
+}
