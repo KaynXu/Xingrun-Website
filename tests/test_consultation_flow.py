@@ -287,6 +287,42 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(remaining_rows[0]["id"], 2)
         self.assertEqual(remaining_rows[0]["parent_wechat_name"], "李妈妈")
 
+    def test_consultation_create_requires_lightweight_fields(self):
+        response = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "child_name": "轻量学生",
+                "consultation_subject": "数学",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("家长诉求", response.get_json()["error"])
+
+    def test_consultation_stage_notes_and_closing_result_round_trip(self):
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "child_name": "流程学生",
+                "consultation_subject": "数学",
+                "grade": "七年级",
+                "need_detail": "想看看七年级数学衔接",
+                "receiving_teacher": "何姝健",
+                "source_channel": "转介绍",
+                "customer_service_note": "已加客服，家长发了校内成绩",
+                "communication_teacher_note": "老师已初步沟通",
+                "closing_result": "success",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        payload = created.get_json()
+        self.assertEqual(payload["customer_service_note"], "已加客服，家长发了校内成绩")
+        self.assertEqual(payload["communication_teacher_note"], "老师已初步沟通")
+        self.assertEqual(payload["closing_result"], "success")
+
     def test_admin_can_edit_and_delete(self):
         self.create_consultation_record()
         admin_token = self.create_admin_token()
@@ -326,7 +362,9 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "parent_wechat_name": "赵妈妈",
                 "child_name": "赵小星",
                 "grade": "三年级",
+                "receiving_teacher": "何姝健",
                 "consultation_subject": "数学",
+                "need_detail": "想确认三年级数学试听安排",
                 "flow_stage": "待试听",
                 "completed_stages": ["已加小客服微信", "已加对应教师微信", "正在沟通细节", "待试听"],
                 "trial_taken": "是",
@@ -357,6 +395,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "CaseParentA",
                 "child_name": "搜索学生A",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
                 "consultation_subject": "数学",
                 "need_detail": "家长主要咨询试听安排和班课节奏",
                 "flow_stage": "待试听",
@@ -373,6 +413,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "CaseParentB",
                 "child_name": "搜索学生B",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
                 "consultation_subject": "英语",
                 "need_detail": "只了解寒假课程",
                 "flow_stage": "正在沟通细节",
@@ -397,6 +439,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "date": "2026-05-19",
                 "parent_wechat_name": "ExactParent",
                 "child_name": "王小明",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
                 "consultation_subject": "数学",
                 "need_detail": "这是一段完整咨询内容，包含精准片段ABC。",
             },
@@ -409,6 +453,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "date": "2026-05-20",
                 "parent_wechat_name": "OtherParent",
                 "child_name": "王小明同学",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
                 "consultation_subject": "数学",
                 "need_detail": "普通咨询内容",
             },
@@ -436,6 +482,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "OrderExactParent",
                 "child_name": "排序学生",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
                 "consultation_subject": "数学",
                 "need_detail": "普通咨询内容",
             },
@@ -447,6 +495,8 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "OrderFuzzyParent",
                 "child_name": "排序学生延伸",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
                 "consultation_subject": "语文",
                 "need_detail": "普通咨询内容",
             },
@@ -471,6 +521,10 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "钱妈妈",
                 "child_name": "钱小满",
+                "grade": "三年级",
+                "receiving_teacher": "何姝健",
+                "consultation_subject": "数学",
+                "need_detail": "准备进班",
                 "flow_stage": "成功进班",
                 "completed_stages": ["已加小客服微信", "成功进班"],
             },
@@ -485,6 +539,10 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "钱妈妈",
                 "child_name": "钱小满",
+                "grade": "三年级",
+                "receiving_teacher": "何姝健",
+                "consultation_subject": "数学",
+                "need_detail": "准备进班",
                 "flow_stage": "成功进班",
                 "completed_stages": ["已加小客服微信", "成功进班"],
                 "success_class_id": class_id,
@@ -519,6 +577,10 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "周妈妈",
                 "child_name": "周小安",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
+                "consultation_subject": "数学",
+                "need_detail": "沟通后暂时结束",
                 "flow_stage": "咨询结束",
                 "completed_stages": ["已加小客服微信", "正在沟通细节", "咨询结束"],
                 "end_note": "首次关闭",
@@ -555,6 +617,10 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "林妈妈",
                 "child_name": "林小贝",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
+                "consultation_subject": "数学",
+                "need_detail": "误触结束后恢复",
                 "flow_stage": "咨询结束",
                 "completed_stages": ["已加小客服微信", "正在沟通细节", "咨询结束"],
                 "end_note": "误触结束",
@@ -587,6 +653,10 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "吴妈妈",
                 "child_name": "吴小同",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
+                "consultation_subject": "数学",
+                "need_detail": "试听后再决定",
                 "flow_stage": "待试听",
                 "completed_stages": ["已加小客服微信", "待试听"],
             },
@@ -627,6 +697,10 @@ class ConsultationFlowTestCase(unittest.TestCase):
             json={
                 "parent_wechat_name": "郑妈妈",
                 "child_name": "郑小同",
+                "grade": "七年级",
+                "receiving_teacher": "何姝健",
+                "consultation_subject": "数学",
+                "need_detail": "已进班旧记录",
                 "flow_stage": "成功进班",
                 "completed_stages": ["成功进班"],
                 "success_class_manual": "七年级数学班",
@@ -1157,6 +1231,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "家长微信名": "家长1",
                 "孩子姓名": "学生1",
                 "年级": "一年级",
+                "接待老师": "何姝健",
                 "咨询科目": "数学",
                 "具体需求": "基础",
                 "assigned_user_id": member1_row["id"],
@@ -1173,6 +1248,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "家长微信名": "家长2",
                 "孩子姓名": "学生2",
                 "年级": "二年级",
+                "接待老师": "何姝健",
                 "咨询科目": "语文",
                 "具体需求": "阅读",
                 "assigned_user_id": member2_row["id"],
@@ -1190,6 +1266,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "家长微信名": "家长3",
                 "孩子姓名": "学生3",
                 "年级": "三年级",
+                "接待老师": "何姝健",
                 "咨询科目": "英语",
                 "具体需求": "口语",
                 "assigned_user_id": None,
