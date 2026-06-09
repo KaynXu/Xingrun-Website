@@ -251,9 +251,31 @@ test('consultation flow node action moves the current stage to the selected node
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /const \[flowNodeActionMoveCurrent, setFlowNodeActionMoveCurrent\] = useState\(false\);/);
   assert.match(consultationPageBlock[0], /const moveFlowNodeActionStage = \(values: ConsultationFormValues, key: ConsultationFlowCardNodeKey\): ConsultationFormValues =>/);
   assert.match(consultationPageBlock[0], /'teaching-teacher': '加带课教师'/);
+  assert.match(consultationPageBlock[0], /if \(flowNodeActionMoveCurrent\) \{/);
   assert.match(consultationPageBlock[0], /values = moveFlowNodeActionStage\(values, flowNodeActionKey\);/);
+});
+
+test('consultation compact flow opens node dialogs on click and current-stage dialogs on context gestures', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.ok(flowBarBlock);
+  assert.match(flowBarBlock[0], /onStageContextAction/);
+  assert.match(flowBarBlock[0], /onResultContextAction/);
+  assert.match(flowBarBlock[0], /onOverContextAction/);
+  assert.match(flowBarBlock[0], /onContextMenu=\{\(event\) => handleContextAction\(event, node\)\}/);
+  assert.match(flowBarBlock[0], /window\.setTimeout\(\(\) => \{/);
+  assert.match(flowBarBlock[0], /600\)/);
+  assert.match(consultationPageBlock[0], /const consultationStageToFlowNodeKey = \(stage: string\): ConsultationFlowCardNodeKey =>/);
+  assert.match(consultationPageBlock[0], /openConsultationFlowNode\(record, consultationStageToFlowNodeKey\(stage\), false\)/);
+  assert.match(consultationPageBlock[0], /openConsultationFlowNode\(record, consultationStageToFlowNodeKey\(stage\), true\)/);
+  assert.match(consultationPageBlock[0], /onResultClick=\{\(\) => openConsultationFlowNode\(record, 'enter-class', false\)\}/);
+  assert.match(consultationPageBlock[0], /onResultContextAction=\{\(\) => openConsultationFlowNode\(record, 'enter-class', true\)\}/);
 });
 
 test('consultation edit modal does not show the extra synchronized flow status strip', () => {

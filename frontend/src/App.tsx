@@ -3679,6 +3679,9 @@ const ConsultationFlowBar = ({
   onStageJump,
   onOverClick,
   onOverDoubleClick,
+  onStageContextAction,
+  onResultContextAction,
+  onOverContextAction,
 }: {
   stage: string;
   completedStages: string[];
@@ -3695,7 +3698,12 @@ const ConsultationFlowBar = ({
   onStageJump?: (stage: string) => void;
   onOverClick?: () => void;
   onOverDoubleClick?: () => void;
+  onStageContextAction?: (stage: string) => void;
+  onResultContextAction?: () => void;
+  onOverContextAction?: () => void;
 }) => {
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
   const currentStage = stage || consultationFlowStages[0];
   const ended = isConsultationEnded(currentStage);
   const compact = mode === 'list';
@@ -3783,6 +3791,33 @@ const ConsultationFlowBar = ({
     if (node.active || next.active) return 'bg-[#0EA5E9]';
     return 'bg-[#D9EEF7]';
   };
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+  useEffect(() => () => clearLongPressTimer(), []);
+  const runContextAction = (node: typeof flowNodes[number]) => {
+    if (node.disabled) return;
+    if (node.type === 'process') onStageContextAction?.(node.key);
+    if (node.type === 'result') onResultContextAction?.();
+    if (node.type === 'over') onOverContextAction?.();
+  };
+  const handleContextAction = (event: React.MouseEvent<HTMLButtonElement>, node: typeof flowNodes[number]) => {
+    event.preventDefault();
+    runContextAction(node);
+  };
+  const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>, node: typeof flowNodes[number]) => {
+    if (node.disabled || event.pointerType === 'mouse') return;
+    longPressTriggeredRef.current = false;
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      runContextAction(node);
+    }, 600);
+  };
+  const handlePointerEnd = () => clearLongPressTimer();
   return (
     <div className={`grid w-full min-w-0 ${gridClass} ${compact ? 'gap-0.5' : 'gap-1'}`}>
       {flowNodes.map((node, index) => {
@@ -3795,6 +3830,10 @@ const ConsultationFlowBar = ({
               ? '✓'
               : '';
         const handlePrimaryClick = () => {
+          if (longPressTriggeredRef.current) {
+            longPressTriggeredRef.current = false;
+            return;
+          }
           if (node.type === 'process') onStageClick?.(node.key);
           if (node.type === 'result') onResultClick?.();
           if (node.type === 'over') onOverClick?.();
@@ -3817,6 +3856,11 @@ const ConsultationFlowBar = ({
               disabled={node.disabled}
               onClick={handlePrimaryClick}
               onDoubleClick={handlePrimaryDoubleClick}
+              onContextMenu={(event) => handleContextAction(event, node)}
+              onPointerDown={(event) => handlePointerDown(event, node)}
+              onPointerUp={handlePointerEnd}
+              onPointerCancel={handlePointerEnd}
+              onPointerLeave={handlePointerEnd}
               title={node.title}
               className={`relative z-10 flex w-full min-w-0 flex-col items-center gap-0.5 rounded-lg ${compact ? 'min-h-9 py-0.5' : 'min-h-11 py-1'} text-center transition ${node.disabled ? 'cursor-default' : 'hover:bg-sky-50/70 dark:hover:bg-white/5'}`}
             >
@@ -5918,6 +5962,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [flowNodeActionKey, setFlowNodeActionKey] = useState<ConsultationFlowCardNodeKey | null>(null);
   const [flowNodeActionNote, setFlowNodeActionNote] = useState('');
   const [flowNodeActionTeacherId, setFlowNodeActionTeacherId] = useState('');
+  const [flowNodeActionMoveCurrent, setFlowNodeActionMoveCurrent] = useState(false);
   const [overResultDialogRecord, setOverResultDialogRecord] = useState<ConsultationRecord | null>(null);
   const [enterClassRecord, setEnterClassRecord] = useState<ConsultationRecord | null>(null);
   const [enterClassMode, setEnterClassMode] = useState<'existing' | 'quick_new_class' | 'converted_without_class'>('existing');
@@ -6217,7 +6262,6 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     const currentStages = Array.isArray(values.completed_stages) ? values.completed_stages : [];
     return {
       ...values,
-      flow_stage: stage,
       completed_stages: currentStages.includes(stage) ? currentStages : [...currentStages, stage],
     };
   };
@@ -6255,7 +6299,18 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return '';
   };
 
-  const openConsultationFlowNode = (record: ConsultationRecord, key: ConsultationFlowCardNodeKey) => {
+  const consultationStageToFlowNodeKey = (stage: string): ConsultationFlowCardNodeKey => {
+    if (stage === '已加小客服微信') return 'customer-service';
+    if (stage === '已加对应教师微信') return 'communication-teacher';
+    if (stage === '正在沟通细节') return 'teacher-communication';
+    if (stage === '待测试') return 'test';
+    if (stage === '加试听教师') return 'trial-teacher';
+    if (stage === '待试听') return 'trial';
+    if (stage === '加带课教师') return 'teaching-teacher';
+    return 'teacher-communication';
+  };
+
+  const openConsultationFlowNode = (record: ConsultationRecord, key: ConsultationFlowCardNodeKey, moveCurrent = false) => {
     if (!canEditConsultations || isBusy) {
       openViewModal(record);
       return;
@@ -6274,6 +6329,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
     setFlowNodeActionRecord(record);
     setFlowNodeActionKey(key);
+    setFlowNodeActionMoveCurrent(moveCurrent);
     setFlowNodeActionNote(getFlowNodeActionNote(record, key));
     setFlowNodeActionTeacherId(
       key === 'communication-teacher'
@@ -6292,6 +6348,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setFlowNodeActionKey(null);
     setFlowNodeActionNote('');
     setFlowNodeActionTeacherId('');
+    setFlowNodeActionMoveCurrent(false);
   };
 
   const openEnterClassDialog = (record: ConsultationRecord) => {
@@ -6349,7 +6406,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         teaching_teacher_note: flowNodeActionNote,
       };
     }
-    values = moveFlowNodeActionStage(values, flowNodeActionKey);
+    if (flowNodeActionMoveCurrent) {
+      values = moveFlowNodeActionStage(values, flowNodeActionKey);
+    }
     closeFlowNodeActionDialog();
     await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
   };
@@ -6453,12 +6512,16 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         editable={canEditConsultations && !busy && !frozen}
         showOver
         overDisabled={!canEditConsultations || busy}
-        onStageClick={(stage) => handleInlineStageToggle(record, stage)}
-        onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
+        onStageClick={(stage) => openConsultationFlowNode(record, consultationStageToFlowNodeKey(stage), false)}
+        onStageDoubleClick={(stage) => openConsultationFlowNode(record, consultationStageToFlowNodeKey(stage), true)}
+        onStageContextAction={(stage) => openConsultationFlowNode(record, consultationStageToFlowNodeKey(stage), true)}
         onResultChange={(stage) => handleInlineResultChange(record, stage)}
-        onResultClick={() => handleInlineResultClick(record)}
-        onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
-        onOverClick={() => handleInlineEndConsultation(record)}
+        onResultClick={() => openConsultationFlowNode(record, 'enter-class', false)}
+        onResultDoubleClick={() => openConsultationFlowNode(record, 'enter-class', true)}
+        onResultContextAction={() => openConsultationFlowNode(record, 'enter-class', true)}
+        onOverClick={() => openConsultationFlowNode(record, 'over', false)}
+        onOverDoubleClick={() => openConsultationFlowNode(record, 'over', true)}
+        onOverContextAction={() => openConsultationFlowNode(record, 'over', true)}
       />
     );
   };
@@ -6976,7 +7039,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-base font-extrabold text-slate-900 dark:text-white">{flowNodeActionTitle}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-400">{flowNodeActionRecord.child_name || '未命名学生'}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-400">
+                    {flowNodeActionRecord.child_name || '未命名学生'}
+                    {flowNodeActionMoveCurrent ? ' · 保存后设为当前阶段' : ' · 仅补充信息'}
+                  </p>
                 </div>
                 <button type="button" onClick={closeFlowNodeActionDialog} className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/10">
                   <X size={15} />
