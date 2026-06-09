@@ -190,19 +190,15 @@ test('consultation create form requires only lightweight fields', () => {
   assert.doesNotMatch(modalBlock[0], /失败原因[\s\S]*required/);
 });
 
-test('consultation cards render clickable non-linear flow nodes', () => {
+test('consultation page restores compact B3 flow on cards', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(source, /const consultationFlowCardNodes: Array/);
-  for (const label of ['加客服', '加沟通教师', '教师沟通', '测试', '加试听教师', '试听', '加带课教师', '进班', 'Over']) {
-    assert.match(source, new RegExp(label));
-  }
-  assert.match(consultationPageBlock[0], /const renderConsultationFlowCard = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
-  assert.match(consultationPageBlock[0], /onClick=\{\(\) => openConsultationFlowNode\(record, node\.key\)\}/);
-  assert.match(consultationPageBlock[0], /\{renderConsultationFlowCard\(record, busy\)\}/);
-  assert.match(consultationPageBlock[0], /\{renderConsultationFlowCard\(record, busy, true\)\}/);
+  assert.match(consultationPageBlock[0], /const renderB3FlowStrip = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
+  assert.match(consultationPageBlock[0], /\{renderB3FlowStrip\(record, busy\)\}/);
+  assert.match(consultationPageBlock[0], /\{renderB3FlowStrip\(record, busy, true\)\}/);
+  assert.doesNotMatch(consultationPageBlock[0], /renderConsultationFlowCard/);
 });
 
 test('consultation flow node actions use focused dialogs with emotional over results', () => {
@@ -250,31 +246,26 @@ test('consultation ended over pill is green for success and red for failure', ()
   assert.match(pillBlock[0], /bg-rose-500/);
 });
 
-test('consultation flow card uses flow stage as the blue current node', () => {
+test('consultation flow node action moves the current stage to the selected node', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
-  assert.match(source, /function getConsultationCurrentFlowCardNodeKey\(record: ConsultationRecord\): ConsultationFlowCardNodeKey \| null/);
-  assert.match(source, /'待测试': 'test'/);
-  assert.match(source, /'成功进班': 'enter-class'/);
-  assert.match(source, /const currentKey = getConsultationCurrentFlowCardNodeKey\(record\);/);
-  assert.match(source, /if \(currentKey === key && key !== 'over'\) \{/);
-  assert.match(source, /return 'current';/);
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /const moveFlowNodeActionStage = \(values: ConsultationFormValues, key: ConsultationFlowCardNodeKey\): ConsultationFormValues =>/);
+  assert.match(consultationPageBlock[0], /'teaching-teacher': '加带课教师'/);
+  assert.match(consultationPageBlock[0], /values = moveFlowNodeActionStage\(values, flowNodeActionKey\);/);
 });
 
-test('consultation edit modal shows synchronized checked flow status fields', () => {
+test('consultation edit modal does not show the extra synchronized flow status strip', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?const ConsultationModal = /);
 
   assert.ok(modalBlock);
   assert.ok(reportBlock);
-  assert.match(source, /const ConsultationFlowStatusSummary = \(/);
-  for (const label of ['客服微信', '接待教师', '测试情况', '试听教师', '进班班级']) {
-    assert.match(source, new RegExp(label));
-  }
-  assert.match(source, /<CheckCircle2 size=\{14\}/);
-  assert.match(modalBlock[0], /<ConsultationFlowStatusSummary form=\{form\} classes=\{classes\} \/>/);
-  assert.match(reportBlock[0], /<ConsultationFlowStatusSummary form=\{form\} classes=\{classes\} readOnly \/>/);
+  assert.doesNotMatch(source, /const ConsultationFlowStatusSummary = \(/);
+  assert.doesNotMatch(modalBlock[0], /<ConsultationFlowStatusSummary/);
+  assert.doesNotMatch(reportBlock[0], /<ConsultationFlowStatusSummary/);
 });
 
 test('consultation page source adds ai batch entry in the existing action area', () => {
