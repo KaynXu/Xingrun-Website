@@ -7278,7 +7278,18 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 )}
                 {enterClassMode === 'quick_new_class' && (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50/45 p-3 dark:border-emerald-400/15 dark:bg-emerald-400/10">
-                    <p className="mb-3 text-xs font-extrabold text-emerald-700 dark:text-emerald-100">快速建班</p>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-xs font-extrabold text-emerald-700 dark:text-emerald-100">快速建班</p>
+                      <label className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-white/80 px-2.5 text-xs font-extrabold text-emerald-700 shadow-sm dark:border-emerald-300/20 dark:bg-white/10 dark:text-emerald-100">
+                        <input
+                          type="checkbox"
+                          checked={enterClassNewIsBridge}
+                          onChange={(event) => setEnterClassNewIsBridge(event.target.checked)}
+                          className="h-3.5 w-3.5"
+                        />
+                        衔接班
+                      </label>
+                    </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <label className="block">
                         <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班型</span>
@@ -7342,16 +7353,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                           />
                         </label>
                       )}
-                      <div className={enterClassNewType === 'group' ? 'space-y-2' : 'space-y-2 sm:col-span-2'}>
-                        <label className="flex min-h-10 items-center gap-2 rounded-xl border border-white/70 bg-white/75 px-3 text-sm font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
-                          <input
-                            type="checkbox"
-                            checked={enterClassNewIsBridge}
-                            onChange={(event) => setEnterClassNewIsBridge(event.target.checked)}
-                          />
-                          衔接班
-                        </label>
-                        {enterClassNewIsBridge && (
+                      {enterClassNewIsBridge && (
+                        <div className="rounded-2xl border border-white/70 bg-white/70 p-2 dark:border-white/10 dark:bg-white/5 sm:col-span-2">
                           <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                             <select
                               value={enterClassBridgeFrom}
@@ -7369,8 +7372,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                               {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                             </select>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
