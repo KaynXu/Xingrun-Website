@@ -6579,6 +6579,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           const state = getConsultationFlowCardNodeState(record, node.key);
           const active = state === 'current';
           const done = state === 'done';
+          const successOver = node.key === 'over' && done && (record.closing_result === 'success' || consultationHasResult(record, '成功进班'));
+          const failedOver = node.key === 'over' && done && !successOver;
           return (
             <button
               key={node.key}
@@ -6587,7 +6589,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               disabled={busy || !canEditConsultations}
               className={cn(
                 'flex h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 text-center transition disabled:cursor-default disabled:opacity-70',
-                done && 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200',
+                done && !failedOver && 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200',
+                failedOver && 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-100',
                 active && 'border-sky-300 bg-white text-sky-700 shadow-[0_8px_18px_rgba(14,165,233,0.12)] dark:border-sky-300/40 dark:bg-sky-400/10 dark:text-sky-100',
                 !done && !active && 'border-slate-200 bg-white text-slate-500 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400 dark:hover:text-sky-200',
               )}
@@ -6595,7 +6598,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             >
               <span className={cn(
                 'h-2 w-2 rounded-full',
-                done ? 'bg-emerald-500' : active ? 'bg-sky-500' : 'bg-slate-300 dark:bg-slate-600',
+                failedOver ? 'bg-rose-500' : done ? 'bg-emerald-500' : active ? 'bg-sky-500' : 'bg-slate-300 dark:bg-slate-600',
               )} />
               <span className="block max-w-full truncate text-[11px] font-extrabold leading-4">{node.label}</span>
             </button>
@@ -6643,6 +6646,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const getRecordResultPill = (record: ConsultationRecord) => {
+    const endedAsSuccess = record.closing_result === 'success' || consultationHasResult(record, '成功进班');
+    const endedAsFailed = record.closing_result === 'failed';
     if (record.flow_stage === '成功进班') {
       return { label: '☀️ 成功进班', className: 'bg-sky-500 text-white shadow-[0_8px_18px_rgba(14,165,233,0.22)]' };
     }
@@ -6650,21 +6655,34 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       return { label: '😢 试听未成', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
     }
     if (record.flow_stage === '咨询结束') {
+      if (endedAsSuccess) {
+        return { label: 'OVER', className: 'bg-emerald-500 text-white shadow-[0_8px_18px_rgba(34,197,94,0.22)]' };
+      }
+      if (endedAsFailed) {
+        return { label: 'OVER', className: 'bg-rose-500 text-white shadow-[0_8px_18px_rgba(244,63,94,0.22)]' };
+      }
       return { label: 'OVER', className: 'bg-rose-500 text-white shadow-[0_8px_18px_rgba(244,63,94,0.22)]' };
     }
     return { label: '未选择结果', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
   };
 
-  const renderOverButton = (record: ConsultationRecord, busy: boolean, className = '') => (
-    <button
-      type="button"
-      onClick={() => handleInlineEndConsultation(record)}
-      className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 font-extrabold text-[#F45B7A] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
-      disabled={!canEditConsultations || busy}
-    >
-      OVER
-    </button>
-  );
+  const renderOverButton = (record: ConsultationRecord, busy: boolean, className = '') => {
+    const successOver = isConsultationEnded(record.flow_stage) && (record.closing_result === 'success' || consultationHasResult(record, '成功进班'));
+    return (
+      <button
+        type="button"
+        onClick={() => handleInlineEndConsultation(record)}
+        className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-lg border font-extrabold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+          successOver
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+            : 'border-rose-200 bg-rose-50 text-[#F45B7A] hover:bg-rose-100'
+        } ${className}`}
+        disabled={!canEditConsultations || busy}
+      >
+        OVER
+      </button>
+    );
+  };
 
   const renderDeleteButton = (record: ConsultationRecord, busy: boolean) => canManage ? (
     <button

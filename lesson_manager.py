@@ -1662,9 +1662,10 @@ def enter_consultation_class(
         return None
 
     mode = str((payload or {}).get("mode") or "existing").strip() or "existing"
+    completed_stages = list(dict.fromkeys([*item.get("completed_stages", []), "成功进班", "咨询结束"]))
     update_payload: dict[str, object] = {
-        "flow_stage": "成功进班",
-        "completed_stages": [*item.get("completed_stages", []), "成功进班"],
+        "flow_stage": "咨询结束",
+        "completed_stages": completed_stages,
         "closing_result": "success",
         "closed_by_user_id": actor_user_id,
     }

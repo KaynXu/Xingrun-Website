@@ -238,6 +238,18 @@ test('consultation enter class dialog supports existing class new class and pend
   assert.match(consultationPageBlock[0], /converted_without_class/);
 });
 
+test('consultation ended over pill is green for success and red for failure', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  const pillBlock = consultationPageBlock?.[0].match(/const getRecordResultPill = \(record: ConsultationRecord\) => \{[\s\S]*?\n  \};/);
+
+  assert.ok(pillBlock);
+  assert.match(pillBlock[0], /record\.closing_result === 'success' \|\| consultationHasResult\(record, '成功进班'\)/);
+  assert.match(pillBlock[0], /bg-emerald-500/);
+  assert.match(pillBlock[0], /record\.closing_result === 'failed'/);
+  assert.match(pillBlock[0], /bg-rose-500/);
+});
+
 test('consultation page source adds ai batch entry in the existing action area', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
