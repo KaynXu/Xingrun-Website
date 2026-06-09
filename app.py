@@ -100,6 +100,7 @@ from lesson_manager import (
     delete_lesson as db_delete_lesson,
     delete_organization,
     delete_or_archive_student_profile,
+    enter_consultation_class,
     find_previous_confirmed_class_feedback_entry,
     find_active_wrong_question_practice_pack_job,
     get_class,
@@ -5389,6 +5390,27 @@ def api_consultation_update(consultation_id):
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
+
+
+@app.route("/api/consultations/<int:consultation_id>/enter-class", methods=["POST"])
+def api_consultation_enter_class(consultation_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = enter_consultation_class(
+            consultation_id=consultation_id,
+            payload=payload,
+            organization_id=None if user.get("role") == "super_owner" else user.get("organization_id"),
+            actor_user_id=user["id"],
+            member_user_id=user["id"] if user.get("role") == "member" else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not result:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(result)
 
 
 @app.route("/api/consultations/<int:consultation_id>/test-images", methods=["POST"])

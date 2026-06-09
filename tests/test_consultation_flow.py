@@ -716,6 +716,45 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["ended_at"], "")
 
+    def test_consultation_enter_existing_class_marks_success_and_student_profile(self):
+        created = self.create_consultation_record(**{
+            "孩子姓名": "进班学生",
+            "咨询科目": "数学",
+            "年级": "七年级",
+        })
+        class_id = lesson_manager.save_class(
+            "数学七年级1班",
+            subject="数学",
+            grade="七年级",
+            class_type="group",
+            organization_id=self.owner_user()["organization_id"],
+        )
+        response = self.client.post(
+            f"/api/consultations/{created['id']}/enter-class",
+            headers=self.auth_headers(self.owner_token),
+            json={"mode": "existing", "class_id": class_id},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["item"]["closing_result"], "success")
+        self.assertEqual(payload["item"]["success_class_id"], class_id)
+        self.assertEqual(payload["item"]["student_profile_status"], "created")
+        class_students = lesson_manager.list_students_for_class(class_id)
+        self.assertEqual([student["name"] for student in class_students], ["进班学生"])
+
+    def test_consultation_enter_class_allows_converted_without_class(self):
+        created = self.create_consultation_record(**{"孩子姓名": "暂未定班学生"})
+        response = self.client.post(
+            f"/api/consultations/{created['id']}/enter-class",
+            headers=self.auth_headers(self.owner_token),
+            json={"mode": "converted_without_class"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["item"]["closing_result"], "success")
+        self.assertIsNone(payload["item"]["success_class_id"])
+        self.assertEqual(payload["item"]["student_profile_status"], "needs_completion")
+
     def test_owner_uploads_multiple_consultation_test_images(self):
         created = self.create_consultation_record()
 

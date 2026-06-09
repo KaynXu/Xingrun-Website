@@ -1648,6 +1648,85 @@ def update_consultation(
     return _consultation_storage_row_to_public_dict(updated, teacher_directory)
 
 
+def enter_consultation_class(
+    consultation_id: int,
+    payload: dict,
+    organization_id: Optional[int] = None,
+    actor_user_id: Optional[int] = None,
+    member_user_id: Optional[int] = None,
+) -> Optional[dict]:
+    item = get_consultation(consultation_id, organization_id)
+    if not item:
+        return None
+    if member_user_id is not None and item.get("assigned_user_id") != member_user_id:
+        return None
+
+    mode = str((payload or {}).get("mode") or "existing").strip() or "existing"
+    update_payload: dict[str, object] = {
+        "flow_stage": "成功进班",
+        "completed_stages": [*item.get("completed_stages", []), "成功进班"],
+        "closing_result": "success",
+        "closed_by_user_id": actor_user_id,
+    }
+    class_id: Optional[int] = None
+    student = None
+
+    if mode == "existing":
+        class_id = _normalize_optional_int((payload or {}).get("class_id"))
+        if class_id is None:
+            raise ValueError("请选择转化班级")
+        class_row = get_class(class_id)
+        if not class_row or (organization_id is not None and class_row.get("organization_id") != organization_id):
+            raise ValueError("转化班级不存在")
+        student = create_student_for_class(class_id, str(item.get("child_name") or ""))
+        update_payload.update({
+            "success_class_id": class_id,
+            "success_class_manual": "",
+            "student_profile_status": "created",
+        })
+    elif mode == "quick_new_class":
+        class_name = str((payload or {}).get("class_name") or "").strip()
+        if not class_name:
+            raise ValueError("班级名称不能为空")
+        class_id = save_class(
+            class_name,
+            subject=str((payload or {}).get("subject") or item.get("consultation_subject") or ""),
+            grade=str((payload or {}).get("grade") or item.get("grade") or ""),
+            class_type=str((payload or {}).get("class_type") or "group"),
+            teacher_name=str((payload or {}).get("teaching_teacher") or item.get("teaching_teacher") or ""),
+            teacher_user_id=_normalize_optional_int((payload or {}).get("teaching_teacher_user_id")),
+            organization_id=organization_id,
+        )
+        student = create_student_for_class(class_id, str(item.get("child_name") or ""))
+        update_payload.update({
+            "success_class_id": class_id,
+            "success_class_manual": "",
+            "student_profile_status": "created",
+        })
+    elif mode == "converted_without_class":
+        update_payload.update({
+            "success_class_id": None,
+            "success_class_manual": "班级待补充",
+            "student_profile_status": "needs_completion",
+        })
+    else:
+        raise ValueError("mode must be existing, quick_new_class or converted_without_class")
+
+    updated = update_consultation(
+        consultation_id,
+        update_payload,
+        organization_id=organization_id,
+        assigned_user_id=member_user_id,
+    )
+    if not updated:
+        return None
+    return {
+        "item": updated,
+        "class_id": class_id,
+        "student": student,
+    }
+
+
 def delete_consultation(consultation_id: int, organization_id: Optional[int] = None) -> bool:
     with get_conn() as conn:
         query_sql = "DELETE FROM consultations WHERE id=?"
