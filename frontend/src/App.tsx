@@ -59,14 +59,17 @@ import {
   academicGradeGroups,
   academicGradeOptions,
   academicStageOptions,
+  bridgeStageOptions,
   buildClassDisplayName,
   formatClassDisplayName,
   getAcademicGradeRank,
   getAcademicStageFromGrade,
   inferAcademicCohortYear,
   inferAcademicCohortYearForStage,
+  parseBridgeTarget,
   normalizeAcademicGradeLabel,
   normalizeClassNameInput,
+  serializeBridgeTarget,
 } from './domain/classNaming';
 import {
   buildClassFeedbackPeriodPreview,
@@ -5969,12 +5972,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [enterClassRecord, setEnterClassRecord] = useState<ConsultationRecord | null>(null);
   const [enterClassMode, setEnterClassMode] = useState<'existing' | 'quick_new_class' | 'converted_without_class'>('existing');
   const [enterClassId, setEnterClassId] = useState('');
-  const [enterClassNewName, setEnterClassNewName] = useState('');
   const [enterClassNewType, setEnterClassNewType] = useState('group');
   const [enterClassNewSubject, setEnterClassNewSubject] = useState('');
   const [enterClassNewStage, setEnterClassNewStage] = useState('');
   const [enterClassNewGrade, setEnterClassNewGrade] = useState('');
   const [enterClassNewNumber, setEnterClassNewNumber] = useState('1');
+  const [enterClassNewIsBridge, setEnterClassNewIsBridge] = useState(false);
+  const [enterClassBridgeFrom, setEnterClassBridgeFrom] = useState('小学');
+  const [enterClassBridgeTo, setEnterClassBridgeTo] = useState('初中');
   const loadRequestId = useRef(0);
   const teacherDirectory = buildConsultationTeacherDirectory(records);
 
@@ -6366,6 +6371,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       stage,
       grade: gradeOptionsForStage.includes(normalizedGrade) ? normalizedGrade : gradeOptionsForStage[0] || normalizedGrade,
       classNumber: '1',
+      bridgeFrom: stage === '初中' || stage === '高中' ? stage : '小学',
+      bridgeTo: stage === '高中' ? '高中' : '初中',
     };
   };
 
@@ -6374,12 +6381,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setEnterClassRecord(record);
     setEnterClassMode(record.success_class_id ? 'existing' : 'existing');
     setEnterClassId(record.success_class_id ? String(record.success_class_id) : '');
-    setEnterClassNewName(record.success_class_manual && record.success_class_manual !== '班级待补充' ? record.success_class_manual : '');
     setEnterClassNewType('group');
     setEnterClassNewSubject(defaults.subject);
     setEnterClassNewStage(defaults.stage);
     setEnterClassNewGrade(defaults.grade);
     setEnterClassNewNumber(defaults.classNumber);
+    setEnterClassNewIsBridge(false);
+    setEnterClassBridgeFrom(defaults.bridgeFrom);
+    setEnterClassBridgeTo(defaults.bridgeTo);
     setError('');
   };
 
@@ -6387,12 +6396,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setEnterClassRecord(null);
     setEnterClassMode('existing');
     setEnterClassId('');
-    setEnterClassNewName('');
     setEnterClassNewType('group');
     setEnterClassNewSubject('');
     setEnterClassNewStage('');
     setEnterClassNewGrade('');
     setEnterClassNewNumber('1');
+    setEnterClassNewIsBridge(false);
+    setEnterClassBridgeFrom('小学');
+    setEnterClassBridgeTo('初中');
   };
 
   const handleSaveFlowNodeAction = async () => {
@@ -6469,9 +6480,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       ? academicGradeGroups[enterClassNewStage as keyof typeof academicGradeGroups] || academicGradeOptions
       : academicGradeOptions;
     const quickClassGrade = normalizeAcademicGradeLabel(enterClassNewGrade || record.grade || '');
-    const quickClassCohortYear = inferAcademicCohortYearForStage(quickClassGrade, enterClassNewStage || getAcademicStageFromGrade(quickClassGrade) || '');
+    const quickClassBridgeTarget = serializeBridgeTarget(enterClassBridgeFrom, enterClassBridgeTo);
+    const quickClassCohortStage = enterClassNewIsBridge ? parseBridgeTarget(quickClassBridgeTarget, enterClassNewStage || quickClassGrade).toStage : enterClassNewStage || getAcademicStageFromGrade(quickClassGrade) || '';
+    const quickClassCohortYear = inferAcademicCohortYearForStage(quickClassGrade, quickClassCohortStage);
     const quickClassGeneratedName = buildClassDisplayName({
-      name: enterClassNewName,
       class_type: enterClassNewType,
       subject: enterClassNewSubject || record.consultation_subject,
       stage: enterClassNewStage || getAcademicStageFromGrade(quickClassGrade),
@@ -6480,7 +6492,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       class_number: enterClassNewType === 'group' ? enterClassNewNumber : '',
       cohort_year: quickClassCohortYear,
       show_cohort_year: false,
-      is_bridge: false,
+      is_bridge: enterClassNewIsBridge,
+      bridge_target: quickClassBridgeTarget,
       selected_student_names: record.child_name ? [record.child_name] : [],
     });
     const payload = enterClassMode === 'existing'
@@ -6488,7 +6501,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       : enterClassMode === 'quick_new_class'
         ? {
           mode: enterClassMode,
-          class_name: enterClassNewName.trim() || quickClassGeneratedName,
+          class_name: quickClassGeneratedName,
           subject: enterClassNewSubject || record.consultation_subject,
           grade: quickClassGrade,
           class_type: enterClassNewType,
@@ -6497,8 +6510,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           class_number: enterClassNewType === 'group' ? enterClassNewNumber : '',
           cohort_year: quickClassCohortYear,
           show_cohort_year: false,
-          is_bridge: false,
-          bridge_target: '',
+          is_bridge: enterClassNewIsBridge,
+          bridge_target: enterClassNewIsBridge ? quickClassBridgeTarget : '',
           content_track: '',
           teaching_teacher: record.teaching_teacher,
         }
@@ -6918,17 +6931,19 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     ? academicGradeGroups[enterClassNewStage as keyof typeof academicGradeGroups] || academicGradeOptions
     : academicGradeOptions;
   const enterClassNormalizedGrade = normalizeAcademicGradeLabel(enterClassNewGrade || enterClassRecord?.grade || '');
+  const enterClassBridgeTarget = serializeBridgeTarget(enterClassBridgeFrom, enterClassBridgeTo);
+  const enterClassCohortStage = enterClassNewIsBridge ? parseBridgeTarget(enterClassBridgeTarget, enterClassNewStage || enterClassNormalizedGrade).toStage : enterClassNewStage || getAcademicStageFromGrade(enterClassNormalizedGrade) || '';
   const enterClassPreviewName = enterClassRecord ? buildClassDisplayName({
-    name: enterClassNewName,
     class_type: enterClassNewType,
     subject: enterClassNewSubject || enterClassRecord.consultation_subject,
     stage: enterClassNewStage || getAcademicStageFromGrade(enterClassNormalizedGrade),
     current_grade: enterClassNormalizedGrade,
     grade: enterClassNormalizedGrade,
     class_number: enterClassNewType === 'group' ? enterClassNewNumber : '',
-    cohort_year: inferAcademicCohortYearForStage(enterClassNormalizedGrade, enterClassNewStage || getAcademicStageFromGrade(enterClassNormalizedGrade) || ''),
+    cohort_year: inferAcademicCohortYearForStage(enterClassNormalizedGrade, enterClassCohortStage),
     show_cohort_year: false,
-    is_bridge: false,
+    is_bridge: enterClassNewIsBridge,
+    bridge_target: enterClassBridgeTarget,
     selected_student_names: enterClassRecord.child_name ? [enterClassRecord.child_name] : [],
   }) : '';
   const enterClassModeCards: Array<{
@@ -6964,6 +6979,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     const nextGradeOptions = academicGradeGroups[stage as keyof typeof academicGradeGroups] || academicGradeOptions;
     setEnterClassNewStage(stage);
     setEnterClassNewGrade((current) => nextGradeOptions.includes(normalizeAcademicGradeLabel(current)) ? normalizeAcademicGradeLabel(current) : nextGradeOptions[0] || '');
+    setEnterClassBridgeFrom(stage === '初中' || stage === '高中' ? stage : '小学');
+    setEnterClassBridgeTo(stage === '高中' ? '高中' : '初中');
   };
 
   return (
@@ -7261,21 +7278,14 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                 )}
                 {enterClassMode === 'quick_new_class' && (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50/45 p-3 dark:border-emerald-400/15 dark:bg-emerald-400/10">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-extrabold text-emerald-700 dark:text-emerald-100">快速建班</p>
-                        <p className="mt-0.5 truncate text-[11px] font-semibold text-emerald-700/70 dark:text-emerald-100/70">
-                          预览：{enterClassNewName.trim() || enterClassPreviewName || '补完字段后自动生成'}
-                        </p>
-                      </div>
-                    </div>
+                    <p className="mb-3 text-xs font-extrabold text-emerald-700 dark:text-emerald-100">快速建班</p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <label className="block">
                         <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班型</span>
                         <select
                           value={enterClassNewType}
                           onChange={(event) => setEnterClassNewType(event.target.value)}
-                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                          className={`${workspaceFieldClass} mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm leading-5`}
                         >
                           <option value="group">多人班课</option>
                           <option value="1v1">1v1 小课</option>
@@ -7288,7 +7298,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <select
                           value={academicSubjectOptions.includes(enterClassNewSubject) ? enterClassNewSubject : ''}
                           onChange={(event) => setEnterClassNewSubject(event.target.value)}
-                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                          className={`${workspaceFieldClass} mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm leading-5`}
                         >
                           <option value="">请选择学科</option>
                           {academicSubjectOptions.map((option) => (
@@ -7301,7 +7311,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <select
                           value={enterClassNewStage}
                           onChange={(event) => handleEnterClassStageChange(event.target.value)}
-                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                          className={`${workspaceFieldClass} mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm leading-5`}
                         >
                           {studentCenterStageOptions.map((option) => (
                             <option key={option} value={option}>{option}</option>
@@ -7313,7 +7323,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         <select
                           value={enterClassNewGradeOptions.includes(enterClassNormalizedGrade) ? enterClassNormalizedGrade : ''}
                           onChange={(event) => setEnterClassNewGrade(event.target.value)}
-                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                          className={`${workspaceFieldClass} mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm leading-5`}
                         >
                           {enterClassNewGradeOptions.map((option) => (
                             <option key={option} value={option}>{option}</option>
@@ -7328,19 +7338,39 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             min="1"
                             value={enterClassNewNumber}
                             onChange={(event) => setEnterClassNewNumber(event.target.value)}
-                            className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                            className={`${workspaceFieldClass} mt-1 min-h-10 w-full rounded-xl px-3 py-2 text-sm leading-5`}
                           />
                         </label>
                       )}
-                      <label className={enterClassNewType === 'group' ? 'block' : 'block sm:col-span-2'}>
-                        <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班名</span>
-                        <input
-                          value={enterClassNewName}
-                          onChange={(event) => setEnterClassNewName(event.target.value)}
-                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
-                          placeholder={enterClassPreviewName || `${enterClassRecord.grade || ''}${enterClassRecord.consultation_subject || ''}新班`}
-                        />
-                      </label>
+                      <div className={enterClassNewType === 'group' ? 'space-y-2' : 'space-y-2 sm:col-span-2'}>
+                        <label className="flex min-h-10 items-center gap-2 rounded-xl border border-white/70 bg-white/75 px-3 text-sm font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={enterClassNewIsBridge}
+                            onChange={(event) => setEnterClassNewIsBridge(event.target.checked)}
+                          />
+                          衔接班
+                        </label>
+                        {enterClassNewIsBridge && (
+                          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                            <select
+                              value={enterClassBridgeFrom}
+                              onChange={(event) => setEnterClassBridgeFrom(event.target.value)}
+                              className={`${workspaceFieldClass} min-h-10 w-full rounded-xl px-3 py-2 text-sm leading-5`}
+                            >
+                              {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                            <span className="text-xs font-extrabold text-slate-400">衔</span>
+                            <select
+                              value={enterClassBridgeTo}
+                              onChange={(event) => setEnterClassBridgeTo(event.target.value)}
+                              className={`${workspaceFieldClass} min-h-10 w-full rounded-xl px-3 py-2 text-sm leading-5`}
+                            >
+                              {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -7349,9 +7379,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     会先把咨询标记为转化成功，并把学员档案状态设为“待补充”；班级之后再回填。
                   </div>
                 )}
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100">
-                  学员档案会随进班动作建立或进入待补充状态。
-                </div>
+                {enterClassMode === 'quick_new_class' && (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+                    修改后班名预览：{enterClassPreviewName || '补完字段后自动生成'}
+                  </div>
+                )}
               </div>
 
               <div className="mt-5 grid grid-cols-2 gap-3">
