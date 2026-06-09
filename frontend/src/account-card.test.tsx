@@ -957,6 +957,17 @@ test('consultation page source renders separate desktop pad and mobile consultat
   assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderMobileConsultationCard\)/);
 });
 
+test('consultation default list shows pending records instead of all records', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(source, /function sortPendingConsultations\(records: ConsultationRecord\[\]\): ConsultationRecord\[\]/);
+  assert.match(source, /\.filter\(\(record\) => !isConsultationEnded\(record\.flow_stage\)\)/);
+  assert.match(consultationPageBlock[0], /if \(!activeFilter\) \{\s*return sortPendingConsultations\(records\);/);
+  assert.match(consultationPageBlock[0], /当前暂无待处理咨询。/);
+});
+
 test('consultation page source keeps desktop and tablet consultations as two-row cards', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);

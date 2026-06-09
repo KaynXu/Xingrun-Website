@@ -1180,6 +1180,12 @@ function sortConsultationsForFilter(records: ConsultationRecord[], filterKey: Co
   return sorted.sort((a, b) => getConsultationUpdatedTime(b) - getConsultationUpdatedTime(a));
 }
 
+function sortPendingConsultations(records: ConsultationRecord[]): ConsultationRecord[] {
+  return [...records]
+    .filter((record) => !isConsultationEnded(record.flow_stage))
+    .sort((a, b) => getConsultationRecordDateTime(a) - getConsultationRecordDateTime(b));
+}
+
 function toggleConsultationStage(form: ConsultationFormValues, stage: string): ConsultationFormValues {
   if (isConsultationEnded(form.flow_stage)) return form;
   const currentStages = Array.isArray(form.completed_stages) ? form.completed_stages : [];
@@ -6164,7 +6170,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   }, [records, consultationTodayIso]);
   const visibleRecords = useMemo(() => {
     if (!activeFilter) {
-      return records;
+      return sortPendingConsultations(records);
     }
     return sortConsultationsForFilter(
       records.filter((record) => getConsultationFilterKey(record, consultationTodayIso) === activeFilter),
@@ -7097,9 +7103,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">
             暂无咨询记录，点击「新增记录」开始录入。
           </div>
-        ) : activeFilter && visibleRecords.length === 0 ? (
+        ) : visibleRecords.length === 0 ? (
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-            当前分类「{consultationFilterLabels[activeFilter]}」暂无咨询记录。
+            {activeFilter ? `当前分类「${consultationFilterLabels[activeFilter]}」暂无咨询记录。` : '当前暂无待处理咨询。'}
           </div>
         ) : (
           <>
