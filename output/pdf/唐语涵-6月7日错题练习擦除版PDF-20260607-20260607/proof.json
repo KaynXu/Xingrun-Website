@@ -1,6 +1,14 @@
 {
   "pdf_pages": 9,
-  "pdf_bytes": 5120939,
+  "pdf_bytes": 5120343,
+  "second_image_before": [
+    833,
+    339
+  ],
+  "second_image_after": [
+    833,
+    339
+  ],
   "text_counts": {
     "原题 / 原图": 7,
     "方法提醒": 7,
@@ -30,5 +38,6 @@
       "nonwhite_pixels": 17309
     }
   ],
+  "second_image_landscape": true,
   "first_analysis_corrected_to_lower_question": true
 }

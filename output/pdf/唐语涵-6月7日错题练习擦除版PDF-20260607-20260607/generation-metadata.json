@@ -37,7 +37,12 @@
       "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/02-wechat-89b3a3b0cec5f465-erased.png",
       "erased_bytes": 350509,
       "erased_sha256": "aff7031286f6f7896dafd328640bb644007c98683fcddf6887c6cf87cf69052b",
-      "changed_ratio": 0.070393
+      "changed_ratio": 0.070393,
+      "manual_rotation_applied": "upright_landscape_correction",
+      "size_after_manual_rotation": [
+        833,
+        339
+      ]
     },
     {
       "order": 3,
@@ -94,7 +99,15 @@
   "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607.zip",
   "proof": {
     "pdf_pages": 9,
-    "pdf_bytes": 5120939,
+    "pdf_bytes": 5120343,
+    "second_image_before": [
+      833,
+      339
+    ],
+    "second_image_after": [
+      833,
+      339
+    ],
     "text_counts": {
       "原题 / 原图": 7,
       "方法提醒": 7,
@@ -124,8 +137,10 @@
         "nonwhite_pixels": 17309
       }
     ],
+    "second_image_landscape": true,
     "first_analysis_corrected_to_lower_question": true
   },
   "source_original_images_removed_from_output": true,
-  "analysis_revision_note": "2026-06-09: 第 1 张图片含第6题和第7题，后续分析已改为使用图片下面第7题的等式性质/方程变形判断。"
+  "analysis_revision_note": "2026-06-09: 第 1 张图片含第6题和第7题，后续分析已改为使用图片下面第7题的等式性质/方程变形判断。",
+  "image_rotation_revision_note": "2026-06-09: 第 2 张擦除图已手动放正，最终尺寸为 833x339，PDF 第 2 页已渲染确认文字方向正确。"
 }
