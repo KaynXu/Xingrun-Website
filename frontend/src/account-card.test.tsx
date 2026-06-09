@@ -227,9 +227,13 @@ test('consultation enter class dialog supports existing class new class and pend
   assert.match(consultationPageBlock[0], /const \[enterClassRecord, setEnterClassRecord\] = useState<ConsultationRecord \| null>\(null\);/);
   assert.match(consultationPageBlock[0], /const \[enterClassMode, setEnterClassMode\] = useState<'existing' \| 'quick_new_class' \| 'converted_without_class'>\('existing'\);/);
   assert.match(consultationPageBlock[0], /\/api\/consultations\/\$\{record\.id\}\/enter-class/);
-  for (const label of ['选择已有班级', '快速创建新班', '先标记转化，班级待补充', '新班名称', '学员档案']) {
+  for (const label of ['已有班级', '快速建班', '转化待进班', '班型', '学科', '学段', '年级', '班号', '班名', '学员档案']) {
     assert.match(consultationPageBlock[0], new RegExp(label));
   }
+  assert.match(consultationPageBlock[0], /enterClassPreviewName/);
+  assert.match(consultationPageBlock[0], /buildClassDisplayName/);
+  assert.match(consultationPageBlock[0], /class_number: enterClassNewType === 'group' \? enterClassNewNumber : ''/);
+  assert.match(consultationPageBlock[0], /current_grade: quickClassGradeOptions\.includes\(quickClassGrade\)/);
   assert.match(consultationPageBlock[0], /quick_new_class/);
   assert.match(consultationPageBlock[0], /converted_without_class/);
 });

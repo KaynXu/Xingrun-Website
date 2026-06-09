@@ -758,6 +758,42 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertIsNone(payload["item"]["success_class_id"])
         self.assertEqual(payload["item"]["student_profile_status"], "needs_completion")
 
+    def test_consultation_enter_quick_new_class_uses_structured_class_fields(self):
+        created = self.create_consultation_record(**{
+            "孩子姓名": "快速建班学生",
+            "咨询科目": "数学",
+            "年级": "七年级",
+        })
+        response = self.client.post(
+            f"/api/consultations/{created['id']}/enter-class",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "mode": "quick_new_class",
+                "class_name": "数学·七年级·2班",
+                "subject": "数学",
+                "grade": "七年级",
+                "class_type": "group",
+                "stage": "初中",
+                "current_grade": "七年级",
+                "class_number": "2",
+                "cohort_year": 2026,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        class_id = payload["class_id"]
+        created_class = lesson_manager.get_class(class_id)
+        self.assertIsNotNone(created_class)
+        self.assertEqual(created_class["class_type"], "group")
+        self.assertEqual(created_class["subject"], "数学")
+        self.assertEqual(created_class["stage"], "初中")
+        self.assertEqual(created_class["current_grade"], "七年级")
+        self.assertEqual(created_class["class_number"], "2")
+        self.assertEqual(created_class["cohort_year"], 2026)
+        self.assertEqual(payload["item"]["success_class_id"], class_id)
+        class_students = lesson_manager.list_students_for_class(class_id)
+        self.assertEqual([student["name"] for student in class_students], ["快速建班学生"])
+
     def test_owner_uploads_multiple_consultation_test_images(self):
         created = self.create_consultation_record()
 

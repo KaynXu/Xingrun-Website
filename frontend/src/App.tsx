@@ -64,6 +64,7 @@ import {
   getAcademicGradeRank,
   getAcademicStageFromGrade,
   inferAcademicCohortYear,
+  inferAcademicCohortYearForStage,
   normalizeAcademicGradeLabel,
   normalizeClassNameInput,
 } from './domain/classNaming';
@@ -229,6 +230,7 @@ interface CreditMemberUsageDetailItem {
 export interface ClassItem {
   id: number;
   name: string;
+  class_type?: string;
   subject: string;
   grade: string;
   stage?: string;
@@ -5969,6 +5971,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [enterClassId, setEnterClassId] = useState('');
   const [enterClassNewName, setEnterClassNewName] = useState('');
   const [enterClassNewType, setEnterClassNewType] = useState('group');
+  const [enterClassNewSubject, setEnterClassNewSubject] = useState('');
+  const [enterClassNewStage, setEnterClassNewStage] = useState('');
+  const [enterClassNewGrade, setEnterClassNewGrade] = useState('');
+  const [enterClassNewNumber, setEnterClassNewNumber] = useState('1');
   const loadRequestId = useRef(0);
   const teacherDirectory = buildConsultationTeacherDirectory(records);
 
@@ -6351,12 +6357,29 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setFlowNodeActionMoveCurrent(false);
   };
 
+  const getEnterClassDefaults = (record: ConsultationRecord) => {
+    const normalizedGrade = normalizeAcademicGradeLabel(record.grade || '');
+    const stage = getAcademicStageFromGrade(normalizedGrade) || studentCenterStageOptions[0] || '';
+    const gradeOptionsForStage = stage ? academicGradeGroups[stage as keyof typeof academicGradeGroups] || academicGradeOptions : academicGradeOptions;
+    return {
+      subject: academicSubjectOptions.includes(record.consultation_subject) ? record.consultation_subject : '',
+      stage,
+      grade: gradeOptionsForStage.includes(normalizedGrade) ? normalizedGrade : gradeOptionsForStage[0] || normalizedGrade,
+      classNumber: '1',
+    };
+  };
+
   const openEnterClassDialog = (record: ConsultationRecord) => {
+    const defaults = getEnterClassDefaults(record);
     setEnterClassRecord(record);
     setEnterClassMode(record.success_class_id ? 'existing' : 'existing');
     setEnterClassId(record.success_class_id ? String(record.success_class_id) : '');
     setEnterClassNewName(record.success_class_manual && record.success_class_manual !== '班级待补充' ? record.success_class_manual : '');
     setEnterClassNewType('group');
+    setEnterClassNewSubject(defaults.subject);
+    setEnterClassNewStage(defaults.stage);
+    setEnterClassNewGrade(defaults.grade);
+    setEnterClassNewNumber(defaults.classNumber);
     setError('');
   };
 
@@ -6366,6 +6389,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setEnterClassId('');
     setEnterClassNewName('');
     setEnterClassNewType('group');
+    setEnterClassNewSubject('');
+    setEnterClassNewStage('');
+    setEnterClassNewGrade('');
+    setEnterClassNewNumber('1');
   };
 
   const handleSaveFlowNodeAction = async () => {
@@ -6438,15 +6465,41 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       return;
     }
     const record = enterClassRecord;
+    const quickClassGradeOptions = enterClassNewStage
+      ? academicGradeGroups[enterClassNewStage as keyof typeof academicGradeGroups] || academicGradeOptions
+      : academicGradeOptions;
+    const quickClassGrade = normalizeAcademicGradeLabel(enterClassNewGrade || record.grade || '');
+    const quickClassCohortYear = inferAcademicCohortYearForStage(quickClassGrade, enterClassNewStage || getAcademicStageFromGrade(quickClassGrade) || '');
+    const quickClassGeneratedName = buildClassDisplayName({
+      name: enterClassNewName,
+      class_type: enterClassNewType,
+      subject: enterClassNewSubject || record.consultation_subject,
+      stage: enterClassNewStage || getAcademicStageFromGrade(quickClassGrade),
+      current_grade: quickClassGrade,
+      grade: quickClassGrade,
+      class_number: enterClassNewType === 'group' ? enterClassNewNumber : '',
+      cohort_year: quickClassCohortYear,
+      show_cohort_year: false,
+      is_bridge: false,
+      selected_student_names: record.child_name ? [record.child_name] : [],
+    });
     const payload = enterClassMode === 'existing'
       ? { mode: enterClassMode, class_id: Number(enterClassId) }
       : enterClassMode === 'quick_new_class'
         ? {
           mode: enterClassMode,
-          class_name: enterClassNewName,
-          subject: record.consultation_subject,
-          grade: record.grade,
+          class_name: enterClassNewName.trim() || quickClassGeneratedName,
+          subject: enterClassNewSubject || record.consultation_subject,
+          grade: quickClassGrade,
           class_type: enterClassNewType,
+          stage: enterClassNewStage || getAcademicStageFromGrade(quickClassGrade),
+          current_grade: quickClassGradeOptions.includes(quickClassGrade) ? quickClassGrade : quickClassGradeOptions[0] || quickClassGrade,
+          class_number: enterClassNewType === 'group' ? enterClassNewNumber : '',
+          cohort_year: quickClassCohortYear,
+          show_cohort_year: false,
+          is_bridge: false,
+          bridge_target: '',
+          content_track: '',
           teaching_teacher: record.teaching_teacher,
         }
         : { mode: enterClassMode };
@@ -6861,6 +6914,57 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     flowNodeActionKey === 'communication-teacher'
     || flowNodeActionKey === 'trial-teacher'
     || flowNodeActionKey === 'teaching-teacher';
+  const enterClassNewGradeOptions = enterClassNewStage
+    ? academicGradeGroups[enterClassNewStage as keyof typeof academicGradeGroups] || academicGradeOptions
+    : academicGradeOptions;
+  const enterClassNormalizedGrade = normalizeAcademicGradeLabel(enterClassNewGrade || enterClassRecord?.grade || '');
+  const enterClassPreviewName = enterClassRecord ? buildClassDisplayName({
+    name: enterClassNewName,
+    class_type: enterClassNewType,
+    subject: enterClassNewSubject || enterClassRecord.consultation_subject,
+    stage: enterClassNewStage || getAcademicStageFromGrade(enterClassNormalizedGrade),
+    current_grade: enterClassNormalizedGrade,
+    grade: enterClassNormalizedGrade,
+    class_number: enterClassNewType === 'group' ? enterClassNewNumber : '',
+    cohort_year: inferAcademicCohortYearForStage(enterClassNormalizedGrade, enterClassNewStage || getAcademicStageFromGrade(enterClassNormalizedGrade) || ''),
+    show_cohort_year: false,
+    is_bridge: false,
+    selected_student_names: enterClassRecord.child_name ? [enterClassRecord.child_name] : [],
+  }) : '';
+  const enterClassModeCards: Array<{
+    mode: typeof enterClassMode;
+    label: string;
+    description: string;
+    icon: React.ReactNode;
+    tone: string;
+  }> = [
+    {
+      mode: 'existing',
+      label: '已有班级',
+      description: '从当前班级列表选择，立即建立学员档案。',
+      icon: <Library size={15} />,
+      tone: 'text-sky-600 bg-sky-50 dark:bg-sky-400/10 dark:text-sky-200',
+    },
+    {
+      mode: 'quick_new_class',
+      label: '快速建班',
+      description: '沿用学员中心规则生成班名，再完成进班。',
+      icon: <PlusCircle size={15} />,
+      tone: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-400/10 dark:text-emerald-200',
+    },
+    {
+      mode: 'converted_without_class',
+      label: '转化待进班',
+      description: '先记为成功，班级和档案稍后补齐。',
+      icon: <AlertCircle size={15} />,
+      tone: 'text-amber-600 bg-amber-50 dark:bg-amber-400/10 dark:text-amber-100',
+    },
+  ];
+  const handleEnterClassStageChange = (stage: string) => {
+    const nextGradeOptions = academicGradeGroups[stage as keyof typeof academicGradeGroups] || academicGradeOptions;
+    setEnterClassNewStage(stage);
+    setEnterClassNewGrade((current) => nextGradeOptions.includes(normalizeAcademicGradeLabel(current)) ? normalizeAcademicGradeLabel(current) : nextGradeOptions[0] || '');
+  };
 
   return (
     <div className={`${workspacePageClass} space-y-6`}>
@@ -7114,31 +7218,35 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               </div>
 
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                {([
-                  ['existing', '选择已有班级'],
-                  ['quick_new_class', '快速创建新班'],
-                  ['converted_without_class', '先标记转化，班级待补充'],
-                ] as Array<[typeof enterClassMode, string]>).map(([mode, label]) => (
+                {enterClassModeCards.map((item) => (
                   <button
-                    key={mode}
+                    key={item.mode}
                     type="button"
-                    onClick={() => setEnterClassMode(mode)}
+                    onClick={() => setEnterClassMode(item.mode)}
                     className={cn(
-                      'rounded-2xl border px-3 py-3 text-left text-xs font-extrabold transition',
-                      enterClassMode === mode
-                        ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-[0_8px_18px_rgba(14,165,233,0.12)] dark:border-sky-300/40 dark:bg-sky-400/10 dark:text-sky-100'
-                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                      'min-h-[5.25rem] rounded-2xl border px-3 py-2.5 text-left transition',
+                      enterClassMode === item.mode
+                        ? 'border-sky-300 bg-sky-50 text-slate-900 shadow-[0_10px_24px_rgba(14,165,233,0.14)] ring-1 ring-sky-100 dark:border-sky-300/40 dark:bg-sky-400/10 dark:text-white dark:ring-sky-400/10'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200 hover:bg-sky-50/50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
                     )}
                   >
-                    {label}
+                    <span className="flex items-center gap-2">
+                      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${item.tone}`}>
+                        {item.icon}
+                      </span>
+                      <span className="text-sm font-extrabold">{item.label}</span>
+                    </span>
+                    <span className="mt-2 block text-[11px] font-semibold leading-4 text-slate-500 dark:text-slate-300">
+                      {item.description}
+                    </span>
                   </button>
                 ))}
               </div>
 
               <div className="mt-4 space-y-3">
                 {enterClassMode === 'existing' && (
-                  <label className="block">
-                    <span className="text-xs font-bold text-slate-500 dark:text-slate-300">选择已有班级</span>
+                  <label className="block rounded-2xl border border-sky-100 bg-sky-50/55 p-3 dark:border-sky-400/15 dark:bg-sky-400/10">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-300">已有班级</span>
                     <select
                       value={enterClassId}
                       onChange={(event) => setEnterClassId(event.target.value)}
@@ -7152,27 +7260,88 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   </label>
                 )}
                 {enterClassMode === 'quick_new_class' && (
-                  <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
-                    <label className="block">
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-300">新班名称</span>
-                      <input
-                        value={enterClassNewName}
-                        onChange={(event) => setEnterClassNewName(event.target.value)}
-                        className={`${workspaceFieldClass} mt-1 w-full rounded-xl px-3 py-2`}
-                        placeholder={`${enterClassRecord.grade || ''}${enterClassRecord.consultation_subject || ''}新班`}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班型</span>
-                      <select
-                        value={enterClassNewType}
-                        onChange={(event) => setEnterClassNewType(event.target.value)}
-                        className={`${workspaceFieldClass} mt-1 w-full rounded-xl px-3 py-2`}
-                      >
-                        <option value="group">班课</option>
-                        <option value="mini">小课</option>
-                      </select>
-                    </label>
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/45 p-3 dark:border-emerald-400/15 dark:bg-emerald-400/10">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-extrabold text-emerald-700 dark:text-emerald-100">快速建班</p>
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-emerald-700/70 dark:text-emerald-100/70">
+                          预览：{enterClassNewName.trim() || enterClassPreviewName || '补完字段后自动生成'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班型</span>
+                        <select
+                          value={enterClassNewType}
+                          onChange={(event) => setEnterClassNewType(event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                        >
+                          <option value="group">多人班课</option>
+                          <option value="1v1">1v1 小课</option>
+                          <option value="1v2">1v2 小课</option>
+                          <option value="1v3">1v3 小课</option>
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-300">学科</span>
+                        <select
+                          value={academicSubjectOptions.includes(enterClassNewSubject) ? enterClassNewSubject : ''}
+                          onChange={(event) => setEnterClassNewSubject(event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                        >
+                          <option value="">请选择学科</option>
+                          {academicSubjectOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-300">学段</span>
+                        <select
+                          value={enterClassNewStage}
+                          onChange={(event) => handleEnterClassStageChange(event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                        >
+                          {studentCenterStageOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-300">年级</span>
+                        <select
+                          value={enterClassNewGradeOptions.includes(enterClassNormalizedGrade) ? enterClassNormalizedGrade : ''}
+                          onChange={(event) => setEnterClassNewGrade(event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                        >
+                          {enterClassNewGradeOptions.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {enterClassNewType === 'group' && (
+                        <label className="block">
+                          <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班号</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={enterClassNewNumber}
+                            onChange={(event) => setEnterClassNewNumber(event.target.value)}
+                            className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                          />
+                        </label>
+                      )}
+                      <label className={enterClassNewType === 'group' ? 'block' : 'block sm:col-span-2'}>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班名</span>
+                        <input
+                          value={enterClassNewName}
+                          onChange={(event) => setEnterClassNewName(event.target.value)}
+                          className={`${workspaceFieldClass} mt-1 h-9 w-full rounded-xl px-3 py-1.5 text-sm`}
+                          placeholder={enterClassPreviewName || `${enterClassRecord.grade || ''}${enterClassRecord.consultation_subject || ''}新班`}
+                        />
+                      </label>
+                    </div>
                   </div>
                 )}
                 {enterClassMode === 'converted_without_class' && (
