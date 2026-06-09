@@ -265,8 +265,15 @@ interface ConsultationRecord {
   follow_up_note: string;
   flow_stage: string;
   completed_stages: string[];
+  customer_service_added: string;
+  customer_service_note: string;
+  communication_teacher_added: string;
+  communication_teacher_note: string;
   test_taken: string;
+  test_note: string;
   test_images: Array<{ url: string; filename: string }>;
+  trial_teacher_added: string;
+  trial_teacher_note: string;
   trial_taken: string;
   trial_time_slot: string;
   trial_class_id: number | null;
@@ -274,7 +281,17 @@ interface ConsultationRecord {
   trial_teacher: string;
   trial_feedback: string;
   success_class_id: number | null;
+  teaching_teacher_added: string;
+  teaching_teacher: string;
+  teaching_teacher_note: string;
   success_class_manual: string;
+  enrollment_handoff_note: string;
+  student_profile_status: string;
+  student_profile_note: string;
+  failure_reason: string;
+  failure_note: string;
+  closing_result: string;
+  closed_by_user_id: number | null;
   end_note: string;
   ended_at: string;
   created_at: string;
@@ -1296,8 +1313,15 @@ const consultationFormDefaults: ConsultationFormValues = {
   follow_up_note: '',
   flow_stage: '已加小客服微信',
   completed_stages: ['已加小客服微信'],
+  customer_service_added: '',
+  customer_service_note: '',
+  communication_teacher_added: '',
+  communication_teacher_note: '',
   test_taken: '',
+  test_note: '',
   test_images: [],
+  trial_teacher_added: '',
+  trial_teacher_note: '',
   trial_taken: '',
   trial_time_slot: '',
   trial_class_id: null,
@@ -1305,7 +1329,17 @@ const consultationFormDefaults: ConsultationFormValues = {
   trial_teacher: '',
   trial_feedback: '',
   success_class_id: null,
+  teaching_teacher_added: '',
+  teaching_teacher: '',
+  teaching_teacher_note: '',
   success_class_manual: '',
+  enrollment_handoff_note: '',
+  student_profile_status: '',
+  student_profile_note: '',
+  failure_reason: '',
+  failure_note: '',
+  closing_result: '',
+  closed_by_user_id: null,
   end_note: '',
   ended_at: '',
 };
@@ -1340,8 +1374,15 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     follow_up_note: record.follow_up_note ?? '',
     flow_stage: record.flow_stage || consultationFormDefaults.flow_stage,
     completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages : consultationFormDefaults.completed_stages,
+    customer_service_added: record.customer_service_added ?? '',
+    customer_service_note: record.customer_service_note ?? '',
+    communication_teacher_added: record.communication_teacher_added ?? '',
+    communication_teacher_note: record.communication_teacher_note ?? '',
     test_taken: record.test_taken ?? '',
+    test_note: record.test_note ?? '',
     test_images: Array.isArray(record.test_images) ? record.test_images : [],
+    trial_teacher_added: record.trial_teacher_added ?? '',
+    trial_teacher_note: record.trial_teacher_note ?? '',
     trial_taken: record.trial_taken ?? '',
     trial_time_slot: record.trial_time_slot ?? '',
     trial_class_id: record.trial_class_id ?? null,
@@ -1349,7 +1390,17 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     trial_teacher: record.trial_teacher ?? '',
     trial_feedback: record.trial_feedback ?? '',
     success_class_id: record.success_class_id ?? null,
+    teaching_teacher_added: record.teaching_teacher_added ?? '',
+    teaching_teacher: record.teaching_teacher ?? '',
+    teaching_teacher_note: record.teaching_teacher_note ?? '',
     success_class_manual: record.success_class_manual ?? '',
+    enrollment_handoff_note: record.enrollment_handoff_note ?? '',
+    student_profile_status: record.student_profile_status ?? '',
+    student_profile_note: record.student_profile_note ?? '',
+    failure_reason: record.failure_reason ?? '',
+    failure_note: record.failure_note ?? '',
+    closing_result: record.closing_result ?? '',
+    closed_by_user_id: record.closed_by_user_id ?? null,
     end_note: record.end_note ?? '',
     ended_at: record.ended_at ?? '',
   };
@@ -1373,8 +1424,15 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     follow_up_note: record.follow_up_note ?? '',
     flow_stage: record.flow_stage || consultationFormDefaults.flow_stage,
     completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages : consultationFormDefaults.completed_stages,
+    customer_service_added: record.customer_service_added ?? '',
+    customer_service_note: record.customer_service_note ?? '',
+    communication_teacher_added: record.communication_teacher_added ?? '',
+    communication_teacher_note: record.communication_teacher_note ?? '',
     test_taken: record.test_taken ?? '',
+    test_note: record.test_note ?? '',
     test_images: Array.isArray(record.test_images) ? record.test_images : [],
+    trial_teacher_added: record.trial_teacher_added ?? '',
+    trial_teacher_note: record.trial_teacher_note ?? '',
     trial_taken: record.trial_taken ?? '',
     trial_time_slot: record.trial_time_slot ?? '',
     trial_class_id: record.trial_class_id ?? null,
@@ -1382,7 +1440,17 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     trial_teacher: record.trial_teacher ?? '',
     trial_feedback: record.trial_feedback ?? '',
     success_class_id: record.success_class_id ?? null,
+    teaching_teacher_added: record.teaching_teacher_added ?? '',
+    teaching_teacher: record.teaching_teacher ?? '',
+    teaching_teacher_note: record.teaching_teacher_note ?? '',
     success_class_manual: record.success_class_manual ?? '',
+    enrollment_handoff_note: record.enrollment_handoff_note ?? '',
+    student_profile_status: record.student_profile_status ?? '',
+    student_profile_note: record.student_profile_note ?? '',
+    failure_reason: record.failure_reason ?? '',
+    failure_note: record.failure_note ?? '',
+    closing_result: record.closing_result ?? '',
+    closed_by_user_id: record.closed_by_user_id ?? null,
     end_note: record.end_note ?? '',
     ended_at: record.ended_at ?? '',
     created_at: record.created_at ?? '',
@@ -4452,14 +4520,14 @@ const ConsultationModal = ({
               </button>
               <label className={cn(compactStatusClass(teacherWechatDone), 'relative min-w-0 p-0')}>
                 <span className="pointer-events-none absolute inset-x-3 top-1/2 z-10 min-w-0 -translate-y-1/2 truncate text-center">
-                  负责老师VX：{form.receiving_teacher || '未选择'}
+                  接待教师：{form.receiving_teacher || '未选择'}
                 </span>
                 <select
                   value={form.teacher_id}
                   onChange={(e) => handleTeacherChange(e.target.value)}
                   disabled={readOnly || stageFrozen}
                   className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-3 text-transparent outline-none"
-                  aria-label="选择负责老师"
+                  aria-label="选择接待教师"
                 >
                   <option value="">请选择老师</option>
                   {teacherOptions.map((option) => (
@@ -4479,11 +4547,11 @@ const ConsultationModal = ({
                 <input value={form.parent_wechat_name} onChange={(e) => updateField('parent_wechat_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="家长微信昵称" />
               </label>
               <label className="space-y-2 text-sm">
-                <span className={compactEditLabelClass}>孩子姓名</span>
-                <input value={form.child_name} onChange={(e) => updateField('child_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="孩子姓名" />
+                <span className={compactEditLabelClass}>学生姓名</span>
+                <input value={form.child_name} onChange={(e) => updateField('child_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="学生姓名" />
               </label>
               <label className="space-y-2 text-sm">
-                <span className={compactEditLabelClass}>年级</span>
+                <span className={compactEditLabelClass}>咨询年级</span>
                 <input value={form.grade} onChange={(e) => updateField('grade', e.target.value)} disabled={readOnly} list="consultation-grade-options" className={fieldClass} placeholder="如：三年级" />
               </label>
             </div>
@@ -4520,7 +4588,7 @@ const ConsultationModal = ({
             <section ref={contentRef} className={cn(consultationFlowSectionClass(sectionStates.communication), 'min-h-[14rem] scroll-mt-6 space-y-3', communicationHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(sectionStates.communication)}>沟通与测试</p>
             <label className="scroll-mt-6 space-y-2 text-sm">
-              <span className={compactEditLabelClass}>沟通ing：情况说明</span>
+              <span className={compactEditLabelClass}>家长诉求</span>
               <textarea
                 value={form.need_detail}
                 onChange={(e) => updateField('need_detail', e.target.value)}

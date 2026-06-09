@@ -167,6 +167,29 @@ test('consultation modal source supports quick parsing and structured source met
   assert.match(source, /source_channel_note/);
 });
 
+test('consultation records expose lightweight flow card fields', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.match(source, /customer_service_note: string;/);
+  assert.match(source, /communication_teacher_note: string;/);
+  assert.match(source, /teaching_teacher_note: string;/);
+  assert.match(source, /failure_reason: string;/);
+  assert.match(source, /closing_result: string;/);
+});
+
+test('consultation create form requires only lightweight fields', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /学生姓名/);
+  assert.match(modalBlock[0], /咨询科目/);
+  assert.match(modalBlock[0], /咨询年级/);
+  assert.match(modalBlock[0], /家长诉求/);
+  assert.match(modalBlock[0], /接待教师/);
+  assert.doesNotMatch(modalBlock[0], /失败原因[\s\S]*required/);
+});
+
 test('consultation page source adds ai batch entry in the existing action area', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
