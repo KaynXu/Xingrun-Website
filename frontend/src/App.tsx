@@ -7354,8 +7354,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </label>
                       )}
                       {enterClassNewIsBridge && (
-                        <div className={`${enterClassNewType === 'group' ? '' : 'sm:col-span-2'} rounded-2xl border border-white/70 bg-white/70 p-2 dark:border-white/10 dark:bg-white/5`}>
-                          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                        <div className={`${enterClassNewType === 'group' ? '' : 'sm:col-span-2'} block`}>
+                          <span className="text-xs font-bold text-slate-500 dark:text-slate-300">衔接方向</span>
+                          <div className="mt-1 grid grid-cols-[minmax(0,1fr)_1.5rem_minmax(0,1fr)] items-center gap-1.5">
                             <select
                               value={enterClassBridgeFrom}
                               onChange={(event) => setEnterClassBridgeFrom(event.target.value)}
@@ -7363,7 +7364,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                             >
                               {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                             </select>
-                            <span className="text-xs font-extrabold text-slate-400">衔</span>
+                            <span className="flex min-h-10 items-center justify-center text-sm font-black text-slate-600 dark:text-slate-200">衔</span>
                             <select
                               value={enterClassBridgeTo}
                               onChange={(event) => setEnterClassBridgeTo(event.target.value)}
