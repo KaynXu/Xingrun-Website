@@ -94,37 +94,38 @@
   "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607.zip",
   "proof": {
     "pdf_pages": 9,
-    "pdf_bytes": 5115141,
+    "pdf_bytes": 5120939,
     "text_counts": {
       "原题 / 原图": 7,
       "方法提醒": 7,
       "挖空复盘": 7,
       "订正区": 7,
-      "干净原题图片": 4,
-      "干净几何原题图片": 3,
-      "生成图像": 0,
-      "擦除后原题图片": 0,
+      "clean": 7,
+      "第7题": 4,
+      "等式性质": 2,
+      "多边形": 0,
       "$": 0,
       "rac": 0,
       "mathbbR": 0,
       "ldots": 0,
-      "\\frac": 0,
-      "section_order_ok": true
+      "\\frac": 0
     },
     "render_nonwhite": [
       {
         "page": 1,
-        "nonwhite_pixels": 45677
+        "nonwhite_pixels": 43389
       },
       {
         "page": 5,
-        "nonwhite_pixels": 18342
+        "nonwhite_pixels": 18349
       },
       {
         "page": 9,
-        "nonwhite_pixels": 17300
+        "nonwhite_pixels": 17309
       }
-    ]
+    ],
+    "first_analysis_corrected_to_lower_question": true
   },
-  "source_original_images_removed_from_output": true
+  "source_original_images_removed_from_output": true,
+  "analysis_revision_note": "2026-06-09: 第 1 张图片含第6题和第7题，后续分析已改为使用图片下面第7题的等式性质/方程变形判断。"
 }
