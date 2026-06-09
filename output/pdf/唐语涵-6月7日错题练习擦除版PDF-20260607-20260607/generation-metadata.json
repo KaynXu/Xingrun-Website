@@ -98,16 +98,8 @@
   "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/2020级·六年级·1班·衔接-唐语涵-6月7日错题练习擦除版-20260607-20260607.pdf",
   "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607.zip",
   "proof": {
-    "pdf_pages": 9,
-    "pdf_bytes": 5120343,
-    "second_image_before": [
-      833,
-      339
-    ],
-    "second_image_after": [
-      833,
-      339
-    ],
+    "pdf_pages": 7,
+    "pdf_bytes": 4998185,
     "text_counts": {
       "原题 / 原图": 7,
       "方法提醒": 7,
@@ -123,24 +115,100 @@
       "ldots": 0,
       "\\frac": 0
     },
-    "render_nonwhite": [
+    "page_starts": [
       {
         "page": 1,
-        "nonwhite_pixels": 43389
+        "first_lines": [
+          "数学·初2020级·六年级·1班·小衔初 唐语涵 6月7日错题练习擦除版",
+          "第 1 题",
+          "原题 / 原图",
+          "干净几何原题图片",
+          "题干摘要"
+        ]
+      },
+      {
+        "page": 2,
+        "first_lines": [
+          "第 2 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“在判断选项②时，未能正确应用排列组合知识统计满足系数严格递增且乘积≤10的多项式个数”这里倒回来，这题第一手先做：先把"
+        ]
+      },
+      {
+        "page": 3,
+        "first_lines": [
+          "第 3 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“错在不知道两个单项式相减结果仍为单项式时，它们必须是同类项，因此对应字母指数相等”这里倒回来，这题第一手先做：先回"
+        ]
+      },
+      {
+        "page": 4,
+        "first_lines": [
+          "第 4 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“孩子不理解如何将含绝对值符号的表达式转化为分段形式，或者没有学会通过平方或分类讨论去掉绝对值，从而无法进行后续的化"
+        ]
       },
       {
         "page": 5,
-        "nonwhite_pixels": 18349
+        "first_lines": [
+          "第 5 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“题目给的数据没有看完整，看图时也没有结合题目信息来看”这里倒回来，这题第一手先做：先把干净原题里的已知条件和问法分"
+        ]
       },
       {
-        "page": 9,
-        "nonwhite_pixels": 17309
+        "page": 6,
+        "first_lines": [
+          "第 6 题",
+          "原题 / 原图",
+          "干净几何原题图片",
+          "题干摘要",
+          "先从“孩子认为点D只可能在线段AB上，忽略了“直线”表示点D可以在AB延长线或反向延长线上，导致没有进行分类讨论，从而只得到一"
+        ]
+      },
+      {
+        "page": 7,
+        "first_lines": [
+          "第 7 题",
+          "原题 / 原图",
+          "干净几何原题图片",
+          "题干摘要",
+          "先从“未能识别动态几何问题中旋转可能导致多种位置关系，从而需要分类讨论，误认为只有一种答案”这里倒回来，这题第一手先做："
+        ]
       }
     ],
-    "second_image_landscape": true,
-    "first_analysis_corrected_to_lower_question": true
+    "render_nonwhite": [
+      {
+        "page": 1,
+        "nonwhite_pixels": 31050
+      },
+      {
+        "page": 2,
+        "nonwhite_pixels": 30469
+      },
+      {
+        "page": 4,
+        "nonwhite_pixels": 31111
+      },
+      {
+        "page": 7,
+        "nonwhite_pixels": 22221
+      }
+    ],
+    "one_question_per_page": true
   },
   "source_original_images_removed_from_output": true,
   "analysis_revision_note": "2026-06-09: 第 1 张图片含第6题和第7题，后续分析已改为使用图片下面第7题的等式性质/方程变形判断。",
-  "image_rotation_revision_note": "2026-06-09: 第 2 张擦除图已手动放正，最终尺寸为 833x339，PDF 第 2 页已渲染确认文字方向正确。"
+  "image_rotation_revision_note": "2026-06-09: 第 2 张擦除图已手动放正，最终尺寸为 833x339，PDF 第 2 页已渲染确认文字方向正确。",
+  "layout_revision_note": "2026-06-09: 错题练习模板改为紧凑一页一题；唐语涵擦除版已重排，第二页从第2题开始。"
 }
