@@ -2505,6 +2505,15 @@ def _get_accessible_class_or_error(user: dict, class_id: int):
     return None, (jsonify({"error": "forbidden"}), 403)
 
 
+def _member_can_read_student_profile(user: dict, student_id: int) -> bool:
+    if user.get("role") != "member":
+        return True
+    for class_id in get_user_class_ids(user["id"]):
+        if any(student.get("id") == student_id for student in list_students_for_class(class_id)):
+            return True
+    return False
+
+
 def _get_json_object_payload():
     if not request.is_json:
         return {}, None
@@ -5719,6 +5728,8 @@ def api_student_profile_get(student_id):
     student = get_student_profile(student_id, user.get("organization_id"))
     if not student:
         return jsonify({"error": "not found"}), 404
+    if not _member_can_read_student_profile(user, student_id):
+        return jsonify({"error": "forbidden"}), 403
     return jsonify({"student": student})
 
 
@@ -5796,6 +5807,8 @@ def api_class_invite_reset(class_id):
     user, error = _require_auth()
     if error:
         return error
+    if user.get("role") == "member":
+        return jsonify({"error": "forbidden"}), 403
     cls, error = _get_accessible_class_or_error(user, class_id)
     if error:
         return error
@@ -5819,6 +5832,8 @@ def api_class_students_create(class_id):
     user, error = _require_auth()
     if error:
         return error
+    if user.get("role") == "member":
+        return jsonify({"error": "forbidden"}), 403
     _, error = _get_accessible_class_or_error(user, class_id)
     if error:
         return error
@@ -5846,6 +5861,8 @@ def api_class_students_delete(class_id, student_id):
     user, error = _require_auth()
     if error:
         return error
+    if user.get("role") == "member":
+        return jsonify({"error": "forbidden"}), 403
     _, error = _get_accessible_class_or_error(user, class_id)
     if error:
         return error

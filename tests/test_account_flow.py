@@ -2745,6 +2745,11 @@ class AccountFlowTestCase(unittest.TestCase):
         other_class_id = lesson_manager.save_class("Visible Other Class", subject="Math", grade="六年级")
         lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
         lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
+        owned_student = lesson_manager.create_student_for_class(owned_class_id, "Visible Student")
+        candidate_student = lesson_manager.create_student_profile(
+            "Candidate Student",
+            organization_id=target_member["user"]["organization_id"],
+        )
 
         classes = self.client.get(
             "/api/classes",
@@ -2758,6 +2763,64 @@ class AccountFlowTestCase(unittest.TestCase):
             headers=self.auth_headers(target_member["token"]),
         )
         self.assertEqual(staff_users.status_code, 403)
+
+        all_students = self.client.get(
+            "/api/students",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(all_students.status_code, 403)
+
+        class_students = self.client.get(
+            f"/api/classes/{owned_class_id}/students",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(class_students.status_code, 200)
+        self.assertEqual([item["id"] for item in class_students.get_json()["students"]], [owned_student["id"]])
+
+        owned_student_profile = self.client.get(
+            f"/api/students/{owned_student['id']}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(owned_student_profile.status_code, 200)
+
+        candidate_student_profile = self.client.get(
+            f"/api/students/{candidate_student['id']}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(candidate_student_profile.status_code, 403)
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(target_member["token"]),
+            json={"name": "Member Should Not Create", "subject": "数学", "grade": "六年级"},
+        )
+        self.assertEqual(create_class.status_code, 403)
+
+        update_class = self.client.put(
+            f"/api/classes/{owned_class_id}",
+            headers=self.auth_headers(target_member["token"]),
+            json={"name": "Member Should Not Edit", "subject": "数学", "grade": "六年级"},
+        )
+        self.assertEqual(update_class.status_code, 403)
+
+        add_student = self.client.post(
+            f"/api/classes/{owned_class_id}/students",
+            headers=self.auth_headers(target_member["token"]),
+            json={"student_id": candidate_student["id"]},
+        )
+        self.assertEqual(add_student.status_code, 403)
+
+        remove_student = self.client.delete(
+            f"/api/classes/{owned_class_id}/students/{owned_student['id']}",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(remove_student.status_code, 403)
+
+        reset_invite = self.client.post(
+            f"/api/classes/{owned_class_id}/invite/reset",
+            headers=self.auth_headers(target_member["token"]),
+        )
+        self.assertEqual(reset_invite.status_code, 403)
 
     def test_delete_class_clears_assignments_and_unlinks_lessons(self):
         owner_login = self.client.post(

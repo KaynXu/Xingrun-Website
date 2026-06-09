@@ -29,6 +29,8 @@ type CampusOverviewProps = {
   onHelpLeave: () => void;
   onHelpToggle: () => void;
   selectedSummary: string;
+  overviewTitle: string;
+  overviewScopeLabel: string;
   open: boolean;
   items: CampusOverviewFilterItem[];
   activeKey: CampusOverviewFilterLayer | null;
@@ -54,6 +56,8 @@ export function CampusOverview({
   onHelpLeave,
   onHelpToggle,
   selectedSummary,
+  overviewTitle,
+  overviewScopeLabel,
   open,
   items,
   activeKey,
@@ -73,7 +77,7 @@ export function CampusOverview({
     <section className={`${workspaceCardClass} space-y-4 p-6`}>
       <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Class Workspace</p>
       <div className="relative flex flex-wrap items-center gap-2">
-        <h3 className="text-2xl font-bold text-slate-900 dark:text-white">校区总览</h3>
+        <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{overviewTitle}</h3>
         <div
           className="relative"
           onMouseEnter={onHelpEnter}
@@ -83,19 +87,19 @@ export function CampusOverview({
             type="button"
             onClick={onHelpToggle}
             className="inline-flex h-8 w-8 items-center justify-center text-sky-600 transition hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-200"
-            aria-label="查看校区总览说明"
+            aria-label={`查看${overviewTitle}说明`}
           >
             <Info size={16} />
           </button>
           {activeHelpKey === 'overview' && (
             <div className="absolute left-0 top-10 z-20 w-[min(24rem,calc(100vw-3rem))] rounded-2xl border border-sky-100 bg-white p-4 text-sm text-slate-500 shadow-[0_18px_40px_rgba(14,165,233,0.12)] dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
-              <p className="font-semibold text-slate-900 dark:text-white">校区总览说明</p>
+              <p className="font-semibold text-slate-900 dark:text-white">{overviewTitle}说明</p>
               <p className="mt-2">这里汇总 {currentUser.organization_name} 的教师、学员、班级和小课数量，可按科目、教师、学段和年级查看不同范围。</p>
             </div>
           )}
         </div>
         <FloatingOverviewFilter
-          label="全校区"
+          label={overviewScopeLabel}
           selectedSummary={selectedSummary}
           defaultSummary="全校区"
           open={open}

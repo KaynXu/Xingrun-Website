@@ -6,7 +6,10 @@ type ApiFetch = <T>(endpoint: string, init?: RequestInit) => Promise<T>;
 
 export async function executeStudentCenterLoadRequest(
   apiFetch: ApiFetch,
-  canLoadStaffMembers: boolean,
+  permissions: {
+    canLoadStaffMembers: boolean;
+    canLoadStudentProfiles: boolean;
+  },
 ): Promise<{
   classItems: ClassItem[];
   userItems: UserItem[];
@@ -15,13 +18,15 @@ export async function executeStudentCenterLoadRequest(
 }> {
   const [classItems, userItems, teacherBindingData, studentData] = await Promise.all([
     apiFetch<ClassItem[]>('/api/classes'),
-    canLoadStaffMembers
+    permissions.canLoadStaffMembers
       ? apiFetch<UserItem[]>('/api/admin/users')
       : Promise.resolve([] as UserItem[]),
-    canLoadStaffMembers
+    permissions.canLoadStaffMembers
       ? apiFetch<{ teacher_bindings: Record<number, number | null> }>('/api/classes/teacher-bindings')
       : Promise.resolve({ teacher_bindings: {} as Record<number, number | null> }),
-    apiFetch<{ students: ClassStudentOption[] }>('/api/students'),
+    permissions.canLoadStudentProfiles
+      ? apiFetch<{ students: ClassStudentOption[] }>('/api/students')
+      : Promise.resolve({ students: [] as ClassStudentOption[] }),
   ]);
 
   return { classItems, userItems, teacherBindingData, allStudents: studentData.students };

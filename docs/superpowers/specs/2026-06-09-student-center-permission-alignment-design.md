@@ -15,7 +15,7 @@ Align the student center permission layer so each role sees a consistent UI and 
 ## UI Behavior
 
 - For organization-level roles, the overview label remains `校区总览`.
-- For `member`, the same overview surface is labeled `班级情况`; the underlying read-only summary behavior remains available.
+- For `member`, the same overview surface is labeled `教师总览`, with the scope pill labeled `学生人数`; the underlying read-only summary behavior remains available.
 - The page must not fail with a blanket `无权限` when a `member` opens the student center.
 - Edit controls must be hidden or disabled for `member` according to the centralized student center permission model.
 

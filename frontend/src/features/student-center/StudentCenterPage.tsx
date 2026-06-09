@@ -290,7 +290,10 @@ export function StudentCenterPage({
     try {
       const { classItems, userItems, teacherBindingData, allStudents: loadedStudents } = await executeStudentCenterLoadRequest(
         apiFetch,
-        studentCenterPermissions.canLoadStaffMembers,
+        {
+          canLoadStaffMembers: studentCenterPermissions.canLoadStaffMembers,
+          canLoadStudentProfiles: studentCenterPermissions.canLoadStudentProfiles,
+        },
       );
 
       if (!isCurrentClassLoadRequest(requestVersion, loadPageRequestVersionRef.current)) {
@@ -338,7 +341,7 @@ export function StudentCenterPage({
         setLoading(false);
       }
     }
-  }, [studentCenterPermissions.canLoadStaffMembers]);
+  }, [studentCenterPermissions.canLoadStaffMembers, studentCenterPermissions.canLoadStudentProfiles]);
 
   useEffect(() => {
     loadPage().catch(() => undefined);
@@ -514,6 +517,22 @@ export function StudentCenterPage({
     setExpandedClassId(nextExpandedClassId);
     setFormError(nextErrors.formError);
     setAssignmentError(nextErrors.assignmentError);
+  };
+
+  const openReadOnlyClassStudents = (classId: number) => {
+    setStudentCenterTab('students');
+    setStudentScheduleStatusFilter('scheduled');
+    setStudentClassFilter(classId);
+    setExpandedClassId(null);
+    setActiveStudentFilterLayer(null);
+  };
+
+  const handleClassCardAction = (classId: number | 'new') => {
+    if (typeof classId === 'number' && !studentCenterPermissions.canCreateClass) {
+      openReadOnlyClassStudents(classId);
+      return;
+    }
+    handleToggleExpandedClass(classId);
   };
 
   useEffect(() => {
@@ -1306,13 +1325,17 @@ export function StudentCenterPage({
     if (studentGradeFilter !== '全部' && !studentGradeFilterOptions.includes(studentGradeFilter)) {
       setStudentGradeFilter('全部');
     }
-    if (studentClassFilter !== 'all' && !studentClassFilterOptions.some((item) => item.id === studentClassFilter)) {
+    if (studentClassFilter !== 'all' && !scopedClassItems.some((item) => item.id === studentClassFilter)) {
       setStudentClassFilter('all');
     }
-  }, [studentSubjectFilterOptions, studentTeacherFilterOptions, studentStageFilterOptions, studentGradeFilterOptions, studentClassFilterOptions, studentSubjectFilter, studentTeacherFilter, studentStageFilter, studentGradeFilter, studentClassFilter]);
+  }, [studentSubjectFilterOptions, studentTeacherFilterOptions, studentStageFilterOptions, studentGradeFilterOptions, scopedClassItems, studentSubjectFilter, studentTeacherFilter, studentStageFilter, studentGradeFilter, studentClassFilter]);
   const activeStudentFilterOptions = resolveActiveStudentFilterOptions(activeStudentFilterLayer, studentFilters, studentFilterOptions);
   const handleClassCardClick = (event: React.MouseEvent, classId: number) => {
     if ((event.target as HTMLElement).closest('button, a, input, select, textarea')) {
+      return;
+    }
+    if (!studentCenterPermissions.canCreateClass) {
+      openReadOnlyClassStudents(classId);
       return;
     }
     handleToggleExpandedClass(classId);
@@ -1352,6 +1375,8 @@ export function StudentCenterPage({
         onHelpLeave={() => setActiveClassHelpKey(null)}
         onHelpToggle={() => setActiveClassHelpKey((current) => current === 'overview' ? null : 'overview')}
         selectedSummary={activeOverviewFilterSummary}
+        overviewTitle={studentCenterPermissions.overviewTitle}
+        overviewScopeLabel={studentCenterPermissions.overviewScopeLabel}
         open={isOverviewFilterOpen}
         items={overviewFilterItems}
         activeKey={activeOverviewFilterLayer}
@@ -1458,6 +1483,8 @@ export function StudentCenterPage({
           classCardInteractionLocked={classCardInteractionLocked}
           pageRefreshLocked={pageRefreshLocked}
           canCreateClass={studentCenterPermissions.canCreateClass}
+          canEditClassCards={studentCenterPermissions.canCreateClass}
+          classCardActionLabel={studentCenterPermissions.canCreateClass ? '编辑' : '查看'}
           classScopeLabel={studentCenterPermissions.classScopeLabel}
           classFilterItems={classFilterItems}
           activeClassFilterLayer={activeClassFilterLayer}
@@ -1474,7 +1501,7 @@ export function StudentCenterPage({
           onSelectClassFilterOption={handleSelectClassFilterOption}
           onShowClassCohortYearChange={setShowClassCohortYear}
           onClassCardClick={handleClassCardClick}
-          onToggleExpandedClass={handleToggleExpandedClass}
+          onToggleExpandedClass={handleClassCardAction}
           getClassEffectiveSubject={getClassEffectiveSubject}
           getClassInfoIssues={getClassInfoIssues}
           getClassDisplayName={getClassDisplayName}

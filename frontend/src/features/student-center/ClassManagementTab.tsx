@@ -24,6 +24,8 @@ type ClassManagementTabProps = {
   classCardInteractionLocked: boolean;
   pageRefreshLocked: boolean;
   canCreateClass: boolean;
+  canEditClassCards: boolean;
+  classCardActionLabel: string;
   classScopeLabel: string;
   classFilterItems: Array<FloatingFilterItem<ClassManagementFilterLayer>>;
   activeClassFilterLayer: ClassManagementFilterLayer | null;
@@ -57,6 +59,8 @@ export function ClassManagementTab({
   classCardInteractionLocked,
   pageRefreshLocked,
   canCreateClass,
+  canEditClassCards,
+  classCardActionLabel,
   classScopeLabel,
   classFilterItems,
   activeClassFilterLayer,
@@ -83,7 +87,9 @@ export function ClassManagementTab({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级卡片</h4>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">每次只展开一个班级卡片，在卡片内部完成基础信息维护和负责老师设置。</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            {canEditClassCards ? '每次只展开一个班级卡片，在卡片内部完成基础信息维护和负责老师设置。' : '查看本人负责班级的基础信息和学员情况。'}
+          </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button
@@ -230,9 +236,9 @@ export function ClassManagementTab({
                       onClick={() => onToggleExpandedClass(item.id)}
                       disabled={classCardInteractionLocked}
                       className={`${workspacePrimaryButtonClass} h-9 px-3 py-2 text-sm`}
-                      title="Command+S / Ctrl+S"
+                      title={canEditClassCards ? 'Command+S / Ctrl+S' : '查看班级学员'}
                     >
-                      编辑
+                      {classCardActionLabel}
                     </button>
                     <ChevronRight size={18} className="text-slate-400 dark:text-slate-500" />
                   </div>

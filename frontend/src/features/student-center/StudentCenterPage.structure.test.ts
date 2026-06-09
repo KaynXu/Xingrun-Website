@@ -35,7 +35,33 @@ test('campus overview is extracted from the student center page', () => {
 
   assert.match(campusOverviewSource, /export function CampusOverview/);
   assert.match(campusOverviewSource, /<FloatingOverviewFilter/);
-  assert.match(campusOverviewSource, /校区总览说明/);
+  assert.match(campusOverviewSource, /\{overviewTitle\}说明/);
+});
+
+test('student center passes member overview labels and read-only class copy into extracted components', () => {
+  const studentCenterSource = readFileSync(studentCenterPageUrl, 'utf8');
+  const campusOverviewSource = readFileSync(campusOverviewUrl, 'utf8');
+  const classManagementTabSource = readFileSync(classManagementTabUrl, 'utf8');
+
+  assert.match(studentCenterSource, /overviewTitle=\{studentCenterPermissions\.overviewTitle\}/);
+  assert.match(studentCenterSource, /overviewScopeLabel=\{studentCenterPermissions\.overviewScopeLabel\}/);
+  assert.match(studentCenterSource, /classCardActionLabel=\{studentCenterPermissions\.canCreateClass \? '编辑' : '查看'\}/);
+  assert.match(studentCenterSource, /canEditClassCards=\{studentCenterPermissions\.canCreateClass\}/);
+  assert.match(studentCenterSource, /const openReadOnlyClassStudents = \(classId: number\) => \{/);
+  assert.match(studentCenterSource, /setStudentCenterTab\('students'\)/);
+  assert.match(studentCenterSource, /setStudentScheduleStatusFilter\('scheduled'\)/);
+  assert.match(studentCenterSource, /setStudentClassFilter\(classId\)/);
+  assert.match(studentCenterSource, /if \(!studentCenterPermissions\.canCreateClass\) \{[\s\S]*openReadOnlyClassStudents\(classId\);[\s\S]*return;/);
+  assert.match(studentCenterSource, /scopedClassItems\.some\(\(item\) => item\.id === studentClassFilter\)/);
+  assert.doesNotMatch(studentCenterSource, /studentClassFilterOptions\.some\(\(item\) => item\.id === studentClassFilter\)/);
+
+  assert.match(campusOverviewSource, /overviewTitle/);
+  assert.match(campusOverviewSource, /overviewScopeLabel/);
+  assert.doesNotMatch(campusOverviewSource, /<h3 className="text-2xl font-bold text-slate-900 dark:text-white">校区总览<\/h3>/);
+  assert.doesNotMatch(campusOverviewSource, /label="全校区"/);
+
+  assert.match(classManagementTabSource, /classCardActionLabel/);
+  assert.match(classManagementTabSource, /canEditClassCards/);
 });
 
 test('class management tab display is extracted from the student center page', () => {
