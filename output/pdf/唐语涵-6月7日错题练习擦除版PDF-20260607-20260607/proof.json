@@ -1,0 +1,34 @@
+{
+  "pdf_pages": 9,
+  "pdf_bytes": 5115141,
+  "text_counts": {
+    "原题 / 原图": 7,
+    "方法提醒": 7,
+    "挖空复盘": 7,
+    "订正区": 7,
+    "干净原题图片": 4,
+    "干净几何原题图片": 3,
+    "生成图像": 0,
+    "擦除后原题图片": 0,
+    "$": 0,
+    "rac": 0,
+    "mathbbR": 0,
+    "ldots": 0,
+    "\\frac": 0,
+    "section_order_ok": true
+  },
+  "render_nonwhite": [
+    {
+      "page": 1,
+      "nonwhite_pixels": 45677
+    },
+    {
+      "page": 5,
+      "nonwhite_pixels": 18342
+    },
+    {
+      "page": 9,
+      "nonwhite_pixels": 17300
+    }
+  ]
+}

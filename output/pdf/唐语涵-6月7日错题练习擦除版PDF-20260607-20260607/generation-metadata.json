@@ -1,0 +1,130 @@
+{
+  "student_name": "唐语涵",
+  "class_name": "数学·初2020级·六年级·1班·小衔初",
+  "teacher_name": "何姝健",
+  "date_label": "6月7日",
+  "start_ts": "2026-06-07 00:00:00",
+  "end_ts": "2026-06-08 00:00:00",
+  "query_source": "production:/home/ubuntu/Xingrun-Website/data/xingrun.db",
+  "record_count": 7,
+  "recognized_count": 6,
+  "failed_count": 1,
+  "record_ids": [
+    "wechat-44c2873d504d7029",
+    "wechat-89b3a3b0cec5f465",
+    "wechat-483501dade633851",
+    "wechat-838ce6679719aabe",
+    "wechat-725c0d13d6806bd3",
+    "wechat-0e26f278b109cd08",
+    "wechat-3fc4e7e195345be6"
+  ],
+  "image_rows": [
+    {
+      "order": 1,
+      "record_id": "wechat-44c2873d504d7029",
+      "created_at": "2026-06-07 20:17:50",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/01-wechat-44c2873d504d7029-erased.png",
+      "erased_bytes": 614553,
+      "erased_sha256": "128e1c7148374bbd66388bae55db0e418373f74b30cde25ff0fbac13c0c288a9",
+      "changed_ratio": 0.066445
+    },
+    {
+      "order": 2,
+      "record_id": "wechat-89b3a3b0cec5f465",
+      "created_at": "2026-06-07 20:18:41",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/02-wechat-89b3a3b0cec5f465-erased.png",
+      "erased_bytes": 350509,
+      "erased_sha256": "aff7031286f6f7896dafd328640bb644007c98683fcddf6887c6cf87cf69052b",
+      "changed_ratio": 0.070393
+    },
+    {
+      "order": 3,
+      "record_id": "wechat-483501dade633851",
+      "created_at": "2026-06-07 20:18:57",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/03-wechat-483501dade633851-erased.png",
+      "erased_bytes": 105449,
+      "erased_sha256": "083e5483ae5179159fb3a1299c0a65dd094f212f8fd435a2b8afb28f13d1b337",
+      "changed_ratio": 0.201629
+    },
+    {
+      "order": 4,
+      "record_id": "wechat-838ce6679719aabe",
+      "created_at": "2026-06-07 20:19:25",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/04-wechat-838ce6679719aabe-erased.png",
+      "erased_bytes": 577639,
+      "erased_sha256": "2cda6628701db406c1ffb7d9b22978acdc214078a5968538981e41eb9ffe43dc",
+      "changed_ratio": 0.05939
+    },
+    {
+      "order": 5,
+      "record_id": "wechat-725c0d13d6806bd3",
+      "created_at": "2026-06-07 20:20:46",
+      "recognition_status": "failed",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/05-wechat-725c0d13d6806bd3-erased.png",
+      "erased_bytes": 1069693,
+      "erased_sha256": "8c25fb78afa55e2282305729a8ed2b03b88ab6a022ed142746bfa94834990dac",
+      "changed_ratio": 0.065657
+    },
+    {
+      "order": 6,
+      "record_id": "wechat-0e26f278b109cd08",
+      "created_at": "2026-06-07 20:20:59",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/06-wechat-0e26f278b109cd08-erased.png",
+      "erased_bytes": 391688,
+      "erased_sha256": "f64369729480c244531e746c71d6076456ca94981048b3b8c8617a587893aa05",
+      "changed_ratio": 0.139986
+    },
+    {
+      "order": 7,
+      "record_id": "wechat-3fc4e7e195345be6",
+      "created_at": "2026-06-07 20:21:22",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/07-wechat-3fc4e7e195345be6-erased.png",
+      "erased_bytes": 1011813,
+      "erased_sha256": "12ef90f413ec57da4fe72ee2ef19acf5375538d701e3df224a6e8378dc8a982b",
+      "changed_ratio": 0.069006
+    }
+  ],
+  "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/2020级·六年级·1班·衔接-唐语涵-6月7日错题练习擦除版-20260607-20260607.pdf",
+  "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607.zip",
+  "proof": {
+    "pdf_pages": 9,
+    "pdf_bytes": 5115141,
+    "text_counts": {
+      "原题 / 原图": 7,
+      "方法提醒": 7,
+      "挖空复盘": 7,
+      "订正区": 7,
+      "干净原题图片": 4,
+      "干净几何原题图片": 3,
+      "生成图像": 0,
+      "擦除后原题图片": 0,
+      "$": 0,
+      "rac": 0,
+      "mathbbR": 0,
+      "ldots": 0,
+      "\\frac": 0,
+      "section_order_ok": true
+    },
+    "render_nonwhite": [
+      {
+        "page": 1,
+        "nonwhite_pixels": 45677
+      },
+      {
+        "page": 5,
+        "nonwhite_pixels": 18342
+      },
+      {
+        "page": 9,
+        "nonwhite_pixels": 17300
+      }
+    ]
+  },
+  "source_original_images_removed_from_output": true
+}
