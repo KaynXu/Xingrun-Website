@@ -1117,9 +1117,24 @@ function isConsultationResultStage(stage: string): stage is ConsultationResultSt
   return consultationResultStages.includes(stage as ConsultationResultStage);
 }
 
+function getConsultationCurrentFlowCardNodeKey(record: ConsultationRecord): ConsultationFlowCardNodeKey | null {
+  const stageToNode: Record<string, ConsultationFlowCardNodeKey> = {
+    '已加小客服微信': 'customer-service',
+    '已加对应教师微信': 'communication-teacher',
+    '正在沟通细节': 'teacher-communication',
+    '待测试': 'test',
+    '待试听': 'trial',
+    '成功进班': 'enter-class',
+    '试听失败': 'trial',
+    '咨询结束': 'over',
+  };
+  return stageToNode[record.flow_stage] || null;
+}
+
 function getConsultationFlowCardNodeState(record: ConsultationRecord, key: ConsultationFlowCardNodeKey): ConsultationFlowCardNodeState {
   const completed = new Set(record.completed_stages || []);
   const hasText = (value?: string | null) => Boolean(value && value.trim());
+  const currentKey = getConsultationCurrentFlowCardNodeKey(record);
   const doneByKey: Record<ConsultationFlowCardNodeKey, boolean> = {
     'customer-service': record.customer_service_added === 'yes' || completed.has('已加小客服微信') || hasText(record.customer_service_note),
     'communication-teacher':
@@ -1140,12 +1155,13 @@ function getConsultationFlowCardNodeState(record: ConsultationRecord, key: Consu
       || record.student_profile_status === 'needs_completion',
     over: isConsultationEnded(record.flow_stage) || hasText(record.closing_result) || hasText(record.ended_at),
   };
+  if (currentKey === key && key !== 'over') {
+    return 'current';
+  }
   if (doneByKey[key]) {
     return 'done';
   }
-  const currentIndex = consultationFlowCardNodes.findIndex((node) => node.key === key);
-  const firstIdleIndex = consultationFlowCardNodes.findIndex((node) => !doneByKey[node.key]);
-  return currentIndex === firstIdleIndex ? 'current' : 'idle';
+  return 'idle';
 }
 
 function getConsultationFlowSectionStates(form: ConsultationFormValues): Record<ConsultationFlowSectionKey, ConsultationFlowSectionState> {
@@ -4012,6 +4028,61 @@ const ConsultationCardExpandableText = ({
   );
 };
 
+const ConsultationFlowStatusSummary = ({
+  form,
+  classes,
+  readOnly = false,
+}: {
+  form: ConsultationFormValues;
+  classes: ClassItem[];
+  readOnly?: boolean;
+}) => {
+  const completed = new Set(form.completed_stages || []);
+  const hasText = (value?: string | null) => Boolean(value && value.trim());
+  const customerWechatDone = form.customer_service_added === 'yes' || completed.has('已加小客服微信') || hasText(form.customer_service_note);
+  const receivingTeacherDone = form.communication_teacher_added === 'yes' || completed.has('已加对应教师微信') || hasText(form.receiving_teacher) || hasText(form.teacher_id);
+  const testDone = form.test_taken === '是' || completed.has('待测试') || hasText(form.test_note) || form.test_images.length > 0;
+  const trialTeacherDone = form.trial_teacher_added === 'yes' || hasText(form.trial_teacher) || hasText(form.trial_teacher_note);
+  const successClassName = getCurrentClassDisplayNameById(classes, form.success_class_id);
+  const enterClassDone =
+    form.closing_result === 'success'
+    || form.flow_stage === '成功进班'
+    || completed.has('成功进班')
+    || Boolean(form.success_class_id)
+    || hasText(form.success_class_manual)
+    || form.student_profile_status === 'created'
+    || form.student_profile_status === 'needs_completion';
+  const items = [
+    { label: '客服微信', value: customerWechatDone ? '已添加' : '未添加', done: customerWechatDone },
+    { label: '接待教师', value: form.receiving_teacher || '未选择', done: receivingTeacherDone },
+    { label: '测试情况', value: testDone ? (form.test_note || form.test_taken || '已测试') : '未测试', done: testDone },
+    { label: '试听教师', value: form.trial_teacher || '未选择', done: trialTeacherDone },
+    { label: '进班班级', value: successClassName || form.success_class_manual || '未进班', done: enterClassDone },
+  ];
+
+  return (
+    <div className={cn('grid gap-2', readOnly ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-5')}>
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className={cn(
+            'min-w-0 rounded-xl border px-3 py-2 text-sm',
+            item.done
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+              : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400',
+          )}
+        >
+          <p className="text-[11px] font-bold leading-4 opacity-80">{item.label}</p>
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 font-extrabold">
+            <span className="min-w-0 truncate">{item.value}</span>
+            {item.done ? <CheckCircle2 size={14} className="shrink-0" /> : null}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const ConsultationReadOnlyReport = ({
   form,
   record,
@@ -4038,6 +4109,9 @@ const ConsultationReadOnlyReport = ({
     <section className="grid gap-3 md:grid-cols-2">
       <div className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem]')}>
         <p className={compactFlowTitleClass(sectionStates.base)}>基础信息</p>
+        <div className="mb-3">
+          <ConsultationFlowStatusSummary form={form} classes={classes} readOnly />
+        </div>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
           <div><p className={compactReadLabelClass}>教师微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{teacherWechatDone ? '已添加' : '未添加'}{teacherWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
@@ -4561,6 +4635,9 @@ const ConsultationModal = ({
           <div className="grid gap-3 md:grid-cols-2">
             <section ref={baseInfoRef} className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem] scroll-mt-6', baseInfoHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(sectionStates.base)}>基础信息</p>
+            <div className="mb-3">
+              <ConsultationFlowStatusSummary form={form} classes={classes} />
+            </div>
             <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2">
               <button
                 type="button"

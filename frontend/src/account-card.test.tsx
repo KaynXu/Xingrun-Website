@@ -250,6 +250,33 @@ test('consultation ended over pill is green for success and red for failure', ()
   assert.match(pillBlock[0], /bg-rose-500/);
 });
 
+test('consultation flow card uses flow stage as the blue current node', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+
+  assert.match(source, /function getConsultationCurrentFlowCardNodeKey\(record: ConsultationRecord\): ConsultationFlowCardNodeKey \| null/);
+  assert.match(source, /'待测试': 'test'/);
+  assert.match(source, /'成功进班': 'enter-class'/);
+  assert.match(source, /const currentKey = getConsultationCurrentFlowCardNodeKey\(record\);/);
+  assert.match(source, /if \(currentKey === key && key !== 'over'\) \{/);
+  assert.match(source, /return 'current';/);
+});
+
+test('consultation edit modal shows synchronized checked flow status fields', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+  const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?const ConsultationModal = /);
+
+  assert.ok(modalBlock);
+  assert.ok(reportBlock);
+  assert.match(source, /const ConsultationFlowStatusSummary = \(/);
+  for (const label of ['客服微信', '接待教师', '测试情况', '试听教师', '进班班级']) {
+    assert.match(source, new RegExp(label));
+  }
+  assert.match(source, /<CheckCircle2 size=\{14\}/);
+  assert.match(modalBlock[0], /<ConsultationFlowStatusSummary form=\{form\} classes=\{classes\} \/>/);
+  assert.match(reportBlock[0], /<ConsultationFlowStatusSummary form=\{form\} classes=\{classes\} readOnly \/>/);
+});
+
 test('consultation page source adds ai batch entry in the existing action area', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
