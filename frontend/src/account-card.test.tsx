@@ -205,6 +205,24 @@ test('consultation cards render clickable non-linear flow nodes', () => {
   assert.match(consultationPageBlock[0], /\{renderConsultationFlowCard\(record, busy, true\)\}/);
 });
 
+test('consultation flow node actions use focused dialogs with emotional over results', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /const \[flowNodeActionRecord, setFlowNodeActionRecord\] = useState<ConsultationRecord \| null>\(null\);/);
+  assert.match(consultationPageBlock[0], /const \[flowNodeActionKey, setFlowNodeActionKey\] = useState<ConsultationFlowCardNodeKey \| null>\(null\);/);
+  assert.match(consultationPageBlock[0], /const \[overResultDialogRecord, setOverResultDialogRecord\] = useState<ConsultationRecord \| null>\(null\);/);
+  for (const label of ['选择沟通教师', '选择试听教师', '选择带课教师', '客服沟通情况', '教师沟通情况', '测试情况', '试听情况']) {
+    assert.match(consultationPageBlock[0], new RegExp(label));
+  }
+  assert.match(consultationPageBlock[0], /咨询成功/);
+  assert.match(consultationPageBlock[0], /咨询失败/);
+  assert.match(consultationPageBlock[0], /bg-emerald/);
+  assert.match(consultationPageBlock[0], /bg-rose/);
+  assert.match(consultationPageBlock[0], /closing_result/);
+});
+
 test('consultation page source adds ai batch entry in the existing action area', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);

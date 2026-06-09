@@ -5957,6 +5957,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [restoreConfirmRecord, setRestoreConfirmRecord] = useState<ConsultationRecord | null>(null);
+  const [flowNodeActionRecord, setFlowNodeActionRecord] = useState<ConsultationRecord | null>(null);
+  const [flowNodeActionKey, setFlowNodeActionKey] = useState<ConsultationFlowCardNodeKey | null>(null);
+  const [flowNodeActionNote, setFlowNodeActionNote] = useState('');
+  const [flowNodeActionTeacherId, setFlowNodeActionTeacherId] = useState('');
+  const [overResultDialogRecord, setOverResultDialogRecord] = useState<ConsultationRecord | null>(null);
   const loadRequestId = useRef(0);
   const teacherDirectory = buildConsultationTeacherDirectory(records);
 
@@ -6246,16 +6251,125 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   };
 
+  const addCompletedStage = (values: ConsultationFormValues, stage: string): ConsultationFormValues => {
+    const currentStages = Array.isArray(values.completed_stages) ? values.completed_stages : [];
+    return {
+      ...values,
+      flow_stage: values.flow_stage || stage,
+      completed_stages: currentStages.includes(stage) ? currentStages : [...currentStages, stage],
+    };
+  };
+
+  const getFlowNodeActionNote = (record: ConsultationRecord, key: ConsultationFlowCardNodeKey): string => {
+    if (key === 'customer-service') return record.customer_service_note || '';
+    if (key === 'communication-teacher') return record.communication_teacher_note || '';
+    if (key === 'teacher-communication') return record.communication_teacher_note || record.follow_up_note || '';
+    if (key === 'test') return record.test_note || '';
+    if (key === 'trial-teacher') return record.trial_teacher_note || '';
+    if (key === 'trial') return record.trial_feedback || '';
+    if (key === 'teaching-teacher') return record.teaching_teacher_note || '';
+    return '';
+  };
+
   const openConsultationFlowNode = (record: ConsultationRecord, key: ConsultationFlowCardNodeKey) => {
     if (!canEditConsultations || isBusy) {
       openViewModal(record);
       return;
     }
     if (key === 'over') {
-      handleInlineEndConsultation(record);
+      if (isConsultationEnded(record.flow_stage)) {
+        setRestoreConfirmRecord(record);
+      } else {
+        setOverResultDialogRecord(record);
+      }
       return;
     }
-    openEditModal(record);
+    if (key === 'enter-class') {
+      openEditModal(record);
+      return;
+    }
+    setFlowNodeActionRecord(record);
+    setFlowNodeActionKey(key);
+    setFlowNodeActionNote(getFlowNodeActionNote(record, key));
+    setFlowNodeActionTeacherId(
+      key === 'communication-teacher'
+        ? record.teacher_id || ''
+        : key === 'trial-teacher'
+          ? record.trial_teacher || ''
+          : key === 'teaching-teacher'
+            ? record.teaching_teacher || ''
+            : '',
+    );
+    setError('');
+  };
+
+  const closeFlowNodeActionDialog = () => {
+    setFlowNodeActionRecord(null);
+    setFlowNodeActionKey(null);
+    setFlowNodeActionNote('');
+    setFlowNodeActionTeacherId('');
+  };
+
+  const handleSaveFlowNodeAction = async () => {
+    if (!flowNodeActionRecord || !flowNodeActionKey) {
+      return;
+    }
+    const record = flowNodeActionRecord;
+    const selectedTeacher = consultationTeachers.find((teacher) => teacher.teacher_id === flowNodeActionTeacherId || teacher.display_name === flowNodeActionTeacherId);
+    let values = toConsultationFormValues(record);
+    if (flowNodeActionKey === 'customer-service') {
+      values = addCompletedStage({ ...values, customer_service_added: 'yes', customer_service_note: flowNodeActionNote }, '已加小客服微信');
+    } else if (flowNodeActionKey === 'communication-teacher') {
+      values = addCompletedStage({
+        ...values,
+        communication_teacher_added: 'yes',
+        communication_teacher_note: flowNodeActionNote,
+        teacher_id: selectedTeacher?.teacher_id || flowNodeActionTeacherId || values.teacher_id,
+        receiving_teacher: selectedTeacher?.display_name || values.receiving_teacher,
+      }, '已加对应教师微信');
+    } else if (flowNodeActionKey === 'teacher-communication') {
+      values = addCompletedStage({ ...values, communication_teacher_note: flowNodeActionNote, follow_up_note: flowNodeActionNote || values.follow_up_note }, '正在沟通细节');
+    } else if (flowNodeActionKey === 'test') {
+      values = addCompletedStage({ ...values, test_taken: '是', test_note: flowNodeActionNote }, '待测试');
+    } else if (flowNodeActionKey === 'trial-teacher') {
+      values = {
+        ...values,
+        trial_teacher_added: 'yes',
+        trial_teacher: selectedTeacher?.display_name || flowNodeActionTeacherId || values.trial_teacher,
+        trial_teacher_note: flowNodeActionNote,
+      };
+    } else if (flowNodeActionKey === 'trial') {
+      values = addCompletedStage({ ...values, trial_taken: '是', trial_feedback: flowNodeActionNote }, '待试听');
+    } else if (flowNodeActionKey === 'teaching-teacher') {
+      values = {
+        ...values,
+        teaching_teacher_added: 'yes',
+        teaching_teacher: selectedTeacher?.display_name || flowNodeActionTeacherId || values.teaching_teacher,
+        teaching_teacher_note: flowNodeActionNote,
+      };
+    }
+    closeFlowNodeActionDialog();
+    await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
+  };
+
+  const handleCloseConsultationWithResult = async (record: ConsultationRecord, result: 'success' | 'failed') => {
+    let values = toConsultationFormValues(record);
+    if (result === 'success') {
+      values = setConsultationResultStage({
+        ...values,
+        closing_result: 'success',
+        success_class_manual: values.success_class_manual || (values.success_class_id ? '' : '班级待补充'),
+        student_profile_status: values.student_profile_status || 'needs_completion',
+      }, '成功进班');
+    } else {
+      values = {
+        ...values,
+        closing_result: 'failed',
+        failure_reason: values.failure_reason || '暂未转化',
+      };
+    }
+    setOverResultDialogRecord(null);
+    await saveInlineConsultationUpdate(record, endConsultationValues(values), '结束咨询失败');
   };
 
   const renderConsultationIconActions = (record: ConsultationRecord, busy: boolean, compact = false) => {
@@ -6652,6 +6766,20 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     );
   };
 
+  const flowNodeActionTitle =
+    flowNodeActionKey === 'customer-service' ? '客服沟通情况'
+    : flowNodeActionKey === 'communication-teacher' ? '选择沟通教师'
+    : flowNodeActionKey === 'teacher-communication' ? '教师沟通情况'
+    : flowNodeActionKey === 'test' ? '测试情况'
+    : flowNodeActionKey === 'trial-teacher' ? '选择试听教师'
+    : flowNodeActionKey === 'trial' ? '试听情况'
+    : flowNodeActionKey === 'teaching-teacher' ? '选择带课教师'
+    : '';
+  const flowNodeActionNeedsTeacher =
+    flowNodeActionKey === 'communication-teacher'
+    || flowNodeActionKey === 'trial-teacher'
+    || flowNodeActionKey === 'teaching-teacher';
+
   return (
     <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -6816,6 +6944,105 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             onDelete={canManage ? handleDelete : undefined}
             onRequestEdit={selectedRecord ? () => openEditModal(selectedRecord) : undefined}
           />
+        )}
+        {flowNodeActionRecord && flowNodeActionKey && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+            onClick={(event) => event.target === event.currentTarget && closeFlowNodeActionDialog()}
+          >
+            <div className="w-full max-w-md rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-extrabold text-slate-900 dark:text-white">{flowNodeActionTitle}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-400">{flowNodeActionRecord.child_name || '未命名学生'}</p>
+                </div>
+                <button type="button" onClick={closeFlowNodeActionDialog} className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/10">
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="mt-4 space-y-3">
+                {flowNodeActionNeedsTeacher && (
+                  <label className="block">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-300">
+                      {flowNodeActionKey === 'communication-teacher' ? '选择沟通教师' : flowNodeActionKey === 'trial-teacher' ? '选择试听教师' : '选择带课教师'}
+                    </span>
+                    <select
+                      value={flowNodeActionTeacherId}
+                      onChange={(event) => setFlowNodeActionTeacherId(event.target.value)}
+                      className={`${workspaceFieldClass} mt-1 w-full rounded-xl px-3 py-2`}
+                    >
+                      <option value="">可先不选</option>
+                      {consultationTeachers.map((teacher) => (
+                        <option key={teacher.teacher_id} value={teacher.teacher_id}>{teacher.display_name}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="block">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-300">
+                    {flowNodeActionKey === 'customer-service' ? '客服沟通情况'
+                      : flowNodeActionKey === 'teacher-communication' ? '教师沟通情况'
+                      : flowNodeActionKey === 'test' ? '测试情况'
+                      : flowNodeActionKey === 'trial' ? '试听情况'
+                      : '补充情况'}
+                  </span>
+                  <textarea
+                    value={flowNodeActionNote}
+                    onChange={(event) => setFlowNodeActionNote(event.target.value)}
+                    rows={4}
+                    className={`${workspaceFieldClass} mt-1 min-h-[6rem] w-full rounded-xl px-3 py-2`}
+                    placeholder="可以只写一句关键进展，也可以先留空。"
+                  />
+                </label>
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button type="button" onClick={handleSaveFlowNodeAction} className={workspacePrimaryButtonClass}>
+                  保存
+                </button>
+                <button type="button" onClick={closeFlowNodeActionDialog} className={workspaceSecondaryButtonClass}>
+                  取消
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+        {overResultDialogRecord && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+            onClick={(event) => event.target === event.currentTarget && setOverResultDialogRecord(null)}
+          >
+            <div className="w-full max-w-md rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
+              <p className="text-base font-extrabold text-slate-900 dark:text-white">这次咨询算什么结果？</p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">{overResultDialogRecord.child_name || '未命名学生'} · 点击后会记录 closing_result 并结束咨询</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleCloseConsultationWithResult(overResultDialogRecord, 'success')}
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-5 text-left text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100"
+                >
+                  <span className="block text-base font-extrabold">咨询成功</span>
+                  <span className="mt-1 block text-xs font-semibold text-emerald-600 dark:text-emerald-200">已经进班或确认转化</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCloseConsultationWithResult(overResultDialogRecord, 'failed')}
+                  className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-5 text-left text-rose-800 transition hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-100"
+                >
+                  <span className="block text-base font-extrabold">咨询失败</span>
+                  <span className="mt-1 block text-xs font-semibold text-rose-600 dark:text-rose-200">暂时没有进入班级</span>
+                </button>
+              </div>
+              <button type="button" onClick={() => setOverResultDialogRecord(null)} className={`${workspaceSecondaryButtonClass} mt-4 w-full`}>
+                先不结束
+              </button>
+            </div>
+          </motion.div>
         )}
         {restoreConfirmRecord && (
           <motion.div
