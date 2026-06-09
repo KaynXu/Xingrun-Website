@@ -190,6 +190,21 @@ test('consultation create form requires only lightweight fields', () => {
   assert.doesNotMatch(modalBlock[0], /失败原因[\s\S]*required/);
 });
 
+test('consultation cards render clickable non-linear flow nodes', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(source, /const consultationFlowCardNodes: Array/);
+  for (const label of ['加客服', '加沟通教师', '教师沟通', '测试', '加试听教师', '试听', '加带课教师', '进班', 'Over']) {
+    assert.match(source, new RegExp(label));
+  }
+  assert.match(consultationPageBlock[0], /const renderConsultationFlowCard = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
+  assert.match(consultationPageBlock[0], /onClick=\{\(\) => openConsultationFlowNode\(record, node\.key\)\}/);
+  assert.match(consultationPageBlock[0], /\{renderConsultationFlowCard\(record, busy\)\}/);
+  assert.match(consultationPageBlock[0], /\{renderConsultationFlowCard\(record, busy, true\)\}/);
+});
+
 test('consultation page source adds ai batch entry in the existing action area', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);

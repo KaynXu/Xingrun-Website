@@ -1028,6 +1028,28 @@ const consultationProcessStages = ['已加小客服微信', '已加对应教师�
 type ConsultationResultStage = '成功进班' | '试听失败';
 const consultationResultStages: ConsultationResultStage[] = ['成功进班', '试听失败'];
 const consultationMeetingVersion = 'V2.0';
+type ConsultationFlowCardNodeKey =
+  | 'customer-service'
+  | 'communication-teacher'
+  | 'teacher-communication'
+  | 'test'
+  | 'trial-teacher'
+  | 'trial'
+  | 'teaching-teacher'
+  | 'enter-class'
+  | 'over';
+type ConsultationFlowCardNodeState = 'done' | 'current' | 'idle';
+const consultationFlowCardNodes: Array<{ key: ConsultationFlowCardNodeKey; label: string }> = [
+  { key: 'customer-service', label: '加客服' },
+  { key: 'communication-teacher', label: '加沟通教师' },
+  { key: 'teacher-communication', label: '教师沟通' },
+  { key: 'test', label: '测试' },
+  { key: 'trial-teacher', label: '加试听教师' },
+  { key: 'trial', label: '试听' },
+  { key: 'teaching-teacher', label: '加带课教师' },
+  { key: 'enter-class', label: '进班' },
+  { key: 'over', label: 'Over' },
+];
 type ConsultationFlowSectionKey = 'base' | 'communication' | 'trial' | 'result';
 type ConsultationFlowSectionState = { active: boolean; current: boolean };
 const consultationFlowSectionOrder: ConsultationFlowSectionKey[] = ['base', 'communication', 'trial', 'result'];
@@ -1093,6 +1115,37 @@ function isConsultationEnded(stage: string): boolean {
 
 function isConsultationResultStage(stage: string): stage is ConsultationResultStage {
   return consultationResultStages.includes(stage as ConsultationResultStage);
+}
+
+function getConsultationFlowCardNodeState(record: ConsultationRecord, key: ConsultationFlowCardNodeKey): ConsultationFlowCardNodeState {
+  const completed = new Set(record.completed_stages || []);
+  const hasText = (value?: string | null) => Boolean(value && value.trim());
+  const doneByKey: Record<ConsultationFlowCardNodeKey, boolean> = {
+    'customer-service': record.customer_service_added === 'yes' || completed.has('已加小客服微信') || hasText(record.customer_service_note),
+    'communication-teacher':
+      record.communication_teacher_added === 'yes'
+      || completed.has('已加对应教师微信')
+      || hasText(record.receiving_teacher)
+      || hasText(record.teacher_id),
+    'teacher-communication': completed.has('正在沟通细节') || hasText(record.communication_teacher_note) || hasText(record.need_detail),
+    test: record.test_taken === '是' || completed.has('待测试') || hasText(record.test_note) || (record.test_images || []).length > 0,
+    'trial-teacher': record.trial_teacher_added === 'yes' || hasText(record.trial_teacher) || hasText(record.trial_teacher_note),
+    trial: record.trial_taken === '是' || completed.has('待试听') || completed.has('试听失败') || hasText(record.trial_feedback) || hasText(record.trial_class_manual) || Boolean(record.trial_class_id),
+    'teaching-teacher': record.teaching_teacher_added === 'yes' || hasText(record.teaching_teacher) || hasText(record.teaching_teacher_note),
+    'enter-class':
+      consultationHasResult(record, '成功进班')
+      || Boolean(record.success_class_id)
+      || hasText(record.success_class_manual)
+      || record.student_profile_status === 'created'
+      || record.student_profile_status === 'needs_completion',
+    over: isConsultationEnded(record.flow_stage) || hasText(record.closing_result) || hasText(record.ended_at),
+  };
+  if (doneByKey[key]) {
+    return 'done';
+  }
+  const currentIndex = consultationFlowCardNodes.findIndex((node) => node.key === key);
+  const firstIdleIndex = consultationFlowCardNodes.findIndex((node) => !doneByKey[node.key]);
+  return currentIndex === firstIdleIndex ? 'current' : 'idle';
 }
 
 function getConsultationFlowSectionStates(form: ConsultationFormValues): Record<ConsultationFlowSectionKey, ConsultationFlowSectionState> {
@@ -6193,6 +6246,18 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
   };
 
+  const openConsultationFlowNode = (record: ConsultationRecord, key: ConsultationFlowCardNodeKey) => {
+    if (!canEditConsultations || isBusy) {
+      openViewModal(record);
+      return;
+    }
+    if (key === 'over') {
+      handleInlineEndConsultation(record);
+      return;
+    }
+    openEditModal(record);
+  };
+
   const renderConsultationIconActions = (record: ConsultationRecord, busy: boolean, compact = false) => {
     const frozen = isConsultationEnded(record.flow_stage);
     const sizeClass = compact ? 'h-7 w-7' : 'h-8 w-8';
@@ -6330,6 +6395,42 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     );
   };
 
+  const renderConsultationFlowCard = (record: ConsultationRecord, busy: boolean, mobile = false) => (
+    <div className={cn(
+      'min-w-0 overflow-x-auto rounded-xl border border-[#D9EEF7] bg-[#F9FDFF] p-2 dark:border-white/10 dark:bg-white/[0.03]',
+      mobile ? 'pb-2' : '',
+    )}>
+      <div className={cn('grid min-w-[38rem] items-stretch gap-1.5', mobile ? 'grid-cols-9' : 'grid-cols-9')}>
+        {consultationFlowCardNodes.map((node) => {
+          const state = getConsultationFlowCardNodeState(record, node.key);
+          const active = state === 'current';
+          const done = state === 'done';
+          return (
+            <button
+              key={node.key}
+              type="button"
+              onClick={() => openConsultationFlowNode(record, node.key)}
+              disabled={busy || !canEditConsultations}
+              className={cn(
+                'flex h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 text-center transition disabled:cursor-default disabled:opacity-70',
+                done && 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200',
+                active && 'border-sky-300 bg-white text-sky-700 shadow-[0_8px_18px_rgba(14,165,233,0.12)] dark:border-sky-300/40 dark:bg-sky-400/10 dark:text-sky-100',
+                !done && !active && 'border-slate-200 bg-white text-slate-500 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400 dark:hover:text-sky-200',
+              )}
+              title={node.label}
+            >
+              <span className={cn(
+                'h-2 w-2 rounded-full',
+                done ? 'bg-emerald-500' : active ? 'bg-sky-500' : 'bg-slate-300 dark:bg-slate-600',
+              )} />
+              <span className="block max-w-full truncate text-[11px] font-extrabold leading-4">{node.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const renderInfoCell = (label: string, value: string, className = '') => (
     <div className={`min-w-0 ${className}`}>
       <p className="truncate text-[11px] font-bold leading-4 text-[#7188A6]">{label}</p>
@@ -6441,7 +6542,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
           <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2.5 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
             <ConsultationStatusLamp stage={record.flow_stage} />
-            {renderB3FlowStrip(record, busy)}
+            {renderConsultationFlowCard(record, busy)}
           </div>
         </article>
       </React.Fragment>
@@ -6475,7 +6576,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
           <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
             <ConsultationStatusLamp stage={record.flow_stage} />
-            {renderB3FlowStrip(record, busy)}
+            {renderConsultationFlowCard(record, busy)}
           </div>
         </article>
       </React.Fragment>
@@ -6538,7 +6639,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           <div className="space-y-2.5">
             <div className="grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-2">
               <ConsultationStatusLamp stage={record.flow_stage} />
-              <div className="min-w-0 overflow-visible">{renderB3FlowStrip(record, busy, true)}</div>
+              <div className="min-w-0 overflow-visible">{renderConsultationFlowCard(record, busy, true)}</div>
             </div>
             {canEditConsultations && (
               <div className={canManage ? 'grid grid-cols-1 gap-2.5' : 'hidden'}>
