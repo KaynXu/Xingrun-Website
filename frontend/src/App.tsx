@@ -5962,6 +5962,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [flowNodeActionNote, setFlowNodeActionNote] = useState('');
   const [flowNodeActionTeacherId, setFlowNodeActionTeacherId] = useState('');
   const [overResultDialogRecord, setOverResultDialogRecord] = useState<ConsultationRecord | null>(null);
+  const [enterClassRecord, setEnterClassRecord] = useState<ConsultationRecord | null>(null);
+  const [enterClassMode, setEnterClassMode] = useState<'existing' | 'quick_new_class' | 'converted_without_class'>('existing');
+  const [enterClassId, setEnterClassId] = useState('');
+  const [enterClassNewName, setEnterClassNewName] = useState('');
+  const [enterClassNewType, setEnterClassNewType] = useState('group');
   const loadRequestId = useRef(0);
   const teacherDirectory = buildConsultationTeacherDirectory(records);
 
@@ -6285,7 +6290,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
       return;
     }
     if (key === 'enter-class') {
-      openEditModal(record);
+      openEnterClassDialog(record);
       return;
     }
     setFlowNodeActionRecord(record);
@@ -6308,6 +6313,23 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setFlowNodeActionKey(null);
     setFlowNodeActionNote('');
     setFlowNodeActionTeacherId('');
+  };
+
+  const openEnterClassDialog = (record: ConsultationRecord) => {
+    setEnterClassRecord(record);
+    setEnterClassMode(record.success_class_id ? 'existing' : 'existing');
+    setEnterClassId(record.success_class_id ? String(record.success_class_id) : '');
+    setEnterClassNewName(record.success_class_manual && record.success_class_manual !== '班级待补充' ? record.success_class_manual : '');
+    setEnterClassNewType('group');
+    setError('');
+  };
+
+  const closeEnterClassDialog = () => {
+    setEnterClassRecord(null);
+    setEnterClassMode('existing');
+    setEnterClassId('');
+    setEnterClassNewName('');
+    setEnterClassNewType('group');
   };
 
   const handleSaveFlowNodeAction = async () => {
@@ -6370,6 +6392,44 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     }
     setOverResultDialogRecord(null);
     await saveInlineConsultationUpdate(record, endConsultationValues(values), '结束咨询失败');
+  };
+
+  const handleSubmitEnterClass = async () => {
+    if (!enterClassRecord) {
+      return;
+    }
+    const record = enterClassRecord;
+    const payload = enterClassMode === 'existing'
+      ? { mode: enterClassMode, class_id: Number(enterClassId) }
+      : enterClassMode === 'quick_new_class'
+        ? {
+          mode: enterClassMode,
+          class_name: enterClassNewName,
+          subject: record.consultation_subject,
+          grade: record.grade,
+          class_type: enterClassNewType,
+          teaching_teacher: record.teaching_teacher,
+        }
+        : { mode: enterClassMode };
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await apiFetch<{ item: ConsultationRecord }>(`/api/consultations/${record.id}/enter-class`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setRecords((current) => current.map((item) => (item.id === record.id ? normalizeConsultationRecord(result.item) : item)));
+      if (enterClassMode === 'quick_new_class') {
+        apiFetch<ClassItem[]>('/api/classes')
+          .then((items) => setClasses(items))
+          .catch(() => undefined);
+      }
+      closeEnterClassDialog();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '进班失败');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const renderConsultationIconActions = (record: ConsultationRecord, busy: boolean, compact = false) => {
@@ -7003,6 +7063,108 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                   保存
                 </button>
                 <button type="button" onClick={closeFlowNodeActionDialog} className={workspaceSecondaryButtonClass}>
+                  取消
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+        {enterClassRecord && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+            onClick={(event) => event.target === event.currentTarget && closeEnterClassDialog()}
+          >
+            <div className="w-full max-w-lg rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-extrabold text-slate-900 dark:text-white">进班与学员档案</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-400">{enterClassRecord.child_name || '未命名学生'} · {enterClassRecord.consultation_subject || '未填科目'} / {enterClassRecord.grade || '未填年级'}</p>
+                </div>
+                <button type="button" onClick={closeEnterClassDialog} className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/10">
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {([
+                  ['existing', '选择已有班级'],
+                  ['quick_new_class', '快速创建新班'],
+                  ['converted_without_class', '先标记转化，班级待补充'],
+                ] as Array<[typeof enterClassMode, string]>).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setEnterClassMode(mode)}
+                    className={cn(
+                      'rounded-2xl border px-3 py-3 text-left text-xs font-extrabold transition',
+                      enterClassMode === mode
+                        ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-[0_8px_18px_rgba(14,165,233,0.12)] dark:border-sky-300/40 dark:bg-sky-400/10 dark:text-sky-100'
+                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {enterClassMode === 'existing' && (
+                  <label className="block">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-300">选择已有班级</span>
+                    <select
+                      value={enterClassId}
+                      onChange={(event) => setEnterClassId(event.target.value)}
+                      className={`${workspaceFieldClass} mt-1 w-full rounded-xl px-3 py-2`}
+                    >
+                      <option value="">请选择班级</option>
+                      {classes.map((item) => (
+                        <option key={item.id} value={item.id}>{getCurrentClassDisplayName(item, true)}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {enterClassMode === 'quick_new_class' && (
+                  <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+                    <label className="block">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-300">新班名称</span>
+                      <input
+                        value={enterClassNewName}
+                        onChange={(event) => setEnterClassNewName(event.target.value)}
+                        className={`${workspaceFieldClass} mt-1 w-full rounded-xl px-3 py-2`}
+                        placeholder={`${enterClassRecord.grade || ''}${enterClassRecord.consultation_subject || ''}新班`}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold text-slate-500 dark:text-slate-300">班型</span>
+                      <select
+                        value={enterClassNewType}
+                        onChange={(event) => setEnterClassNewType(event.target.value)}
+                        className={`${workspaceFieldClass} mt-1 w-full rounded-xl px-3 py-2`}
+                      >
+                        <option value="group">班课</option>
+                        <option value="mini">小课</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+                {enterClassMode === 'converted_without_class' && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
+                    会先把咨询标记为转化成功，并把学员档案状态设为“待补充”；班级之后再回填。
+                  </div>
+                )}
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+                  学员档案会随进班动作建立或进入待补充状态。
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button type="button" onClick={handleSubmitEnterClass} disabled={submitting} className={`${workspacePrimaryButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}>
+                  确认进班
+                </button>
+                <button type="button" onClick={closeEnterClassDialog} className={workspaceSecondaryButtonClass}>
                   取消
                 </button>
               </div>

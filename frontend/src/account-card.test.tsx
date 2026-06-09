@@ -223,6 +223,21 @@ test('consultation flow node actions use focused dialogs with emotional over res
   assert.match(consultationPageBlock[0], /closing_result/);
 });
 
+test('consultation enter class dialog supports existing class new class and pending class conversion', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(consultationPageBlock[0], /const \[enterClassRecord, setEnterClassRecord\] = useState<ConsultationRecord \| null>\(null\);/);
+  assert.match(consultationPageBlock[0], /const \[enterClassMode, setEnterClassMode\] = useState<'existing' \| 'quick_new_class' \| 'converted_without_class'>\('existing'\);/);
+  assert.match(consultationPageBlock[0], /\/api\/consultations\/\$\{record\.id\}\/enter-class/);
+  for (const label of ['选择已有班级', '快速创建新班', '先标记转化，班级待补充', '新班名称', '学员档案']) {
+    assert.match(consultationPageBlock[0], new RegExp(label));
+  }
+  assert.match(consultationPageBlock[0], /quick_new_class/);
+  assert.match(consultationPageBlock[0], /converted_without_class/);
+});
+
 test('consultation page source adds ai batch entry in the existing action area', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
