@@ -7354,7 +7354,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                         </label>
                       )}
                       {enterClassNewIsBridge && (
-                        <div className="rounded-2xl border border-white/70 bg-white/70 p-2 dark:border-white/10 dark:bg-white/5 sm:col-span-2">
+                        <div className={`${enterClassNewType === 'group' ? '' : 'sm:col-span-2'} rounded-2xl border border-white/70 bg-white/70 p-2 dark:border-white/10 dark:bg-white/5`}>
                           <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                             <select
                               value={enterClassBridgeFrom}
