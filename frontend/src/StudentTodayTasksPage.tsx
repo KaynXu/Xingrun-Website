@@ -12,7 +12,6 @@ import {
   Loader2,
   LogOut,
   RefreshCw,
-  Smile,
   UserRound,
   Users,
 } from 'lucide-react';
@@ -211,7 +210,7 @@ export function StudentTodayTasksContent({
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-bold text-slate-950 sm:text-3xl">你好, {studentName}</h1>
-              <p className="mt-1 text-sm font-medium text-slate-500">专注今天的复习, 进步看得见!</p>
+              <p className="mt-1 text-sm font-medium text-slate-500">今日复习安排</p>
             </div>
           </div>
 
@@ -241,8 +240,8 @@ export function StudentTodayTasksContent({
           </div>
         )}
 
-        <section className="rounded-2xl border border-sky-100 bg-white/90 p-5 shadow-[0_18px_50px_rgba(47,128,237,0.08)]">
-          <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)_auto] md:items-center">
+        <section className="rounded-xl border border-sky-100 bg-white/90 p-5 shadow-sm">
+          <div className="grid gap-5 md:grid-cols-[14rem_minmax(0,1fr)] md:items-center">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
                 <BookOpenCheck size={23} />
@@ -261,15 +260,11 @@ export function StudentTodayTasksContent({
                 <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progressPercent}%` }} />
               </div>
             </div>
-            <div className="inline-flex items-center gap-2 justify-self-start rounded-2xl bg-cyan-50 px-4 py-2 text-sm font-bold text-sky-700 md:justify-self-end">
-              <span>继续加油!</span>
-              <Smile size={18} className="text-cyan-500" />
-            </div>
           </div>
         </section>
 
         <section className="grid min-h-[40rem] gap-5 xl:grid-cols-[minmax(22rem,34rem)_minmax(0,1fr)]">
-          <aside className="flex min-h-[40rem] flex-col rounded-2xl border border-sky-100 bg-white/95 p-5 shadow-[0_18px_50px_rgba(47,128,237,0.08)]">
+          <aside className="flex min-h-[40rem] flex-col rounded-xl border border-sky-100 bg-white/95 p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-2">
                 <CalendarDays size={21} className="text-sky-600" />
@@ -301,19 +296,19 @@ export function StudentTodayTasksContent({
                       aria-pressed={active}
                       onClick={() => onTaskSelect(task)}
                       className={cx(
-                        'group w-full rounded-2xl border p-4 text-left transition',
+                        'group w-full rounded-xl border border-l-4 p-4 text-left shadow-sm transition',
                         active
-                          ? 'border-emerald-300 bg-emerald-50/70 shadow-[0_16px_36px_rgba(16,185,129,0.14)]'
-                          : 'border-sky-100 bg-white hover:border-sky-300 hover:bg-sky-50/70',
+                          ? 'border-sky-100 border-l-emerald-500 bg-white'
+                          : 'border-sky-100 border-l-transparent bg-white hover:border-sky-300 hover:border-l-sky-300',
                       )}
                     >
                       <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-4">
                         <div className="flex h-full items-center justify-center border-r border-slate-200 pr-3">
                           <span
                             className={cx(
-                              'flex h-8 w-8 items-center justify-center rounded-xl border text-sm font-bold',
+                              'flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-bold',
                               active
-                                ? 'border-emerald-500 bg-emerald-500 text-white'
+                                ? 'border-slate-300 bg-white text-slate-600'
                                 : 'border-slate-300 bg-white text-slate-500 group-hover:border-sky-400 group-hover:text-sky-600',
                             )}
                           >
@@ -323,11 +318,11 @@ export function StudentTodayTasksContent({
                         <div className="min-w-0">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <span className="inline-flex rounded-lg bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">{task.lesson_subject || '复习'}</span>
-                              <p className="mt-2 truncate text-lg font-bold text-slate-950">{task.lesson_topic || '未命名课程'}</p>
+                              <span className="inline-flex rounded-md bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">{task.lesson_subject || '复习'}</span>
+                              <p className="mt-2 text-lg font-bold leading-snug text-slate-950">{task.lesson_topic || '未命名课程'}</p>
                             </div>
-                            <span className={cx('shrink-0 rounded-xl px-3 py-1 text-xs font-bold', active ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-600 text-white')}>
-                              {active ? '正在预览' : '开始复习'}
+                            <span className={cx('shrink-0 rounded-lg border px-3 py-1 text-xs font-bold', active ? 'border-emerald-200 bg-white text-emerald-700' : 'border-sky-200 bg-white text-sky-700')}>
+                              {active ? '预览中' : '打开'}
                             </span>
                           </div>
                           <p className="mt-2 truncate text-sm font-medium text-slate-500">{task.review_label}</p>
@@ -343,7 +338,7 @@ export function StudentTodayTasksContent({
                               </span>
                             )}
                           </div>
-                          <p className="mt-3 line-clamp-2 rounded-xl bg-white/80 px-3 py-2 text-sm font-medium text-slate-600">{stepText}</p>
+                          <p className="mt-3 line-clamp-2 border-t border-slate-100 pt-3 text-sm font-medium text-slate-600">{stepText}</p>
                         </div>
                       </div>
                     </button>
@@ -352,13 +347,13 @@ export function StudentTodayTasksContent({
               )}
             </div>
 
-            <div className="mt-5 flex items-center gap-2 rounded-2xl bg-sky-50 px-4 py-3 text-sm font-semibold text-slate-500">
+            <div className="mt-5 flex items-center gap-2 rounded-xl bg-sky-50 px-4 py-3 text-sm font-semibold text-slate-500">
               <BookOpenCheck size={18} className="text-sky-600" />
-              <span>按顺序完成, 效果更好哦</span>
+              <span>任务按复习计划顺序排列</span>
             </div>
           </aside>
 
-          <div className="min-h-[40rem] overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_18px_50px_rgba(47,128,237,0.08)]">
+          <div className="min-h-[40rem] overflow-hidden rounded-xl border border-sky-100 bg-white shadow-sm">
             <div className="flex min-h-16 flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
               <div className="mr-auto flex min-w-0 items-center gap-2">
                 <FileText size={21} className="text-slate-700" />

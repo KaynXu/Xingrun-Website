@@ -83,8 +83,16 @@ test('student today tasks content renders option three student cards and pdf wor
   assert.match(markup, /自动缩放/);
   assert.match(markup, /下载PDF/);
   assert.match(markup, /打开PDF/);
+  assert.match(markup, /border-l-4/);
+  assert.match(markup, /border-l-emerald-500/);
+  assert.match(markup, /border-slate-300 bg-white text-slate-600/);
   assert.match(markup, /iframe/);
   assert.doesNotMatch(markup, /完成清单/);
+  assert.doesNotMatch(markup, /border-emerald-300 bg-emerald-50\/70/);
+  assert.doesNotMatch(markup, /active && 'bg-emerald-50'/);
+  assert.doesNotMatch(markup, /border-emerald-500 bg-emerald-500 text-white/);
+  assert.doesNotMatch(markup, /继续加油/);
+  assert.doesNotMatch(markup, /效果更好哦/);
   assert.doesNotMatch(markup, /选择学生/);
   assert.doesNotMatch(markup, /2026-06-04/);
 });
