@@ -303,17 +303,12 @@ export function StudentTodayTasksContent({
                       )}
                     >
                       <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-4">
-                        <div
-                          className={cx(
-                            'flex h-full items-center justify-center rounded-lg border-r border-slate-200 pr-3',
-                            active && 'bg-emerald-50',
-                          )}
-                        >
+                        <div className="flex h-full items-center justify-center border-r border-slate-200 pr-3">
                           <span
                             className={cx(
                               'flex h-8 w-8 items-center justify-center rounded-lg border text-sm font-bold',
                               active
-                                ? 'border-emerald-500 bg-emerald-500 text-white'
+                                ? 'border-slate-300 bg-white text-slate-600'
                                 : 'border-slate-300 bg-white text-slate-500 group-hover:border-sky-400 group-hover:text-sky-600',
                             )}
                           >
