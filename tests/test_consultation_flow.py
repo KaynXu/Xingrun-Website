@@ -312,15 +312,19 @@ class ConsultationFlowTestCase(unittest.TestCase):
                 "need_detail": "想看看七年级数学衔接",
                 "receiving_teacher": "何姝健",
                 "source_channel": "转介绍",
+                "customer_service_teacher": "客服老师",
                 "customer_service_note": "已加客服，家长发了校内成绩",
                 "communication_teacher_note": "老师已初步沟通",
+                "test_teacher": "测试老师",
                 "closing_result": "success",
             },
         )
         self.assertEqual(created.status_code, 201)
         payload = created.get_json()
+        self.assertEqual(payload["customer_service_teacher"], "客服老师")
         self.assertEqual(payload["customer_service_note"], "已加客服，家长发了校内成绩")
         self.assertEqual(payload["communication_teacher_note"], "老师已初步沟通")
+        self.assertEqual(payload["test_teacher"], "测试老师")
         self.assertEqual(payload["closing_result"], "success")
 
     def test_admin_can_edit_and_delete(self):

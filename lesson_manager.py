@@ -209,10 +209,12 @@ CONSULTATION_STAGE_API_FIELDS = {
     "flow_stage",
     "completed_stages",
     "customer_service_added",
+    "customer_service_teacher",
     "customer_service_note",
     "communication_teacher_added",
     "communication_teacher_note",
     "test_taken",
+    "test_teacher",
     "test_note",
     "test_images",
     "trial_teacher_added",
@@ -1412,15 +1414,16 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 source_channel, source_channel_note, screenshot, reminder_at,
                 reminder_status, reminder_task_id, follow_up_status, follow_up_note,
                 created_at, updated_at, flow_stage, completed_stages_json, test_taken,
-                customer_service_added, customer_service_note, communication_teacher_added,
-                communication_teacher_note, test_note, test_images_json, trial_teacher_added,
+                customer_service_added, customer_service_teacher, customer_service_note,
+                communication_teacher_added, communication_teacher_note, test_teacher,
+                test_note, test_images_json, trial_teacher_added,
                 trial_teacher_note, trial_taken, trial_time_slot, trial_class_id,
                 trial_class_manual, trial_teacher, trial_feedback, success_class_id,
                 teaching_teacher_added, teaching_teacher, teaching_teacher_note,
                 success_class_manual, enrollment_handoff_note, student_profile_status,
                 student_profile_note, failure_reason, failure_note, closing_result,
                 closed_by_user_id, end_note, ended_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id,
@@ -1445,9 +1448,11 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 stored["completed_stages_json"],
                 stored["test_taken"],
                 stored["customer_service_added"],
+                stored["customer_service_teacher"],
                 stored["customer_service_note"],
                 stored["communication_teacher_added"],
                 stored["communication_teacher_note"],
+                stored["test_teacher"],
                 stored["test_note"],
                 stored["test_images_json"],
                 stored["trial_teacher_added"],
@@ -1558,9 +1563,11 @@ def update_consultation(
                 completed_stages_json=?,
                 test_taken=?,
                 customer_service_added=?,
+                customer_service_teacher=?,
                 customer_service_note=?,
                 communication_teacher_added=?,
                 communication_teacher_note=?,
+                test_teacher=?,
                 test_note=?,
                 test_images_json=?,
                 trial_teacher_added=?,
@@ -1605,9 +1612,11 @@ def update_consultation(
                 stored["completed_stages_json"],
                 stored["test_taken"],
                 stored["customer_service_added"],
+                stored["customer_service_teacher"],
                 stored["customer_service_note"],
                 stored["communication_teacher_added"],
                 stored["communication_teacher_note"],
+                stored["test_teacher"],
                 stored["test_note"],
                 stored["test_images_json"],
                 stored["trial_teacher_added"],
@@ -2055,9 +2064,11 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
         "completed_stages_json": json.dumps(completed_stages, ensure_ascii=False),
         "test_taken": str(row.get("test_taken") or ""),
         "customer_service_added": str(row.get("customer_service_added") or ""),
+        "customer_service_teacher": str(row.get("customer_service_teacher") or ""),
         "customer_service_note": str(row.get("customer_service_note") or ""),
         "communication_teacher_added": str(row.get("communication_teacher_added") or ""),
         "communication_teacher_note": str(row.get("communication_teacher_note") or ""),
+        "test_teacher": str(row.get("test_teacher") or ""),
         "test_note": str(row.get("test_note") or ""),
         "test_images_json": json.dumps(_json_list(row.get("test_images")), ensure_ascii=False),
         "trial_teacher_added": str(row.get("trial_teacher_added") or ""),
@@ -2124,9 +2135,11 @@ def _consultation_storage_row_to_public_dict(
     serialized["follow_up_status"] = _derive_consultation_follow_up_status(flow_stage)
     serialized["test_taken"] = payload.get("test_taken", "") or ""
     serialized["customer_service_added"] = payload.get("customer_service_added", "") or ""
+    serialized["customer_service_teacher"] = payload.get("customer_service_teacher", "") or ""
     serialized["customer_service_note"] = payload.get("customer_service_note", "") or ""
     serialized["communication_teacher_added"] = payload.get("communication_teacher_added", "") or ""
     serialized["communication_teacher_note"] = payload.get("communication_teacher_note", "") or ""
+    serialized["test_teacher"] = payload.get("test_teacher", "") or ""
     serialized["test_note"] = payload.get("test_note", "") or ""
     serialized["test_images"] = _json_list(payload.get("test_images_json", "[]"))
     serialized["trial_teacher_added"] = payload.get("trial_teacher_added", "") or ""
@@ -2193,10 +2206,12 @@ def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "consultations", "flow_stage", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "completed_stages_json", "TEXT DEFAULT '[]'")
     _ensure_column(conn, "consultations", "customer_service_added", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "customer_service_teacher", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "customer_service_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "communication_teacher_added", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "communication_teacher_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "test_taken", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "test_teacher", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "test_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "test_images_json", "TEXT DEFAULT '[]'")
     _ensure_column(conn, "consultations", "trial_teacher_added", "TEXT DEFAULT ''")
