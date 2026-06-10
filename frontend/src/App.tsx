@@ -67,6 +67,7 @@ import {
   normalizeAcademicGradeLabel,
   normalizeClassNameInput,
 } from './domain/classNaming';
+import { StudentPortalPage } from './StudentTodayTasksPage';
 import {
   buildClassFeedbackPeriodPreview,
   buildCreateClassFeedbackTaskRequest,
@@ -10337,6 +10338,11 @@ export const LandingPage = ({
 // --- Main App ---
 
 export default function App() {
+  const studentPortalMode = typeof window !== 'undefined' && window.location.pathname.startsWith('/student');
+  if (studentPortalMode) {
+    return <StudentPortalPage today={getTodayIsoDate()} />;
+  }
+
   const [token, setToken] = useState<string>(() => getToken());
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(getToken()));

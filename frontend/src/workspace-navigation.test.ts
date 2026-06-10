@@ -24,6 +24,9 @@ test('workspace navigation wires consultation and calendar pages into the shell'
   assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '课堂反馈'/);
   assert.match(appSource, /'class-feedback-generation': '课堂反馈'/);
+  assert.doesNotMatch(sidebarBlock, /id: 'student-tasks'/);
+  assert.doesNotMatch(appSource, /'student-tasks': '学生端今日任务'/);
+  assert.doesNotMatch(appSource, /activeWorkspacePage === 'student-tasks'/);
   assert.match(sidebarBlock, /id: 'consultation'[\s\S]*label: '咨询记录'/);
   assert.match(appSource, /consultation: '咨询记录'/);
   assert.match(appSource, /activeWorkspacePage === 'consultation'[\s\S]*<ConsultationPage currentUser=\{currentUser\}/);
