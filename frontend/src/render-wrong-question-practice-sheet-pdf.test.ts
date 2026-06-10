@@ -36,7 +36,7 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.equal((markup.match(/class="writing-card"/g) || []).length, 1);
   assert.match(markup, /redo-work-area/);
   assert.match(markup, /redo-line/);
-  assert.equal((markup.match(/class="redo-line"/g) || []).length, 8);
+  assert.equal((markup.match(/class="redo-line"/g) || []).length, 6);
   assert.match(markup, /\.record-page \{[\s\S]*?break-after: page/);
   assert.match(markup, /原题 \/ 原图/);
   assert.match(markup, /挖空复盘/);

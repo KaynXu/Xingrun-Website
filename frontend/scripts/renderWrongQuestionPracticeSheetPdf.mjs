@@ -870,7 +870,7 @@ function buildRedoWorkArea() {
     <section class="redo-work-area">
       <div class="section-title">订正区</div>
       <div class="redo-lines">
-        ${Array.from({ length: 8 }, () => '<div class="redo-line"></div>').join('')}
+        ${Array.from({ length: 6 }, () => '<div class="redo-line"></div>').join('')}
       </div>
     </section>
   `;
@@ -1227,7 +1227,7 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .source-image {
-            max-height: 48mm;
+            max-height: 68mm;
           }
 
           .generated-diagram-image {
