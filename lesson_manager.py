@@ -1633,6 +1633,35 @@ def _drop_legacy_table_if_exists(conn: sqlite3.Connection, table: str) -> None:
         conn.execute(f"DROP TABLE {table}")
 
 
+def _drop_stale_index_if_bound_to_wrong_table(
+    conn: sqlite3.Connection, index_name: str, expected_table: str
+) -> None:
+    row = conn.execute(
+        "SELECT tbl_name FROM sqlite_master WHERE type='index' AND name=?",
+        (index_name,),
+    ).fetchone()
+    if row and row["tbl_name"] != expected_table:
+        conn.execute(f'DROP INDEX "{index_name}"')
+
+
+def _cleanup_class_feedback_student_entries_repair_legacy(conn: sqlite3.Connection) -> None:
+    legacy_table = "class_feedback_student_entries__repair_legacy"
+    _drop_stale_index_if_bound_to_wrong_table(
+        conn,
+        "idx_class_feedback_student_entries_task_student",
+        "class_feedback_student_entries",
+    )
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (legacy_table,),
+    ).fetchone()
+    if not row:
+        return
+    legacy_count = conn.execute(f'SELECT COUNT(*) AS c FROM "{legacy_table}"').fetchone()["c"]
+    if legacy_count == 0:
+        conn.execute(f'DROP TABLE "{legacy_table}"')
+
+
 def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sqlite3.Connection) -> None:
     column_rows = conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()
     columns = [row[1] for row in column_rows]
@@ -2179,6 +2208,7 @@ def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection)
 
 
 def _ensure_class_feedback_task_integrity_guards(conn: sqlite3.Connection) -> None:
+    _cleanup_class_feedback_student_entries_repair_legacy(conn)
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_class_feedback_student_entries_task_student
