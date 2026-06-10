@@ -1057,29 +1057,18 @@ const consultationFlowStageToSection: Record<string, ConsultationFlowSectionKey>
   '咨询结束': 'result',
 };
 type ConsultationFilterKey =
-  | 'pending-7'
-  | 'pending-30'
-  | 'pending-over30'
-  | 'ended-success'
-  | 'ended-unsuccessful';
+  | 'pending'
+  | 'ended';
 
 const consultationFilterGroups: Array<{
   title: string;
   items: Array<{ key: ConsultationFilterKey; label: string }>;
 }> = [
   {
-    title: '待咨询',
+    title: '',
     items: [
-      { key: 'pending-7', label: '一周内' },
-      { key: 'pending-30', label: '一月内' },
-      { key: 'pending-over30', label: '30天+' },
-    ],
-  },
-  {
-    title: '已结束',
-    items: [
-      { key: 'ended-success', label: '咨询成功' },
-      { key: 'ended-unsuccessful', label: '咨询失败' },
+      { key: 'pending', label: '待咨询' },
+      { key: 'ended', label: '已结束' },
     ],
   },
 ];
@@ -1155,14 +1144,10 @@ function consultationHasResult(record: ConsultationRecord, result: ConsultationR
 
 function getConsultationFilterKey(record: ConsultationRecord, todayIso: string): ConsultationFilterKey {
   if (isConsultationEnded(record.flow_stage)) {
-    if (consultationHasResult(record, '成功进班')) return 'ended-success';
-    return 'ended-unsuccessful';
+    return 'ended';
   }
 
-  const ageDays = getConsultationAgeDays(record, todayIso);
-  if (ageDays <= 7) return 'pending-7';
-  if (ageDays <= 30) return 'pending-30';
-  return 'pending-over30';
+  return 'pending';
 }
 
 function getConsultationOver30SectionLabel(record: ConsultationRecord, todayIso: string): string {
@@ -1174,16 +1159,10 @@ function getConsultationOver30SectionLabel(record: ConsultationRecord, todayIso:
 
 function sortConsultationsForFilter(records: ConsultationRecord[], filterKey: ConsultationFilterKey): ConsultationRecord[] {
   const sorted = [...records];
-  if (filterKey.startsWith('pending-')) {
+  if (filterKey === 'pending') {
     return sorted.sort((a, b) => getConsultationRecordDateTime(a) - getConsultationRecordDateTime(b));
   }
   return sorted.sort((a, b) => getConsultationUpdatedTime(b) - getConsultationUpdatedTime(a));
-}
-
-function sortPendingConsultations(records: ConsultationRecord[]): ConsultationRecord[] {
-  return [...records]
-    .filter((record) => !isConsultationEnded(record.flow_stage))
-    .sort((a, b) => getConsultationRecordDateTime(a) - getConsultationRecordDateTime(b));
 }
 
 function toggleConsultationStage(form: ConsultationFormValues, stage: string): ConsultationFormValues {
@@ -5965,7 +5944,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'view' | 'create' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
-  const [activeFilter, setActiveFilter] = useState<ConsultationFilterKey | null>(null);
+  const [activeFilter, setActiveFilter] = useState<ConsultationFilterKey>('pending');
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [restoreConfirmRecord, setRestoreConfirmRecord] = useState<ConsultationRecord | null>(null);
@@ -6169,24 +6148,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return counts;
   }, [records, consultationTodayIso]);
   const visibleRecords = useMemo(() => {
-    if (!activeFilter) {
-      return sortPendingConsultations(records);
-    }
     return sortConsultationsForFilter(
       records.filter((record) => getConsultationFilterKey(record, consultationTodayIso) === activeFilter),
       activeFilter,
     );
   }, [records, consultationTodayIso, activeFilter]);
   const getVisibleRecordSectionLabel = (record: ConsultationRecord, index: number): string | null => {
-    if (activeFilter !== 'pending-over30') {
-      return null;
-    }
-    const label = getConsultationOver30SectionLabel(record, consultationTodayIso);
-    const previousRecord = visibleRecords[index - 1];
-    if (!previousRecord) {
-      return label;
-    }
-    return getConsultationOver30SectionLabel(previousRecord, consultationTodayIso) === label ? null : label;
+    return null;
   };
 
   const handleInlineStageToggle = async (record: ConsultationRecord, stage: string) => {
@@ -7067,7 +7035,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         <div className="grid min-w-0 grid-cols-2 gap-2 min-[520px]:flex min-[520px]:items-center min-[520px]:gap-3 min-[520px]:overflow-hidden">
           {consultationFilterGroups.map((group) => (
             <div key={group.title} className="min-w-0 min-[520px]:flex min-[520px]:shrink-0 min-[520px]:items-center min-[520px]:gap-2">
-              <p className="shrink-0 text-[11px] font-bold text-slate-400">{group.title}</p>
+              {group.title && <p className="shrink-0 text-[11px] font-bold text-slate-400">{group.title}</p>}
               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1 min-[520px]:mt-0 min-[520px]:flex-nowrap min-[520px]:gap-1.5">
                 {group.items.map((item) => {
                   const active = activeFilter === item.key;
@@ -7076,7 +7044,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <button
                       key={item.key}
                       type="button"
-                      onClick={() => setActiveFilter((current) => (current === item.key ? null : item.key))}
+                      onClick={() => setActiveFilter(item.key)}
                       className={`inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-[10px] font-bold transition min-[520px]:gap-1 min-[520px]:px-2 min-[520px]:text-[11px] ${
                         active
                           ? 'border-sky-200 bg-sky-500 text-white shadow-[0_10px_22px_rgba(14,165,233,0.18)]'
@@ -7105,7 +7073,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
         ) : visibleRecords.length === 0 ? (
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-            {activeFilter ? `当前分类「${consultationFilterLabels[activeFilter]}」暂无咨询记录。` : '当前暂无待处理咨询。'}
+            {activeFilter === 'pending' ? '当前暂无待处理咨询。' : `当前分类「${consultationFilterLabels[activeFilter]}」暂无咨询记录。`}
           </div>
         ) : (
           <>

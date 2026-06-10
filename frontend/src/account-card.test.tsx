@@ -962,9 +962,10 @@ test('consultation default list shows pending records instead of all records', (
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
   assert.ok(consultationPageBlock);
-  assert.match(source, /function sortPendingConsultations\(records: ConsultationRecord\[\]\): ConsultationRecord\[\]/);
-  assert.match(source, /\.filter\(\(record\) => !isConsultationEnded\(record\.flow_stage\)\)/);
-  assert.match(consultationPageBlock[0], /if \(!activeFilter\) \{\s*return sortPendingConsultations\(records\);/);
+  assert.match(source, /type ConsultationFilterKey =\s*\| 'pending'\s*\| 'ended';/);
+  assert.match(consultationPageBlock[0], /const \[activeFilter, setActiveFilter\] = useState<ConsultationFilterKey>\('pending'\);/);
+  assert.match(consultationPageBlock[0], /records\.filter\(\(record\) => getConsultationFilterKey\(record, consultationTodayIso\) === activeFilter\)/);
+  assert.match(consultationPageBlock[0], /onClick=\{\(\) => setActiveFilter\(item\.key\)\}/);
   assert.match(consultationPageBlock[0], /当前暂无待处理咨询。/);
 });
 
