@@ -1,0 +1,36 @@
+rubric_name: review_plan_quality
+passing_score: 85
+criteria:
+  - name: schema_validity
+    weight: 15
+    description: 结构是否完整，days/date/items 等字段是否符合 schema
+  - name: subject_fit
+    weight: 20
+    description: 是否体现数学、物理、雅思的学科特性
+  - name: task_actionability
+    weight: 15
+    description: 学生是否知道每天要完成什么
+  - name: factuality
+    weight: 10
+    description: 是否避免虚构考试日期、教材页码、官方要求或学生成绩
+  - name: review_loop
+    weight: 10
+    description: 是否包含复盘、错因、回炉、checkpoint
+  - name: workload_sanity
+    weight: 10
+    description: 任务量是否现实
+  - name: style_consistency
+    weight: 10
+    description: 是否符合统一物理蓝本视觉系统
+  - name: pdf_safety
+    weight: 10
+    description: 是否避免空框、截断、背景压正文和答案页干扰
+revision_triggers:
+  - score_below_85
+  - high_severity_issue
+  - schema_invalid
+  - missing_subject_specificity
+  - unrealistic_workload
+  - hallucinated_information
+  - no_review_loop
+  - unsafe_pdf_layout

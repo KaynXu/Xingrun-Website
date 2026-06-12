@@ -1,0 +1,37 @@
+subject: math
+source_notes:
+  - 崔老师版本保留题目质量、公式、口述卡片和出品检查优势
+  - 华老师版本保留稳定 5 天结构、通用版式和分页规则优势
+core_dimensions:
+  - topic
+  - skill
+  - question_type
+  - error_pattern
+  - method
+  - exam_strategy
+planning_principles:
+  - 每个复习日都覆盖整节课，但侧重点不同
+  - 先诊断概念漏洞，再安排题型训练
+  - 每个 topic 应对应至少一种可作答题型
+  - 高频错因要分类，例如审题、代数变形、公式误用、图像理解、步骤缺失
+  - 必须安排 spiral review、timed practice 或 checkpoint quiz
+quality_rules:
+  - 填空题答案必须具体、可推断
+  - 不使用斜杠纯文本替代分式
+  - 角和三角形对象使用 ∠ 与 △ 等数学符号
+  - 老师追问必须有完整题干或同类题背景
+  - 不输出口号式挖空或低质量孤立工具题
+required_components:
+  - topic_review
+  - worked_example
+  - targeted_practice
+  - error_log
+  - timed_practice
+  - spiral_review
+  - checkpoint_quiz
+avoid:
+  - 只写刷题
+  - 只按章节罗列
+  - 忽略错题归因
+  - 忽略解题步骤
+  - 没有回炉机制

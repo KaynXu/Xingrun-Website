@@ -1,0 +1,13 @@
+{
+  "input": {
+    "subject": "ielts",
+    "courseSystem": "IELTS",
+    "knownWeaknesses": ["matching headings", "fill in blanks", "同义替换"]
+  },
+  "expectedCriteria": [
+    "must include reading question type flow",
+    "must include synonym replacement",
+    "must include error type classification",
+    "must not ask students to memorize passage content"
+  ]
+}

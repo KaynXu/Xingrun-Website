@@ -1,0 +1,13 @@
+{
+  "input": {
+    "subject": "physics",
+    "courseSystem": "IGCSE",
+    "knownWeaknesses": ["mechanics", "electricity", "units", "experiment analysis"]
+  },
+  "expectedCriteria": [
+    "must include formula conditions",
+    "must include unit check",
+    "must include experiment or data processing",
+    "must include concept explanation"
+  ]
+}

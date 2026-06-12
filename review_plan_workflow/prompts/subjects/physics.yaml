@@ -1,0 +1,38 @@
+subject: physics
+source_notes:
+  - 物理工作流是统一视觉样式蓝本
+  - 物理特有内容留在 subject pack，视觉规则抽入统一 style
+core_dimensions:
+  - concept
+  - law
+  - formula
+  - unit
+  - graph
+  - experiment
+  - calculation
+  - explanation
+planning_principles:
+  - 前三次可分模块复习，第14/30天累积复习前三次内容
+  - 先理解概念和适用条件，再进行计算训练
+  - 公式必须和单位、图像、实验情境绑定
+  - 错题分析区分概念错误、公式选择错误、单位错误、图像理解错误、计算错误
+  - 训练必须包含文字解释题，不能只做计算题
+required_components:
+  - concept_map
+  - formula_sheet
+  - unit_check
+  - graph_interpretation
+  - experiment_analysis
+  - calculation_drill
+  - explanation_practice
+  - error_analysis
+quality_rules:
+  - 公式必须包含适用条件和物理量含义
+  - 必须有单位检查和数量级判断
+  - 必须有实验或数据处理任务
+  - 不把物理变成纯数学计算训练
+avoid:
+  - 只背公式
+  - 忽略实验设计和误差分析
+  - 忽略单位和数量级判断
+  - 忽略文字解释题

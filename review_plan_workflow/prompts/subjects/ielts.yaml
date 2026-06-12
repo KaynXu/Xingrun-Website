@@ -1,0 +1,38 @@
+subject: ielts
+source_notes:
+  - 当前桌面资料主要覆盖 IELTS Reading
+  - Listening/Writing/Speaking 是 Phase 2 扩展，不假装已有完整规则
+core_dimensions:
+  - reading
+  - listening
+  - writing_task_1
+  - writing_task_2
+  - speaking
+  - vocabulary
+  - grammar
+  - feedback_loop
+planning_principles:
+  - Reading 重点是题型流程、定位、同义替换和错因分类
+  - Writing 必须包含写作、批改、重写
+  - Speaking 必须包含录音、反馈、复述或二次回答
+  - Reading 和 Listening 必须做错因分类
+  - 每周或阶段必须有 feedback loop
+required_components:
+  - band_gap_analysis
+  - skill_drill
+  - vocabulary_review
+  - timed_practice
+  - mock_test
+  - feedback
+  - rewrite_or_retake
+  - error_type_analysis
+reading_rules:
+  - 每个复习日尽量覆盖整节阅读课的完整主线
+  - 填空题围绕题型判断、关键词定位、词性、同义替换和判断题边界
+  - 选择题只做基础记忆、易混辨析和错误纠正
+avoid:
+  - 只让学生刷真题
+  - 忽略输出型任务
+  - 忽略 band descriptor
+  - 没有 rewrite 或 retell
+  - 四项技能混在一起不区分

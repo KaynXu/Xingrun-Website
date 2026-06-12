@@ -1,0 +1,15 @@
+{
+  "input": {
+    "subject": "math",
+    "courseSystem": "A-Level",
+    "target": "mock 前稳定 Pure 得分",
+    "timeframe": {"totalDays": 14},
+    "knownWeaknesses": ["calculus", "proof", "trigonometry"]
+  },
+  "expectedCriteria": [
+    "must include checkpoint",
+    "must include timed practice",
+    "must not hallucinate exam date",
+    "must include spiral review"
+  ]
+}

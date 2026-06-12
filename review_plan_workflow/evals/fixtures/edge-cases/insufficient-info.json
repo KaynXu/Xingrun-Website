@@ -1,0 +1,11 @@
+{
+  "input": {
+    "subject": "",
+    "summary_text": ""
+  },
+  "expectedCriteria": [
+    "must mark missing info",
+    "must not hallucinate topics",
+    "must include risk warnings"
+  ]
+}

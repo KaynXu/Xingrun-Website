@@ -1,0 +1,23 @@
+subject: common
+shared_principles:
+  - 计划必须可执行
+  - 计划必须有阶段性
+  - 计划必须包含复盘机制
+  - 计划必须包含检测节点
+  - 输入不足时必须标注风险
+  - 不得虚构考试日期、教材页码、学生成绩或官方要求
+required_components:
+  - student_overview
+  - diagnosis
+  - phased_strategy
+  - task_plan
+  - review_loop
+  - checkpoint
+  - risk_warning
+  - teacher_notes
+avoid:
+  - 泛泛建议
+  - 只写知识点清单
+  - 只写鼓励性语言
+  - 任务没有产出要求
+  - 学习量明显不现实
