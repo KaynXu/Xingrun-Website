@@ -68,7 +68,7 @@ export function cn(...classes: Array<string | false | null | undefined>): string
   return classes.filter(Boolean).join(' ');
 }
 
-export const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
+export const workspacePageClass = 'mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8 xl:px-10 xl:py-10';
 export const workspaceCardClass =
   'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78 dark:shadow-[0_24px_60px_rgba(2,6,23,0.52)]';
 export const workspaceSoftCardClass =

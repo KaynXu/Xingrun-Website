@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
+const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
+const settingsSource = readFileSync(new URL('./features/settings/SettingsPage.tsx', import.meta.url), 'utf8');
 const studentCenterSource = readFileSync(new URL('./features/student-center/StudentCenterPage.tsx', import.meta.url), 'utf8');
 const classManagementTabSource = readFileSync(new URL('./features/student-center/ClassManagementTab.tsx', import.meta.url), 'utf8');
 const classEditorModalSource = readFileSync(new URL('./features/student-center/ClassEditorModal.tsx', import.meta.url), 'utf8');
@@ -12,14 +15,14 @@ const sharedGradeOptionsPattern = new RegExp(
   `const gradeOptions\\s*=\\s*\\[\\s*${fixedGradeValues.map((value) => `'${value}'`).join('\\s*,\\s*')}\\s*\\];`,
 );
 
-function requireMatch(pattern: RegExp): string {
-  const match = appSource.match(pattern);
+function requireMatch(source: string, pattern: RegExp): string {
+  const match = source.match(pattern);
   assert.ok(match);
   return match[0];
 }
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '课堂反馈'/);
@@ -37,65 +40,60 @@ test('workspace navigation wires consultation and calendar pages into the shell'
 });
 
 test('review generation source replaces separate lesson input and library pages with one review-generation workspace page', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(sidebarBlock, /id: 'review-generation'[\s\S]*label: '复习生成'/);
   assert.doesNotMatch(sidebarBlock, /id: 'input'[\s\S]*label:/);
   assert.doesNotMatch(sidebarBlock, /id: 'library'[\s\S]*label:/);
   assert.match(appSource, /'review-generation': '复习生成'/);
-  assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
+  assert.match(appSource, /import \{ ReviewGenerationPage \} from '\.\/features\/review-generation\/ReviewGenerationPage';/);
+  assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*renderLessonInput=\{\(handleFormSuccess\) => \(/);
+  assert.match(appSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
   assert.doesNotMatch(appSource, /activePage === 'input'/);
   assert.doesNotMatch(appSource, /activePage === 'library'/);
 });
 
 test('review generation source defaults to history documents and expands the shared composer from the primary CTA', () => {
-  const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
-
-  assert.match(reviewGenerationBlock, /const \[composerOpen, setComposerOpen\] = useState\(false\);/);
-  assert.match(reviewGenerationBlock, /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
-  assert.match(reviewGenerationBlock, /新建复习文档/);
-  assert.match(reviewGenerationBlock, /生成复习文档/);
-  assert.match(reviewGenerationBlock, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} highlightedLessonId=\{highlightedLessonId\} \/>/);
+  assert.match(reviewGenerationSource, /const \[composerOpen, setComposerOpen\] = useState\(false\);/);
+  assert.match(reviewGenerationSource, /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
+  assert.match(reviewGenerationSource, /新建复习文档/);
+  assert.match(reviewGenerationSource, /生成复习文档/);
+  assert.match(reviewGenerationSource, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} highlightedLessonId=\{highlightedLessonId\} \/>/);
 });
 
 test('review generation source closes the shared composer after successful generation and refreshes history', () => {
-  const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
-
-  assert.match(reviewGenerationBlock, /const handleFormSuccess = \(result: ReviewPlanCreateResponse\) => \{\s*setComposerOpen\(false\);\s*setHighlightedLessonId\(result\.id\);[\s\S]*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
-  assert.match(reviewGenerationBlock, /这份录音已处理过，已复用已有复习文档/);
-  assert.doesNotMatch(reviewGenerationBlock, /setActivePage\('library'\)/);
+  assert.match(reviewGenerationSource, /const handleFormSuccess = \(result: ReviewPlanCreateResult\) => \{\s*setComposerOpen\(false\);\s*setHighlightedLessonId\(result\.id\);[\s\S]*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
+  assert.match(reviewGenerationSource, /这份录音已处理过，已复用已有复习文档/);
+  assert.doesNotMatch(reviewGenerationSource, /setActivePage\('library'\)/);
 });
 
 test('review generation source removes continue-edit-feedback entry points from composer and history actions', () => {
-  const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
-  const historyBlock = requireMatch(/const ReviewDocumentHistory = \(\{[\s\S]*?\n};/);
-
-  assert.doesNotMatch(reviewGenerationBlock, /selectedLessonForFeedback/);
-  assert.doesNotMatch(reviewGenerationBlock, /继续编辑课后反馈/);
-  assert.doesNotMatch(historyBlock, /onContinueFeedback/);
-  assert.doesNotMatch(historyBlock, /继续编辑反馈/);
-  assert.doesNotMatch(historyBlock, /<Pencil size=\{16\} \/>/);
+  assert.doesNotMatch(reviewGenerationSource, /selectedLessonForFeedback/);
+  assert.doesNotMatch(reviewGenerationSource, /继续编辑课后反馈/);
+  assert.doesNotMatch(reviewGenerationSource, /onContinueFeedback/);
+  assert.doesNotMatch(reviewGenerationSource, /继续编辑反馈/);
+  assert.doesNotMatch(reviewGenerationSource, /<Pencil size=\{16\} \/>/);
 });
 
-test('review generation source renders history as paginated cards with explicit generation time', () => {
-  const historyBlock = requireMatch(/const ReviewDocumentHistory = \(\{[\s\S]*?\n};/);
-
-  assert.match(historyBlock, /const REVIEW_HISTORY_PAGE_SIZE = 12;/);
-  assert.match(historyBlock, /const \[historyPage, setHistoryPage\] = useState\(1\);/);
-  assert.match(historyBlock, /const totalHistoryPages = Math\.max\(1, Math\.ceil\(lessons\.length \/ REVIEW_HISTORY_PAGE_SIZE\)\);/);
-  assert.match(historyBlock, /const paginatedLessons = lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage \* REVIEW_HISTORY_PAGE_SIZE\);/);
-  assert.match(historyBlock, /if \(highlightedLessonId\) \{[\s\S]*setHistoryPage\(Math\.floor\(highlightedIndex \/ REVIEW_HISTORY_PAGE_SIZE\) \+ 1\);[\s\S]*setHistoryPage\(1\);[\s\S]*\}, \[highlightedLessonId, lessons\]\);/);
-  assert.match(historyBlock, /highlightedLessonId === lesson\.id/);
-  assert.match(historyBlock, /生成时间/);
-  assert.match(historyBlock, /new Date\(lesson\.created_at\)\.toLocaleString\('zh-CN'\)/);
-  assert.match(historyBlock, /className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3"/);
-  assert.match(historyBlock, /上一页/);
-  assert.match(historyBlock, /下一页/);
-  assert.doesNotMatch(historyBlock, /<table className=/);
+test('review generation source renders history as a paginated list with explicit generation time', () => {
+  assert.match(reviewGenerationSource, /const REVIEW_HISTORY_PAGE_SIZE = 12;/);
+  assert.match(reviewGenerationSource, /const \[historyPage, setHistoryPage\] = useState\(1\);/);
+  assert.match(reviewGenerationSource, /const totalHistoryPages = Math\.max\(1, Math\.ceil\(lessons\.length \/ REVIEW_HISTORY_PAGE_SIZE\)\);/);
+  assert.match(reviewGenerationSource, /const paginatedLessons = lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage \* REVIEW_HISTORY_PAGE_SIZE\);/);
+  assert.match(reviewGenerationSource, /if \(highlightedLessonId\) \{[\s\S]*setHistoryPage\(Math\.floor\(highlightedIndex \/ REVIEW_HISTORY_PAGE_SIZE\) \+ 1\);[\s\S]*setHistoryPage\(1\);[\s\S]*\}, \[highlightedLessonId, lessons\]\);/);
+  assert.match(reviewGenerationSource, /highlightedLessonId === lesson\.id/);
+  assert.match(reviewGenerationSource, /生成时间/);
+  assert.match(reviewGenerationSource, /new Date\(lesson\.created_at\)\.toLocaleString\('zh-CN'\)/);
+  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_132px_180px_112px_132px\]/);
+  assert.match(reviewGenerationSource, /<ul className="divide-y divide-sky-100\/80 dark:divide-white\/10">/);
+  assert.match(reviewGenerationSource, /上一页/);
+  assert.match(reviewGenerationSource, /下一页/);
+  assert.doesNotMatch(reviewGenerationSource, /grid gap-4 lg:grid-cols-2 xl:grid-cols-3/);
+  assert.doesNotMatch(reviewGenerationSource, /<article/);
 });
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
-  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
+  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
   assert.match(lessonInputBlock, /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
@@ -104,17 +102,16 @@ test('lesson input source keeps subject class and date controls in a fluid grid 
 });
 
 test('review generation source requires class selection before generation and carries currentUser into LessonInput', () => {
-  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
-  const reviewGenerationBlock = requireMatch(/const ReviewGenerationPage = \(\{[\s\S]*?\n};/);
+  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /if \(!classId\) \{\s*setError\('请选择班级后再生成复习记录'\);\s*return;\s*\}/);
-  assert.match(reviewGenerationBlock, /<LessonInput[\s\S]*onSuccess=\{handleFormSuccess\}[\s\S]*currentUser=\{currentUser\}[\s\S]*\/>/);
-  assert.doesNotMatch(reviewGenerationBlock, /initialLesson=\{/);
-  assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*currentUser=\{currentUser\}/);
+  assert.match(appSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
+  assert.doesNotMatch(reviewGenerationSource, /initialLesson=\{/);
+  assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}/);
 });
 
 test('review generation source submits same lesson supplemental materials', () => {
-  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
+  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /sameLessonMaterials/);
   assert.match(lessonInputBlock, /same_lesson_materials:\s*sameLessonMaterials/);
@@ -122,19 +119,19 @@ test('review generation source submits same lesson supplemental materials', () =
 });
 
 test('lesson input source refreshes assignable classes when the signed-in user changes so stale class options cannot trigger forbidden', () => {
-  const lessonInputBlock = requireMatch(/const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
+  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
 
   assert.match(lessonInputBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(lessonInputBlock, /\}, \[currentUser\.id, currentUser\.role\]\);/);
 });
 
 test('review generation source appends auth token to lesson pdf links', () => {
-  assert.match(appSource, /href=\{buildAuthedPath\(`\/api\/pdf\/\$\{lesson\.id\}`\)\}/);
-  assert.match(appSource, /href=\{buildAuthedPath\(`\/api\/pdf\/download\/\$\{lesson\.id\}`\)\}/);
+  assert.match(reviewGenerationSource, /href=\{buildAuthedPath\(`\/api\/pdf\/\$\{lesson\.id\}`\)\}/);
+  assert.match(reviewGenerationSource, /href=\{buildAuthedPath\(`\/api\/pdf\/download\/\$\{lesson\.id\}`\)\}/);
 });
 
 test('workspace navigation wires smart wrong questions into every authenticated role shell', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /function canAccessSmartWrongQuestions\(role: Role\): boolean \{/);
   assert.match(appSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
@@ -144,7 +141,7 @@ test('workspace navigation wires smart wrong questions into every authenticated 
 });
 
 test('workspace navigation removes the master data mappings page and keeps accounts focused on approval only', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.doesNotMatch(appSource, /MasterDataMappingsPage/);
   assert.doesNotMatch(appSource, /masterDataMappings/);
@@ -154,7 +151,7 @@ test('workspace navigation removes the master data mappings page and keeps accou
 });
 
 test('workspace navigation exposes a dedicated owner-only credit center page', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\) \? \[\{ id: 'credit', icon: [^,]+, label: '积分中心' \}\] : \[]/);
   assert.match(appSource, /credit: '积分中心'/);
@@ -163,7 +160,7 @@ test('workspace navigation exposes a dedicated owner-only credit center page', (
 });
 
 test('settings page source keeps only account and about sections after credit center extraction', () => {
-  const settingsBlock = requireMatch(/const SettingsPage = \(\{ currentUser, onLogout \}: \{ currentUser: CurrentUser; onLogout: \(\) => void \}\) => \{[\s\S]*?\n};/);
+  const settingsBlock = requireMatch(settingsSource, /export function SettingsPage\([\s\S]*?\n\}/);
 
   assert.match(settingsBlock, /<h3 className=\{workspaceSectionTitleClass\}>系统设置<\/h3>/);
   assert.match(settingsBlock, /当前账号/);
@@ -175,16 +172,16 @@ test('settings page source keeps only account and about sections after credit ce
 });
 
 test('credit center page source supports member drilldown and ledger filtering', () => {
-  const creditBlock = requireMatch(/const CreditCenterPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+  const creditBlock = requireMatch(creditCenterSource, /export function CreditCenterPage\([\s\S]*?\n\}/);
 
   assert.match(creditBlock, /apiFetch<CreditOverview>\('\/api\/credits\/overview'\)/);
   assert.match(creditBlock, /apiFetch<\{ items: CreditLedgerItem\[] \}>\('\/api\/credits\/ledger\?limit=100'\)/);
   assert.match(creditBlock, /apiFetch<\{ items: CreditMemberUsageItem\[] \}>\('\/api\/credits\/member-usage'\)/);
   assert.match(creditBlock, /apiFetch<\{ items: CreditMemberUsageDetailItem\[] \}>\(`/);
   assert.match(creditBlock, /const \[selectedUsageUser, setSelectedUsageUser\] = useState<CreditMemberUsageItem \| null>\(null\);/);
-  assert.match(creditBlock, /const CREDIT_USAGE_DETAIL_PAGE_SIZE = 5;/);
+  assert.match(creditCenterSource, /const CREDIT_USAGE_DETAIL_PAGE_SIZE = 5;/);
   assert.match(creditBlock, /const \[ledgerFilter, setLedgerFilter\] = useState<'all' \| 'credit' \| 'debit'>\('all'\);/);
-  assert.match(creditBlock, /const CREDIT_LEDGER_PAGE_SIZE = 5;/);
+  assert.match(creditCenterSource, /const CREDIT_LEDGER_PAGE_SIZE = 5;/);
   assert.match(creditBlock, /const \[usageDetailPage, setUsageDetailPage\] = useState\(1\);/);
   assert.match(creditBlock, /const \[ledgerPage, setLedgerPage\] = useState\(1\);/);
   assert.match(creditBlock, /const totalUsageDetailPages = Math\.max\(1, Math\.ceil\(usageDetailItems\.length \/ CREDIT_USAGE_DETAIL_PAGE_SIZE\)\);/);
@@ -211,7 +208,7 @@ test('credit center page source supports member drilldown and ledger filtering',
 
 test('workspace navigation source exposes classes management through configurable page visibility', () => {
   const classManagementBlock = `${studentCenterSource}\n${classManagementTabSource}\n${classEditorModalSource}`;
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
   assert.match(appSource, /const configurableWorkspacePages/);
@@ -282,7 +279,7 @@ test('class management source keeps compact card single-expand shell', () => {
 });
 
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
-  const consultationBlock = requireMatch(/const ConsultationPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+  const consultationBlock = requireMatch(appSource, /const ConsultationPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
 
   assert.match(appSource, /mobileNavOpen/);
   assert.match(appSource, /aria-label="打开导航"/);
@@ -320,7 +317,7 @@ test('consultation workspace source allows staff edits and uses the new follow-u
 });
 
 test('approval page source keeps member role controls separate from class assignment', () => {
-  const approvalBlock = requireMatch(/const ApprovalPage = \([\s\S]*?\n\};\n\nconst SettingsPage/);
+  const approvalBlock = requireMatch(appSource, /const ApprovalPage = \([\s\S]*?\n\};\n\n\/\/ --- Login Modal ---/);
 
   assert.match(approvalBlock, /成员权限/);
   assert.match(approvalBlock, /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);

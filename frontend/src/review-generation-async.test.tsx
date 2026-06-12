@@ -2,17 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 test('review history source polls review plans while pending lessons exist', () => {
-  assert.match(appSource, /const hasPendingLesson = lessons\.some\(isReviewLessonPending\);/);
-  assert.match(appSource, /const timer = window\.setInterval\(\(\) => \{\s*void load\(true\);\s*\}, 3000\);/);
-  assert.match(appSource, /return \(\) => window\.clearInterval\(timer\);/);
+  assert.match(reviewGenerationSource, /const hasPendingLesson = lessons\.some\(isReviewLessonPending\);/);
+  assert.match(reviewGenerationSource, /const timer = window\.setInterval\(\(\) => \{\s*void load\(true\);\s*\}, 3000\);/);
+  assert.match(reviewGenerationSource, /return \(\) => window\.clearInterval\(timer\);/);
 });
 
 test('review history source normalizes malformed task polling responses', () => {
-  assert.match(appSource, /apiFetch<unknown>\('\/api\/review-plans'\)/);
-  assert.match(appSource, /\.then\(\(payload\) => setLessons\(normalizeReviewLessonsResponse\(payload\)\)\)/);
+  assert.match(reviewGenerationSource, /apiFetch<unknown>\('\/api\/review-plans'\)/);
+  assert.match(reviewGenerationSource, /\.then\(\(payload\) => setLessons\(normalizeReviewLessonsResponse\(payload\)\)\)/);
 });
 
 test('review generation source synchronizes member class selection against accessible classes', () => {
