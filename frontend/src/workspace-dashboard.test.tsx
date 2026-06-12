@@ -2,11 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import React, { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { JSDOM } from 'jsdom';
-
 import { WorkspaceDashboard, getOrganizationManagementEntries } from './WorkspaceDashboard';
 
 type DashboardRole = 'super_owner' | 'owner' | 'admin' | 'member';
@@ -17,61 +14,6 @@ const defaultStyles = {
   primaryButtonClass: 'workspace-primary',
   secondaryButtonClass: 'workspace-secondary',
 };
-
-type GlobalKey = keyof typeof globalThis;
-
-function setGlobalValue<T>(key: GlobalKey, value: T): () => void {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
-  Object.defineProperty(globalThis, key, {
-    configurable: true,
-    writable: true,
-    value,
-  });
-
-  return () => {
-    if (descriptor) {
-      Object.defineProperty(globalThis, key, descriptor);
-      return;
-    }
-
-    delete (globalThis as Record<string, unknown>)[key];
-  };
-}
-
-function setupDomEnvironment(): {
-  cleanup: () => void;
-  container: HTMLDivElement;
-  mouseEvent: typeof MouseEvent;
-} {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
-    url: 'http://localhost/',
-  });
-  const restoreCallbacks = [
-    setGlobalValue('window', dom.window),
-    setGlobalValue('document', dom.window.document),
-    setGlobalValue('navigator', dom.window.navigator),
-    setGlobalValue('HTMLElement', dom.window.HTMLElement),
-    setGlobalValue('HTMLButtonElement', dom.window.HTMLButtonElement),
-    setGlobalValue('Node', dom.window.Node),
-    setGlobalValue('Event', dom.window.Event),
-    setGlobalValue('MouseEvent', dom.window.MouseEvent),
-    setGlobalValue('IS_REACT_ACT_ENVIRONMENT' as GlobalKey, true),
-  ];
-  const container = dom.window.document.createElement('div');
-  dom.window.document.body.appendChild(container);
-
-  return {
-    container,
-    mouseEvent: dom.window.MouseEvent,
-    cleanup: () => {
-      dom.window.document.body.removeChild(container);
-      for (const restore of restoreCallbacks.reverse()) {
-        restore();
-      }
-      dom.window.close();
-    },
-  };
-}
 
 function renderDashboard(role: DashboardRole): string {
   return renderToStaticMarkup(
@@ -128,9 +70,9 @@ test('workspace dashboard shows super owner platform overview', () => {
   const markup = renderDashboard('super_owner');
 
   assert.match(markup, /平台总览/);
-  assert.match(markup, /机构观察/);
-  assert.match(markup, /账号审批/);
-  assert.match(markup, /系统设置/);
+  assert.doesNotMatch(markup, /查看机构工作区/);
+  assert.doesNotMatch(markup, /进入审批/);
+  assert.doesNotMatch(markup, /打开设置/);
   assert.doesNotMatch(markup, /机构运营概览/);
   assert.doesNotMatch(markup, /新建复习文档/);
 });
@@ -145,53 +87,12 @@ test('workspace dashboard copy keeps AI labels and material-generation copy', ()
   assert.match(superOwnerMarkup, /AI 平台/);
 });
 
-test('super owner platform cards navigate to real platform and organization views', async () => {
-  const domEnvironment = setupDomEnvironment();
-  let root: Root | null = null;
-  const navigatedPages: string[] = [];
+test('super owner platform cards are removed from the dashboard', () => {
+  const markup = renderDashboard('super_owner');
 
-  try {
-    root = createRoot(domEnvironment.container);
-    await act(async () => {
-      root?.render(
-        <WorkspaceDashboard
-          currentUser={{
-            display_name: '测试用户',
-            role: 'super_owner',
-          }}
-          setActivePage={(page) => {
-            navigatedPages.push(page);
-          }}
-          styles={defaultStyles}
-          canOpenAccounts={true}
-        />,
-      );
-    });
-
-    const buttons = Array.from(domEnvironment.container.querySelectorAll('button'));
-    const organizationButton = buttons.find((button) => button.textContent?.includes('机构观察'));
-    const approvalButton = buttons.find((button) => button.textContent?.includes('账号审批'));
-    const settingsButton = buttons.find((button) => button.textContent?.includes('系统设置'));
-
-    assert.ok(organizationButton);
-    assert.ok(approvalButton);
-    assert.ok(settingsButton);
-
-    await act(async () => {
-      organizationButton?.dispatchEvent(new domEnvironment.mouseEvent('click', { bubbles: true }));
-      approvalButton?.dispatchEvent(new domEnvironment.mouseEvent('click', { bubbles: true }));
-      settingsButton?.dispatchEvent(new domEnvironment.mouseEvent('click', { bubbles: true }));
-    });
-
-    assert.deepEqual(navigatedPages, ['classes', 'accounts', 'settings']);
-  } finally {
-    if (root) {
-      await act(async () => {
-        root?.unmount();
-      });
-    }
-    domEnvironment.cleanup();
-  }
+  assert.doesNotMatch(markup, /查看机构工作区/);
+  assert.doesNotMatch(markup, /进入审批/);
+  assert.doesNotMatch(markup, /打开设置/);
 });
 
 test('app source routes the dashboard page through WorkspaceDashboard', () => {
