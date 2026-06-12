@@ -137,7 +137,7 @@ test('workspace navigation wires smart wrong questions into every authenticated 
 
   assert.match(accessSource, /export function canAccessSmartWrongQuestions\(role: WorkspaceRole\): boolean \{/);
   assert.match(accessSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
-  assert.match(sidebarBlock, /showSmartWrongQuestions[\s\S]*id: 'smartWrongQuestions', icon: Cpu, label: '智能错题', description: '错题归档与再练'/);
+  assert.match(sidebarBlock, /showSmartWrongQuestions[\s\S]*id: 'smartWrongQuestions', icon: Cpu, label: '智能错题'/);
   assert.match(appSource, /smartWrongQuestions: '智能错题'/);
   assert.match(contentSource, /activeWorkspacePage === 'smartWrongQuestions'[\s\S]*canOpenWorkspacePage\(currentUser, 'smartWrongQuestions'\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
@@ -155,7 +155,7 @@ test('workspace navigation removes the master data mappings page and keeps accou
 test('workspace navigation exposes a dedicated owner-only credit center page', () => {
   const sidebarBlock = sidebarSource;
 
-  assert.match(sidebarBlock, /showCreditCenter[\s\S]*id: 'credit', icon: Bell, label: '积分中心', description: '成员消耗与流水'/);
+  assert.match(sidebarBlock, /showCreditCenter[\s\S]*id: 'credit', icon: Bell, label: '积分中心'/);
   assert.match(appSource, /credit: '积分中心'/);
   assert.match(accessSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
   assert.match(contentSource, /activeWorkspacePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);

@@ -44,7 +44,6 @@ type SidebarEntry = {
   id: SidebarPage;
   icon: LucideIcon;
   label: string;
-  description: string;
 };
 
 function getFallbackRoleLabel(role: CurrentUser['role']): string {
@@ -258,28 +257,28 @@ export function Sidebar({
 }) {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const dashboardItems: SidebarEntry[] = [
-    { id: 'dashboard', icon: LayoutDashboard, label: '工作台', description: '总览与今日重点' },
+    { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
   ].filter((item) => canOpenPage(item.id));
   const teachingItems: SidebarEntry[] = [
-    { id: 'review-generation', icon: Library, label: '复习生成', description: '录音转复习与文档' },
-    { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈', description: '课堂留痕与材料整理' },
-    { id: 'consultation', icon: MessageSquare, label: '咨询记录', description: '跟进状态与邀约进度' },
-    { id: 'calendar', icon: CalendarDays, label: '课程日历', description: '班级排期与自定义事项' },
+    { id: 'review-generation', icon: Library, label: '复习生成' },
+    { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈' },
+    { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
+    { id: 'calendar', icon: CalendarDays, label: '课程日历' },
     ...(showSmartWrongQuestions
-      ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题', description: '错题归档与再练' } satisfies SidebarEntry]
+      ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' } satisfies SidebarEntry]
       : []),
   ].filter((item) => canOpenPage(item.id));
   const organizationManagementItems: SidebarEntry[] = [
-    { id: 'classes', icon: Home, label: '学管中心', description: '班级、学生与老师管理' },
+    { id: 'classes', icon: Home, label: '学管中心' },
     ...(showCreditCenter
-      ? [{ id: 'credit', icon: Bell, label: '积分中心', description: '成员消耗与流水' } satisfies SidebarEntry]
+      ? [{ id: 'credit', icon: Bell, label: '积分中心' } satisfies SidebarEntry]
       : []),
     ...(showAccounts
-      ? [{ id: 'accounts', icon: User, label: '账号审批', description: '机构成员与权限审批' } satisfies SidebarEntry]
+      ? [{ id: 'accounts', icon: User, label: '账号审批' } satisfies SidebarEntry]
       : []),
   ].filter((item) => canOpenPage(item.id));
   const systemItems: SidebarEntry[] = [
-    { id: 'settings', icon: Settings, label: '系统设置', description: '账号、权限与系统信息' },
+    { id: 'settings', icon: Settings, label: '系统设置' },
   ].filter((item) => canOpenPage(item.id));
   const menuSections = [
     { label: '总览', items: dashboardItems },
@@ -351,7 +350,6 @@ export function Sidebar({
                       <motion.span layoutId="active-pill" className="h-2 w-2 rounded-full bg-blue-500" />
                     )}
                   </div>
-                  <p className="mt-1 truncate text-xs text-slate-400 dark:text-slate-500">{item.description}</p>
                 </div>
                 {compact && !mobile && (
                   <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-40 -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-200/70 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 opacity-0 shadow-[0_10px_24px_rgba(31,42,68,0.14)] transition group-hover/nav-item:opacity-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
