@@ -1,0 +1,52 @@
+style_name: physics_master_unified
+style_version: physics-master-style.v1
+language: zh-CN
+source: desktop_physics_workflow
+principle: 物理视觉作为统一母版，数学和雅思继承同一页面结构与组件，只做学科内容 override。
+palette:
+  accent: "#2F8F83"
+  accent_secondary: "#B86B4B"
+  soft: "#F2F8F5"
+  quote_bg: "#FFF6EE"
+  text: "#222222"
+  muted: "#666666"
+page:
+  paper: A4
+  left_margin_mm: 18
+  right_margin_mm: 18
+  top_margin_mm: 24
+  bottom_margin_mm: 16
+  answer_pages_background: plain
+brand:
+  logo_path: frontend/public/logo.png
+  logo_transparent_required: true
+components:
+  - home_usage_box
+  - full_coverage_box
+  - golden_quote_box
+  - day_task_card
+  - blanks_card
+  - choices_card
+  - subject_beyond_card
+  - answer_key_table
+physics_master_features:
+  core_formula_card: true
+  low_opacity_background_line_art: true
+  background_formulas_from_lesson_only: true
+  answer_page_plain_background: true
+subject_overrides:
+  math:
+    beyond_subject_title: 数学里的远方
+    formula_mode: math_symbol_safe
+  physics:
+    beyond_subject_title: 物理里的远方
+    formula_mode: formula_unit_condition
+  ielts:
+    beyond_subject_title: 语言里的远方
+    formula_mode: none
+pdf_safety:
+  - 背景不能压正文、题目、答案或表格
+  - 大模块标题不能和主体跨页分离
+  - 答案页使用素背景
+  - Logo 不能带白底方块
+  - 缺少专属视觉资产时使用占位配置，不阻塞主链路

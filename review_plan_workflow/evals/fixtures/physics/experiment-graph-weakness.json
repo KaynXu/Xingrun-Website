@@ -1,0 +1,13 @@
+{
+  "input": {
+    "subject": "physics",
+    "courseSystem": "A-Level",
+    "knownWeaknesses": ["experiment design", "graph interpretation"]
+  },
+  "expectedCriteria": [
+    "must include graph interpretation",
+    "must include uncertainty/error analysis",
+    "must include formula/unit link",
+    "must use unified physics-master style"
+  ]
+}

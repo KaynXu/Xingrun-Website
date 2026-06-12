@@ -1,0 +1,22 @@
+math:
+  must_include:
+    - error_log
+    - question_type
+    - topic_review
+    - skill_practice
+    - spiral_review
+    - timed_practice
+physics:
+  must_include:
+    - formula_conditions
+    - unit_check
+    - experiment_analysis
+    - graph_interpretation
+    - explanation_practice
+ielts:
+  must_include:
+    - reading_question_type
+    - band_gap_analysis
+    - feedback_loop
+    - rewrite_or_retake
+    - reading_listening_error_analysis

@@ -2305,6 +2305,26 @@ def init_db():
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS review_plan_runs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson_id        INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+            organization_id  INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            trace_id         TEXT NOT NULL UNIQUE,
+            status           TEXT NOT NULL DEFAULT 'running',
+            subject          TEXT NOT NULL DEFAULT '',
+            provider         TEXT NOT NULL DEFAULT '',
+            model            TEXT NOT NULL DEFAULT '',
+            prompt_version   TEXT NOT NULL DEFAULT '',
+            style_version    TEXT NOT NULL DEFAULT '',
+            schema_version   TEXT NOT NULL DEFAULT '',
+            warnings_json    TEXT NOT NULL DEFAULT '[]',
+            quality_review_json TEXT NOT NULL DEFAULT '{}',
+            node_outputs_json TEXT NOT NULL DEFAULT '{}',
+            logs_json        TEXT NOT NULL DEFAULT '[]',
+            created_at       TEXT DEFAULT (datetime('now','localtime')),
+            updated_at       TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS organizations (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL UNIQUE,
@@ -2353,6 +2373,9 @@ def init_db():
             reviewed_at     TEXT,
             created_at      TEXT DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE INDEX IF NOT EXISTS idx_review_plan_runs_lesson_updated
+        ON review_plan_runs(lesson_id, updated_at);
 
         CREATE TABLE IF NOT EXISTS organization_requests (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4119,6 +4142,125 @@ def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
         )
         if cur.rowcount == 0:
             raise LookupError("lesson not found")
+
+
+def _dump_review_plan_run_json(value: object, fallback: object) -> str:
+    try:
+        return json.dumps(value if value is not None else fallback, ensure_ascii=False)
+    except TypeError:
+        return json.dumps(fallback, ensure_ascii=False)
+
+
+def _load_review_plan_run_json(value: object, fallback: object):
+    try:
+        parsed = json.loads(str(value or ""))
+    except json.JSONDecodeError:
+        return fallback
+    return parsed
+
+
+def save_review_plan_run(
+    *,
+    lesson_id: int,
+    organization_id: int,
+    trace_id: str,
+    status: str,
+    subject: str = "",
+    provider: str = "",
+    model: str = "",
+    prompt_version: str = "",
+    style_version: str = "",
+    schema_version: str = "",
+    warnings: object = None,
+    quality_review: object = None,
+    node_outputs: object = None,
+    logs: object = None,
+) -> None:
+    warnings_json = _dump_review_plan_run_json(warnings, [])
+    quality_review_json = _dump_review_plan_run_json(quality_review, {})
+    node_outputs_json = _dump_review_plan_run_json(node_outputs, {})
+    logs_json = _dump_review_plan_run_json(logs, [])
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM review_plan_runs WHERE trace_id=?",
+            (str(trace_id or ""),),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE review_plan_runs
+                SET lesson_id=?, organization_id=?, status=?, subject=?, provider=?, model=?,
+                    prompt_version=?, style_version=?, schema_version=?, warnings_json=?,
+                    quality_review_json=?, node_outputs_json=?, logs_json=?,
+                    updated_at=datetime('now','localtime')
+                WHERE trace_id=?
+                """,
+                (
+                    int(lesson_id),
+                    int(organization_id),
+                    str(status or "running"),
+                    str(subject or ""),
+                    str(provider or ""),
+                    str(model or ""),
+                    str(prompt_version or ""),
+                    str(style_version or ""),
+                    str(schema_version or ""),
+                    warnings_json,
+                    quality_review_json,
+                    node_outputs_json,
+                    logs_json,
+                    str(trace_id or ""),
+                ),
+            )
+            return
+        conn.execute(
+            """
+            INSERT INTO review_plan_runs (
+                lesson_id, organization_id, trace_id, status, subject, provider, model,
+                prompt_version, style_version, schema_version, warnings_json,
+                quality_review_json, node_outputs_json, logs_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(lesson_id),
+                int(organization_id),
+                str(trace_id or ""),
+                str(status or "running"),
+                str(subject or ""),
+                str(provider or ""),
+                str(model or ""),
+                str(prompt_version or ""),
+                str(style_version or ""),
+                str(schema_version or ""),
+                warnings_json,
+                quality_review_json,
+                node_outputs_json,
+                logs_json,
+            ),
+        )
+
+
+def get_latest_review_plan_run_for_lesson(lesson_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM review_plan_runs
+            WHERE lesson_id=?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(lesson_id),),
+        ).fetchone()
+        if not row:
+            return None
+        run = dict(row)
+        run["warnings"] = _load_review_plan_run_json(run.get("warnings_json"), [])
+        run["quality_review"] = _load_review_plan_run_json(run.get("quality_review_json"), {})
+        run["node_outputs"] = _load_review_plan_run_json(run.get("node_outputs_json"), {})
+        run["logs"] = _load_review_plan_run_json(run.get("logs_json"), [])
+        return run
 
 
 def get_lesson(lesson_id: int):
@@ -12094,8 +12236,8 @@ def cmd_add(args):
     print(f"\n课程信息：{lesson_date} | {subject} | {grade} | {topic}")
 
     # 3. AI 生成复习计划
-    from ai_processor import parse_and_generate_plan
-    plan = parse_and_generate_plan(
+    from review_plan_workflow.service import generate_single_lesson_review_plan
+    plan = generate_single_lesson_review_plan(
         summary_text=raw_text,
         subject=subject,
         grade=grade,

@@ -120,6 +120,7 @@ from lesson_manager import (
     get_active_class_invite_by_code,
     get_or_create_active_class_invite,
     get_lesson,
+    get_latest_review_plan_run_for_lesson,
     get_student_profile,
     get_wrong_question_chat_session,
     get_weekly_wrong_question_followup_message,
@@ -794,7 +795,7 @@ def _run_review_plan_generation_job(
         weak_points = str(lesson.get("weak_points") or "")
         raw_text = str(lesson.get("summary") or "")
 
-        from ai_processor import parse_and_generate_plan
+        from review_plan_workflow.service import generate_single_lesson_review_plan
         try:
             plan = _run_ai_feature_with_charge(
                 user=user,
@@ -802,13 +803,17 @@ def _run_review_plan_generation_job(
                 source_record_type="lesson",
                 source_record_id=lesson_id,
                 producer=lambda: _call_ai_helper_with_usage(
-                    parse_and_generate_plan,
+                    generate_single_lesson_review_plan,
                     summary_text=raw_text,
                     subject=subject,
                     grade=grade,
                     topic=topic,
                     weak_points=weak_points,
                     lesson_date=lesson_date,
+                    provider=chat_provider,
+                    model=chat_model,
+                    lesson_id=lesson_id,
+                    organization_id=int(user["organization_id"]),
                 ),
                 provider=chat_provider,
                 model=chat_model,
@@ -837,6 +842,8 @@ def _run_review_plan_generation_job(
             except LookupError:
                 logger.exception("Failed to mark lesson %s as failed after AI error", lesson_id)
             return
+        if isinstance(plan, tuple) and len(plan) == 2 and isinstance(plan[1], dict):
+            plan = plan[0]
 
         from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
@@ -2314,6 +2321,16 @@ def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
     pdf_path = serialized.get("pdf_path", "")
     if not pdf_path or not Path(pdf_path).exists():
         serialized["pdf_path"] = ""
+    try:
+        latest_run = get_latest_review_plan_run_for_lesson(int(serialized.get("id") or 0))
+    except Exception:
+        latest_run = None
+    if latest_run:
+        serialized["trace_id"] = latest_run.get("trace_id", "")
+        serialized["workflow_warnings"] = latest_run.get("warnings", [])
+        serialized["quality_review"] = latest_run.get("quality_review", {})
+        serialized["prompt_version"] = latest_run.get("prompt_version", "")
+        serialized["style_version"] = latest_run.get("style_version", "")
     return serialized
 
 

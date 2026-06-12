@@ -1,0 +1,16 @@
+{
+  "input": {
+    "subject": "math",
+    "courseSystem": "IGCSE",
+    "studentLevel": "中等",
+    "target": "A",
+    "knownWeaknesses": ["algebra", "graphs"],
+    "availability": {"hoursPerWeek": 6}
+  },
+  "expectedCriteria": [
+    "must include phased plan",
+    "must include error log",
+    "must include topic/question type/skill dimensions",
+    "must include realistic workload"
+  ]
+}

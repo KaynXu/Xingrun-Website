@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-06-10
+最后更新：2026-06-12
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-12 已完成复习计划工作流第一阶段工程化落地：新增 `review_plan_workflow/` 轻量 pipeline 骨架、Pydantic schema、prompt registry/renderer、三科 subject packs、统一物理视觉蓝本 style config、quality gate、eval fixtures，以及 `docs/review-plan-workflow.md` / `docs/teacher-prompt-migration.md` 两份审计与迁移文档；`/api/review-plans` 后台 worker 已改为走新 service，`review_plan_runs` 记录 trace、prompt/style/schema 版本、warnings 和 quality review，响应序列化会带出最新 trace 元数据。现阶段为兼容切片：实际 plan 生成仍复用旧 `ai_processor.parse_and_generate_plan()`，不改变现有单课输入/输出和 PDF 主行为。
 - 2026-06-10 已按用户“把题目搞清晰”的要求继续优化 `唐语涵-6月7日错题练习擦除版`：`frontend/scripts/renderWrongQuestionPracticeSheetPdf.mjs` 将干净题图最大显示高度从 `48mm` 提到 `68mm`，订正线从 `8` 条收为 `6` 条，把页面空间优先让给题目图片，同时继续保持“一页一道题 + 作答区”。已重生成 PDF、zip 和 proof 图，成品仍位于 `output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/`。proof：PDF `7` 页、`4924355 bytes`；第 1-7 页页首依次为 `第1题` 到 `第7题`，第 2 页页首仍是 `第2题`；题图显示尺寸已放大，典型页从上一版约 `316.5x135.8pt / 334.5x135.8pt / 169.5x135.8pt` 提升到 `448.5x192.8pt / 474.0x192.8pt / 240.0x192.7pt`；`原题 / 原图 / 方法提醒 / 挖空复盘 / 订正区 / clean` 均为 `7`，`等式性质=2`、`多边形=0`，raw `$ / rac / mathbbR / ldots / \frac` 均为 `0`，抽查页渲染非空，zip 内 1 份 PDF + 7 张擦除图 + 0 张 original 图；已肉眼查看 `proof/pdf-contact.png` 和 `proof/page-2.png`，确认题图更清楚且未挤压遮挡。
 - 2026-06-10 已清理课堂反馈遗留空表 `class_feedback_student_entries__repair_legacy`，并补上代码级自愈：`lesson_manager.init_db()` 现在会先识别 `idx_class_feedback_student_entries_task_student` 是否误挂在错误表上，若是则先移除错索引；若 `class_feedback_student_entries__repair_legacy` 存在且为空，则直接删除，再把正式表 `class_feedback_student_entries(task_id, student_id)` 的唯一索引补回。已新增 `tests/test_class_feedback_store.py` 回归覆盖“空 legacy 表占住正式索引名”场景。本地 proof：`py_compile lesson_manager.py tests/test_class_feedback_store.py`、2 条定向 unittest、`git diff --check` 全过。线上也已清理完成：清理前正式表 `0` 行、legacy 表 `0` 行、同名索引误挂在 legacy 表；清理后 legacy 表已删除，唯一索引已恢复到正式表。线上 SQLite 备份位于 `data/backups/xingrun.db.before-class-feedback-repair-legacy-cleanup-20260610-163131.sqlite`。
 - 2026-06-10 已重建本地学生端 demo 登录账号：当前 `data/xingrun.db` 启动后实际是空库（`student_accounts=0 / students=0 / lessons=0`），本轮已补入本地组织 `星润Starain`、班级 `2023级·三年级·1班`、学生 `test` 和学生端账号 `test / test123`，并用 `POST /api/student/login` 本地 proof 返回 `200` + token，确认可登录。注意当前本地 `lessons` 仍为 `0`，所以学生端登录后可能只会显示 `0` 个今日任务；若后续需要完整 demo 任务页，还需再补本地 lesson/PDF 样例数据。
@@ -345,6 +346,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 复习计划工作流下一步应先把 compatibility plan node 替换成真正的分节点 LLM 生成与 revision：按 `review_plan_workflow/prompts/nodes/` 拆出 intake/source/scope/time/task/quality/revision 节点，跑三科 fixture eval，再做真实 PDF 目视 smoke；IELTS 当前只把 Reading 作为已覆盖能力，Listening/Writing/Speaking 需要单独补资料后进入 Phase 2，不能假装已经完整覆盖。
 - 先按重排后的闭环顺序推进：`archive/reflection authority layer -> same-record continuity -> student-facing AI chat front door -> practice artifact rebuild -> error_correction adapter -> optional workbench`，不再让“先补更多入口”反过来定义主链路。
 - 这轮之后最值得做的是把 `practice artifact rebuild` 从“运行时 PDF 已接到 reflection spine”继续推到“生成结果本身也更主动围绕这条脊柱组织文案”：优先让 `ai_processor.py` 的练习 structured fallback、PDF 里的挖空复盘和答案页说明进一步围绕 `reflection_summary + question_structured + knowledge_tags` 收紧，并继续收缩剩余旧 `child_reason_*` 依赖。
 - `error_correction` 的迁移下一步只先拿低耦合底层能力，不要早引入 Vue / SQLAlchemy / LangGraph：优先顺序调整为 `prepare_input() 风格标准化 -> simplify_ocr_results() OCR 边界 -> overlap split 多页分割 -> 结构化纠错预览`，确认这些都能挂到现有 Flask + SQLite ingestion run 上后，再考虑 React workbench 页面。
@@ -409,6 +411,7 @@
 - 这一步仍适合直接在 `develop` 做，小改动即可，不需要并行开第二条错题链路。
 
 ### 风险
+- 复习计划新工作流当前已经有 trace/schema/style/rubric 外壳，但实际内容生成仍是旧单次大 prompt；quality revision 现在只记录 warnings，尚未真正二次改写 plan。上线前需要用真实三科材料跑端到端质量评估和人工看 PDF，尤其确认物理视觉蓝本统一后没有让数学/雅思题型栏目失真。
 - `docs/wrong-questions/wrong-question-system-review-20260603.md` 当前有用户已有未提交改动，本轮没有动它；后续若要继续补文档或合并文档侧结论，先单独 diff 用户改动，避免互相覆盖。
 - 当前 AI 对话闭环是确定性三步引导，不依赖 LangGraph；这能先稳住归档闭环，但还没有做更开放的多轮追问、对话中途改写归档摘要，或基于知识图谱的个性化追问。
 - `wrong_question_chat_sessions/messages` 目前只有 stream 写入和响应内序列化，没有单独的 list/detail API；如果前端需要懒加载历史或恢复未完成会话，还需要再补一个轻量读取接口。
