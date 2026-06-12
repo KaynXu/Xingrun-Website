@@ -189,7 +189,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIn("第三段：高考题条件翻译和例题1到5。", lesson["summary"])
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:processed-review-plan")
@@ -200,10 +200,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         _mock_request_key,
         _mock_ensure_credits,
         mock_start_thread,
-        mock_parse_and_generate_plan,
+        mock_generate_plan_json,
         _mock_generate_pdf,
     ):
-        mock_parse_and_generate_plan.return_value = (
+        mock_generate_plan_json.return_value = (
             {"lesson_info": {"topic": "一次函数"}, "days": []},
             {
                 "provider": "deepseek",
@@ -400,12 +400,12 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         mock_start_thread.assert_not_called()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("app._run_ai_feature_with_charge")
     def test_worker_uses_lesson_data_source_of_truth(
         self,
         mock_run_with_charge,
-        mock_parse_and_generate_plan,
+        mock_generate_plan_json,
         mock_generate_pdf,
     ):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -420,7 +420,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
         expected_plan = {"lesson_info": {"topic": "一次函数"}, "days": []}
         mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
-        mock_parse_and_generate_plan.return_value = expected_plan
+        mock_generate_plan_json.return_value = (
+            expected_plan,
+            {"provider": "openai", "model": "gpt-4o", "input_tokens": 1, "output_tokens": 1},
+        )
 
         app_module._run_review_plan_generation_job(
             lesson_id=lesson_id,
@@ -434,22 +437,19 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["record_status"], "ready")
         self.assertEqual(saved["plan"], expected_plan)
         self.assertEqual(mock_run_with_charge.call_args.kwargs["source_record_id"], lesson_id)
-        mock_parse_and_generate_plan.assert_called_once_with(
-            summary_text="课堂总结文本",
-            subject="数学",
-            grade="初二",
-            topic="一次函数",
-            weak_points="斜率判断",
-            lesson_date="2026-04-09",
-            include_usage=True,
-        )
+        mock_generate_plan_json.assert_called_once()
+        generation_kwargs = mock_generate_plan_json.call_args.kwargs
+        self.assertEqual(generation_kwargs["provider"], "openai")
+        self.assertEqual(generation_kwargs["model"], "gpt-4o")
+        self.assertIn("课堂总结文本", generation_kwargs["user_message"])
+        self.assertIn("本节课主题：一次函数", generation_kwargs["user_message"])
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_worker_only_processes_pending_lessons(
         self,
-        mock_parse_and_generate_plan,
+        mock_generate_plan_json,
         mock_generate_pdf,
     ):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -479,7 +479,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["record_status"], "ready")
         self.assertEqual(saved["generation_error"], "")
         self.assertEqual(saved["pdf_path"], "/tmp/existing.pdf")
-        mock_parse_and_generate_plan.assert_not_called()
+        mock_generate_plan_json.assert_not_called()
         mock_generate_pdf.assert_not_called()
 
     @patch("app._start_review_plan_generation_thread")

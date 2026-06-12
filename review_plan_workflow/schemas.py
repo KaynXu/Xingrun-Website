@@ -58,6 +58,52 @@ class SourceSummary(BaseModel):
     confidence: float = 0.0
 
 
+class ScopePlan(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    planning_mode: str = "single_lesson_spaced_review"
+    review_days: list[int] = Field(default_factory=lambda: [1, 2, 7, 14, 30])
+    module_sequence: list[str] = Field(default_factory=list)
+    review_loop: list[str] = Field(default_factory=list)
+    scope_warnings: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class TimeAllocation(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    total_days: int = 30
+    review_schedule: list[dict[str, Any]] = Field(default_factory=list)
+    daily_workload_minutes: int = 30
+    buffer_strategy: str = ""
+    workload_warnings: list[str] = Field(default_factory=list)
+
+
+class TaskBlueprint(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    subject: SubjectKey = "unknown"
+    task_blocks: list[dict[str, Any]] = Field(default_factory=list)
+    required_components: list[str] = Field(default_factory=list)
+    output_contract: dict[str, Any] = Field(default_factory=dict)
+    risk_controls: list[str] = Field(default_factory=list)
+
+
+class PromptBundle(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    system_prompt_path: str
+    node_prompt_path: str
+    subject_pack_path: str
+    style_path: str
+    rubric_path: str
+    prompt_version: str
+    prompt: str = Field(default="", exclude=True)
+    prompt_preview: str = ""
+    variables: dict[str, Any] = Field(default_factory=dict)
+
+
 class QualityIssue(BaseModel):
     severity: Literal["low", "medium", "high"] = "medium"
     category: str = "completeness"

@@ -7,8 +7,8 @@
 - Frontend: `frontend/src/App.tsx` posts text and file payloads to `/api/review-plans`.
 - Backend API: `app.py` creates a pending lesson and returns `202`.
 - Worker: `app.py::_run_review_plan_generation_job` handles transcription, plan generation, PDF rendering, and final status.
-- LLM client: `ai_processor.parse_and_generate_plan()`.
-- Prompt source: `ai_processor.PLAN_SYSTEM_PROMPT` plus `PROMPT_STYLE_ADDONS`.
+- LLM client: `review_plan_workflow.llm.client.generate_review_plan_json()`.
+- Prompt source: `review_plan_workflow/prompts/` registry plus subject packs, style config, and rubrics.
 - Renderer: `review_plan_templates.single_lesson_pdf` adapts the plan into `review_plan_templates.generate_review_pdfs`.
 
 ### Current Generation Flow
@@ -16,21 +16,24 @@
 1. The frontend collects subject, class, topic, lesson date, weak points, and text/file input.
 2. `/api/review-plans` validates auth, class access, duplicate request identity, and credits.
 3. The backend creates a pending lesson and starts a background worker.
-4. The worker optionally transcribes audio, then makes one large structured LLM call.
-5. The PDF adapter maps the returned JSON into the ReportLab review-plan template.
-6. The lesson row stores final `plan_json`, `pdf_path`, status, and error fields.
+4. The worker optionally transcribes audio, then calls `review_plan_workflow.service`.
+5. The workflow runs deterministic intake/source/scope/time/task/prompt-bundle nodes.
+6. The workflow-native `plan_generator` makes one structured JSON LLM call.
+7. The deterministic quality gate records schema/quality review and revision warnings.
+8. The PDF adapter maps the returned JSON into the ReportLab review-plan template.
+9. The lesson row stores final `plan_json`, `pdf_path`, status, error fields, and run trace metadata.
 
 ### Single API / Workflow Assessment
 
-The product entry is already asynchronous, but generation is still effectively a single large prompt call. There is no persisted node state, no schema-first node output, no independent quality reviewer, and no traceId returned to the frontend.
+The product entry is asynchronous. Generation now has persisted node outputs and trace metadata, but the final student-facing plan is still produced by one LLM plan-generation node. The next boundary to remove is metadata-only revision.
 
-### Missing Engineering Controls
+### Controls And Remaining Gaps
 
-- Schema validation: JSON mode is used, but there was no Pydantic/JSON Schema validation for the review-plan structure.
-- Intermediate state: only final `plan_json` was persisted.
+- Schema validation: final plan and node context now have Pydantic boundaries; node-level repair retry is still pending.
+- Intermediate state: node outputs are now persisted in `review_plan_runs`; node replay is still pending.
 - Retry and revision: existing retry behavior is task-level, not schema-level or quality-level.
-- Quality gate: no independent quality reviewer existed for single-lesson plans.
-- Trace: no review-plan traceId, node logs, prompt version, style version, or schema version.
+- Quality gate: deterministic quality review now exists; LLM revision is still pending.
+- Trace: review-plan traceId, node logs, prompt version, style version, and schema version now exist.
 - Eval: existing tests cover async API and PDF basics, but not subject quality fixtures.
 - Style separation: PDF style values were hard-coded in the renderer.
 - Subject separation: math, physics, and IELTS rules were not represented as repo-managed subject packs.
@@ -42,7 +45,7 @@ The product entry is already asynchronous, but generation is still effectively a
 | `lesson_manager.py` | 12000+ | DB schema, accounts, classes, lessons, students, CLI | Too large to split safely in this pass | Add only focused review-plan run helpers now |
 | `frontend/src/App.tsx` | 10000+ | Whole app UI and review-plan page | Too many UI responsibilities | Keep frontend as API caller only in this phase |
 | `app.py` | 7000+ | Routes, workers, AI charge orchestration | Review-plan worker owns too much generation detail | Move plan generation orchestration into `review_plan_workflow.service` |
-| `ai_processor.py` | 2400+ | AI clients, prompts, plan generation, other AI features | Giant inline prompt and LLM call coupling | Keep legacy function as compatibility node while new workflow boundary lands |
+| `ai_processor.py` | 2400+ | AI clients, prompts, legacy plan generation, other AI features | Giant inline prompt and unrelated AI features remain coupled | Do not use it from the review-plan workflow path; keep only for historical direct callers until a later cleanup |
 | `generate_review_pdfs.py` | 1600+ | PDF rendering and visual style | Style hard-coded in Python | Load unified style config with physics as master visual language |
 
 ## Framework Decision
@@ -72,8 +75,8 @@ The review-plan flow has a known order and should be controlled by code. Code sh
 - `state.py`: traceId, versions, warnings, logs, and node outputs.
 - `schemas.py`: Pydantic schemas for inputs, node outputs, quality review, and final plan.
 - `service.py`: single-lesson workflow entry used by the Flask worker.
-- `nodes/`: intake normalizer, subject router, source analyzer, and future node slots.
-- `llm/`: prompt registry and renderer boundaries.
+- `nodes/`: intake normalizer, subject router, source analyzer, scope planner, time allocator, task blueprint, prompt bundle builder, native plan generator, and revision boundary.
+- `llm/`: prompt registry, renderer, JSON parsing, OpenAI-compatible chat client, and usage extraction.
 - `prompts/subjects/`: common, math, physics, IELTS subject packs.
 - `prompts/styles/review_plan_style.yaml`: one unified visual system using physics as the master style.
 - `prompts/rubrics/`: quality and workload checks.
@@ -109,6 +112,21 @@ Each generation run receives a `trace_id`. The `review_plan_runs` table stores:
 
 API responses may include `trace_id`, `workflow_warnings`, `quality_review`, `prompt_version`, and `style_version` without breaking older frontend consumers.
 
+## Current Node Chain
+
+The current single-lesson service executes this ordered chain:
+
+1. `intake_normalizer`: normalize raw request fields and missing info.
+2. `subject_router`: choose math, physics, IELTS, or common subject pack.
+3. `source_analyzer`: extract confirmed topics, evidence, and source risks.
+4. `scope_planner`: build review days, module sequence, review loop, warnings, and assumptions.
+5. `time_allocator`: map the review scope to day-level workload and buffer strategy.
+6. `task_blueprint`: produce subject-aware task blocks, required components, output contract, and risk controls.
+7. `prompt_bundle_builder`: render the next LLM prompt bundle and version it.
+8. `plan_generator`: calls the workflow-native OpenAI-compatible JSON generator using the rendered prompt bundle.
+9. `quality_reviewer`: deterministic schema and quality gate.
+10. `revision_policy`: records revision-required warnings until the dedicated revision node is implemented.
+
 ## Adding a New Subject
 
 1. Add `prompts/subjects/<subject>.yaml`.
@@ -123,6 +141,6 @@ Phase 1 eval fixtures are JSON files under `review_plan_workflow/evals/fixtures/
 
 ## Known Limitations
 
-- The first implementation keeps the old `ai_processor.parse_and_generate_plan()` as the compatibility plan-generation node.
-- Revision is recorded as metadata in Phase 1; a dedicated LLM revision node is the next step.
+- Plan generation no longer calls `ai_processor.parse_and_generate_plan()`, but it is still a single LLM plan-generation node after structured intake/source/scope/time/task/prompt-bundle preparation.
+- Revision is still recorded as metadata; a dedicated LLM revision node is the next cleanup target.
 - IELTS source material currently covers Reading best; full four-skill IELTS generation remains Phase 2.

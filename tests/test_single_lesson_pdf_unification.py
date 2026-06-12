@@ -220,7 +220,7 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
     def test_cmd_add_uses_review_template_generator(self):
         import argparse
 
-        with patch("ai_processor.parse_and_generate_plan", return_value=copy.deepcopy(DEMO_PLAN)), \
+        with patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json", return_value=(copy.deepcopy(DEMO_PLAN), {})), \
              patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf") as generate_pdf, \
              patch("lesson_manager._open_pdf"):
             generate_pdf.return_value = str(self.base / "cli-review-plan.pdf")

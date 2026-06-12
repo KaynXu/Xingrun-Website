@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from typing import Any, Optional, Tuple, Union
 
-from .executor import WorkflowNode, run_workflow_node
-from .nodes import intake_normalizer_node, source_analyzer_node, subject_router_node
+from .executor import run_workflow_node
+from .nodes import (
+    intake_normalizer_node,
+    plan_generator_node,
+    prompt_bundle_builder_node,
+    scope_planner_node,
+    source_analyzer_node,
+    subject_router_node,
+    task_blueprint_node,
+    time_allocator_node,
+)
 from .quality_gate import review_single_lesson_plan
 from .revision_policy import apply_revision_policy
 from .schemas import ReviewPlanInput
@@ -44,31 +53,6 @@ def _record_run(
         return
 
 
-def _legacy_plan_generator(payload: dict[str, Any], context: WorkflowContext) -> tuple[dict[str, Any], dict[str, Any]]:
-    import ai_processor
-
-    result = ai_processor.parse_and_generate_plan(
-        summary_text=payload["input"].summary_text,
-        subject=payload["input"].subject,
-        grade=payload["input"].grade,
-        topic=payload["input"].topic,
-        weak_points=payload["input"].weak_points,
-        lesson_date=payload["input"].lesson_date,
-        include_usage=True,
-    )
-    if isinstance(result, tuple) and len(result) == 2:
-        plan, usage = result
-    else:
-        plan, usage = result, {}
-    return plan, usage
-
-
-plan_generator_node: WorkflowNode[dict[str, Any], tuple[dict[str, Any], dict[str, Any]]] = WorkflowNode(
-    name="plan_generator",
-    run=_legacy_plan_generator,
-)
-
-
 def generate_single_lesson_review_plan(
     *,
     summary_text: str,
@@ -98,9 +82,50 @@ def generate_single_lesson_review_plan(
         normalized = run_workflow_node(intake_normalizer_node, review_input, context)
         route = run_workflow_node(subject_router_node, normalized, context)
         source = run_workflow_node(source_analyzer_node, normalized, context)
+        scope = run_workflow_node(
+            scope_planner_node,
+            {"input": review_input, "normalized": normalized, "route": route, "source": source},
+            context,
+        )
+        time_allocation = run_workflow_node(
+            time_allocator_node,
+            {"normalized": normalized, "scope": scope},
+            context,
+        )
+        task_blueprint = run_workflow_node(
+            task_blueprint_node,
+            {
+                "normalized": normalized,
+                "route": route,
+                "source": source,
+                "scope": scope,
+                "time_allocation": time_allocation,
+            },
+            context,
+        )
+        prompt_bundle = run_workflow_node(
+            prompt_bundle_builder_node,
+            {
+                "route": route,
+                "source": source,
+                "scope": scope,
+                "time_allocation": time_allocation,
+                "task_blueprint": task_blueprint,
+            },
+            context,
+        )
         plan, usage = run_workflow_node(
             plan_generator_node,
-            {"input": review_input, "normalized": normalized, "route": route, "source": source},
+            {
+                "input": review_input,
+                "normalized": normalized,
+                "route": route,
+                "source": source,
+                "scope": scope,
+                "time_allocation": time_allocation,
+                "task_blueprint": task_blueprint,
+                "prompt_bundle": prompt_bundle,
+            },
             context,
         )
         quality = review_single_lesson_plan(plan, subject=route.selected_subject)
