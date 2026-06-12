@@ -141,6 +141,6 @@ Phase 1 eval fixtures are JSON files under `review_plan_workflow/evals/fixtures/
 
 ## Known Limitations
 
-- Plan generation no longer calls `ai_processor.parse_and_generate_plan()`, but it is still a single LLM plan-generation node after structured intake/source/scope/time/task/prompt-bundle preparation.
+- The old `ai_processor.py` single-lesson review-plan entrypoint and inline prompt have been removed from active code. Plan generation now lives in one workflow-native LLM node after structured intake/source/scope/time/task/prompt-bundle preparation.
 - Revision is still recorded as metadata; a dedicated LLM revision node is the next cleanup target.
 - IELTS source material currently covers Reading best; full four-skill IELTS generation remains Phase 2.

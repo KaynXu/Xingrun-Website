@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import ai_processor
+from review_plan_workflow.llm import PromptRegistry, render_prompt
+from review_plan_workflow.llm.client import loads_model_json
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -129,18 +131,24 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
 
-    def test_plan_system_prompt_limits_formula_only_fill_ratio(self):
-        self.assertIn("纯公式型填空题", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("不得超过 30%", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("至少 70% 的填空题", ai_processor.PLAN_SYSTEM_PROMPT)
+    def test_review_plan_legacy_symbols_are_removed_from_ai_processor(self):
+        self.assertFalse(hasattr(ai_processor, "PLAN" + "_SYSTEM_PROMPT"))
+        self.assertFalse(hasattr(ai_processor, "PROMPT" + "_STYLE_ADDONS"))
+        self.assertFalse(hasattr(ai_processor, "parse" + "_and_generate_plan"))
 
-    def test_plan_system_prompt_requires_163320_style_method_map(self):
-        for phrase in ["方法主线", "题型入口", "操作步骤", "易错提醒", "典型例题", "老师原话"]:
-            self.assertIn(phrase, ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("看到什么条件", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("先做什么", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("同一节课", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("多段材料", ai_processor.PLAN_SYSTEM_PROMPT)
+    def test_review_plan_prompt_registry_owns_system_prompt(self):
+        rendered = render_prompt(
+            system_prompt_path="system/review-plan-agent.md",
+            node_prompt_path="nodes/task-generator.md",
+            subject_pack_path="subjects/math.yaml",
+            registry=PromptRegistry(),
+        )
+
+        self.assertIn("专业的复习计划生成 Agent", rendered["prompt"])
+        self.assertIn("中国小学、初中、高中课程与考试复习", rendered["prompt"])
+        self.assertIn("不要默认套用国际课程", rendered["prompt"])
+        self.assertIn("先诊断概念漏洞，再安排题型训练", rendered["prompt"])
+        self.assertIn("checkpoint_quiz", rendered["prompt"])
 
     def test_wrong_question_recognition_prompt_requests_mixed_latex_output(self):
         self.assertIn("正文 + LaTeX 公式", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
@@ -550,22 +558,16 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
-    def test_parse_and_generate_plan_recovers_bare_latex_backslashes(self):
-        fake_client = _FakeClient(
+    def test_review_plan_json_parser_recovers_bare_latex_backslashes(self):
+        plan = loads_model_json(
             r"""{"lesson_info":{"topic":"含参方程"},"days":[{"items":[{"text":"观察 $\left(x+1\right)^2$ 的开口方向"}]}],"weekly_review_prompts":[]}"""
         )
-        with patch("ai_processor._get_client", return_value=fake_client):
-            plan = ai_processor.parse_and_generate_plan("课堂总结")
-
         self.assertEqual(plan["days"][0]["items"][0]["text"], r"观察 $\left(x+1\right)^2$ 的开口方向")
 
-    def test_parse_and_generate_plan_preserves_bare_latex_json_control_escapes(self):
-        fake_client = _FakeClient(
+    def test_review_plan_json_parser_preserves_bare_latex_json_control_escapes(self):
+        plan = loads_model_json(
             r"""{"lesson_info":{"topic":"分式"},"days":[{"items":[{"text":"计算 $\frac{1}{2}$ 的值"}]}],"weekly_review_prompts":[]}"""
         )
-        with patch("ai_processor._get_client", return_value=fake_client):
-            plan = ai_processor.parse_and_generate_plan("课堂总结")
-
         self.assertEqual(plan["days"][0]["items"][0]["text"], r"计算 $\frac{1}{2}$ 的值")
 
     def test_transcribe_child_reason_audio_uses_local_faster_whisper_auto_detect_first(self):

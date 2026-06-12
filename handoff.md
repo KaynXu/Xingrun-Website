@@ -6,7 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-06-12 已按用户要求清掉复习计划主链路兼容层：`review_plan_workflow.service` 不再调用 `ai_processor.parse_and_generate_plan()`，实际 plan 生成迁入 `review_plan_workflow.nodes.plan_generator` 和 `review_plan_workflow.llm.client.generate_review_plan_json()`；旧 `ai_processor` 函数只剩历史直接调用测试覆盖，不再是 `/api/review-plans` 或 CLI 主路径。剩余过渡点是 revision 仍只记录 warning，下一步要做真正 LLM revision。
+- 2026-06-12 已按用户要求继续清理复习计划旧兼容层：`review_plan_workflow.service` 不再调用旧 `ai_processor` 单节复习计划入口，实际 plan 生成迁入 `review_plan_workflow.nodes.plan_generator` 和 `review_plan_workflow.llm.client.generate_review_plan_json()`；旧 `ai_processor` 单节入口、内联大 prompt 和 style addon 已删除。剩余过渡点是 revision 仍只记录 warning，下一步要做真正 LLM revision。
 - 2026-06-12 复习计划工作流的“节点上下文层”已作为主生成节点前置输入保留：`service` 会依次执行 `scope_planner / time_allocator / task_blueprint / prompt_bundle_builder`，并把范围、时间分配、任务蓝图、prompt bundle version 写入 `review_plan_runs.node_outputs`。
 - 2026-06-12 已纠正复习计划 system prompt 的课程语境：数学、物理默认面向中国小学、初中、高中课程与考试复习，不再默认写成国际课程；雅思作为语言考试场景单独保留，且不反推到数学/物理。
 - 2026-06-12 已完成复习计划工作流第一阶段工程化落地：新增 `review_plan_workflow/` 轻量 pipeline 骨架、Pydantic schema、prompt registry/renderer、三科 subject packs、统一物理视觉蓝本 style config、quality gate、eval fixtures，以及 `docs/review-plan-workflow.md` / `docs/teacher-prompt-migration.md` 两份审计与迁移文档；`/api/review-plans` 后台 worker 已改为走新 service，`review_plan_runs` 记录 trace、prompt/style/schema 版本、warnings 和 quality review，响应序列化会带出最新 trace 元数据。
