@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-06-13 已按用户要求移除工作台左侧导航激活项右侧的蓝色圆点：`frontend/src/features/navigation/Sidebar.tsx` 现在只保留当前项的背景、图标边框和文字高亮，不再额外显示小圆点提示。当前轮 proof 继续使用聚焦导航脚本记录。
+- 2026-06-13 已按用户要求移除工作台左侧导航图标的边框和背景：`frontend/src/features/navigation/Sidebar.tsx` 现在让图标容器保持透明，只通过当前项/悬停时的图标颜色变化表达状态，不再显示额外描边或底色。当前轮 proof 继续使用聚焦导航脚本记录。
+- 2026-06-13 已按用户要求移除工作台左侧导航激活项右侧的蓝色圆点：`frontend/src/features/navigation/Sidebar.tsx` 现在只保留当前项的背景和文字高亮，不再额外显示小圆点提示。当前轮 proof 继续使用聚焦导航脚本记录。
 - 2026-06-13 已按用户要求把工作台左侧导航列表继续收紧：`frontend/src/features/navigation/Sidebar.tsx` 现在缩小了分组间距、按钮纵向 padding 和图标容器尺寸，导航视觉更紧凑，同时仍保留可点击面积与独立滚动。当前轮 proof 继续使用聚焦导航脚本记录。
 - 2026-06-13 已修复工作台左侧导航在移除按钮描述后无法滚动的问题：`frontend/src/features/navigation/Sidebar.tsx` 的主导航容器已补回 `min-h-0 + overflow-y-auto + overscroll`，现在顶部品牌区和底部账号区固定时，中间菜单区可独立纵向滚动。当前轮 proof 继续使用聚焦导航脚本记录。
 - 2026-06-13 已按用户要求把工作台左侧导航按钮下方的说明文字移除：`frontend/src/features/navigation/Sidebar.tsx` 现在仅保留图标 + 标签，不再在每个按钮下方显示描述文案；相关源码断言已同步更新到 `frontend/src/workspace-navigation.test.ts`。本轮 proof 将继续沿用聚焦导航脚本记录。

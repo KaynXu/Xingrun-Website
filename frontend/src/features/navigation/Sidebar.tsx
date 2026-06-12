@@ -340,10 +340,10 @@ export function Sidebar({
               >
                 <span
                   className={cn(
-                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border text-slate-500 transition-colors',
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-slate-500 transition-colors',
                     activePage === item.id
-                      ? 'border-blue-200 bg-white text-blue-600 dark:border-sky-400/30 dark:bg-slate-950/70 dark:text-sky-300'
-                      : 'border-slate-200/70 bg-white/90 group-hover/nav-item:border-slate-300 group-hover/nav-item:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+                      ? 'text-blue-600 dark:text-sky-300'
+                      : 'group-hover/nav-item:text-slate-700 dark:text-slate-300',
                   )}
                 >
                   <item.icon size={17} />
