@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Sidebar.tsx'), 'utf8');
+const headerSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Header.tsx'), 'utf8');
 const cssSource = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
 const courseCalendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
 const smartWrongQuestionsSource = readFileSync(resolve(process.cwd(), 'src/SmartWrongQuestionsPage.tsx'), 'utf8');
@@ -21,7 +22,7 @@ test('workspace shell disables wait-mode page transitions and heavy blur on mobi
   assert.match(source, /const \[isMobileViewport, setIsMobileViewport\] = useState\(getInitialMobileViewport\);/);
   assert.match(source, /<AnimatePresence mode=\{isMobileViewport \? undefined : 'wait'\}>/);
   assert.match(source, /transition=\{isMobileViewport \? \{ duration: 0 \} : \{ duration: 0\.18 \}\}/);
-  assert.match(source, /className="sticky top-0 z-10 flex h-20 items-center justify-end border-b border-sky-100\/80 bg-white\/92 px-4 sm:bg-white\/78 sm:backdrop-blur-xl/);
+  assert.match(headerSource, /className="sticky top-0 z-10 flex h-20 items-center justify-end border-b border-sky-100\/80 bg-white\/92 px-4 sm:bg-white\/78 sm:backdrop-blur-xl/);
   assert.doesNotMatch(source, /<p className="text-xs font-semibold uppercase tracking-\[0\.28em\] text-sky-600">Workspace<\/p>/);
   assert.match(source, /className="absolute inset-0 bg-slate-950\/45 sm:backdrop-blur-sm"/);
 });

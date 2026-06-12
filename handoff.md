@@ -601,3 +601,13 @@
   - module import proof for `Sidebar`, `SidebarAccountSheet`, and `App.tsx`
   - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
   - `npx tsx --test --test-name-pattern="sidebar|workspace shell source keeps sidebar|desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar" src/account-card.test.tsx`
+
+## 2026-06-12 App.tsx seventh split pass
+- Extracted `Header` to `frontend/src/features/navigation/Header.tsx`.
+- Updated `frontend/src/App.tsx` to keep shell composition while importing the extracted top header component.
+- Updated `frontend/src/workspace-navigation.test.ts`, `frontend/src/mobile-workspace-performance.test.ts`, and `frontend/src/account-card.test.tsx` so header-related source assertions now follow `features/navigation/Header.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round7_proof.sh`:
+  - source extraction checks
+  - module import proof for `Header` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
+  - `npx tsx --test --test-name-pattern="header|workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header" src/account-card.test.tsx`

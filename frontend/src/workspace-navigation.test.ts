@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const sidebarSource = readFileSync(new URL('./features/navigation/Sidebar.tsx', import.meta.url), 'utf8');
+const headerSource = readFileSync(new URL('./features/navigation/Header.tsx', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
@@ -279,7 +280,7 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
   const consultationBlock = requireMatch(appSource, /const ConsultationPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
 
   assert.match(appSource, /mobileNavOpen/);
-  assert.match(appSource, /aria-label="打开导航"/);
+  assert.match(headerSource, /aria-label="打开导航"/);
   assert.match(appSource, /className="fixed inset-0 z-40 lg:hidden"/);
   assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
   assert.match(appSource, /className="hidden md:block xl:hidden"/);
