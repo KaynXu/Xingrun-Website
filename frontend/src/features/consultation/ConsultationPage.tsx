@@ -1,32 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertCircle,
-  CalendarDays,
-  ChevronDown,
-  Cpu,
-  Eye,
-  Pencil,
-  PlusCircle,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  Trash2,
-} from 'lucide-react';
+import { AlertCircle, CalendarDays, ChevronDown, Cpu, Eye, Pencil, PlusCircle, RefreshCw, Search, ShieldCheck, Trash2, } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import type {
-  ConsultationFilterKey,
-  ConsultationFormValues,
-  ConsultationRecord,
-  ConsultationResultStage,
-  ConsultationTeacherOption,
-  CurrentUser,
-} from '../../App';
+  ConsultationFilterKey, ConsultationFormValues, ConsultationRecord, ConsultationResultStage, ConsultationTeacherOption, CurrentUser } from '../../App';
 import {
   ConsultationBatchModal,
+  ConsultationModal,
+  getTodayIsoDate,
+  normalizeConsultationTeacherOption,
+  toConsultationFormValues,
+} from '../../App';
+import {
   ConsultationCardExpandableText,
   ConsultationFlowBar,
-  ConsultationModal,
   ConsultationStatusLamp,
   buildConsultationTeacherDirectory,
   clearConsultationResultStage,
@@ -41,18 +28,15 @@ import {
   getConsultationOver30SectionLabel,
   getConsultationSourceLabel,
   getConsultationTeacherName,
-  getTodayIsoDate,
   isConsultationEnded,
   isConsultationResultStage,
   moveConsultationStage,
   normalizeConsultationRecord,
-  normalizeConsultationTeacherOption,
   restoreConsultationValues,
   setConsultationResultStage,
   sortConsultationsForFilter,
-  toConsultationFormValues,
   toggleConsultationStageLight,
-} from '../../App';
+} from './consultationShared';
 import { workspaceCardClass, workspaceFieldClass, workspacePageClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSectionTextClass, workspaceSectionTitleClass, apiFetch } from '../../workspaceShared';
 import { hasOwnerAccess, hasStaffAccess } from '../navigation/workspaceAccess';
 

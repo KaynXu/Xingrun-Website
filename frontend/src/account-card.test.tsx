@@ -145,7 +145,7 @@ test('consultation detail cards use darker dark-mode surfaces instead of translu
 });
 
 test('consultation modal source keeps the create and edit form concise', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /placeholder="老师 ID"/);
   assert.doesNotMatch(source, />截图字段</);
@@ -156,7 +156,7 @@ test('consultation modal source keeps the create and edit form concise', () => {
 });
 
 test('consultation modal source supports quick parsing and structured source metadata confirmation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
 
   assert.match(source, /快速录入/);
   assert.match(source, /智能解析/);
@@ -172,7 +172,7 @@ test('consultation page source adds ai batch entry in the existing action area',
 });
 
 test('consultation page V2.0 exposes owner-only meeting workbench instead of refresh', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(appBlock);
@@ -193,7 +193,7 @@ test('consultation page uses one unified search without mode switching', () => {
 });
 
 test('consultation modal keeps save beside close and supports keyboard save shortcuts', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -212,7 +212,7 @@ test('consultation modal keeps save beside close and supports keyboard save shor
 });
 
 test('consultation meeting workbench keeps local drafts until final save', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -240,7 +240,7 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
 });
 
 test('consultation meeting workbench has lighter secondary filters and terminal age filters', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -255,7 +255,7 @@ test('consultation meeting workbench has lighter secondary filters and terminal 
 });
 
 test('consultation meeting workbench uses a grouped teacher popover instead of a select', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -269,7 +269,7 @@ test('consultation meeting workbench uses a grouped teacher popover instead of a
 });
 
 test('consultation meeting workbench can directly mark a card processed with motion feedback', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -286,7 +286,7 @@ test('consultation meeting workbench can directly mark a card processed with mot
 });
 
 test('consultation meeting workbench only lets the flow over node change state on double click', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
@@ -315,7 +315,7 @@ test('compact sidebar shows immediate labels on icon hover', () => {
 });
 
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -331,7 +331,7 @@ test('consultation meeting workbench reuses the same responsive card scheme as t
 });
 
 test('consultation meeting workbench final save and close guard are explicit', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -349,7 +349,7 @@ test('consultation meeting workbench final save and close guard are explicit', (
 });
 
 test('consultation source renders approved v6 flow stage bars', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   assert.match(source, /consultationFlowStages/);
   assert.match(source, /ConsultationFlowBar/);
   assert.match(source, /ConsultationStatusLamp/);
@@ -365,7 +365,7 @@ test('consultation source renders approved v6 flow stage bars', () => {
 });
 
 test('consultation modal source includes stage-specific test and trial fields', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   assert.ok(modalBlock);
   assert.match(modalBlock[0], /是否测试/);
@@ -379,7 +379,7 @@ test('consultation modal source includes stage-specific test and trial fields', 
 });
 
 test('consultation view mode uses a read-only report layout instead of disabled edit fields', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -393,7 +393,7 @@ test('consultation view mode uses a read-only report layout instead of disabled 
 });
 
 test('consultation list and workbench cards expand long detail previews based on rendered overflow', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const expandableBlock = source.match(/const ConsultationCardExpandableText = \([\s\S]*?\n};/);
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
@@ -413,7 +413,7 @@ test('consultation list and workbench cards expand long detail previews based on
 });
 
 test('consultation modal uses compact flow sections for both editing and viewing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -427,7 +427,7 @@ test('consultation modal uses compact flow sections for both editing and viewing
 });
 
 test('consultation modal sections derive active and current visual states from the shared flow status', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const readOnlyBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?const ConsultationModal = /);
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
@@ -452,7 +452,7 @@ test('consultation modal sections derive active and current visual states from t
 });
 
 test('consultation inactive flow sections stay readable without whole-card opacity', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const sectionClassBlock = source.match(/function consultationFlowSectionClass[\s\S]*?const compactFlowTitleClass/);
   const titleClassBlock = source.match(/const compactFlowTitleClass[\s\S]*?const compactReadLabelClass/);
 
@@ -475,7 +475,7 @@ test('consultation inactive flow sections stay readable without whole-card opaci
 });
 
 test('consultation view modal keeps the title header and uses a two by two report grid', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
@@ -492,7 +492,7 @@ test('consultation view modal keeps the title header and uses a two by two repor
 });
 
 test('consultation read only cards use two inner columns in narrow modal widths', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
   assert.ok(reportBlock);
@@ -504,7 +504,7 @@ test('consultation read only cards use two inner columns in narrow modal widths'
 });
 
 test('consultation edit modal uses the same two by two flow cards as the view modal', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -516,7 +516,7 @@ test('consultation edit modal uses the same two by two flow cards as the view mo
 });
 
 test('consultation edit form derives lit flow stages from edited fields', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.match(source, /function deriveConsultationFlowFromFields\(values: ConsultationFormValues\): ConsultationFormValues/);
@@ -535,7 +535,7 @@ test('consultation edit form derives lit flow stages from edited fields', () => 
 });
 
 test('consultation edit form uses assignment teacher dropdown and scoped class options', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -551,7 +551,7 @@ test('consultation edit form uses assignment teacher dropdown and scoped class o
 });
 
 test('consultation edit form keeps wechat status capsules compressed in one row without visible teacher chevron', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -565,7 +565,7 @@ test('consultation edit form keeps wechat status capsules compressed in one row 
 });
 
 test('consultation edit form highlights changed section titles and uses teacher dropdowns', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -583,7 +583,7 @@ test('consultation edit form highlights changed section titles and uses teacher 
 });
 
 test('consultation success result does not carry payment card status in the consultation form', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
@@ -594,7 +594,7 @@ test('consultation success result does not carry payment card status in the cons
 });
 
 test('consultation flow display labels shorten test and trial stage wording', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const labelBlock = source.match(/const consultationStageDisplayLabel = \(stage: string\) => \{[\s\S]*?\n};/);
 
   assert.ok(labelBlock);
@@ -605,7 +605,7 @@ test('consultation flow display labels shorten test and trial stage wording', ()
 });
 
 test('consultation flow bar renders a one-row B6 dot stepper with responsive labels', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -620,7 +620,7 @@ test('consultation flow bar renders a one-row B6 dot stepper with responsive lab
 });
 
 test('consultation result capsule matches stage widths and uses empty enter fail short labels', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
   const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
@@ -637,7 +637,7 @@ test('consultation result capsule matches stage widths and uses empty enter fail
 });
 
 test('consultation flow treats result as the sixth dot node instead of a separate wide capsule', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -650,7 +650,7 @@ test('consultation flow treats result as the sixth dot node instead of a separat
 });
 
 test('consultation modal jump controls are preserved on the dot stepper without widening nodes', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -664,7 +664,7 @@ test('consultation modal jump controls are preserved on the dot stepper without 
 });
 
 test('consultation full flow bar avoids fixed minimum columns that can push the result capsule outside the modal', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -676,7 +676,7 @@ test('consultation full flow bar avoids fixed minimum columns that can push the 
 });
 
 test('consultation modal places flow subtitle and status lamp beside the title', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -687,7 +687,7 @@ test('consultation modal places flow subtitle and status lamp beside the title',
 });
 
 test('consultation modal flow uses the same compact one-row style as consultation cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -698,7 +698,7 @@ test('consultation modal flow uses the same compact one-row style as consultatio
 });
 
 test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
@@ -718,7 +718,7 @@ test('consultation modal flow capsules jump to matching edit sections without ch
 });
 
 test('consultation modal uses dot-stepper jump buttons and flashes the jumped edit section', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
@@ -738,7 +738,7 @@ test('consultation modal uses dot-stepper jump buttons and flashes the jumped ed
 });
 
 test('consultation result capsule keeps the colored label full width while preserving the dropdown hit area', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
   assert.ok(resultCapsuleBlock);
@@ -750,7 +750,7 @@ test('consultation result capsule keeps the colored label full width while prese
 });
 
 test('consultation source restores ended records only after an explicit yes no confirmation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -768,7 +768,7 @@ test('consultation source restores ended records only after an explicit yes no c
 });
 
 test('consultation source keeps ai batch parse endpoint unchanged', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
   assert.ok(batchModalBlock);
   assert.match(batchModalBlock[0], /apiFetch<ConsultationBatchParseResponse>\('\/api\/consultations\/ai-parse'/);
@@ -829,7 +829,7 @@ test('consultation page source keeps desktop and tablet consultations as two-row
 });
 
 test('consultation mobile card keeps view edit icons in the top right and removes the bottom edit capsule', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const mobileCard = consultationPageSource.match(/const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) => \{[\s\S]*?\n  \};/);
   assert.ok(mobileCard);
   assert.match(mobileCard[0], /getRecordResultPill\(record\)/);
@@ -843,7 +843,7 @@ test('consultation mobile card keeps view edit icons in the top right and remove
 });
 
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -858,7 +858,7 @@ test('consultation batch modal source parses text, previews drafts, and reuses c
 });
 
 test('consultation batch modal source keeps refresh failure separate after successful writes', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -869,7 +869,7 @@ test('consultation batch modal source keeps refresh failure separate after succe
 });
 
 test('consultation batch modal source blocks dismissal while parsing or importing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -879,7 +879,7 @@ test('consultation batch modal source blocks dismissal while parsing or importin
 });
 
 test('consultation batch modal source previews key written fields before confirm', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -892,7 +892,7 @@ test('consultation batch modal source previews key written fields before confirm
 });
 
 test('consultation batch modal source lets users remove individual drafts before import', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -903,7 +903,7 @@ test('consultation batch modal source lets users remove individual drafts before
 });
 
 test('consultation batch modal source attributes write failures to a specific draft and always clears importing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -923,7 +923,7 @@ test('approval page source supports editing member display names inline', () => 
 });
 
 test('consultation batch modal source keeps only remaining drafts after a partial import failure', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -936,7 +936,7 @@ test('consultation batch modal source keeps only remaining drafts after a partia
 });
 
 test('consultation batch modal source preserves the current preview when parsing fails', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -949,7 +949,7 @@ test('consultation batch modal source preserves the current preview when parsing
 });
 
 test('consultation batch modal source keeps imported drafts visible while retries only include unsaved drafts', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);

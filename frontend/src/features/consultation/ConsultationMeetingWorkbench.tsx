@@ -2,15 +2,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, Eye, Pencil } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
-import type { ConsultationFormValues, ConsultationRecord, ConsultationTeacherOption, CurrentUser } from '../../App';
+import type { ClassItem, ConsultationFormValues, ConsultationRecord, ConsultationTeacherOption, CurrentUser } from '../../App';
+import {
+  ConsultationModal,
+  getTodayIsoDate,
+  normalizeConsultationTeacherOption,
+  toConsultationFormValues,
+} from '../../App';
 import {
   ConsultationCardExpandableText,
   ConsultationFlowBar,
-  ConsultationModal,
   ConsultationStatusLamp,
-  apiFetch,
   buildConsultationTeacherDirectory,
-  cn,
   consultationFlowStages,
   consultationMeetingVersion,
   consultationProcessStages,
@@ -20,13 +23,14 @@ import {
   endConsultationValues,
   getConsultationSourceLabel,
   getConsultationTeacherName,
-  getTodayIsoDate,
   isConsultationEnded,
   isConsultationResultStage,
   normalizeConsultationRecord,
-  normalizeConsultationTeacherOption,
+} from './consultationShared';
+import {
+  apiFetch,
+  cn,
   readLocalStorageItem,
-  toConsultationFormValues,
   workspaceGhostButtonClass,
   workspacePageClass,
   workspacePrimaryButtonClass,
@@ -35,7 +39,7 @@ import {
   workspaceSectionTitleClass,
   workspaceSoftCardClass,
   writeLocalStorageItem,
-} from '../../App';
+} from '../../workspaceShared';
 
 export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
