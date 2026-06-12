@@ -310,7 +310,12 @@ export function Sidebar({
         </div>
       </div>
 
-      <nav className={cn('flex-1 space-y-5 py-5', compact && !mobile ? 'px-4' : 'px-4')}>
+      <nav
+        className={cn(
+          'min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-auto py-5 [-webkit-overflow-scrolling:touch]',
+          compact && !mobile ? 'px-4' : 'px-4',
+        )}
+      >
         {menuSections.map((section) => (
           <div key={section.label} className="space-y-1.5">
             <p className={cn('px-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500', compact && !mobile && 'hidden')}>
