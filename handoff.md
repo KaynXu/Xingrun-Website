@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已继续清理工作台权限与审批页周边的平行类型：`frontend/src/features/navigation/workspaceAccess.ts` 现直接复用 `frontend/src/appTypes.ts` 的 `Role / WorkspacePage / CurrentUser`，`frontend/src/features/approval/ApprovalPage.tsx` 也已切到同一套共享角色/页面类型，不再各自维护一份 `Role/Page` 联合类型。当前轮 proof `/tmp/xingrun_workspace_types_unify_proof.sh` 已通过：权限模块与审批页导入链正常，且两处重复角色/页面类型定义已移除。
 - 2026-06-13 已把 `CurrentUser / ClassItem / UserItem / ClassBindingTarget / Role / WorkspacePage` 从 `frontend/src/App.tsx` 抽到 `frontend/src/appTypes.ts`，并把 `apiUploadFormWithProgress()` 提升到 `frontend/src/workspaceShared.ts`；审批、咨询、课堂反馈、复习生成、导航壳子、智能错题等页面现在直接依赖共享类型/共享 helper，不再把 `App.tsx` 当作全局类型与上传工具中转站。同步补了独立的 `frontend/src/features/landing/LandingPage.tsx`，把 `LandingPage / LandingLegalPage` 从工作台模块断开并重新接回 `App.tsx`，未登录入口与法律页渲染恢复可用，相关 landing / storage guard / 定向咨询源码断言 proof 已通过。
 - 2026-06-13 已把咨询领域基础类型收口到 `frontend/src/features/consultation/consultationTypes.ts`，并把 `getTodayIsoDate()` 提升到 `frontend/src/workspaceShared.ts`；咨询列表页、面对面工作台、流程共享组件和两个咨询弹窗现在直接引用各自的咨询类型/共享日期 helper，不再把 `frontend/src/App.tsx` 当作类型仓库。
 - 2026-06-13 已把咨询记录 `AI 批量整理` 弹窗从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationBatchModal.tsx`，解析、预览、逐条导入和失败重试相关逻辑不再内联在 `App.tsx` 中；`App.tsx` 现通过导入与转发导出继续给咨询页复用，批量整理源码断言也已切到新文件。

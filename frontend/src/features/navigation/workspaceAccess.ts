@@ -1,19 +1,8 @@
-type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
-type WorkspacePage =
-  | 'dashboard'
-  | 'review-generation'
-  | 'class-feedback-generation'
-  | 'consultation'
-  | 'calendar'
-  | 'smartWrongQuestions'
-  | 'classes'
-  | 'accounts'
-  | 'credit'
-  | 'settings';
+import type { CurrentUser, WorkspacePage, Role as WorkspaceRole } from '../../appTypes';
 
 type VisiblePageUser = {
-  role: WorkspaceRole;
-  visible_pages?: WorkspacePage[];
+  role: CurrentUser['role'];
+  visible_pages?: CurrentUser['visible_pages'];
 };
 
 export const configurableWorkspacePages: Array<{ id: WorkspacePage; label: string }> = [

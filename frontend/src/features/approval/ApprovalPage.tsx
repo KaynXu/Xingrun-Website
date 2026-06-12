@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MoreVertical, Pencil, PlusCircle, RefreshCw, Save, Trash2 } from 'lucide-react';
-import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem } from '../../appTypes';
+import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem, WorkspacePage, Role } from '../../appTypes';
 import { formatClassDisplayName } from '../../domain/classNaming';
 import {
   canOpenWorkspacePage,
@@ -18,19 +18,7 @@ import {
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
 } from '../../workspaceShared';
-
-type Role = 'super_owner' | 'owner' | 'admin' | 'member';
-type Page =
-  | 'dashboard'
-  | 'review-generation'
-  | 'class-feedback-generation'
-  | 'consultation'
-  | 'calendar'
-  | 'smartWrongQuestions'
-  | 'classes'
-  | 'accounts'
-  | 'credit'
-  | 'settings';
+type Page = WorkspacePage;
 
 interface RegistrationRequestItem {
   id: number;
