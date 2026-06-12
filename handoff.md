@@ -591,3 +591,13 @@
   - source extraction checks
   - module import proof for `LessonInput` and `App.tsx`
   - `npx tsx --test src/workspace-navigation.test.ts src/review-generation-async.test.tsx`
+
+## 2026-06-12 App.tsx sixth split pass
+- Extracted `Sidebar` and `SidebarAccountSheet` to `frontend/src/features/navigation/Sidebar.tsx`.
+- Updated `frontend/src/App.tsx` to keep shell state and page routing while importing the extracted navigation shell.
+- Updated `frontend/src/workspace-navigation.test.ts`, `frontend/src/mobile-workspace-performance.test.ts`, and `frontend/src/account-card.test.tsx` so sidebar-related source assertions now follow `features/navigation/Sidebar.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round6_proof.sh`:
+  - source extraction checks
+  - module import proof for `Sidebar`, `SidebarAccountSheet`, and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
+  - `npx tsx --test --test-name-pattern="sidebar|workspace shell source keeps sidebar|desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar" src/account-card.test.tsx`

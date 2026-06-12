@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const sidebarSource = readFileSync(new URL('./features/navigation/Sidebar.tsx', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
@@ -24,7 +25,7 @@ function requireMatch(source: string, pattern: RegExp): string {
 }
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '课堂反馈'/);
@@ -42,12 +43,13 @@ test('workspace navigation wires consultation and calendar pages into the shell'
 });
 
 test('review generation source replaces separate lesson input and library pages with one review-generation workspace page', () => {
-  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(sidebarBlock, /id: 'review-generation'[\s\S]*label: '复习生成'/);
   assert.doesNotMatch(sidebarBlock, /id: 'input'[\s\S]*label:/);
   assert.doesNotMatch(sidebarBlock, /id: 'library'[\s\S]*label:/);
   assert.match(appSource, /'review-generation': '复习生成'/);
+  assert.match(appSource, /import \{ Sidebar \} from '\.\/features\/navigation\/Sidebar';/);
   assert.match(appSource, /import \{ ReviewGenerationPage \} from '\.\/features\/review-generation\/ReviewGenerationPage';/);
   assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*renderLessonInput=\{\(handleFormSuccess\) => \(/);
   assert.match(appSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
@@ -126,17 +128,17 @@ test('review generation source appends auth token to lesson pdf links', () => {
 });
 
 test('workspace navigation wires smart wrong questions into every authenticated role shell', () => {
-  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /function canAccessSmartWrongQuestions\(role: Role\): boolean \{/);
   assert.match(appSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
-  assert.match(sidebarBlock, /canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
+  assert.match(sidebarBlock, /showSmartWrongQuestions[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
   assert.match(appSource, /smartWrongQuestions: '智能错题'/);
   assert.match(appSource, /activeWorkspacePage === 'smartWrongQuestions'[\s\S]*canOpenWorkspacePage\(currentUser, 'smartWrongQuestions'\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
 test('workspace navigation removes the master data mappings page and keeps accounts focused on approval only', () => {
-  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.doesNotMatch(appSource, /MasterDataMappingsPage/);
   assert.doesNotMatch(appSource, /masterDataMappings/);
@@ -146,9 +148,9 @@ test('workspace navigation removes the master data mappings page and keeps accou
 });
 
 test('workspace navigation exposes a dedicated owner-only credit center page', () => {
-  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\) \? \[\{ id: 'credit', icon: [^,]+, label: '积分中心' \}\] : \[]/);
+  assert.match(sidebarBlock, /showCreditCenter \? \[\{ id: 'credit', icon: [^,]+, label: '积分中心' \}\] : \[]/);
   assert.match(appSource, /credit: '积分中心'/);
   assert.match(appSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
   assert.match(appSource, /activeWorkspacePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
@@ -203,12 +205,12 @@ test('credit center page source supports member drilldown and ledger filtering',
 
 test('workspace navigation source exposes classes management through configurable page visibility', () => {
   const classManagementBlock = `${studentCenterSource}\n${classManagementTabSource}\n${classEditorModalSource}`;
-  const sidebarBlock = requireMatch(appSource, /const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
   assert.match(appSource, /const configurableWorkspacePages/);
   assert.match(appSource, /function canOpenWorkspacePage\(user: CurrentUser, page: Page\): boolean \{/);
-  assert.match(sidebarBlock, /canOpenWorkspacePage\(currentUser, item\.id as Page\)/);
+  assert.match(sidebarBlock, /filter\(\(item\) => canOpenPage\(item\.id as SidebarPage\)\)/);
   assert.match(sidebarBlock, /id: 'classes'[\s\S]*label: '学管中心'/);
   assert.match(appSource, /classes: '学管中心'/);
   assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);

@@ -7,6 +7,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import * as AppModule from './App';
 
+const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Sidebar.tsx'), 'utf8');
 const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
 const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
 const classManagementTabSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassManagementTab.tsx'), 'utf8');
@@ -103,39 +105,33 @@ test('sidebar account sheet includes dark theme surface classes', () => {
   assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
 });
 
-test('workspace shell source applies dark classes to sidebar header and dashboard panels', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+test('workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header', () => {
   const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
 
-  assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
-  assert.match(source, /:\s*'h-screen w-72 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
-  assert.match(source, /\?\s*'h-screen w-24 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
-  assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
+  assert.match(sidebarSource, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
+  assert.match(sidebarSource, /:\s*'h-screen w-56 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(sidebarSource, /\?\s*'h-screen w-24 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(appSource, /<header className="sticky top-0 z-10 flex h-20 items-center justify-end[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
+  assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.28em\] text-sky-600">Workspace<\/p>/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
-  assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(appSource, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
+  assert.match(appSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-
-  assert.match(source, /<div className=\{cn\('mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10', compact && !mobile && 'px-3'\)\}>/);
+  assert.match(sidebarSource, /<div className=\{cn\('mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10', compact && !mobile && 'px-3'\)\}>/);
 });
 
 test('sidebar account sheet renders above workspace content without relying on a fullscreen blur layer', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-
-  assert.match(source, /import \{ createPortal \} from 'react-dom';/);
-  assert.match(source, /<div className="fixed inset-0 z-\[70\]"/);
-  assert.doesNotMatch(source, /backdrop-blur-\[4px\]/);
+  assert.match(sidebarSource, /import \{ createPortal \} from 'react-dom';/);
+  assert.match(sidebarSource, /<div className="fixed inset-0 z-\[70\]"/);
+  assert.doesNotMatch(sidebarSource, /backdrop-blur-\[4px\]/);
 });
 
 test('desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-
-  assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
-  assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
+  assert.doesNotMatch(appSource, /<div className="flex-1 overflow-y-auto">/);
+  assert.match(appSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
+  assert.match(appSource, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {
@@ -317,8 +313,7 @@ test('consultation meeting workbench only lets the flow over node change state o
 });
 
 test('compact sidebar shows immediate labels on icon hover', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const sidebarBlock = source.match(/const Sidebar = \([\s\S]*?\n};/);
+  const sidebarBlock = sidebarSource.match(/export function Sidebar\([\s\S]*?\n}\n/);
 
   assert.ok(sidebarBlock);
   assert.match(sidebarBlock[0], /title=\{compact && !mobile \? item\.label : undefined\}/);
