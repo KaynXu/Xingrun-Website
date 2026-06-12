@@ -312,12 +312,12 @@ export function Sidebar({
 
       <nav
         className={cn(
-          'min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-y-auto py-5 [-webkit-overflow-scrolling:touch]',
+          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-auto py-4 [-webkit-overflow-scrolling:touch]',
           compact && !mobile ? 'px-4' : 'px-4',
         )}
       >
         {menuSections.map((section) => (
-          <div key={section.label} className="space-y-1.5">
+          <div key={section.label} className="space-y-1">
             <p className={cn('px-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500', compact && !mobile && 'hidden')}>
               {section.label}
             </p>
@@ -331,7 +331,7 @@ export function Sidebar({
                   onNavigate?.();
                 }}
                 className={cn(
-                  'group/nav-item relative flex w-full touch-manipulation items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all duration-200',
+                  'group/nav-item relative flex w-full touch-manipulation items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left transition-all duration-200',
                   compact && !mobile && 'justify-center px-3',
                   activePage === item.id
                     ? 'bg-[#edf2ff] text-slate-900 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.12)] dark:bg-white/10 dark:text-slate-100'
@@ -340,13 +340,13 @@ export function Sidebar({
               >
                 <span
                   className={cn(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border text-slate-500 transition-colors',
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border text-slate-500 transition-colors',
                     activePage === item.id
                       ? 'border-blue-200 bg-white text-blue-600 dark:border-sky-400/30 dark:bg-slate-950/70 dark:text-sky-300'
                       : 'border-slate-200/70 bg-white/90 group-hover/nav-item:border-slate-300 group-hover/nav-item:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
                   )}
                 >
-                  <item.icon size={18} />
+                  <item.icon size={17} />
                 </span>
                 <div className={cn('min-w-0 flex-1', compact && !mobile && 'hidden')}>
                   <div className="flex items-center gap-2">
