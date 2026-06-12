@@ -1,0 +1,24 @@
+{
+  "name": "中国高中数学函数与解析几何 14 天校内考前复习",
+  "input": {
+    "subject": "math",
+    "courseSystem": "中国高中数学",
+    "grade": "高二",
+    "target": "期末前 14 天稳定函数、三角与解析几何得分",
+    "timeframe": {"totalDays": 14},
+    "knownWeaknesses": ["函数性质", "三角恒等变形", "解析几何计算", "步骤书写不完整"],
+    "availability": {"minutesPerDay": 45}
+  },
+  "expectedCriteria": [
+    "must include checkpoint",
+    "must include timed practice",
+    "must not hallucinate exam date",
+    "must include spiral review",
+    "must stay within China high-school math context"
+  ],
+  "checks": [
+    {"name": "math_subject_markers", "containsAny": ["题型", "步骤", "错因", "模型", "公式"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
+  ]
+}

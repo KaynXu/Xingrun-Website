@@ -1,4 +1,5 @@
 {
+  "name": "IELTS Reading matching and fill-in error types",
   "input": {
     "subject": "ielts",
     "courseSystem": "IELTS",
@@ -9,5 +10,10 @@
     "must include synonym replacement",
     "must include error type classification",
     "must not ask students to memorize passage content"
+  ],
+  "checks": [
+    {"name": "ielts_reading_markers", "containsAny": ["Reading", "同义替换", "题型", "定位"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
   ]
 }
