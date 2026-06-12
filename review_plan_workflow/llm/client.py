@@ -139,6 +139,25 @@ def usage_dict(response: Any, *, provider: str = "", model_fallback: str = "") -
     }
 
 
+def merge_usage(*usages: dict[str, Any]) -> dict[str, Any]:
+    merged = {
+        "provider": "",
+        "model": "",
+        "input_tokens": 0,
+        "output_tokens": 0,
+    }
+    for usage in usages:
+        if not isinstance(usage, dict):
+            continue
+        if not merged["provider"] and usage.get("provider"):
+            merged["provider"] = str(usage.get("provider") or "")
+        if not merged["model"] and usage.get("model"):
+            merged["model"] = str(usage.get("model") or "")
+        merged["input_tokens"] += max(0, int(usage.get("input_tokens", 0) or 0))
+        merged["output_tokens"] += max(0, int(usage.get("output_tokens", 0) or 0))
+    return merged
+
+
 def generate_review_plan_json(
     *,
     system_prompt: str,

@@ -6,7 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
-- 2026-06-12 已按用户要求继续清理复习计划旧兼容层：`review_plan_workflow.service` 不再调用旧 `ai_processor` 单节复习计划入口，实际 plan 生成迁入 `review_plan_workflow.nodes.plan_generator` 和 `review_plan_workflow.llm.client.generate_review_plan_json()`；旧 `ai_processor` 单节入口、内联大 prompt 和 style addon 已删除。剩余过渡点是 revision 仍只记录 warning，下一步要做真正 LLM revision。
+- 2026-06-12 复习计划工作流已补上真正质量闭环：`plan_generator` 会在最终计划 JSON/schema 不合格时做 1 次结构修复重试；`service` 会在 `quality_gate` 判定 score < 85 或 high issue 时调用 `revision` 节点最多 2 次，每次重新跑质量检查，最终返回通过版本或当前最高分版本并记录 warnings / node outputs / usage。旧 `revision_policy` 文件已删除。
+- 2026-06-12 已按用户要求继续清理复习计划旧兼容层：`review_plan_workflow.service` 不再调用旧 `ai_processor` 单节复习计划入口，实际 plan 生成迁入 `review_plan_workflow.nodes.plan_generator` 和 `review_plan_workflow.llm.client.generate_review_plan_json()`；旧 `ai_processor` 单节入口、内联大 prompt 和 style addon 已删除。
 - 2026-06-12 复习计划工作流的“节点上下文层”已作为主生成节点前置输入保留：`service` 会依次执行 `scope_planner / time_allocator / task_blueprint / prompt_bundle_builder`，并把范围、时间分配、任务蓝图、prompt bundle version 写入 `review_plan_runs.node_outputs`。
 - 2026-06-12 已纠正复习计划 system prompt 的课程语境：数学、物理默认面向中国小学、初中、高中课程与考试复习，不再默认写成国际课程；雅思作为语言考试场景单独保留，且不反推到数学/物理。
 - 2026-06-12 已完成复习计划工作流第一阶段工程化落地：新增 `review_plan_workflow/` 轻量 pipeline 骨架、Pydantic schema、prompt registry/renderer、三科 subject packs、统一物理视觉蓝本 style config、quality gate、eval fixtures，以及 `docs/review-plan-workflow.md` / `docs/teacher-prompt-migration.md` 两份审计与迁移文档；`/api/review-plans` 后台 worker 已改为走新 service，`review_plan_runs` 记录 trace、prompt/style/schema 版本、warnings 和 quality review，响应序列化会带出最新 trace 元数据。
@@ -349,7 +350,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 复习计划工作流下一步应把 `revision_policy` 替换成真正 LLM revision 节点，并继续把 task generation 从单个 plan LLM call 拆成可校验的分节点输出；跑三科 fixture eval，再做真实 PDF 目视 smoke。IELTS 当前只把 Reading 作为已覆盖能力，Listening/Writing/Speaking 需要单独补资料后进入 Phase 2，不能假装已经完整覆盖。
+- 复习计划工作流下一步应跑三科 fixture eval 和真实 PDF 目视 smoke，确认 repair/revision 后的数学、物理、雅思 Reading 输出质量；之后再把 task generation 从单个 plan LLM call 拆成更细的可校验分节点输出。IELTS 当前只把 Reading 作为已覆盖能力，Listening/Writing/Speaking 需要单独补资料后进入 Phase 2，不能假装已经完整覆盖。
 - 先按重排后的闭环顺序推进：`archive/reflection authority layer -> same-record continuity -> student-facing AI chat front door -> practice artifact rebuild -> error_correction adapter -> optional workbench`，不再让“先补更多入口”反过来定义主链路。
 - 这轮之后最值得做的是把 `practice artifact rebuild` 从“运行时 PDF 已接到 reflection spine”继续推到“生成结果本身也更主动围绕这条脊柱组织文案”：优先让 `ai_processor.py` 的练习 structured fallback、PDF 里的挖空复盘和答案页说明进一步围绕 `reflection_summary + question_structured + knowledge_tags` 收紧，并继续收缩剩余旧 `child_reason_*` 依赖。
 - `error_correction` 的迁移下一步只先拿低耦合底层能力，不要早引入 Vue / SQLAlchemy / LangGraph：优先顺序调整为 `prepare_input() 风格标准化 -> simplify_ocr_results() OCR 边界 -> overlap split 多页分割 -> 结构化纠错预览`，确认这些都能挂到现有 Flask + SQLite ingestion run 上后，再考虑 React workbench 页面。

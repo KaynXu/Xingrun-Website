@@ -7,6 +7,7 @@ from .nodes import (
     intake_normalizer_node,
     plan_generator_node,
     prompt_bundle_builder_node,
+    revision_node,
     scope_planner_node,
     source_analyzer_node,
     subject_router_node,
@@ -14,8 +15,8 @@ from .nodes import (
     time_allocator_node,
 )
 from .quality_gate import review_single_lesson_plan
-from .revision_policy import apply_revision_policy
-from .schemas import ReviewPlanInput
+from .llm.client import merge_usage
+from .schemas import QualityReview, ReviewPlanInput
 from .state import WorkflowContext
 
 
@@ -51,6 +52,76 @@ def _record_run(
     except Exception:
         # Trace storage must never make the existing generation path fail.
         return
+
+
+def _score_quality(plan: dict[str, Any], *, subject: str, context: WorkflowContext, node_key: str) -> QualityReview:
+    quality = review_single_lesson_plan(plan, subject=subject)
+    context.node_outputs[node_key] = quality.model_dump()
+    context.node_outputs["quality_reviewer"] = quality.model_dump()
+    return quality
+
+
+def _maybe_revise_plan(
+    *,
+    plan: dict[str, Any],
+    quality: QualityReview,
+    usage: dict[str, Any],
+    review_input: ReviewPlanInput,
+    prompt_bundle: Any,
+    subject: str,
+    context: WorkflowContext,
+) -> tuple[dict[str, Any], QualityReview, dict[str, Any]]:
+    if not quality.must_revise:
+        return plan, quality, usage
+
+    best_plan = plan
+    best_quality = quality
+    current_plan = plan
+    current_quality = quality
+    total_usage = usage
+
+    for attempt in range(1, 3):
+        try:
+            revised_plan, revision_usage = run_workflow_node(
+                revision_node,
+                {
+                    "input": review_input,
+                    "prompt_bundle": prompt_bundle,
+                    "plan": current_plan,
+                    "quality": current_quality,
+                    "attempt": attempt,
+                },
+                context,
+            )
+        except Exception as exc:
+            context.add_warning(
+                "quality_revision_failed",
+                f"第 {attempt} 次质量修订失败，已返回当前最优结果：{exc}",
+                "high",
+            )
+            break
+
+        total_usage = merge_usage(total_usage, revision_usage)
+        current_plan = revised_plan
+        current_quality = _score_quality(
+            current_plan,
+            subject=subject,
+            context=context,
+            node_key=f"quality_reviewer_after_revision_{attempt}",
+        )
+        if current_quality.score >= best_quality.score:
+            best_plan = current_plan
+            best_quality = current_quality
+        if not current_quality.must_revise:
+            return current_plan, current_quality, total_usage
+
+    if best_quality.must_revise:
+        context.add_warning(
+            "quality_revision_required",
+            "质量门禁在最多 2 次 revision 后仍建议人工复核；已返回当前最高分版本。",
+            "high",
+        )
+    return best_plan, best_quality, total_usage
 
 
 def generate_single_lesson_review_plan(
@@ -128,10 +199,16 @@ def generate_single_lesson_review_plan(
             },
             context,
         )
-        quality = review_single_lesson_plan(plan, subject=route.selected_subject)
-        context.node_outputs["quality_reviewer"] = quality.model_dump()
-        if quality.must_revise:
-            plan = apply_revision_policy(plan, quality, context)
+        quality = _score_quality(plan, subject=route.selected_subject, context=context, node_key="quality_reviewer_initial")
+        plan, quality, usage = _maybe_revise_plan(
+            plan=plan,
+            quality=quality,
+            usage=usage,
+            review_input=review_input,
+            prompt_bundle=prompt_bundle,
+            subject=route.selected_subject,
+            context=context,
+        )
 
         _record_run(
             lesson_id=lesson_id,

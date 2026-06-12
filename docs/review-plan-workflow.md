@@ -18,21 +18,21 @@
 3. The backend creates a pending lesson and starts a background worker.
 4. The worker optionally transcribes audio, then calls `review_plan_workflow.service`.
 5. The workflow runs deterministic intake/source/scope/time/task/prompt-bundle nodes.
-6. The workflow-native `plan_generator` makes one structured JSON LLM call.
-7. The deterministic quality gate records schema/quality review and revision warnings.
+6. The workflow-native `plan_generator` makes one structured JSON LLM call and performs one schema repair retry when needed.
+7. The deterministic quality gate records schema/quality review; if the plan fails, `revision` can run up to two LLM revision attempts and re-score each result.
 8. The PDF adapter maps the returned JSON into the ReportLab review-plan template.
 9. The lesson row stores final `plan_json`, `pdf_path`, status, error fields, and run trace metadata.
 
 ### Single API / Workflow Assessment
 
-The product entry is asynchronous. Generation now has persisted node outputs and trace metadata, but the final student-facing plan is still produced by one LLM plan-generation node. The next boundary to remove is metadata-only revision.
+The product entry is asynchronous. Generation now has persisted node outputs and trace metadata. The final student-facing plan is still produced by one primary LLM plan-generation node, but schema repair and quality revision are now bounded workflow steps controlled by code.
 
 ### Controls And Remaining Gaps
 
-- Schema validation: final plan and node context now have Pydantic boundaries; node-level repair retry is still pending.
+- Schema validation: final plan and node context now have Pydantic boundaries; `plan_generator` performs one schema repair retry.
 - Intermediate state: node outputs are now persisted in `review_plan_runs`; node replay is still pending.
-- Retry and revision: existing retry behavior is task-level, not schema-level or quality-level.
-- Quality gate: deterministic quality review now exists; LLM revision is still pending.
+- Retry and revision: task-level retry remains in the worker; schema repair and quality revision now happen inside the workflow.
+- Quality gate: deterministic quality review now exists and can trigger up to two LLM revision attempts.
 - Trace: review-plan traceId, node logs, prompt version, style version, and schema version now exist.
 - Eval: existing tests cover async API and PDF basics, but not subject quality fixtures.
 - Style separation: PDF style values were hard-coded in the renderer.
@@ -75,7 +75,7 @@ The review-plan flow has a known order and should be controlled by code. Code sh
 - `state.py`: traceId, versions, warnings, logs, and node outputs.
 - `schemas.py`: Pydantic schemas for inputs, node outputs, quality review, and final plan.
 - `service.py`: single-lesson workflow entry used by the Flask worker.
-- `nodes/`: intake normalizer, subject router, source analyzer, scope planner, time allocator, task blueprint, prompt bundle builder, native plan generator, and revision boundary.
+- `nodes/`: intake normalizer, subject router, source analyzer, scope planner, time allocator, task blueprint, prompt bundle builder, native plan generator, and revision node.
 - `llm/`: prompt registry, renderer, JSON parsing, OpenAI-compatible chat client, and usage extraction.
 - `prompts/subjects/`: common, math, physics, IELTS subject packs.
 - `prompts/styles/review_plan_style.yaml`: one unified visual system using physics as the master style.
@@ -123,9 +123,9 @@ The current single-lesson service executes this ordered chain:
 5. `time_allocator`: map the review scope to day-level workload and buffer strategy.
 6. `task_blueprint`: produce subject-aware task blocks, required components, output contract, and risk controls.
 7. `prompt_bundle_builder`: render the next LLM prompt bundle and version it.
-8. `plan_generator`: calls the workflow-native OpenAI-compatible JSON generator using the rendered prompt bundle.
+8. `plan_generator`: calls the workflow-native OpenAI-compatible JSON generator using the rendered prompt bundle; performs one schema repair retry if the generated plan is invalid.
 9. `quality_reviewer`: deterministic schema and quality gate.
-10. `revision_policy`: records revision-required warnings until the dedicated revision node is implemented.
+10. `revision`: if quality fails, revises the plan up to two times, re-running quality review after each attempt and returning the highest-scoring result with warnings if it still fails.
 
 ## Adding a New Subject
 
@@ -142,5 +142,5 @@ Phase 1 eval fixtures are JSON files under `review_plan_workflow/evals/fixtures/
 ## Known Limitations
 
 - The old `ai_processor.py` single-lesson review-plan entrypoint and inline prompt have been removed from active code. Plan generation now lives in one workflow-native LLM node after structured intake/source/scope/time/task/prompt-bundle preparation.
-- Revision is still recorded as metadata; a dedicated LLM revision node is the next cleanup target.
+- Quality revision is now bounded to two LLM attempts; the remaining quality work is subject fixture evals and real PDF smoke review.
 - IELTS source material currently covers Reading best; full four-skill IELTS generation remains Phase 2.

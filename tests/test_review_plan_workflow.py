@@ -1,4 +1,3 @@
-import copy
 import sys
 import tempfile
 import unittest
@@ -12,10 +11,10 @@ if str(ROOT) not in sys.path:
 import config_runtime
 import lesson_manager
 import app as app_module
-from demo_plan import DEMO_PLAN
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.service import generate_single_lesson_review_plan
+from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
 class ReviewPlanWorkflowTestCase(unittest.TestCase):
@@ -56,7 +55,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
-        plan = copy.deepcopy(DEMO_PLAN)
+        plan = valid_single_lesson_plan(subject="物理", topic="电路")
         usage = {
             "provider": "deepseek",
             "model": "deepseek-v4-pro",
@@ -103,6 +102,134 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("formula_sheet", run["node_outputs"]["task_blueprint"]["required_components"])
         self.assertEqual(run["node_outputs"]["time_allocator"]["review_schedule"][0]["day"], 1)
         self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_repairs_invalid_schema_once(self, mock_generate_plan):
+        valid_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.side_effect = [
+            ({"lesson_info": {"topic": "一次函数"}, "days": []}, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4}),
+            (valid_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 5, "output_tokens": 6}),
+        ]
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated, valid_plan)
+        self.assertEqual(usage["input_tokens"], 8)
+        self.assertEqual(usage["output_tokens"], 10)
+        self.assertEqual(mock_generate_plan.call_count, 2)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_repairs_json_parse_failure_once(self, mock_generate_plan):
+        valid_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.side_effect = [
+            ValueError("bad json"),
+            (valid_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 5, "output_tokens": 6}),
+        ]
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated, valid_plan)
+        self.assertEqual(usage["input_tokens"], 5)
+        self.assertEqual(usage["output_tokens"], 6)
+        self.assertEqual(mock_generate_plan.call_count, 2)
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_revises_low_quality_plan_until_quality_passes(self, mock_generate_plan, mock_revise_plan):
+        low_quality_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        low_quality_plan["weak_points_summary"] = "（具体题目）"
+        fixed_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.return_value = (
+            low_quality_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_revise_plan.return_value = (
+            fixed_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 30, "output_tokens": 40},
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated, fixed_plan)
+        self.assertEqual(usage["input_tokens"], 40)
+        self.assertEqual(usage["output_tokens"], 60)
+        mock_revise_plan.assert_called_once()
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_returns_best_plan_with_warning_after_two_failed_revisions(self, mock_generate_plan, mock_revise_plan):
+        low_quality_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        low_quality_plan["weak_points_summary"] = "（具体题目）"
+        still_low_quality_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        still_low_quality_plan["weak_points_summary"] = "按实际填写"
+        mock_generate_plan.return_value = (
+            low_quality_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_revise_plan.return_value = (
+            still_low_quality_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 1, "output_tokens": 2},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated, still_low_quality_plan)
+        self.assertEqual(usage["input_tokens"], 12)
+        self.assertEqual(usage["output_tokens"], 24)
+        self.assertEqual(mock_revise_plan.call_count, 2)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["quality_review"]["passed"], False)
+        self.assertTrue(any(warning["code"] == "quality_revision_required" for warning in run["warnings"]))
 
     def test_lesson_serialization_includes_latest_review_plan_run(self):
         lesson_id = lesson_manager.create_pending_lesson(
