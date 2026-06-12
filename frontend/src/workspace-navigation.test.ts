@@ -13,6 +13,7 @@ const lessonInputSource = readFileSync(new URL('./features/review-generation/Les
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
 const settingsSource = readFileSync(new URL('./features/settings/SettingsPage.tsx', import.meta.url), 'utf8');
 const approvalPageSource = readFileSync(new URL('./features/approval/ApprovalPage.tsx', import.meta.url), 'utf8');
+const consultationPageSource = readFileSync(new URL('./features/consultation/ConsultationPage.tsx', import.meta.url), 'utf8');
 const studentCenterSource = readFileSync(new URL('./features/student-center/StudentCenterPage.tsx', import.meta.url), 'utf8');
 const classManagementTabSource = readFileSync(new URL('./features/student-center/ClassManagementTab.tsx', import.meta.url), 'utf8');
 const classEditorModalSource = readFileSync(new URL('./features/student-center/ClassEditorModal.tsx', import.meta.url), 'utf8');
@@ -280,30 +281,30 @@ test('class management source keeps compact card single-expand shell', () => {
 });
 
 test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
-  const consultationBlock = requireMatch(appSource, /const ConsultationPage = \(\{ currentUser \}: \{ currentUser: CurrentUser \}\) => \{[\s\S]*?\n};/);
+  const consultationBlock = consultationPageSource;
 
   assert.match(appSource, /mobileNavOpen/);
   assert.match(headerSource, /aria-label="打开导航"/);
   assert.match(shellSource, /className="fixed inset-0 z-40 lg:hidden"/);
-  assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
-  assert.match(appSource, /className="hidden md:block xl:hidden"/);
+  assert.match(consultationPageSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
+  assert.match(consultationPageSource, /className="hidden md:block xl:hidden"/);
   assert.match(shellSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
-  assert.match(appSource, /className=\{`grid w-full gap-2 self-start lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] \$\{canManage \? 'grid-cols-3' : 'grid-cols-2'\}`\}/);
-  assert.match(appSource, /className=\{`\$\{workspaceSecondaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
-  assert.match(appSource, /className=\{`\$\{workspacePrimaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
-  assert.match(appSource, /whitespace-nowrap/);
+  assert.match(consultationPageSource, /className=\{`grid w-full gap-2 self-start lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] \$\{canManage \? 'grid-cols-3' : 'grid-cols-2'\}`\}/);
+  assert.match(consultationPageSource, /className=\{`\$\{workspaceSecondaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
+  assert.match(consultationPageSource, /className=\{`\$\{workspacePrimaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
+  assert.match(consultationPageSource, /whitespace-nowrap/);
   assert.doesNotMatch(consultationBlock, /sm:min-w-\[126px\]/);
   assert.doesNotMatch(appSource, /overflow-x-auto/);
 });
 
 test('consultation workspace source shows source channel metadata and keeps the quick parse controls', () => {
   assert.match(appSource, /来源渠道主类/);
-  assert.match(appSource, /record\.source_channel \|\| '未标注来源渠道'/);
-  assert.match(appSource, /consultation_subject\?\.\s*trim\(\) \|\| '未填写咨询科目'/);
+  assert.match(appSource, /const sourceChannel = record\.source_channel \|\| '未标注来源渠道';/);
+  assert.match(consultationPageSource, /consultation_subject\?\.\s*trim\(\) \|\| '未填写咨询科目'/);
   assert.match(appSource, /快速录入/);
   assert.match(appSource, /智能解析/);
   assert.match(appSource, /来源渠道备注/);
-  assert.match(appSource, /apiFetch<ConsultationTeacherOption\[]>\('\/api\/consultation-teachers'\)/);
+  assert.match(consultationPageSource, /apiFetch<ConsultationTeacherOption\[]>\('\/api\/consultation-teachers'\)/);
 });
 
 test('consultation workspace source allows staff edits and uses the new follow-up status set', () => {
@@ -312,9 +313,9 @@ test('consultation workspace source allows staff edits and uses the new follow-u
   assert.match(accessSource, /export function hasStaffAccess\(role: WorkspaceRole\): boolean \{/);
   assert.match(appSource, /const canEdit = hasStaffAccess\(currentUser\.role\) \|\| currentUser\.role === 'member';/);
   assert.match(appSource, /\{readOnly && canEdit && \(/);
-  assert.match(appSource, /const canManage = hasStaffAccess\(currentUser\.role\);/);
-  assert.match(appSource, /const canEditConsultations = canManage \|\| currentUser\.role === 'member';/);
-  assert.match(appSource, /onDelete=\{canManage \? handleDelete : undefined\}/);
+  assert.match(consultationPageSource, /const canManage = hasStaffAccess\(currentUser\.role\);/);
+  assert.match(consultationPageSource, /const canEditConsultations = canManage \|\| currentUser\.role === 'member';/);
+  assert.match(consultationPageSource, /onDelete=\{canManage \? handleDelete : undefined\}/);
 });
 
 test('approval page source keeps member role controls separate from class assignment', () => {
