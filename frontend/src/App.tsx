@@ -1755,94 +1755,148 @@ const Sidebar = ({
   onProfileUpdated?: (username: string, displayName: string) => void;
 }) => {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
-  const menuItems = [
-    ...[
-      { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
-      { id: 'review-generation', icon: Library, label: '复习生成' },
-      { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈' },
-      { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
-      { id: 'calendar', icon: CalendarDays, label: '课程日历' },
-      ...(canAccessSmartWrongQuestions(currentUser.role)
-        ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' }]
-        : []),
-      { id: 'classes', icon: Home, label: '学管中心' },
-      ...(hasOwnerAccess(currentUser.role) ? [{ id: 'credit', icon: Bell, label: '积分中心' }] : []),
-      ...(hasStaffAccess(currentUser.role) ? [{ id: 'accounts', icon: User, label: '账号审批' }] : []),
-      { id: 'settings', icon: Settings, label: '系统设置' },
-    ].filter((item) => canOpenWorkspacePage(currentUser, item.id as Page)),
-  ];
+  const menuSections = [
+    {
+      label: '总览',
+      items: [
+        { id: 'dashboard' as Page, icon: LayoutDashboard, label: '工作台', description: '回到全局工作视图' },
+      ],
+    },
+    {
+      label: '教学工作',
+      items: [
+        { id: 'review-generation' as Page, icon: Library, label: '复习生成', description: '生成讲义与复习资料' },
+        { id: 'class-feedback-generation' as Page, icon: FileText, label: '课堂反馈', description: '整理课堂结论与记录' },
+        { id: 'calendar' as Page, icon: CalendarDays, label: '课程日历', description: '查看排课与时间安排' },
+        ...(canAccessSmartWrongQuestions(currentUser.role)
+          ? [{ id: 'smartWrongQuestions' as Page, icon: Cpu, label: '智能错题', description: '跟进错题与掌握情况' }]
+          : []),
+      ],
+    },
+    {
+      label: '机构管理',
+      items: [
+        { id: 'classes' as Page, icon: Home, label: '学管中心', description: '查看班级、学生与协同信息' },
+        { id: 'consultation' as Page, icon: MessageSquare, label: '咨询记录', description: '跟进家长沟通与转化过程' },
+        ...(hasOwnerAccess(currentUser.role)
+          ? [{ id: 'credit' as Page, icon: Bell, label: '积分中心', description: '管理组织积分与兑换记录' }]
+          : []),
+        ...(hasStaffAccess(currentUser.role)
+          ? [{ id: 'accounts' as Page, icon: User, label: '账号审批', description: '处理成员开通与权限状态' }]
+          : []),
+      ],
+    },
+    {
+      label: '系统',
+      items: [
+        { id: 'settings' as Page, icon: Settings, label: '系统设置', description: '账号、主题与系统配置' },
+      ],
+    },
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => canOpenWorkspacePage(currentUser, item.id)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <div
       className={cn(
-        'flex flex-col border-r border-sky-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(239,248,255,0.92)_52%,rgba(231,243,255,0.96)_100%)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(8,15,30,0.98)_0%,rgba(15,23,42,0.96)_52%,rgba(17,24,39,0.98)_100%)]',
+        'flex flex-col border-r border-slate-200/70 bg-[#fbfdff] dark:border-white/10 dark:bg-[#0b1220]',
         mobile
-          ? 'h-full w-full overflow-y-auto overscroll-y-auto [-webkit-overflow-scrolling:touch] shadow-[18px_0_48px_rgba(47,128,237,0.12)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.48)]'
+          ? 'h-full w-full overflow-y-auto overscroll-y-auto [-webkit-overflow-scrolling:touch] shadow-[18px_0_48px_rgba(15,23,42,0.12)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.48)]'
           : compact
-            ? 'h-screen w-24 shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]'
-            : 'h-screen w-72 shadow-[18px_0_48px_rgba(47,128,237,0.06)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
+            ? 'h-screen w-64 shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]'
+            : 'h-screen w-[18.5rem] shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
       )}
     >
-      <div className={cn('border-b border-sky-100/80 py-6 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-6')}>
-        <div className={cn('flex items-center gap-3', compact && !mobile && 'justify-center')}>
-        <img src="/logo.png" alt="星润 logo" className="w-10 h-10 object-contain" />
-          <div className={cn(compact && !mobile && 'hidden')}>
-            <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Starain 工作台</h1>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-sky-600">机构工作台</p>
+      <div className={cn('border-b border-slate-200/70 py-6 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-5')}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-white/10 dark:bg-white/5">
+            <img src="/logo.png" alt="星润 logo" className="h-8 w-8 object-contain" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">星润 Starain</h1>
+            <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">Teaching workspace</p>
           </div>
         </div>
       </div>
 
-      <nav className={cn('flex-1 space-y-1 py-5', compact && !mobile ? 'px-3' : 'px-4')}>
-        {menuItems.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            title={compact && !mobile ? item.label : undefined}
-            onClick={() => {
-              setActivePage(item.id as Page);
-              onNavigate?.();
-            }}
-            className={cn(
-              'group/nav-item relative flex w-full touch-manipulation items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200',
-              compact && !mobile && 'justify-center px-3',
-              activePage === item.id
-                ? 'border border-sky-200 bg-white text-sky-700 shadow-[0_16px_36px_rgba(47,128,237,0.08)] dark:border-sky-500/30 dark:bg-white/10 dark:text-sky-300 dark:shadow-[0_16px_36px_rgba(2,6,23,0.35)]'
-                : 'border border-transparent text-slate-500 hover:border-sky-100 hover:bg-white/75 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/10 dark:hover:bg-white/5 dark:hover:text-slate-100',
-            )}
-          >
-            <item.icon size={20} />
-            <span className={cn('font-medium', compact && !mobile && 'hidden')}>{item.label}</span>
-            {compact && !mobile && (
-              <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-40 -translate-y-1/2 whitespace-nowrap rounded-lg border border-sky-100 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 opacity-0 shadow-[0_10px_24px_rgba(31,42,68,0.14)] transition group-hover/nav-item:opacity-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
-                {item.label}
-              </span>
-            )}
-            {activePage === item.id && (
-              <motion.div
-                layoutId="active-pill"
-                className={cn('h-2 w-2 rounded-full bg-sky-500', compact && !mobile ? 'absolute right-2' : 'ml-auto')}
-              />
-            )}
-          </button>
+      <nav className={cn('flex-1 space-y-6 overflow-y-auto py-6', compact && !mobile ? 'px-4' : 'px-5')}>
+        {menuSections.map((section) => (
+          <div key={section.label} className="space-y-2">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+              {section.label}
+            </p>
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                const isActive = activePage === item.id;
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActivePage(item.id);
+                      onNavigate?.();
+                    }}
+                    className="group/nav-item relative flex w-full touch-manipulation rounded-[1.15rem] px-3 py-2.5 text-left transition-all duration-200"
+                  >
+                    {isActive && (
+                      <motion.span
+                        layoutId="active-sidebar-item"
+                        className="absolute inset-0 rounded-[1.15rem] bg-[#edf2ff] shadow-[inset_0_0_0_1px_rgba(49,94,251,0.08)] dark:bg-white/[0.07] dark:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.16)]"
+                      />
+                    )}
+                    <span className="relative flex min-w-0 flex-1 items-center gap-3">
+                      <span
+                        className={cn(
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-200',
+                          isActive
+                            ? 'bg-white text-[#315efb] shadow-[0_10px_22px_rgba(49,94,251,0.14)] dark:bg-[#15213a] dark:text-sky-300'
+                            : 'text-slate-500 group-hover/nav-item:bg-white group-hover/nav-item:text-slate-900 dark:text-slate-400 dark:group-hover/nav-item:bg-white/5 dark:group-hover/nav-item:text-slate-100',
+                        )}
+                      >
+                        <item.icon size={18} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={cn('block truncate text-[15px] font-semibold', isActive ? 'text-slate-900 dark:text-slate-50' : 'text-slate-700 dark:text-slate-200')}>
+                          {item.label}
+                        </span>
+                        <span className={cn('mt-0.5 block truncate text-xs', isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500')}>
+                          {item.description}
+                        </span>
+                      </span>
+                      {isActive ? (
+                        <motion.span layoutId="active-sidebar-dot" className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#315efb] dark:bg-sky-300" />
+                      ) : (
+                        <ChevronRight size={16} className="shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/nav-item:opacity-100 dark:text-slate-600" />
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ))}
       </nav>
 
-      <div className={cn('mt-auto border-t border-sky-100/80 p-4 dark:border-white/10', compact && !mobile && 'px-3')}>
+      <div className={cn('mt-auto border-t border-slate-200/70 p-4 dark:border-white/10', compact && !mobile && 'px-4')}>
         <button
           type="button"
           onClick={() => setAccountSheetOpen(true)}
-          className={cn('flex w-full items-center gap-3 rounded-2xl border border-sky-100 bg-white/80 p-3 text-left transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10', compact && !mobile && 'justify-center')}
+          className="flex w-full items-center gap-3 rounded-[1.15rem] border border-slate-200/70 bg-white px-3 py-3 text-left shadow-sm transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 font-bold text-white">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#315efb] font-bold text-white">
             {currentUser.display_name.slice(0, 1).toUpperCase()}
           </div>
-          <div className={cn('flex-1 min-w-0', compact && !mobile && 'hidden')}>
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
-            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{getRoleLabel(currentUser.role)}</p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{currentUser.organization_name}</p>
           </div>
-          <MoreVertical size={16} className={cn('shrink-0 text-slate-400 dark:text-slate-500', compact && !mobile && 'hidden')} />
+          <MoreVertical size={16} className="shrink-0 text-slate-400 dark:text-slate-500" />
         </button>
+        <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">{getRoleLabel(currentUser.role)}</p>
       </div>
 
       <button
@@ -1890,57 +1944,64 @@ const Header = ({
   onToggleDarkMode?: () => void;
   onOpenSidebar?: () => void;
 }) => {
+  const headerButtonClass =
+    'flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white';
+
   return (
-    <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100/80 bg-white/92 px-4 sm:bg-white/78 sm:backdrop-blur-xl sm:px-6 md:px-8 dark:border-white/10 dark:bg-[#0f172a]/92 dark:sm:bg-[#0f172a]/88">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Workspace</p>
-        <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-white">{title}</h2>
-      </div>
-      <div className="flex items-center gap-2 sm:gap-4">
-        {onOpenSidebar && (
-          <button
-            type="button"
-            onClick={onOpenSidebar}
-            title="打开导航"
-            aria-label="打开导航"
-            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 lg:hidden dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            <Menu size={20} />
-          </button>
-        )}
-        {onToggleDarkMode && (
-          <button
-            type="button"
-            onClick={onToggleDarkMode}
-            title="切换夜间模式"
-            aria-label="切换夜间模式"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            {isDark ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-        )}
-        {onGoHome && (
-          <button
-            type="button"
-            onClick={onGoHome}
-            title="返回首页"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            <Home size={20} />
-          </button>
-        )}
-        <div className="relative hidden xl:block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
-          <input
-            type="text"
-            placeholder="搜索课程、班级..."
-            className={`${workspaceFieldClass} w-64 rounded-full py-2 pl-10 pr-4`}
-          />
+    <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-[rgba(251,253,255,0.88)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0f172a]/88">
+      <div className="flex h-[4.75rem] items-center justify-between gap-4 px-4 sm:px-6 md:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          {onOpenSidebar && (
+            <button
+              type="button"
+              onClick={onOpenSidebar}
+              title="打开导航"
+              aria-label="打开导航"
+              className={`${headerButtonClass} lg:hidden`}
+            >
+              <Menu size={20} />
+            </button>
+          )}
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-xl dark:text-white">{title}</h2>
+            <p className="hidden text-sm text-slate-500 xl:block dark:text-slate-400">围绕教学、班级与反馈继续推进工作</p>
+          </div>
         </div>
-        <button className="relative hidden h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-slate-800 md:flex dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white">
-          <Bell size={20} />
-          <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400 dark:border-slate-900" />
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative hidden xl:block">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
+            <input
+              type="text"
+              placeholder="搜索课程、班级..."
+              className={`${workspaceFieldClass} w-60 rounded-full border-slate-200/80 bg-white/92 py-2 pl-9 pr-4 shadow-none dark:border-white/10 dark:bg-white/5`}
+            />
+          </div>
+          {onToggleDarkMode && (
+            <button
+              type="button"
+              onClick={onToggleDarkMode}
+              title="切换夜间模式"
+              aria-label="切换夜间模式"
+              className={headerButtonClass}
+            >
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          )}
+          {onGoHome && (
+            <button
+              type="button"
+              onClick={onGoHome}
+              title="返回首页"
+              className={headerButtonClass}
+            >
+              <Home size={20} />
+            </button>
+          )}
+          <button className={`${headerButtonClass} relative hidden md:flex`}>
+            <Bell size={20} />
+            <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400 dark:border-slate-900" />
+          </button>
+        </div>
       </div>
     </header>
   );
@@ -10833,7 +10894,7 @@ export default function App() {
 
   if (consultationMeetingMode) {
     return (
-      <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      <div className="relative min-h-[100svh] overflow-x-hidden bg-[#f5f8fc] text-slate-900 sm:min-h-screen dark:bg-[#020617] dark:text-slate-100">
         <ConsultationMeetingWorkbench currentUser={currentUser} />
       </div>
     );
@@ -10842,12 +10903,7 @@ export default function App() {
   const activeWorkspacePage = getWorkspacePageFallback(currentUser, activePage);
 
   return (
-    <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px] dark:bg-cyan-500/10" />
-        <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px] dark:bg-blue-500/10" />
-        <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px] dark:bg-slate-900/40" />
-      </div>
+    <div className="relative min-h-[100svh] overflow-x-hidden bg-[#f5f8fc] text-slate-900 sm:min-h-screen dark:bg-[#020617] dark:text-slate-100">
       <div className="relative flex min-h-[100svh] sm:min-h-screen">
         <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
           <Sidebar
@@ -10896,7 +10952,7 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation' ? 'lg:pl-24' : 'lg:pl-72')}>
+        <main className={cn('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation' ? 'lg:pl-64' : 'lg:pl-[18.5rem]')}>
           <Header
             title={pageTitle[activeWorkspacePage]}
             onGoHome={() => setShowLanding(true)}

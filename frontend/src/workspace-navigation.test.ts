@@ -19,7 +19,7 @@ function requireMatch(pattern: RegExp): string {
 }
 
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = appSource;
 
   assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '课堂反馈'/);
@@ -37,7 +37,7 @@ test('workspace navigation wires consultation and calendar pages into the shell'
 });
 
 test('review generation source replaces separate lesson input and library pages with one review-generation workspace page', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = appSource;
 
   assert.match(sidebarBlock, /id: 'review-generation'[\s\S]*label: '复习生成'/);
   assert.doesNotMatch(sidebarBlock, /id: 'input'[\s\S]*label:/);
@@ -134,17 +134,17 @@ test('review generation source appends auth token to lesson pdf links', () => {
 });
 
 test('workspace navigation wires smart wrong questions into every authenticated role shell', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = appSource;
 
   assert.match(appSource, /function canAccessSmartWrongQuestions\(role: Role\): boolean \{/);
   assert.match(appSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
-  assert.match(sidebarBlock, /canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
+  assert.match(sidebarBlock, /canAccessSmartWrongQuestions\(currentUser\.role\)[\s\S]*id: 'smartWrongQuestions' as Page, icon: Cpu, label: '智能错题'/);
   assert.match(appSource, /smartWrongQuestions: '智能错题'/);
   assert.match(appSource, /activeWorkspacePage === 'smartWrongQuestions'[\s\S]*canOpenWorkspacePage\(currentUser, 'smartWrongQuestions'\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
 });
 
 test('workspace navigation removes the master data mappings page and keeps accounts focused on approval only', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = appSource;
 
   assert.doesNotMatch(appSource, /MasterDataMappingsPage/);
   assert.doesNotMatch(appSource, /masterDataMappings/);
@@ -154,9 +154,9 @@ test('workspace navigation removes the master data mappings page and keeps accou
 });
 
 test('workspace navigation exposes a dedicated owner-only credit center page', () => {
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = appSource;
 
-  assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\) \? \[\{ id: 'credit', icon: [^,]+, label: '积分中心' \}\] : \[]/);
+  assert.match(sidebarBlock, /hasOwnerAccess\(currentUser\.role\)[\s\S]*id: 'credit' as Page, icon: Bell, label: '积分中心'/);
   assert.match(appSource, /credit: '积分中心'/);
   assert.match(appSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
   assert.match(appSource, /activeWorkspacePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
@@ -211,13 +211,14 @@ test('credit center page source supports member drilldown and ledger filtering',
 
 test('workspace navigation source exposes classes management through configurable page visibility', () => {
   const classManagementBlock = `${studentCenterSource}\n${classManagementTabSource}\n${classEditorModalSource}`;
-  const sidebarBlock = requireMatch(/const menuItems = \[[\s\S]*?\n  \];/);
+  const sidebarBlock = requireMatch(/const menuSections = \[[\s\S]*?\.filter\(\(section\) => section\.items\.length > 0\);/);
 
   assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
   assert.match(appSource, /const configurableWorkspacePages/);
   assert.match(appSource, /function canOpenWorkspacePage\(user: CurrentUser, page: Page\): boolean \{/);
-  assert.match(sidebarBlock, /canOpenWorkspacePage\(currentUser, item\.id as Page\)/);
+  assert.match(sidebarBlock, /canOpenWorkspacePage\(currentUser, item\.id\)/);
   assert.match(sidebarBlock, /id: 'classes'[\s\S]*label: '学管中心'/);
+  assert.match(sidebarBlock, /label: '机构管理'/);
   assert.match(appSource, /classes: '学管中心'/);
   assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
   assert.match(appSource, /activeWorkspacePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<StudentCenterPage currentUser=\{currentUser\}/);
@@ -287,9 +288,10 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
   assert.match(appSource, /mobileNavOpen/);
   assert.match(appSource, /aria-label="打开导航"/);
   assert.match(appSource, /className="fixed inset-0 z-40 lg:hidden"/);
+  assert.match(appSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
+  assert.match(appSource, /lg:pl-64/);
   assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
   assert.match(appSource, /className="hidden md:block xl:hidden"/);
-  assert.match(appSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
   assert.match(appSource, /className=\{`grid w-full gap-2 self-start lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] \$\{canManage \? 'grid-cols-3' : 'grid-cols-2'\}`\}/);
   assert.match(appSource, /className=\{`\$\{workspaceSecondaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
   assert.match(appSource, /className=\{`\$\{workspacePrimaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);

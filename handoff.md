@@ -523,6 +523,7 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
+- 2026-06-12 已按参考图重做工作台导航壳层：`frontend/src/App.tsx` 侧栏改为分组式导航（`总览 / 教学工作 / 机构管理 / 系统`）、更克制的浅色面板、说明性二级文案和底部账号卡；顶部 header 改成更轻的操作栏，并把认证后工作区背景从发光渐变收口为纯净浅灰蓝底。已同步更新导航相关源码断言到 `frontend/src/account-card.test.tsx`、`frontend/src/mobile-workspace-performance.test.ts`、`frontend/src/workspace-navigation.test.ts`。本轮 proof 已通过：`npm run build`、`tsx --test src/mobile-workspace-performance.test.ts src/workspace-navigation.test.ts`，以及临时脚本 `/tmp/codex_nav_sidebar_proof.sh`（含源码断言和 mock `/api/me` 的 Playwright 截图，输出图 `/tmp/codex-nav-sidebar-proof.png`）。
 - 当前本地 `develop` 包含智能错题结构化图像方案：识别提示词新增 `diagram_type` / `diagram_spec`，入库和练习单快照新增结构化图字段，PDF payload 会优先把数轴/几何/函数图渲染成 SVG data URL，只有没有结构化图时才回退原图。
 - 已补上用户反馈：函数图不再用 `<polyline>` 折线连接采样点，改为三次贝塞尔 `<path>` 平滑曲线；几何图不再按 x/y 轴分别拉伸，而是等比例缩放并居中，避免正方形被画成长方形。
 - 云端最近两道几何题样张已重新生成并打开：`/Users/xiaodi/Desktop/cloud-two-geometry-structured-demo-20260522.pdf`；其中正方形题的结构化图已保持正方形比例。
