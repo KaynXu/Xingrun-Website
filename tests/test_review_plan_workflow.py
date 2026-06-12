@@ -42,7 +42,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             variables={"trace_id": "trace-1"},
             registry=registry,
         )
-        self.assertIn("专业的国际课程复习计划生成 Agent", rendered["prompt"])
+        self.assertIn("专业的复习计划生成 Agent", rendered["prompt"])
+        self.assertIn("中国小学、初中、高中课程与考试复习", rendered["prompt"])
+        self.assertIn("不要默认套用国际课程", rendered["prompt"])
         self.assertIn("formula", rendered["prompt"])
         self.assertRegex(rendered["prompt_version"], r"^[0-9a-f]{12}$")
 
