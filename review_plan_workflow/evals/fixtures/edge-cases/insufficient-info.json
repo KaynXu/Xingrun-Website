@@ -1,4 +1,5 @@
 {
+  "name": "Insufficient input information",
   "input": {
     "subject": "",
     "summary_text": ""
@@ -7,5 +8,9 @@
     "must mark missing info",
     "must not hallucinate topics",
     "must include risk warnings"
+  ],
+  "checks": [
+    {"name": "schema_boundary", "schemaValid": true},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]}
   ]
 }

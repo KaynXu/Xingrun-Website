@@ -1,16 +1,24 @@
 {
+  "name": "中国初中数学代数薄弱 6 周提升",
   "input": {
     "subject": "math",
-    "courseSystem": "IGCSE",
+    "courseSystem": "中国初中数学",
+    "grade": "八年级",
     "studentLevel": "中等",
-    "target": "A",
-    "knownWeaknesses": ["algebra", "graphs"],
+    "target": "6 周内稳定一次函数、方程与代数式基础题得分",
+    "knownWeaknesses": ["方程变形", "代数式化简", "一次函数图像", "错因复盘不完整"],
     "availability": {"hoursPerWeek": 6}
   },
   "expectedCriteria": [
     "must include phased plan",
     "must include error log",
     "must include topic/question type/skill dimensions",
-    "must include realistic workload"
+    "must include realistic workload",
+    "must stay within China middle-school math context"
+  ],
+  "checks": [
+    {"name": "math_subject_markers", "containsAny": ["题型", "步骤", "错因", "模型", "公式"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
   ]
 }

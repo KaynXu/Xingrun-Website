@@ -137,10 +137,18 @@ The current single-lesson service executes this ordered chain:
 
 ## Running Evals
 
-Phase 1 eval fixtures are JSON files under `review_plan_workflow/evals/fixtures/`. They are not a full benchmark suite yet; they are a regression checklist for schema, subject fit, workload sanity, and factuality.
+Phase 1 eval fixtures are JSON files under `review_plan_workflow/evals/fixtures/`. They are paired with `review_plan_workflow.evals.runner`, a deterministic local runner that validates fixture definitions and can score a generated plan against schema, quality-gate output, review-day structure, and keyword checks.
+
+Run local fixture validation:
+
+```bash
+python3 -m review_plan_workflow.evals.runner --validate-fixtures-only
+```
+
+This is still not a full benchmark suite. It is a regression baseline for schema, subject fit, workload sanity, factuality, and the China-school-course default for math/physics fixtures.
 
 ## Known Limitations
 
 - The old `ai_processor.py` single-lesson review-plan entrypoint and inline prompt have been removed from active code. Plan generation now lives in one workflow-native LLM node after structured intake/source/scope/time/task/prompt-bundle preparation.
-- Quality revision is now bounded to two LLM attempts; the remaining quality work is subject fixture evals and real PDF smoke review.
+- Quality revision is now bounded to two LLM attempts; the remaining quality work is live LLM fixture evaluation and real PDF smoke review.
 - IELTS source material currently covers Reading best; full four-skill IELTS generation remains Phase 2.
