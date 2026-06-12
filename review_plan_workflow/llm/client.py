@@ -1,11 +1,165 @@
 from __future__ import annotations
 
-from typing import Any, Callable, TypeVar
+import json
+import os
+import re
+from typing import Any, Callable, Optional, TypeVar
 
+from config_runtime import get_runtime_config
 from pydantic import BaseModel
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+_BARE_LATEX_COMMAND_RE = re.compile(
+    r"(?<!\\)\\(?:left|right|frac|sqrt|theta|alpha|beta|gamma|delta|pi|sin|cos|tan|"
+    r"log|ln|angle|parallel|perp|cdot|times|div|leq|geq|neq|pm|circ|text|overline|widehat)\b"
+)
+
+
+def _escape_bare_backslashes_in_json_strings(raw: str) -> str:
+    result: list[str] = []
+    in_string = False
+    i = 0
+    valid_simple_escapes = {'"', "\\", "/", "b", "f", "n", "r", "t"}
+
+    while i < len(raw):
+        char = raw[i]
+        if not in_string:
+            result.append(char)
+            if char == '"':
+                in_string = True
+            i += 1
+            continue
+
+        if char == '"':
+            result.append(char)
+            in_string = False
+            i += 1
+            continue
+
+        if char != "\\":
+            result.append(char)
+            i += 1
+            continue
+
+        if i + 1 >= len(raw):
+            result.append("\\\\")
+            i += 1
+            continue
+
+        next_char = raw[i + 1]
+        if next_char == "u" and i + 5 < len(raw) and re.fullmatch(r"[0-9a-fA-F]{4}", raw[i + 2 : i + 6]):
+            result.append(raw[i : i + 6])
+            i += 6
+            continue
+        if next_char in {'"', "\\", "/"}:
+            result.append(raw[i : i + 2])
+            i += 2
+            continue
+        if next_char in valid_simple_escapes and not (i + 2 < len(raw) and raw[i + 2].isalpha()):
+            result.append(raw[i : i + 2])
+            i += 2
+            continue
+
+        result.append("\\\\")
+        i += 1
+
+    return "".join(result)
+
+
+def loads_model_json(raw: Optional[str], default: str = "{}") -> dict[str, Any]:
+    content = raw if raw is not None and str(raw).strip() else default
+    if _BARE_LATEX_COMMAND_RE.search(content):
+        return json.loads(_escape_bare_backslashes_in_json_strings(content))
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        data = json.loads(_escape_bare_backslashes_in_json_strings(content))
+    if not isinstance(data, dict):
+        raise ValueError("model JSON response must be an object")
+    return data
+
+
+def _runtime_config() -> dict[str, Any]:
+    return get_runtime_config()
+
+
+def resolve_chat_provider(provider: str = "") -> str:
+    return str(provider or _runtime_config().get("provider") or "deepseek").strip() or "deepseek"
+
+
+def resolve_chat_model(provider: str = "", model: str = "") -> str:
+    cfg = _runtime_config()
+    provider_name = resolve_chat_provider(provider)
+    if model:
+        return model
+    if provider_name == "deepseek":
+        return str(cfg.get("deepseek_model") or "deepseek-v4-pro")
+    if provider_name == "mimo":
+        return str(cfg.get("mimo_model") or "MiMo-7B-RL")
+    return str(cfg.get("openai_model") or "gpt-4o")
+
+
+def get_chat_client(provider: str = ""):
+    from openai import OpenAI
+
+    cfg = _runtime_config()
+    provider_name = resolve_chat_provider(provider)
+
+    if provider_name == "deepseek":
+        key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
+        if not key:
+            raise RuntimeError("未找到 DeepSeek API Key，请在设置页面配置。")
+        return OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
+
+    if provider_name == "mimo":
+        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
+        base_url = str(cfg.get("mimo_base_url") or "").strip()
+        if not key:
+            raise RuntimeError("未找到 MiMo API Key，请在设置页面配置。")
+        if not base_url:
+            raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
+        return OpenAI(api_key=key, base_url=base_url)
+
+    key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        raise RuntimeError("未找到 OpenAI API Key，请在设置页面配置 openai_api_key，或设置环境变量 OPENAI_API_KEY。")
+    return OpenAI(api_key=key)
+
+
+def usage_dict(response: Any, *, provider: str = "", model_fallback: str = "") -> dict[str, Any]:
+    usage = getattr(response, "usage", None)
+    return {
+        "provider": resolve_chat_provider(provider),
+        "model": str(getattr(response, "model", "") or model_fallback or resolve_chat_model(provider)),
+        "input_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+        "output_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+    }
+
+
+def generate_review_plan_json(
+    *,
+    system_prompt: str,
+    user_message: str,
+    provider: str = "",
+    model: str = "",
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    provider_name = resolve_chat_provider(provider)
+    model_name = resolve_chat_model(provider_name, model)
+    client = get_chat_client(provider_name)
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        temperature=0.3,
+        response_format={"type": "json_object"},
+    )
+    raw = response.choices[0].message.content
+    return loads_model_json(raw), usage_dict(response, provider=provider_name, model_fallback=model_name)
 
 
 def generate_structured(

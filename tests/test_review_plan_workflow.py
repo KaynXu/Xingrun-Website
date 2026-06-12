@@ -54,8 +54,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertTrue(review.must_revise)
         self.assertTrue(any(issue.category == "schema" for issue in review.issues))
 
-    @patch("ai_processor.parse_and_generate_plan")
-    def test_service_records_trace_run_without_mutating_plan_json(self, mock_parse):
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
         plan = copy.deepcopy(DEMO_PLAN)
         usage = {
             "provider": "deepseek",
@@ -63,7 +63,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             "input_tokens": 10,
             "output_tokens": 20,
         }
-        mock_parse.return_value = (plan, usage)
+        mock_generate_plan.return_value = (plan, usage)
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-06-01",
             subject="物理",
@@ -95,6 +95,14 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(run["style_version"], "physics-master-style.v1")
         self.assertIn("quality_reviewer", run["node_outputs"])
         self.assertIn("plan_generator", run["node_outputs"])
+        self.assertIn("scope_planner", run["node_outputs"])
+        self.assertIn("time_allocator", run["node_outputs"])
+        self.assertIn("task_blueprint", run["node_outputs"])
+        self.assertIn("prompt_bundle_builder", run["node_outputs"])
+        self.assertEqual(run["node_outputs"]["task_blueprint"]["subject"], "physics")
+        self.assertIn("formula_sheet", run["node_outputs"]["task_blueprint"]["required_components"])
+        self.assertEqual(run["node_outputs"]["time_allocator"]["review_schedule"][0]["day"], 1)
+        self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
 
     def test_lesson_serialization_includes_latest_review_plan_run(self):
         lesson_id = lesson_manager.create_pending_lesson(

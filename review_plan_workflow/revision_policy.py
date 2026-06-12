@@ -9,9 +9,9 @@ from .state import WorkflowContext
 def apply_revision_policy(plan: dict[str, Any], quality: QualityReview, context: WorkflowContext) -> dict[str, Any]:
     """Phase-1 revision boundary.
 
-    The current production generator is still a compatibility node. Instead of
-    silently rewriting the plan deterministically, we attach review metadata and
-    let the next implementation step replace this with an LLM revision node.
+    The workflow now owns plan generation, but revision still needs a dedicated
+    LLM node. Until then, keep quality findings visible without silently
+    rewriting student-facing plans deterministically.
     """
 
     if quality.must_revise:

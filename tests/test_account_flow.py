@@ -1997,7 +1997,8 @@ class AccountFlowTestCase(unittest.TestCase):
         with patch("app.has_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
-             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
+             patch("app._start_review_plan_generation_thread"), \
+             patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json", return_value=({"questions": []}, {})):
             missing_class_response = self.client.post(
                 "/api/review-plans",
                 headers=self.auth_headers(target_member["token"]),
@@ -2039,7 +2040,7 @@ class AccountFlowTestCase(unittest.TestCase):
 
         self.assertEqual(missing_class_response.status_code, 400)
         self.assertEqual(forbidden_class_response.status_code, 403)
-        self.assertEqual(allowed_class_response.status_code, 201)
+        self.assertEqual(allowed_class_response.status_code, 202)
 
     def test_member_class_feedback_task_access_requires_owned_class(self):
         owner_token = self.login_as_kayn()
@@ -2172,7 +2173,8 @@ class AccountFlowTestCase(unittest.TestCase):
         with patch("app.has_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
-             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
+             patch("app._start_review_plan_generation_thread"), \
+             patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json", return_value=({"questions": []}, {})):
             owner_response = self.client.post(
                 "/api/review-plans",
                 headers=self.auth_headers(owner_token),
@@ -2187,7 +2189,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(owner_response.status_code, 201)
+        self.assertEqual(owner_response.status_code, 202)
 
     def test_lesson_api_hides_stale_pdf_paths_when_file_is_missing(self):
         owner_token = self.login_as_kayn()
