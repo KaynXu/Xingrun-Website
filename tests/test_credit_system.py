@@ -18,6 +18,7 @@ import credit_manager
 import lesson_manager
 import app as app_module
 import xhs_open_platform
+from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
 class CreditSystemServiceTestCase(unittest.TestCase):
@@ -745,7 +746,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
             },
         )
         mock_generate_plan_json.return_value = (
-            {"days": [], "questions": []},
+            valid_single_lesson_plan(subject="数学", topic="方程"),
             {
                 "provider": "openai",
                 "model": "gpt-4o",
@@ -853,7 +854,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
             ),
         ]
         mock_generate_plan_json.return_value = (
-            {"days": [], "questions": []},
+            valid_single_lesson_plan(subject="数学", topic="方程"),
             {
                 "provider": "openai",
                 "model": "gpt-4o",

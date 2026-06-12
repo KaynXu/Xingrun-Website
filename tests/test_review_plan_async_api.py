@@ -15,6 +15,7 @@ import config_runtime
 import credit_manager
 import lesson_manager
 from app import app
+from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
 class ReviewPlanAsyncApiTestCase(unittest.TestCase):
@@ -203,8 +204,9 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         mock_generate_plan_json,
         _mock_generate_pdf,
     ):
+        expected_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
         mock_generate_plan_json.return_value = (
-            {"lesson_info": {"topic": "一次函数"}, "days": []},
+            expected_plan,
             {
                 "provider": "deepseek",
                 "model": "deepseek-chat",
@@ -418,7 +420,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
             class_id=0,
         )
 
-        expected_plan = {"lesson_info": {"topic": "一次函数"}, "days": []}
+        expected_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
         mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
         mock_generate_plan_json.return_value = (
             expected_plan,
