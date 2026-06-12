@@ -6,6 +6,7 @@ const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
 const settingsSource = readFileSync(new URL('./features/settings/SettingsPage.tsx', import.meta.url), 'utf8');
+const approvalPageSource = readFileSync(new URL('./features/approval/ApprovalPage.tsx', import.meta.url), 'utf8');
 const studentCenterSource = readFileSync(new URL('./features/student-center/StudentCenterPage.tsx', import.meta.url), 'utf8');
 const classManagementTabSource = readFileSync(new URL('./features/student-center/ClassManagementTab.tsx', import.meta.url), 'utf8');
 const classEditorModalSource = readFileSync(new URL('./features/student-center/ClassEditorModal.tsx', import.meta.url), 'utf8');
@@ -254,7 +255,7 @@ test('workspace navigation source exposes explicit super owner hierarchy for acc
   assert.match(appSource, /if \(role === 'owner'\) return '机构负责人';/);
   assert.match(appSource, /function hasOwnerAccess\(role: Role\): boolean \{/);
   assert.match(appSource, /function canManageOwnerRole\(role: Role\): boolean \{/);
-  assert.match(appSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面/);
+  assert.match(approvalPageSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面/);
 });
 
 test('class management source wires class filter rules and shared grade controls', () => {
@@ -317,7 +318,7 @@ test('consultation workspace source allows staff edits and uses the new follow-u
 });
 
 test('approval page source keeps member role controls separate from class assignment', () => {
-  const approvalBlock = requireMatch(appSource, /const ApprovalPage = \([\s\S]*?\n\};\n\n\/\/ --- Login Modal ---/);
+  const approvalBlock = requireMatch(approvalPageSource, /export function ApprovalPage\([\s\S]*?\n\}/);
 
   assert.match(approvalBlock, /成员权限/);
   assert.match(approvalBlock, /apiFetch<UserItem\[]>\('\/api\/admin\/users'\)/);

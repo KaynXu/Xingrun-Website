@@ -573,3 +573,12 @@
   - source extraction checks
   - module import proof for `ClassFeedbackGenerationPage` and `App.tsx`
   - `npx tsx --test src/workspace-navigation.test.ts src/class-feedback-generation.test.tsx`
+
+## 2026-06-12 App.tsx fourth split pass
+- Extracted `ApprovalPage` to `frontend/src/features/approval/ApprovalPage.tsx`.
+- Updated `frontend/src/App.tsx` to render the extracted approval page component from the new feature path.
+- Updated `frontend/src/workspace-navigation.test.ts` so approval-related structure assertions now follow `features/approval/ApprovalPage.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round4_proof.sh`:
+  - source extraction checks
+  - module import proof for `ApprovalPage` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts`
