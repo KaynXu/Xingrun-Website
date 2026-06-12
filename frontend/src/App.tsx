@@ -111,6 +111,13 @@ import {
   LandingPage,
 } from './features/landing/LandingPage';
 import {
+  ClassClaimPage,
+  JoinOrganizationModal,
+  LoginModal,
+  OrganizationApplyModal,
+  PasswordResetModal,
+} from './features/auth/PublicAuthModals';
+import {
   academicGradeGroups,
   academicGradeOptions,
   academicStageOptions,

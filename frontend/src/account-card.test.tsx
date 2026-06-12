@@ -15,6 +15,7 @@ const consultationPageSource = readFileSync(resolve(process.cwd(), 'src/features
 const consultationMeetingWorkbenchSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationMeetingWorkbench.tsx'), 'utf8');
 const consultationModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
 const consultationBatchModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
+const authSource = readFileSync(resolve(process.cwd(), 'src/features/auth/PublicAuthModals.tsx'), 'utf8');
 const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
 const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
 const classManagementTabSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassManagementTab.tsx'), 'utf8');
@@ -1306,13 +1307,12 @@ test('account administration source disables refresh and teacher alias actions w
 });
 
 test('login source includes password reset and first-login class claim entry points', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
-  const classClaimBlock = source.match(/const ClassClaimPage = \([\s\S]*?const LoginModal = \(/);
+  const source = authSource;
+  const classClaimBlock = source.match(/export const ClassClaimPage = \([\s\S]*?export const LoginModal = \(/);
 
-  assert.match(source, /type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
   assert.match(source, /\/api\/password-reset/);
   assert.match(source, /recovery_phone/);
-  assert.match(source, /const ClassClaimPage = \(/);
+  assert.match(source, /export const ClassClaimPage = \(/);
   assert.match(source, /\/api\/me\/unbound-classes/);
   assert.match(source, /\/api\/me\/claim-classes/);
   assert.ok(classClaimBlock);
