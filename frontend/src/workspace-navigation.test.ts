@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
+const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
 const settingsSource = readFileSync(new URL('./features/settings/SettingsPage.tsx', import.meta.url), 'utf8');
 const approvalPageSource = readFileSync(new URL('./features/approval/ApprovalPage.tsx', import.meta.url), 'utf8');
@@ -94,36 +95,29 @@ test('review generation source renders history as a paginated list with explicit
 });
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
-  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
-
-  assert.match(lessonInputBlock, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
-  assert.match(lessonInputBlock, /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
-  assert.doesNotMatch(lessonInputBlock, /sm:w-40/);
+  assert.match(lessonInputSource, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
+  assert.match(lessonInputSource, /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
+  assert.doesNotMatch(lessonInputSource, /sm:w-40/);
   assert.doesNotMatch(appSource, /sm:w-32/);
 });
 
 test('review generation source requires class selection before generation and carries currentUser into LessonInput', () => {
-  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
-
-  assert.match(lessonInputBlock, /if \(!classId\) \{\s*setError\('请选择班级后再生成复习记录'\);\s*return;\s*\}/);
+  assert.match(lessonInputSource, /if \(!classId\) \{\s*setError\('请选择班级后再生成复习记录'\);\s*return;\s*\}/);
+  assert.match(appSource, /import \{ LessonInput \} from '\.\/features\/review-generation\/LessonInput';/);
   assert.match(appSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
   assert.doesNotMatch(reviewGenerationSource, /initialLesson=\{/);
   assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}/);
 });
 
 test('review generation source submits same lesson supplemental materials', () => {
-  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
-
-  assert.match(lessonInputBlock, /sameLessonMaterials/);
-  assert.match(lessonInputBlock, /same_lesson_materials:\s*sameLessonMaterials/);
-  assert.match(lessonInputBlock, /同一节课补充材料/);
+  assert.match(lessonInputSource, /sameLessonMaterials/);
+  assert.match(lessonInputSource, /same_lesson_materials:\s*sameLessonMaterials/);
+  assert.match(lessonInputSource, /同一节课补充材料/);
 });
 
 test('lesson input source refreshes assignable classes when the signed-in user changes so stale class options cannot trigger forbidden', () => {
-  const lessonInputBlock = requireMatch(appSource, /const LessonInput = \(\{[\s\S]*?currentUser: CurrentUser;[\s\S]*?\n};/);
-
-  assert.match(lessonInputBlock, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
-  assert.match(lessonInputBlock, /\}, \[currentUser\.id, currentUser\.role\]\);/);
+  assert.match(lessonInputSource, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(lessonInputSource, /\}, \[currentUser\.id, currentUser\.role\]\);/);
 });
 
 test('review generation source appends auth token to lesson pdf links', () => {

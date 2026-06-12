@@ -582,3 +582,12 @@
   - source extraction checks
   - module import proof for `ApprovalPage` and `App.tsx`
   - `npx tsx --test src/workspace-navigation.test.ts`
+
+## 2026-06-12 App.tsx fifth split pass
+- Extracted `LessonInput` to `frontend/src/features/review-generation/LessonInput.tsx`.
+- Updated `frontend/src/App.tsx` to render the extracted lesson composer component from the new feature path.
+- Updated `frontend/src/workspace-navigation.test.ts` and `frontend/src/review-generation-async.test.tsx` so review-generation assertions now follow `features/review-generation/LessonInput.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round5_proof.sh`:
+  - source extraction checks
+  - module import proof for `LessonInput` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/review-generation-async.test.tsx`

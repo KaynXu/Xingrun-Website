@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 
 test('review history source polls review plans while pending lessons exist', () => {
   assert.match(reviewGenerationSource, /const hasPendingLesson = lessons\.some\(isReviewLessonPending\);/);
@@ -17,8 +18,9 @@ test('review history source normalizes malformed task polling responses', () => 
 });
 
 test('review generation source synchronizes member class selection against accessible classes', () => {
-  assert.match(appSource, /function syncMemberScopedClassSelection\(/);
-  assert.match(appSource, /if \(role !== 'member'\) \{\s*return selectedClassId;/);
-  assert.match(appSource, /if \(classes.length === 1\) \{\s*return classes\[0\]\?\.id \?\? null;/);
-  assert.match(appSource, /setClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
+  assert.match(lessonInputSource, /function syncMemberScopedClassSelection\(/);
+  assert.match(lessonInputSource, /if \(role !== 'member'\) \{\s*return selectedClassId;/);
+  assert.match(lessonInputSource, /if \(classes.length === 1\) \{\s*return classes\[0\]\?\.id \?\? null;/);
+  assert.match(lessonInputSource, /setClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
+  assert.match(appSource, /import \{ LessonInput \} from '\.\/features\/review-generation\/LessonInput';/);
 });
