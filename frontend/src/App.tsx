@@ -35,23 +35,14 @@ import {
   Info,
   Save,
 } from 'lucide-react';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { CourseCalendarPage } from './CourseCalendarPage';
 import type { CourseCalendarCustomItemRecord, CourseCalendarCustomScheduleRecord, CourseCalendarScheduleRecord, CourseCalendarTimeBlock } from './courseCalendarData';
 import { getCurrentWeekTuesday } from './courseCalendarData';
-import { StudentCenterPage } from './features/student-center/StudentCenterPage';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 export {
   resolveTeacherBindingRollbackClassItem,
   resolveTeacherBindingRollbackTeacherBindings,
 } from './features/student-center/teacherBindingRules';
-import { SmartWrongQuestionsPage } from './SmartWrongQuestionsPage';
-import { ClassFeedbackGenerationPage } from './features/class-feedback/ClassFeedbackGenerationPage';
-import { WorkspaceDashboard } from './WorkspaceDashboard';
-import { ReviewGenerationPage } from './features/review-generation/ReviewGenerationPage';
-import { LessonInput } from './features/review-generation/LessonInput';
-import { CreditCenterPage } from './features/credits/CreditCenterPage';
-import { SettingsPage } from './features/settings/SettingsPage';
-import { ApprovalPage } from './features/approval/ApprovalPage';
+import { WorkspacePageContent } from './features/navigation/WorkspacePageContent';
 import { WorkspaceShellLayout } from './features/navigation/WorkspaceShellLayout';
 import { FloatingFilterBar, FloatingOverviewFilter } from './components/FloatingFilterBar';
 import {
@@ -7021,87 +7012,40 @@ export default function App() {
       canOpenPage={(page) => canOpenWorkspacePage(currentUser, page)}
       roleLabel={getRoleLabel(currentUser.role)}
     >
-      <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
-        <motion.div
-          key={activeWorkspacePage}
-          initial={isMobileViewport ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 0, y: -6 }}
-          transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
-        >
-                {activeWorkspacePage === 'dashboard' && (
-                  <WorkspaceDashboard
-                    currentUser={currentUser}
-                    setActivePage={navigateWorkspacePage}
-                    styles={{
-                      pageClass: workspacePageClass,
-                      cardClass: workspaceCardClass,
-                      primaryButtonClass: workspacePrimaryButtonClass,
-                      secondaryButtonClass: workspaceSecondaryButtonClass,
-                    }}
-                    canOpenAccounts={hasStaffAccess(currentUser.role)}
-                  />
-                )}
-                {activeWorkspacePage === 'review-generation' && canOpenWorkspacePage(currentUser, 'review-generation') && (
-                  <ReviewGenerationPage
-                    onSuccess={handleReviewGenerationSuccess}
-                    renderLessonInput={(handleFormSuccess) => (
-                      <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} />
-                    )}
-                  />
-                )}
-                {activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage(currentUser, 'class-feedback-generation') && <ClassFeedbackGenerationPage currentUser={currentUser} />}
-                {activeWorkspacePage === 'consultation' && canOpenWorkspacePage(currentUser, 'consultation') && <ConsultationPage currentUser={currentUser} />}
-                {activeWorkspacePage === 'calendar' && canOpenWorkspacePage(currentUser, 'calendar') &&
-                  (calendarLoading ? (
-                    <div className={`${workspacePageClass}`}>
-                      <div className={`${workspaceCardClass} p-8`}>
-                        <WorkspaceLoading label="正在整理课程日历..." />
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {calendarError && (
-                        <div className={`${workspacePageClass} pb-0`}>
-                          <div className={`${workspaceCardClass} flex items-center gap-2 border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300`}>
-                            <AlertCircle size={16} />
-                            <span>课程日历加载失败：{calendarError}</span>
-                          </div>
-                        </div>
-                      )}
-                      <CourseCalendarPage
-                        anchorDate={calendarAnchorDate}
-                        today={getTodayIsoDate()}
-                        currentUserId={currentUser.id}
-                        currentUserRole={currentUser.role}
-                        classes={calendarClasses}
-                        schedules={calendarSchedules}
-                        customItems={calendarCustomItems}
-                        customSchedules={calendarCustomSchedules}
-                        pageStepDays={calendarPageStepDays}
-                        onPageStepDaysChange={handleCalendarPageStepDaysChange}
-                        onPreviousPage={handlePreviousCalendarPage}
-                        onNextPage={handleNextCalendarPage}
-                        onScheduleClass={handleScheduleCalendarClass}
-                        onScheduleCustomItem={handleScheduleCalendarCustomItem}
-                        onCreateCustomItem={handleCreateCalendarCustomItem}
-                        onDeleteCustomItem={handleDeleteCalendarCustomItem}
-                        onDeleteSchedule={handleDeleteCalendarSchedule}
-                        onDeleteCustomSchedule={handleDeleteCalendarCustomSchedule}
-                      />
-                    </>
-                  ))}
-                {activeWorkspacePage === 'smartWrongQuestions' &&
-                  canOpenWorkspacePage(currentUser, 'smartWrongQuestions') &&
-                  <SmartWrongQuestionsPage currentUser={currentUser} />}
-                {activeWorkspacePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
-                  <StudentCenterPage currentUser={currentUser} classBindingTarget={classBindingTarget} onClearClassBindingTarget={() => setClassBindingTarget(null)} />
-                )}
-                {activeWorkspacePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
-                {activeWorkspacePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
-                {activeWorkspacePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
-        </motion.div>
-      </AnimatePresence>
+      <WorkspacePageContent
+        activeWorkspacePage={activeWorkspacePage}
+        currentUser={currentUser}
+        isMobileViewport={isMobileViewport}
+        canOpenWorkspacePage={canOpenWorkspacePage}
+        hasOwnerAccess={hasOwnerAccess}
+        hasStaffAccess={hasStaffAccess}
+        navigateWorkspacePage={navigateWorkspacePage}
+        handleReviewGenerationSuccess={handleReviewGenerationSuccess}
+        ConsultationPageComponent={ConsultationPage}
+        calendarLoading={calendarLoading}
+        calendarError={calendarError}
+        calendarAnchorDate={calendarAnchorDate}
+        getTodayIsoDate={getTodayIsoDate}
+        calendarClasses={calendarClasses}
+        calendarSchedules={calendarSchedules}
+        calendarCustomItems={calendarCustomItems}
+        calendarCustomSchedules={calendarCustomSchedules}
+        calendarPageStepDays={calendarPageStepDays}
+        handleCalendarPageStepDaysChange={handleCalendarPageStepDaysChange}
+        handlePreviousCalendarPage={handlePreviousCalendarPage}
+        handleNextCalendarPage={handleNextCalendarPage}
+        handleScheduleCalendarClass={handleScheduleCalendarClass}
+        handleScheduleCalendarCustomItem={handleScheduleCalendarCustomItem}
+        handleCreateCalendarCustomItem={handleCreateCalendarCustomItem}
+        handleDeleteCalendarCustomItem={handleDeleteCalendarCustomItem}
+        handleDeleteCalendarSchedule={handleDeleteCalendarSchedule}
+        handleDeleteCalendarCustomSchedule={handleDeleteCalendarCustomSchedule}
+        WorkspaceLoadingComponent={WorkspaceLoading}
+        classBindingTarget={classBindingTarget}
+        handleClearClassBindingTarget={() => setClassBindingTarget(null)}
+        handleOpenClassBinding={handleOpenClassBinding}
+        handleLogout={handleLogout}
+      />
     </WorkspaceShellLayout>
   );
 }
