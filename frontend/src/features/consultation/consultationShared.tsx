@@ -6,7 +6,7 @@ import type {
   ConsultationFormValues,
   ConsultationRecord,
   ConsultationResultStage,
-} from '../../App';
+} from './consultationTypes';
 import { cn } from '../../workspaceShared';
 
 export const consultationFlowStages = ['已加小客服微信', '已加对应教师微信', '正在沟通细节', '待测试', '待试听', '成功进班', '试听失败', '咨询结束'];

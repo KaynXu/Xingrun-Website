@@ -2,13 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, Eye, Pencil } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
-import type { ClassItem, ConsultationFormValues, ConsultationRecord, ConsultationTeacherOption, CurrentUser } from '../../App';
+import type { ClassItem, CurrentUser } from '../../App';
+import type { ConsultationFormValues, ConsultationRecord, ConsultationTeacherOption } from './consultationTypes';
 import {
   ConsultationModal,
-  getTodayIsoDate,
   normalizeConsultationTeacherOption,
   toConsultationFormValues,
-} from '../../App';
+} from './ConsultationModal';
 import {
   ConsultationCardExpandableText,
   ConsultationFlowBar,
@@ -30,6 +30,7 @@ import {
 import {
   apiFetch,
   cn,
+  getTodayIsoDate,
   readLocalStorageItem,
   workspaceGhostButtonClass,
   workspacePageClass,
@@ -2492,4 +2493,3 @@ export const LandingPage = ({
 };
 
 // --- Main App ---
-

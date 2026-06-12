@@ -4,14 +4,16 @@ import { motion } from 'motion/react';
 
 import type {
   ClassItem,
+  CurrentUser,
+} from '../../App';
+import type {
   ConsultationFormValues,
   ConsultationRecord,
   ConsultationResultStage,
   ConsultationTeacherOption,
-  CurrentUser,
-} from '../../App';
+} from './consultationTypes';
 import { formatClassDisplayName } from '../../domain/classNaming';
-import { apiFetch, cn, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
+import { apiFetch, cn, getTodayIsoDate, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
 import { hasStaffAccess } from '../navigation/workspaceAccess';
 import {
   ConsultationFlowBar,
@@ -46,12 +48,6 @@ type ConsultationQuickParseKey = keyof Pick<
 >;
 
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
-
-function getTodayIsoDate(): string {
-  const now = new Date();
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return localDate.toISOString().slice(0, 10);
-}
 
 function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
   return formatClassDisplayName(item, { showCohortYear });

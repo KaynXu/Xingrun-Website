@@ -3,14 +3,17 @@ import { AlertCircle, CalendarDays, ChevronDown, Cpu, Eye, Pencil, PlusCircle, R
 import { AnimatePresence, motion } from 'motion/react';
 
 import type {
-  ConsultationFilterKey, ConsultationFormValues, ConsultationRecord, ConsultationResultStage, ConsultationTeacherOption, CurrentUser } from '../../App';
+  CurrentUser,
+} from '../../App';
+import type {
+  ConsultationFilterKey, ConsultationFormValues, ConsultationRecord, ConsultationResultStage, ConsultationTeacherOption,
+} from './consultationTypes';
 import {
-  ConsultationBatchModal,
   ConsultationModal,
-  getTodayIsoDate,
   normalizeConsultationTeacherOption,
   toConsultationFormValues,
-} from '../../App';
+} from './ConsultationModal';
+import { ConsultationBatchModal } from './ConsultationBatchModal';
 import {
   ConsultationCardExpandableText,
   ConsultationFlowBar,
@@ -37,7 +40,7 @@ import {
   sortConsultationsForFilter,
   toggleConsultationStageLight,
 } from './consultationShared';
-import { workspaceCardClass, workspaceFieldClass, workspacePageClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSectionTextClass, workspaceSectionTitleClass, apiFetch } from '../../workspaceShared';
+import { workspaceCardClass, workspaceFieldClass, workspacePageClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSectionTextClass, workspaceSectionTitleClass, apiFetch, getTodayIsoDate } from '../../workspaceShared';
 import { hasOwnerAccess, hasStaffAccess } from '../navigation/workspaceAccess';
 
 export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) {

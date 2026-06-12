@@ -119,6 +119,7 @@ import {
   apiFetch,
   buildAuthedPath,
   cn,
+  getTodayIsoDate,
   getToken,
   readLocalStorageItem,
   removeLocalStorageItem,
@@ -133,11 +134,21 @@ import {
   workspaceSoftCardClass,
   writeLocalStorageItem,
 } from './workspaceShared';
+export type {
+  ConsultationBatchDraftItem,
+  ConsultationBatchParseResponse,
+  ConsultationFilterKey,
+  ConsultationFormValues,
+  ConsultationRecord,
+  ConsultationResultStage,
+  ConsultationTeacherOption,
+} from './features/consultation/consultationTypes';
 
 export {
   apiFetch,
   buildAuthedPath,
   cn,
+  getTodayIsoDate,
   getToken,
   readLocalStorageItem,
   removeLocalStorageItem,
@@ -216,74 +227,6 @@ export interface ClassItem {
   teacher_user_id?: number | null;
   lesson_count?: number;
   student_count?: number;
-}
-
-export interface ConsultationRecord {
-  id: number;
-  date: string;
-  parent_wechat_name: string;
-  child_name: string;
-  grade: string;
-  receiving_teacher: string;
-  teacher_id: string;
-  teacher_display_name?: string;
-  consultation_subject: string;
-  need_detail: string;
-  source_channel: string;
-  source_channel_note: string;
-  screenshot: string;
-  follow_up_status: string;
-  follow_up_note: string;
-  flow_stage: string;
-  completed_stages: string[];
-  test_taken: string;
-  test_images: Array<{ url: string; filename: string }>;
-  trial_taken: string;
-  trial_time_slot: string;
-  trial_class_id: number | null;
-  trial_class_manual: string;
-  trial_teacher: string;
-  trial_feedback: string;
-  success_class_id: number | null;
-  success_class_manual: string;
-  end_note: string;
-  ended_at: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export type ConsultationFormValues = Omit<ConsultationRecord, 'id' | 'created_at' | 'updated_at'>;
-export type ConsultationResultStage = '成功进班' | '试听失败';
-type ConsultationQuickParseKey = keyof Pick<
-  ConsultationFormValues,
-  | 'parent_wechat_name'
-  | 'child_name'
-  | 'grade'
-  | 'receiving_teacher'
-  | 'teacher_id'
-  | 'consultation_subject'
-  | 'need_detail'
-  | 'source_channel'
-  | 'source_channel_note'
->;
-
-export interface ConsultationTeacherOption {
-  teacher_id: string;
-  display_name: string;
-  aliases: string[];
-}
-
-interface ConsultationBatchDraftItem {
-  action: 'create' | 'update';
-  target_id: number | null;
-  reason: string;
-  fields: Partial<ConsultationFormValues>;
-  warnings: string[];
-}
-
-interface ConsultationBatchParseResponse {
-  items: ConsultationBatchDraftItem[];
-  warnings: string[];
 }
 
 export interface CurrentUser {
@@ -625,24 +568,11 @@ function clearJoinInvitePathIfNeeded(): void {
   window.history.replaceState({}, '', '/');
 }
 
-function getTodayIsoDate(): string {
-  const now = new Date();
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return localDate.toISOString().slice(0, 10);
-}
-
 function shiftIsoDate(dateString: string, days: number): string {
   const base = new Date(`${dateString}T12:00:00`);
   base.setDate(base.getDate() + days);
   return base.toISOString().slice(0, 10);
 }
-
-export type ConsultationFilterKey =
-  | 'pending-7'
-  | 'pending-30'
-  | 'pending-over30'
-  | 'ended-success'
-  | 'ended-unsuccessful';
 
 export {
   ConsultationBatchModal,
@@ -665,7 +595,6 @@ export {
   getConsultationOver30SectionLabel,
   getConsultationSourceLabel,
   getConsultationTeacherName,
-  getTodayIsoDate,
   isConsultationEnded,
   isConsultationResultStage,
   moveConsultationStage,

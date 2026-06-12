@@ -4,39 +4,7 @@ import { motion } from 'motion/react';
 
 import { apiFetch, cn, workspaceFieldClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSoftCardClass } from '../../workspaceShared';
 import { buildConsultationBatchCreatePayload } from './ConsultationModal';
-
-interface ConsultationRecord {
-  id: number;
-  child_name?: string;
-}
-
-interface ConsultationFormValues {
-  date?: string;
-  child_name?: string;
-  parent_wechat_name?: string;
-  grade?: string;
-  receiving_teacher?: string;
-  teacher_id?: string;
-  consultation_subject?: string;
-  source_channel?: string;
-  source_channel_note?: string;
-  follow_up_status?: string;
-  follow_up_note?: string;
-  need_detail?: string;
-}
-
-interface ConsultationBatchDraftItem {
-  action: 'create' | 'update';
-  target_id: number | null;
-  reason: string;
-  fields: Partial<ConsultationFormValues>;
-  warnings: string[];
-}
-
-interface ConsultationBatchParseResponse {
-  items: ConsultationBatchDraftItem[];
-  warnings: string[];
-}
+import type { ConsultationBatchDraftItem, ConsultationBatchParseResponse, ConsultationFormValues } from './consultationTypes';
 
 const ConsultationBatchModal = ({
   open,
