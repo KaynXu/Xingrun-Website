@@ -7,6 +7,7 @@ const sidebarSource = readFileSync(new URL('./features/navigation/Sidebar.tsx', 
 const headerSource = readFileSync(new URL('./features/navigation/Header.tsx', import.meta.url), 'utf8');
 const shellSource = readFileSync(new URL('./features/navigation/WorkspaceShellLayout.tsx', import.meta.url), 'utf8');
 const contentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
+const accessSource = readFileSync(new URL('./features/navigation/workspaceAccess.ts', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
@@ -133,8 +134,8 @@ test('review generation source appends auth token to lesson pdf links', () => {
 test('workspace navigation wires smart wrong questions into every authenticated role shell', () => {
   const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
-  assert.match(appSource, /function canAccessSmartWrongQuestions\(role: Role\): boolean \{/);
-  assert.match(appSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
+  assert.match(accessSource, /export function canAccessSmartWrongQuestions\(role: WorkspaceRole\): boolean \{/);
+  assert.match(accessSource, /return hasStaffAccess\(role\) \|\| role === 'member';/);
   assert.match(sidebarBlock, /showSmartWrongQuestions[\s\S]*\{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' \}/);
   assert.match(appSource, /smartWrongQuestions: '智能错题'/);
   assert.match(contentSource, /activeWorkspacePage === 'smartWrongQuestions'[\s\S]*canOpenWorkspacePage\(currentUser, 'smartWrongQuestions'\)[\s\S]*<SmartWrongQuestionsPage currentUser=\{currentUser\} \/>/);
@@ -155,7 +156,7 @@ test('workspace navigation exposes a dedicated owner-only credit center page', (
 
   assert.match(sidebarBlock, /showCreditCenter \? \[\{ id: 'credit', icon: [^,]+, label: '积分中心' \}\] : \[]/);
   assert.match(appSource, /credit: '积分中心'/);
-  assert.match(appSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
+  assert.match(accessSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
   assert.match(contentSource, /activeWorkspacePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
 });
 
@@ -211,12 +212,12 @@ test('workspace navigation source exposes classes management through configurabl
   const sidebarBlock = requireMatch(sidebarSource, /const menuItems = \[[\s\S]*?\n  \];/);
 
   assert.match(appSource, /type Page =[\s\S]*'classes'[\s\S]*;/);
-  assert.match(appSource, /const configurableWorkspacePages/);
-  assert.match(appSource, /function canOpenWorkspacePage\(user: CurrentUser, page: Page\): boolean \{/);
+  assert.match(accessSource, /export const configurableWorkspacePages/);
+  assert.match(accessSource, /export function canOpenWorkspacePage\(user: VisiblePageUser, page: WorkspacePage\): boolean \{/);
   assert.match(sidebarBlock, /filter\(\(item\) => canOpenPage\(item\.id as SidebarPage\)\)/);
   assert.match(sidebarBlock, /id: 'classes'[\s\S]*label: '学管中心'/);
   assert.match(appSource, /classes: '学管中心'/);
-  assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
+  assert.match(accessSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
   assert.match(contentSource, /activeWorkspacePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) &&[\s\S]*<StudentCenterPage currentUser=\{currentUser\}/);
   assert.match(classManagementBlock, /label: '班级管理'/);
   assert.match(classManagementBlock, /负责老师/);
@@ -224,8 +225,8 @@ test('workspace navigation source exposes classes management through configurabl
 });
 
 test('workspace navigation falls back when the selected page is not allowed for the current role', () => {
-  assert.match(appSource, /function getWorkspacePageFallback\(user: CurrentUser, page: Page\): Page \{/);
-  assert.match(appSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
+  assert.match(accessSource, /export function getWorkspacePageFallback\(user: VisiblePageUser, page: WorkspacePage\): WorkspacePage \{/);
+  assert.match(accessSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
   assert.match(appSource, /const activeWorkspacePage = getWorkspacePageFallback\(currentUser, activePage\);/);
   assert.match(appSource, /setActivePage\(\(page\) => getWorkspacePageFallback\(user, page\)\);/);
   assert.match(appSource, /const navigateWorkspacePage = useCallback\(\(page: Page\) => \{/);
@@ -240,11 +241,11 @@ test('workspace navigation falls back when the selected page is not allowed for 
 });
 
 test('workspace navigation keeps role and unauthenticated permission paths explicit', () => {
-  assert.match(appSource, /function hasOwnerAccess\(role: Role\): boolean \{\s*return role === 'super_owner' \|\| role === 'owner';\s*\}/);
-  assert.match(appSource, /function hasStaffAccess\(role: Role\): boolean \{\s*return hasOwnerAccess\(role\) \|\| role === 'admin';\s*\}/);
-  assert.match(appSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
-  assert.match(appSource, /if \(page === 'accounts'\) \{\s*return hasStaffAccess\(user\.role\);\s*\}/);
-  assert.match(appSource, /if \(page === 'smartWrongQuestions' && !canAccessSmartWrongQuestions\(user\.role\)\) \{\s*return false;\s*\}/);
+  assert.match(accessSource, /export function hasOwnerAccess\(role: WorkspaceRole\): boolean \{\s*return role === 'super_owner' \|\| role === 'owner';\s*\}/);
+  assert.match(accessSource, /export function hasStaffAccess\(role: WorkspaceRole\): boolean \{\s*return hasOwnerAccess\(role\) \|\| role === 'admin';\s*\}/);
+  assert.match(accessSource, /if \(page === 'credit'\) \{\s*return hasOwnerAccess\(user\.role\);\s*\}/);
+  assert.match(accessSource, /if \(page === 'accounts'\) \{\s*return hasStaffAccess\(user\.role\);\s*\}/);
+  assert.match(accessSource, /if \(page === 'smartWrongQuestions' && !canAccessSmartWrongQuestions\(user\.role\)\) \{\s*return false;\s*\}/);
   assert.match(appSource, /if \(!token \|\| !currentUser \|\| showLanding \|\| landingLegalPage\) \{/);
 });
 
@@ -252,7 +253,7 @@ test('workspace navigation source exposes explicit super owner hierarchy for acc
   assert.match(appSource, /type Role = 'super_owner' \| 'owner' \| 'admin' \| 'member';/);
   assert.match(appSource, /if \(role === 'super_owner'\) return '超级管理员';/);
   assert.match(appSource, /if \(role === 'owner'\) return '机构负责人';/);
-  assert.match(appSource, /function hasOwnerAccess\(role: Role\): boolean \{/);
+  assert.match(accessSource, /export function hasOwnerAccess\(role: WorkspaceRole\): boolean \{/);
   assert.match(appSource, /function canManageOwnerRole\(role: Role\): boolean \{/);
   assert.match(approvalPageSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面/);
 });
@@ -308,7 +309,7 @@ test('consultation workspace source shows source channel metadata and keeps the 
 test('consultation workspace source allows staff edits and uses the new follow-up status set', () => {
   assert.match(appSource, /const consultationStatusOptions = \['待邀约', '跟进中', '已报班', '已劝退'\];/);
   assert.match(appSource, /follow_up_status: '待邀约',/);
-  assert.match(appSource, /function hasStaffAccess\(role: Role\): boolean \{/);
+  assert.match(accessSource, /export function hasStaffAccess\(role: WorkspaceRole\): boolean \{/);
   assert.match(appSource, /const canEdit = hasStaffAccess\(currentUser\.role\) \|\| currentUser\.role === 'member';/);
   assert.match(appSource, /\{readOnly && canEdit && \(/);
   assert.match(appSource, /const canManage = hasStaffAccess\(currentUser\.role\);/);

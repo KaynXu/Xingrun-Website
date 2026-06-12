@@ -3,6 +3,13 @@ import { MoreVertical, Pencil, PlusCircle, RefreshCw, Save, Trash2 } from 'lucid
 import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem } from '../../App';
 import { formatClassDisplayName } from '../../domain/classNaming';
 import {
+  canOpenWorkspacePage,
+  configurableWorkspacePages,
+  getVisibleWorkspacePages,
+  hasOwnerAccess,
+  hasStaffAccess,
+} from '../navigation/workspaceAccess';
+import {
   apiFetch,
   cn,
   workspaceCardClass,
@@ -89,16 +96,6 @@ interface TeacherAliasEditingState {
   alias_names: string;
 }
 
-const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
-  { id: 'review-generation', label: '复习生成' },
-  { id: 'class-feedback-generation', label: '课堂反馈' },
-  { id: 'consultation', label: '咨询记录' },
-  { id: 'calendar', label: '课程日历' },
-  { id: 'smartWrongQuestions', label: '智能错题' },
-  { id: 'classes', label: '学管中心' },
-];
-const configurableWorkspacePageIds = new Set(configurableWorkspacePages.map((item) => item.id));
-
 function getRoleLabel(role: Role): string {
   if (role === 'super_owner') return '超级管理员';
   if (role === 'owner') return '机构负责人';
@@ -108,14 +105,6 @@ function getRoleLabel(role: Role): string {
 
 function canManageOwnerRole(role: Role): boolean {
   return role === 'super_owner';
-}
-
-function getVisibleWorkspacePages(user: Pick<CurrentUser, 'visible_pages'> | UserItem): Page[] {
-  if (!user.visible_pages || user.visible_pages.length === 0) {
-    return configurableWorkspacePages.map((item) => item.id);
-  }
-  const visiblePageSet = new Set(user.visible_pages.filter((page) => configurableWorkspacePageIds.has(page)));
-  return configurableWorkspacePages.filter((item) => visiblePageSet.has(item.id)).map((item) => item.id);
 }
 
 function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {

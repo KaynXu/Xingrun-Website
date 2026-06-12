@@ -44,6 +44,14 @@ export {
 } from './features/student-center/teacherBindingRules';
 import { WorkspacePageContent } from './features/navigation/WorkspacePageContent';
 import { WorkspaceShellLayout } from './features/navigation/WorkspaceShellLayout';
+import {
+  canAccessSmartWrongQuestions,
+  canOpenWorkspacePage,
+  configurableWorkspacePages,
+  getWorkspacePageFallback,
+  hasOwnerAccess,
+  hasStaffAccess,
+} from './features/navigation/workspaceAccess';
 import { FloatingFilterBar, FloatingOverviewFilter } from './components/FloatingFilterBar';
 import {
   academicGradeGroups,
@@ -346,61 +354,11 @@ const academicSubjectFilterOptions = ['全部学科', ...academicSubjectOptions]
 const studentCenterStageOptions = [...academicStageOptions];
 const studentCenterGradeOptions = [...academicGradeOptions];
 const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
-const configurableWorkspacePages: Array<{ id: Page; label: string }> = [
-  { id: 'review-generation', label: '复习生成' },
-  { id: 'class-feedback-generation', label: '课堂反馈' },
-  { id: 'consultation', label: '咨询记录' },
-  { id: 'calendar', label: '课程日历' },
-  { id: 'smartWrongQuestions', label: '智能错题' },
-  { id: 'classes', label: '学管中心' },
-];
-const configurableWorkspacePageIds = new Set(configurableWorkspacePages.map((item) => item.id));
-
 function getRoleLabel(role: Role): string {
   if (role === 'super_owner') return '超级管理员';
   if (role === 'owner') return '机构负责人';
   if (role === 'admin') return '管理员';
   return '机构成员';
-}
-
-function hasOwnerAccess(role: Role): boolean {
-  return role === 'super_owner' || role === 'owner';
-}
-
-function hasStaffAccess(role: Role): boolean {
-  return hasOwnerAccess(role) || role === 'admin';
-}
-
-function canAccessSmartWrongQuestions(role: Role): boolean {
-  return hasStaffAccess(role) || role === 'member';
-}
-
-function getVisibleWorkspacePages(user: Pick<CurrentUser, 'visible_pages'> | UserItem): Page[] {
-  if (!Array.isArray(user.visible_pages)) {
-    return configurableWorkspacePages.map((item) => item.id);
-  }
-  const visiblePageSet = new Set(user.visible_pages.filter((page) => configurableWorkspacePageIds.has(page)));
-  return configurableWorkspacePages.map((item) => item.id).filter((page) => visiblePageSet.has(page));
-}
-
-function canOpenWorkspacePage(user: CurrentUser, page: Page): boolean {
-  if (page === 'dashboard' || page === 'settings') {
-    return true;
-  }
-  if (page === 'credit') {
-    return hasOwnerAccess(user.role);
-  }
-  if (page === 'accounts') {
-    return hasStaffAccess(user.role);
-  }
-  if (page === 'smartWrongQuestions' && !canAccessSmartWrongQuestions(user.role)) {
-    return false;
-  }
-  return getVisibleWorkspacePages(user).includes(page);
-}
-
-function getWorkspacePageFallback(user: CurrentUser, page: Page): Page {
-  return canOpenWorkspacePage(user, page) ? page : 'dashboard';
 }
 
 function canManageOwnerRole(role: Role): boolean {

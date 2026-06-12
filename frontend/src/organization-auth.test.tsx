@@ -4,11 +4,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+const accessSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/workspaceAccess.ts'), 'utf8');
+const approvalSource = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
 
 function getApprovalPageSource(): string {
-  const approvalBlock = appSource.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
-  assert.ok(approvalBlock);
-  return approvalBlock[0];
+  return approvalSource;
 }
 
 test('landing and login source expose separate organization application and invite join entry points', () => {
@@ -51,7 +51,7 @@ test('approval page source refreshes member login info after decisions and when 
 test('approval page source lets managers edit member visible pages', () => {
   const approvalSource = getApprovalPageSource();
 
-  assert.match(appSource, /const configurableWorkspacePages/);
+  assert.match(accessSource, /export const configurableWorkspacePages/);
   assert.match(approvalSource, /const \[visiblePageSavingUserId, setVisiblePageSavingUserId\] = useState<number \| null>\(null\);/);
   assert.match(approvalSource, /const handleToggleVisiblePage = async \(targetUser: UserItem, page: Page\) => \{/);
   assert.match(approvalSource, /apiFetch<\{ ok: boolean; user: UserItem \}>\(`\/api\/admin\/users\/\$\{targetUser\.id\}\/visible-pages`/);
