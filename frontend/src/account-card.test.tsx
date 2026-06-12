@@ -12,6 +12,7 @@ const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigati
 const headerSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Header.tsx'), 'utf8');
 const shellSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspaceShellLayout.tsx'), 'utf8');
 const consultationPageSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationPage.tsx'), 'utf8');
+const consultationMeetingWorkbenchSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationMeetingWorkbench.tsx'), 'utf8');
 const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
 const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
 const classManagementTabSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassManagementTab.tsx'), 'utf8');
@@ -212,7 +213,7 @@ test('consultation modal keeps save beside close and supports keyboard save shor
 
 test('consultation meeting workbench keeps local drafts until final save', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const \[draftsById, setDraftsById\] = useState<Record<number, ConsultationFormValues>>\(\{\}\);/);
@@ -240,7 +241,7 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
 
 test('consultation meeting workbench has lighter secondary filters and terminal age filters', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const \[pendingStatusFilter, setPendingStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
@@ -255,7 +256,7 @@ test('consultation meeting workbench has lighter secondary filters and terminal 
 
 test('consultation meeting workbench uses a grouped teacher popover instead of a select', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const \[teacherFilterOpen, setTeacherFilterOpen\] = useState\(false\);/);
@@ -269,7 +270,7 @@ test('consultation meeting workbench uses a grouped teacher popover instead of a
 
 test('consultation meeting workbench can directly mark a card processed with motion feedback', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const prefersReducedMotion = useReducedMotion\(\);/);
@@ -287,7 +288,7 @@ test('consultation meeting workbench can directly mark a card processed with mot
 test('consultation meeting workbench only lets the flow over node change state on double click', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(flowBarBlock);
   assert.ok(workbenchBlock);
@@ -315,7 +316,7 @@ test('compact sidebar shows immediate labels on icon hover', () => {
 
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const renderMeetingDesktopCard = \(record: ConsultationRecord\) =>/);
@@ -331,7 +332,7 @@ test('consultation meeting workbench reuses the same responsive card scheme as t
 
 test('consultation meeting workbench final save and close guard are explicit', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /beforeunload/);
@@ -394,7 +395,7 @@ test('consultation view mode uses a read-only report layout instead of disabled 
 test('consultation list and workbench cards expand long detail previews based on rendered overflow', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const expandableBlock = source.match(/const ConsultationCardExpandableText = \([\s\S]*?\n};/);
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(expandableBlock);
   assert.ok(workbenchBlock);
