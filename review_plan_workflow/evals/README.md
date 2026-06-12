@@ -10,6 +10,17 @@ Run fixture definition validation:
 python3 -m review_plan_workflow.evals.runner --validate-fixtures-only
 ```
 
+Run an opt-in workflow eval for one fixture:
+
+```bash
+python3 -m review_plan_workflow.evals.runner \
+  --run-workflow \
+  --fixture math/algebra-weakness-6-week.json \
+  --output /tmp/review-plan-eval-report.json
+```
+
+`--run-workflow` calls the real review-plan generation service and may call the configured LLM provider. Keep it out of normal unit tests; use fake generators in tests and run live evals manually when API keys and cost are expected.
+
 Supported check operators:
 
 - `containsAny`: plan text must include at least one listed marker.

@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-12 复习计划 eval runner 已从“只校验 fixture 定义”推进到“可选跑 workflow eval”：`python3 -m review_plan_workflow.evals.runner --run-workflow --fixture ... --output ...` 会把 fixture 输入映射进 `generate_single_lesson_review_plan()`，生成 plan 后再跑 schema / quality gate / fixture checks 并输出 JSON 报告；默认命令仍只做 fixture validation，避免单测或日常误触发真实 LLM 调用。当前仍需手动用真实 API key 跑三科 live eval，并做 PDF 视觉 smoke。
 - 2026-06-12 复习计划工作流已补本地 eval runner：`review_plan_workflow.evals.runner` 可验证 fixture 定义，并能用 schema、quality gate、固定复习日、关键词和默认禁用国际课程词检查生成结果；数学/物理 eval fixtures 已改为中国小学/初中/高中校内课程语境，雅思保持 IELTS 独立语境。当前仍未接入 live LLM 批量评测和 PDF 视觉 smoke。
 - 2026-06-12 复习计划工作流已补上真正质量闭环：`plan_generator` 会在最终计划 JSON/schema 不合格时做 1 次结构修复重试；`service` 会在 `quality_gate` 判定 score < 85 或 high issue 时调用 `revision` 节点最多 2 次，每次重新跑质量检查，最终返回通过版本或当前最高分版本并记录 warnings / node outputs / usage。旧 `revision_policy` 文件已删除。
 - 2026-06-12 已按用户要求继续清理复习计划旧兼容层：`review_plan_workflow.service` 不再调用旧 `ai_processor` 单节复习计划入口，实际 plan 生成迁入 `review_plan_workflow.nodes.plan_generator` 和 `review_plan_workflow.llm.client.generate_review_plan_json()`；旧 `ai_processor` 单节入口、内联大 prompt 和 style addon 已删除。

@@ -13,8 +13,11 @@ from review_plan_workflow.evals.runner import (
     evaluate_plan_against_fixture,
     iter_fixture_paths,
     load_fixture,
+    run_workflow_eval,
+    run_workflow_for_fixture,
     validate_all_fixtures,
     validate_fixture_definition,
+    workflow_kwargs_from_fixture,
 )
 from tests.review_plan_test_utils import valid_single_lesson_plan
 
@@ -75,7 +78,67 @@ class ReviewPlanEvalRunnerTestCase(unittest.TestCase):
         self.assertFalse(default_check["passed"])
         self.assertEqual(default_check["forbidden_found"], ["A-Level"])
 
+    def test_workflow_kwargs_from_fixture_preserves_subject_context(self):
+        fixture_path = FIXTURE_ROOT / "physics" / "mechanics-electricity-units-experiment.json"
+        fixture = load_fixture(fixture_path)
+
+        kwargs = workflow_kwargs_from_fixture(fixture, provider="deepseek", model="deepseek-v4-pro")
+
+        self.assertEqual(kwargs["subject"], "physics")
+        self.assertEqual(kwargs["grade"], "九年级")
+        self.assertIn("中国初中物理", kwargs["summary_text"])
+        self.assertIn("力学受力分析", kwargs["weak_points"])
+        self.assertTrue(kwargs["include_usage"])
+
+    def test_workflow_eval_uses_generator_and_evaluates_plan(self):
+        fixture_path = FIXTURE_ROOT / "math" / "algebra-weakness-6-week.json"
+        fixture = load_fixture(fixture_path)
+        calls = []
+
+        def fake_generator(**kwargs):
+            calls.append(kwargs)
+            return valid_single_lesson_plan(subject="数学", topic="一次函数"), {
+                "provider": "fake",
+                "model": "fake-model",
+                "input_tokens": 1,
+                "output_tokens": 2,
+            }
+
+        result = run_workflow_for_fixture(fixture, fixture_path=str(fixture_path), generator=fake_generator)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["status"], "evaluated")
+        self.assertEqual(result["usage"]["provider"], "fake")
+        self.assertEqual(calls[0]["subject"], "math")
+        self.assertTrue(result["evaluation"]["passed"])
+
+    def test_workflow_eval_collects_filtered_fixture_report(self):
+        def fake_generator(**kwargs):
+            return valid_single_lesson_plan(subject="数学", topic="一次函数"), {}
+
+        report = run_workflow_eval(
+            fixture_filters=["math/algebra-weakness-6-week.json"],
+            generator=fake_generator,
+        )
+
+        self.assertTrue(report["passed"], report)
+        self.assertEqual(report["fixture_count"], 1)
+        self.assertEqual(report["mode"], "workflow")
+        self.assertEqual(report["results"][0]["status"], "evaluated")
+
+    def test_workflow_eval_returns_generation_error_without_crashing(self):
+        fixture_path = FIXTURE_ROOT / "math" / "algebra-weakness-6-week.json"
+        fixture = load_fixture(fixture_path)
+
+        def failing_generator(**kwargs):
+            raise RuntimeError("missing api key")
+
+        result = run_workflow_for_fixture(fixture, fixture_path=str(fixture_path), generator=failing_generator)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["status"], "generation_failed")
+        self.assertIn("missing api key", result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

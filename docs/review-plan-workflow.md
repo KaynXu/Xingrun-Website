@@ -145,10 +145,21 @@ Run local fixture validation:
 python3 -m review_plan_workflow.evals.runner --validate-fixtures-only
 ```
 
+Run an opt-in workflow eval for one fixture:
+
+```bash
+python3 -m review_plan_workflow.evals.runner \
+  --run-workflow \
+  --fixture math/algebra-weakness-6-week.json \
+  --output /tmp/review-plan-eval-report.json
+```
+
+`--run-workflow` uses the existing `review_plan_workflow.service.generate_single_lesson_review_plan()` path and may call the configured LLM provider. Normal unit tests should keep using fake generators; live evals are manual proof runs when API keys and cost are expected.
+
 This is still not a full benchmark suite. It is a regression baseline for schema, subject fit, workload sanity, factuality, and the China-school-course default for math/physics fixtures.
 
 ## Known Limitations
 
 - The old `ai_processor.py` single-lesson review-plan entrypoint and inline prompt have been removed from active code. Plan generation now lives in one workflow-native LLM node after structured intake/source/scope/time/task/prompt-bundle preparation.
-- Quality revision is now bounded to two LLM attempts; the remaining quality work is live LLM fixture evaluation and real PDF smoke review.
+- Quality revision is now bounded to two LLM attempts; the remaining quality work is running live fixture eval reports and real PDF smoke review.
 - IELTS source material currently covers Reading best; full four-skill IELTS generation remains Phase 2.
