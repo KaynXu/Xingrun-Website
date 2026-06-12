@@ -103,27 +103,27 @@ test('sidebar account sheet includes dark theme surface classes', () => {
     />,
   );
 
-  assert.match(markup, /dark:bg-slate-950\/78/);
+  assert.match(markup, /dark:bg-slate-950\/80/);
   assert.match(markup, /dark:border-white\/10/);
   assert.match(markup, /dark:text-slate-100/);
-  assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
+  assert.match(markup, /bg-\[#fbfdff\]/);
 });
 
 test('workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header', () => {
   const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
 
   assert.match(sidebarSource, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
-  assert.match(sidebarSource, /:\s*'h-screen w-56 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
-  assert.match(sidebarSource, /\?\s*'h-screen w-24 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
-  assert.match(headerSource, /<header className="sticky top-0 z-10 flex h-20 items-center justify-end[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
+  assert.match(sidebarSource, /:\s*'h-screen w-\[18\.5rem\] shadow-\[18px_0_48px_rgba\(15,23,42,0\.05\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(sidebarSource, /\?\s*'h-screen w-64 shadow-\[18px_0_48px_rgba\(15,23,42,0\.05\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(headerSource, /<header className="sticky top-0 z-10 border-b border-slate-200\/70 bg-\[rgba\(251,253,255,0\.88\)\] backdrop-blur-xl dark:border-white\/10 dark:bg-\[#0f172a\]\/88">/);
   assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.28em\] text-sky-600">Workspace<\/p>/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
   assert.match(shellSource, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
+  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-64' : 'lg:pl-\[18\.5rem\]'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
-  assert.match(sidebarSource, /<div className=\{cn\('mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10', compact && !mobile && 'px-3'\)\}>/);
+  assert.match(sidebarSource, /<div className=\{cn\('mt-auto border-t border-slate-200\/70 p-4 dark:border-white\/10', compact && !mobile && 'px-4'\)\}>/);
 });
 
 test('sidebar account sheet renders above workspace content without relying on a fullscreen blur layer', () => {
@@ -134,8 +134,8 @@ test('sidebar account sheet renders above workspace content without relying on a
 
 test('desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar', () => {
   assert.doesNotMatch(shellSource, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
-  assert.match(shellSource, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
+  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-64' : 'lg:pl-\[18\.5rem\]'\)\}>/);
+  assert.match(shellSource, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[#f5f8fc\] text-slate-900 sm:min-h-screen dark:bg-\[#020617\] dark:text-slate-100">/);
 });
 
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {

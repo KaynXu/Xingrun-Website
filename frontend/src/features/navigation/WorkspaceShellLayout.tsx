@@ -61,12 +61,7 @@ export function WorkspaceShellLayout({
   const compactSidebar = activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation';
 
   return (
-    <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px] dark:bg-cyan-500/10" />
-        <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px] dark:bg-blue-500/10" />
-        <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px] dark:bg-slate-900/40" />
-      </div>
+    <div className="relative min-h-[100svh] overflow-x-hidden bg-[#f5f8fc] text-slate-900 sm:min-h-screen dark:bg-[#020617] dark:text-slate-100">
       <div className="relative flex min-h-[100svh] sm:min-h-screen">
         <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
           <Sidebar
@@ -102,7 +97,7 @@ export function WorkspaceShellLayout({
                 <button
                   type="button"
                   onClick={onCloseSidebar}
-                  className="absolute right-3 top-3 z-10 flex h-10 w-10 touch-manipulation items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="absolute right-3 top-3 z-10 flex h-10 w-10 touch-manipulation items-center justify-center rounded-full border border-slate-200/70 bg-white/90 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                   aria-label="关闭导航"
                 >
                   <X size={18} />
@@ -125,7 +120,7 @@ export function WorkspaceShellLayout({
             </motion.div>
           )}
         </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', compactSidebar ? 'lg:pl-24' : 'lg:pl-56')}>
+        <main className={cn('flex min-w-0 flex-1 flex-col', compactSidebar ? 'lg:pl-64' : 'lg:pl-[18.5rem]')}>
           <Header
             title={title}
             onGoHome={onGoHome}

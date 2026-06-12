@@ -3671,7 +3671,7 @@ export default function App() {
 
   if (consultationMeetingMode) {
     return (
-      <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
+      <div className="relative min-h-[100svh] overflow-x-hidden bg-[#f5f8fc] text-slate-900 sm:min-h-screen dark:bg-[#020617] dark:text-slate-100">
         <ConsultationMeetingWorkbench currentUser={currentUser} />
       </div>
     );

@@ -23,8 +23,7 @@ test('workspace shell disables wait-mode page transitions and heavy blur on mobi
   assert.match(source, /const \[isMobileViewport, setIsMobileViewport\] = useState\(getInitialMobileViewport\);/);
   assert.match(source, /<AnimatePresence mode=\{isMobileViewport \? undefined : 'wait'\}>/);
   assert.match(source, /transition=\{isMobileViewport \? \{ duration: 0 \} : \{ duration: 0\.18 \}\}/);
-  assert.match(headerSource, /className="sticky top-0 z-10 flex h-20 items-center justify-end border-b border-sky-100\/80 bg-white\/92 px-4 sm:bg-white\/78 sm:backdrop-blur-xl/);
-  assert.doesNotMatch(source, /<p className="text-xs font-semibold uppercase tracking-\[0\.28em\] text-sky-600">Workspace<\/p>/);
+  assert.match(headerSource, /className="sticky top-0 z-10 border-b border-slate-200\/70 bg-\[rgba\(251,253,255,0\.88\)\] backdrop-blur-xl dark:border-white\/10 dark:bg-\[#0f172a\]\/88"/);
   assert.match(shellSource, /className="absolute inset-0 bg-slate-950\/45 sm:backdrop-blur-sm"/);
 });
 
@@ -33,7 +32,7 @@ test('workspace shell uses stable viewport height containers for mobile browser 
   assert.match(shellSource, /<div className="relative flex min-h-\[100svh\] sm:min-h-screen">/);
   assert.doesNotMatch(shellSource, /<div className="relative min-h-\[100dvh\] overflow-x-hidden/);
   assert.doesNotMatch(shellSource, /<div className="relative flex min-h-\[100dvh\]/);
-  assert.doesNotMatch(shellSource, /<div className="relative min-h-screen overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\]/);
+  assert.doesNotMatch(shellSource, /<div className="relative min-h-screen overflow-x-hidden bg-\[#f5f8fc\]/);
 });
 
 test('workspace shell keeps authenticated content on native page scroll', () => {

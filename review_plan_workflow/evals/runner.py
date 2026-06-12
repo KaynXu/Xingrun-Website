@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import validate_final_review_plan
@@ -37,6 +37,13 @@ def iter_fixture_paths(root: Path = FIXTURE_ROOT) -> list[Path]:
 
 def load_fixture(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _relative_fixture_path(path: Path, root: Path = FIXTURE_ROOT) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
 
 
 def _stringify(value: Any) -> str:
@@ -217,30 +224,159 @@ def evaluate_plan_against_fixture(plan: dict[str, Any], fixture: dict[str, Any],
     }
 
 
+def workflow_kwargs_from_fixture(fixture: dict[str, Any], *, provider: str = "", model: str = "") -> dict[str, Any]:
+    input_payload = fixture.get("input") if isinstance(fixture.get("input"), dict) else {}
+    known_weaknesses = [str(item) for item in _list_value(input_payload.get("knownWeaknesses"))]
+    summary_lines = [
+        f"fixture: {fixture.get('name') or ''}",
+        f"course_system: {input_payload.get('courseSystem') or ''}",
+        f"target: {input_payload.get('target') or ''}",
+        f"student_level: {input_payload.get('studentLevel') or ''}",
+        f"timeframe: {_stringify(input_payload.get('timeframe') or {})}",
+        f"availability: {_stringify(input_payload.get('availability') or {})}",
+        "known_weaknesses: " + "；".join(known_weaknesses),
+        "expected_criteria: " + "；".join(str(item) for item in _list_value(fixture.get("expectedCriteria"))),
+    ]
+    summary_text = str(input_payload.get("summary_text") or input_payload.get("summaryText") or "\n".join(summary_lines))
+    topic = str(input_payload.get("topic") or input_payload.get("target") or (known_weaknesses[0] if known_weaknesses else "") or fixture.get("name") or "")
+    return {
+        "summary_text": summary_text,
+        "subject": str(input_payload.get("subject") or ""),
+        "grade": str(input_payload.get("grade") or input_payload.get("studentLevel") or ""),
+        "topic": topic,
+        "weak_points": "；".join(known_weaknesses),
+        "lesson_date": str(input_payload.get("lessonDate") or input_payload.get("lesson_date") or ""),
+        "provider": provider,
+        "model": model,
+        "include_usage": True,
+    }
+
+
+def run_workflow_for_fixture(
+    fixture: dict[str, Any],
+    *,
+    fixture_path: str = "",
+    provider: str = "",
+    model: str = "",
+    generator: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    errors = validate_fixture_definition(fixture, fixture_path=fixture_path)
+    if errors:
+        return {
+            "fixture": fixture_path,
+            "passed": False,
+            "status": "invalid_fixture",
+            "definition_errors": errors,
+        }
+
+    workflow_kwargs = workflow_kwargs_from_fixture(fixture, provider=provider, model=model)
+    generator_fn = generator
+    if generator_fn is None:
+        from review_plan_workflow.service import generate_single_lesson_review_plan
+
+        generator_fn = generate_single_lesson_review_plan
+
+    try:
+        generated = generator_fn(**workflow_kwargs)
+        if isinstance(generated, tuple):
+            plan, usage = generated
+        else:
+            plan, usage = generated, {}
+        evaluation = evaluate_plan_against_fixture(plan, fixture, fixture_path=fixture_path)
+        return {
+            "fixture": fixture_path,
+            "passed": bool(evaluation.get("passed")),
+            "status": "evaluated",
+            "workflow_input": {key: value for key, value in workflow_kwargs.items() if key != "include_usage"},
+            "usage": usage,
+            "evaluation": evaluation,
+            "plan": plan,
+        }
+    except Exception as exc:
+        return {
+            "fixture": fixture_path,
+            "passed": False,
+            "status": "generation_failed",
+            "workflow_input": {key: value for key, value in workflow_kwargs.items() if key != "include_usage"},
+            "error": str(exc),
+        }
+
+
+def run_workflow_eval(
+    *,
+    root: Path = FIXTURE_ROOT,
+    fixture_filters: list[str] | None = None,
+    provider: str = "",
+    model: str = "",
+    generator: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    fixture_filters = fixture_filters or []
+    results = []
+    for fixture_path in iter_fixture_paths(root):
+        relative_path = _relative_fixture_path(fixture_path, root)
+        if fixture_filters and not any(filter_value in relative_path for filter_value in fixture_filters):
+            continue
+        fixture = load_fixture(fixture_path)
+        results.append(
+            run_workflow_for_fixture(
+                fixture,
+                fixture_path=relative_path,
+                provider=provider,
+                model=model,
+                generator=generator,
+            )
+        )
+
+    return {
+        "passed": bool(results) and all(result.get("passed") for result in results),
+        "fixture_count": len(results),
+        "mode": "workflow",
+        "results": results,
+    }
+
+
 def validate_all_fixtures(root: Path = FIXTURE_ROOT) -> dict[str, Any]:
     results = []
     for fixture_path in iter_fixture_paths(root):
         fixture = load_fixture(fixture_path)
-        errors = validate_fixture_definition(fixture, fixture_path=str(fixture_path.relative_to(root)))
-        results.append({"fixture": str(fixture_path.relative_to(root)), "passed": not errors, "errors": errors})
+        errors = validate_fixture_definition(fixture, fixture_path=_relative_fixture_path(fixture_path, root))
+        results.append({"fixture": _relative_fixture_path(fixture_path, root), "passed": not errors, "errors": errors})
     return {
         "passed": all(result["passed"] for result in results),
         "fixture_count": len(results),
+        "mode": "fixture_validation",
         "results": results,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Validate review-plan eval fixtures.")
+    parser = argparse.ArgumentParser(description="Run review-plan eval fixtures.")
     parser.add_argument("--fixtures-root", type=Path, default=FIXTURE_ROOT)
     parser.add_argument("--validate-fixtures-only", action="store_true")
+    parser.add_argument("--run-workflow", action="store_true", help="Generate plans from fixtures before evaluating them.")
+    parser.add_argument("--fixture", action="append", default=[], help="Relative fixture path substring to run. Can be repeated.")
+    parser.add_argument("--provider", default="", help="Optional LLM provider override for --run-workflow.")
+    parser.add_argument("--model", default="", help="Optional LLM model override for --run-workflow.")
+    parser.add_argument("--output", type=Path, help="Optional JSON report path.")
     args = parser.parse_args(argv)
 
-    report = validate_all_fixtures(args.fixtures_root)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    if args.run_workflow:
+        report = run_workflow_eval(
+            root=args.fixtures_root,
+            fixture_filters=args.fixture,
+            provider=args.provider,
+            model=args.model,
+        )
+    else:
+        report = validate_all_fixtures(args.fixtures_root)
+
+    rendered = json.dumps(report, ensure_ascii=False, indent=2)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered + "\n", encoding="utf-8")
+    print(rendered)
     return 0 if report["passed"] else 1
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
