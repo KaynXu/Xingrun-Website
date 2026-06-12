@@ -28,18 +28,13 @@ import {
 import { formatClassDisplayName } from '../../domain/classNaming';
 import {
   apiFetch,
+  getTodayIsoDate,
   workspaceFieldClass,
   workspacePageClass,
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
 } from '../../workspaceShared';
-import type { ClassItem, CurrentUser } from '../../App';
-
-function getTodayIsoDate(): string {
-  const now = new Date();
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return localDate.toISOString().slice(0, 10);
-}
+import type { ClassItem, CurrentUser } from '../../appTypes';
 
 function getIsoWeekParts(dateString: string): { year: number; week: number } {
   const base = new Date(`${dateString}T12:00:00`);

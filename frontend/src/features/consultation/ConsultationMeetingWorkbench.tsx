@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, Eye, Pencil } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
-import type { ClassItem, CurrentUser } from '../../App';
+import type { ClassItem, CurrentUser } from '../../appTypes';
 import type { ConsultationFormValues, ConsultationRecord, ConsultationTeacherOption } from './consultationTypes';
 import {
   ConsultationModal,

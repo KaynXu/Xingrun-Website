@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import type {
   ClassItem,
   CurrentUser,
-} from '../../App';
+} from '../../appTypes';
 import type {
   ConsultationFormValues,
   ConsultationRecord,

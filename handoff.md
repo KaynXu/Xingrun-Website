@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已把 `CurrentUser / ClassItem / UserItem / ClassBindingTarget / Role / WorkspacePage` 从 `frontend/src/App.tsx` 抽到 `frontend/src/appTypes.ts`，并把 `apiUploadFormWithProgress()` 提升到 `frontend/src/workspaceShared.ts`；审批、咨询、课堂反馈、复习生成、导航壳子、智能错题等页面现在直接依赖共享类型/共享 helper，不再把 `App.tsx` 当作全局类型与上传工具中转站。同步补了独立的 `frontend/src/features/landing/LandingPage.tsx`，把 `LandingPage / LandingLegalPage` 从工作台模块断开并重新接回 `App.tsx`，未登录入口与法律页渲染恢复可用，相关 landing / storage guard / 定向咨询源码断言 proof 已通过。
 - 2026-06-13 已把咨询领域基础类型收口到 `frontend/src/features/consultation/consultationTypes.ts`，并把 `getTodayIsoDate()` 提升到 `frontend/src/workspaceShared.ts`；咨询列表页、面对面工作台、流程共享组件和两个咨询弹窗现在直接引用各自的咨询类型/共享日期 helper，不再把 `frontend/src/App.tsx` 当作类型仓库。
 - 2026-06-13 已把咨询记录 `AI 批量整理` 弹窗从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationBatchModal.tsx`，解析、预览、逐条导入和失败重试相关逻辑不再内联在 `App.tsx` 中；`App.tsx` 现通过导入与转发导出继续给咨询页复用，批量整理源码断言也已切到新文件。
 - 2026-06-13 已把咨询记录编辑/查看弹窗从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationModal.tsx`，并把快速解析、表单派生、结果区/流程卡片和只读报告等 modal 专属 helper 一并迁出；`App.tsx` 现在通过导入和转发导出继续给咨询页与面对面工作台复用，相关源码断言已同步切到新 modal 文件。

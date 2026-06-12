@@ -10,7 +10,7 @@ import {
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
   workspaceSoftCardClass,
-} from './App';
+} from './workspaceShared';
 import {
   buildMemberStudentNotebookSummaries,
   buildWeeklyWrongQuestionActivitySummaryPath,

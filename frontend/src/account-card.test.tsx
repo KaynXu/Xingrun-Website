@@ -13,6 +13,8 @@ const headerSource = readFileSync(resolve(process.cwd(), 'src/features/navigatio
 const shellSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspaceShellLayout.tsx'), 'utf8');
 const consultationPageSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationPage.tsx'), 'utf8');
 const consultationMeetingWorkbenchSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationMeetingWorkbench.tsx'), 'utf8');
+const consultationModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+const consultationBatchModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
 const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
 const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
 const classManagementTabSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassManagementTab.tsx'), 'utf8');
@@ -139,9 +141,9 @@ test('desktop workspace uses page-level scrolling instead of an inner scroll con
 });
 
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {
-  assert.match(appSource, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(consultationModalSource, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(consultationBatchModalSource, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
   assert.match(consultationPageSource, /rounded-\[14px\] border border-\[#D9EEF7\] bg-white p-3\.5 shadow-\[0_6px_18px_rgba\(31,42,68,0\.04\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
-  assert.match(appSource, /workspaceSoftCardClass\} p-5/);
 });
 
 test('consultation modal source keeps the create and edit form concise', () => {

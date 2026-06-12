@@ -1,4 +1,4 @@
-import type { CurrentUser } from '../../App';
+import type { CurrentUser } from '../../appTypes';
 import {
   workspaceCardClass,
   workspacePageClass,

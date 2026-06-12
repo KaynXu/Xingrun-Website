@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-import type { CurrentUser } from '../../App';
+import type { CurrentUser } from '../../appTypes';
 import { cn } from '../../workspaceShared';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';

@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Upload } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { ClassItem, CurrentUser } from '../../App';
+import type { ClassItem, CurrentUser } from '../../appTypes';
 import { formatClassDisplayName } from '../../domain/classNaming';
 import {
   apiFetch,
+  apiUploadFormWithProgress,
   buildAuthedPath,
   cn,
   workspaceCardClass,
@@ -69,47 +70,6 @@ function syncMemberScopedClassSelection(
   }
 
   return null;
-}
-
-function apiUploadFormWithProgress<T = unknown>(
-  path: string,
-  body: FormData,
-  onProgress: (progress: number) => void,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', path);
-    const token = typeof window !== 'undefined' ? window.localStorage.getItem('xr_token') : null;
-    if (token) {
-      xhr.setRequestHeader('X-Auth-Token', token);
-    }
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable || event.total <= 0) {
-        return;
-      }
-      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
-    };
-    xhr.onload = () => {
-      if (xhr.status === 401 && typeof window !== 'undefined') {
-        window.localStorage.removeItem('xr_token');
-        window.location.reload();
-      }
-      let payload: T & { error?: string };
-      try {
-        payload = JSON.parse(xhr.responseText || '{}') as T & { error?: string };
-      } catch {
-        payload = { error: xhr.statusText } as T & { error?: string };
-      }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(payload.error || xhr.statusText));
-        return;
-      }
-      onProgress(100);
-      resolve(payload);
-    };
-    xhr.onerror = () => reject(new Error('上传失败，请重试'));
-    xhr.send(body);
-  });
 }
 
 const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) => (

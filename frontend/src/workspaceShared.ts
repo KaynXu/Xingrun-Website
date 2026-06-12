@@ -64,6 +64,47 @@ export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOpti
   return res.json() as Promise<T>;
 }
 
+export function apiUploadFormWithProgress<T = unknown>(
+  path: string,
+  body: FormData,
+  onProgress: (progress: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    const token = getToken();
+    if (token) {
+      xhr.setRequestHeader('X-Auth-Token', token);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) {
+        return;
+      }
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        removeLocalStorageItem('xr_token');
+        window.location.reload();
+      }
+      let payload: T & { error?: string };
+      try {
+        payload = JSON.parse(xhr.responseText || '{}') as T & { error?: string };
+      } catch {
+        payload = { error: xhr.statusText } as T & { error?: string };
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(payload.error || xhr.statusText));
+        return;
+      }
+      onProgress(100);
+      resolve(payload);
+    };
+    xhr.onerror = () => reject(new Error('上传失败，请重试'));
+    xhr.send(body);
+  });
+}
+
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
 }

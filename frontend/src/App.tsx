@@ -98,6 +98,18 @@ import {
   hasStaffAccess,
 } from './features/navigation/workspaceAccess';
 import { FloatingFilterBar, FloatingOverviewFilter } from './components/FloatingFilterBar';
+import type {
+  ClassBindingTarget,
+  ClassItem,
+  CurrentUser,
+  Role,
+  UserItem,
+  WorkspacePage,
+} from './appTypes';
+import {
+  LandingLegalPage,
+  LandingPage,
+} from './features/landing/LandingPage';
 import {
   academicGradeGroups,
   academicGradeOptions,
@@ -117,6 +129,7 @@ import {
 } from './classFeedbackGeneration';
 import {
   apiFetch,
+  apiUploadFormWithProgress,
   buildAuthedPath,
   cn,
   getTodayIsoDate,
@@ -135,6 +148,14 @@ import {
   writeLocalStorageItem,
 } from './workspaceShared';
 export type {
+  ClassBindingTarget,
+  ClassItem,
+  CurrentUser,
+  Role,
+  UserItem,
+  WorkspacePage as Page,
+} from './appTypes';
+export type {
   ConsultationBatchDraftItem,
   ConsultationBatchParseResponse,
   ConsultationFilterKey,
@@ -146,6 +167,7 @@ export type {
 
 export {
   apiFetch,
+  apiUploadFormWithProgress,
   buildAuthedPath,
   cn,
   getTodayIsoDate,
@@ -164,21 +186,11 @@ export {
   writeLocalStorageItem,
 } from './workspaceShared';
 export { SidebarAccountSheet } from './features/navigation/Sidebar';
+export { LandingLegalPage, LandingPage } from './features/landing/LandingPage';
 
 // --- Types ---
 
-type Role = 'super_owner' | 'owner' | 'admin' | 'member';
-type Page =
-  | 'dashboard'
-  | 'review-generation'
-  | 'class-feedback-generation'
-  | 'consultation'
-  | 'calendar'
-  | 'smartWrongQuestions'
-  | 'classes'
-  | 'accounts'
-  | 'credit'
-  | 'settings';
+type Page = WorkspacePage;
 type LandingLegalDocumentKey = 'privacy' | 'terms';
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization' | 'password-reset';
 
@@ -206,40 +218,6 @@ interface ReviewPlanCreateResponse {
 
 interface ApiSettings {
   provider: string;
-}
-
-export interface ClassItem {
-  id: number;
-  name: string;
-  subject: string;
-  grade: string;
-  stage?: string;
-  current_grade?: string;
-  class_number?: string;
-  cohort_year?: number;
-  show_cohort_year?: boolean | number;
-  is_bridge?: boolean;
-  bridge_target?: string;
-  content_track?: string;
-  last_promoted_at?: string;
-  teacher_name?: string;
-  teacher_email?: string;
-  teacher_user_id?: number | null;
-  lesson_count?: number;
-  student_count?: number;
-}
-
-export interface CurrentUser {
-  id: number;
-  username: string;
-  display_name: string;
-  role: Role;
-  status: string;
-  organization_id: number;
-  organization_name: string;
-  created_at: string;
-  visible_pages?: Page[];
-  requires_class_claim?: boolean;
 }
 
 interface RegistrationRequestItem {
@@ -277,16 +255,6 @@ interface OrganizationSummaryItem {
   lesson_count: number;
 }
 
-export interface UserItem {
-  id: number;
-  name: string;
-  org: string;
-  role: Role;
-  username?: string;
-  last_login?: string | null;
-  visible_pages?: Page[];
-}
-
 type MemberBindingSummaryStatus = 'healthy' | 'needs_review' | 'incomplete';
 
 interface MemberBindingSummary {
@@ -309,11 +277,6 @@ interface ApprovalPageProps {
   currentUser: CurrentUser;
   onOpenClassBinding: (target: ClassBindingTarget) => void;
 }
-
-export type ClassBindingTarget = {
-  teacherUserId: number;
-  teacherName: string;
-};
 
 function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
   return formatClassDisplayName(item, { showCohortYear });
@@ -483,49 +446,6 @@ export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentK
     return 'terms';
   }
   return null;
-}
-
-// --- API helper ---
-
-export function apiUploadFormWithProgress<T = unknown>(
-  path: string,
-  body: FormData,
-  onProgress: (progress: number) => void,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', path);
-    const token = getToken();
-    if (token) {
-      xhr.setRequestHeader('X-Auth-Token', token);
-    }
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable || event.total <= 0) {
-        return;
-      }
-      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
-    };
-    xhr.onload = () => {
-      if (xhr.status === 401) {
-        removeLocalStorageItem('xr_token');
-        window.location.reload();
-      }
-      let payload: T & { error?: string };
-      try {
-        payload = JSON.parse(xhr.responseText || '{}') as T & { error?: string };
-      } catch {
-        payload = { error: xhr.statusText } as T & { error?: string };
-      }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(payload.error || xhr.statusText));
-        return;
-      }
-      onProgress(100);
-      resolve(payload);
-    };
-    xhr.onerror = () => reject(new Error('上传失败，请重试'));
-    xhr.send(body);
-  });
 }
 
 function getInitialDarkModePreference(): boolean {

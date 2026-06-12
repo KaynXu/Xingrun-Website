@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 
 import type {
   CurrentUser,
-} from '../../App';
+} from '../../appTypes';
 import type {
   ConsultationFilterKey, ConsultationFormValues, ConsultationRecord, ConsultationResultStage, ConsultationTeacherOption,
 } from './consultationTypes';

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-import type { CurrentUser } from '../../App';
+import type { CurrentUser } from '../../appTypes';
 import {
   apiFetch,
   cn,

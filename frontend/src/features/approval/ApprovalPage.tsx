@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MoreVertical, Pencil, PlusCircle, RefreshCw, Save, Trash2 } from 'lucide-react';
-import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem } from '../../App';
+import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem } from '../../appTypes';
 import { formatClassDisplayName } from '../../domain/classNaming';
 import {
   canOpenWorkspacePage,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { CurrentUser } from '../../App';
+import type { CurrentUser } from '../../appTypes';
 import {
   apiFetch,
   cn,
