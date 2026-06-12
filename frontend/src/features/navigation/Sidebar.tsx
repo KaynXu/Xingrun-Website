@@ -351,9 +351,6 @@ export function Sidebar({
                 <div className={cn('min-w-0 flex-1', compact && !mobile && 'hidden')}>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{item.label}</span>
-                    {activePage === item.id && (
-                      <motion.span layoutId="active-pill" className="h-2 w-2 rounded-full bg-blue-500" />
-                    )}
                   </div>
                 </div>
                 {compact && !mobile && (
