@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已把咨询记录 `AI 批量整理` 弹窗从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationBatchModal.tsx`，解析、预览、逐条导入和失败重试相关逻辑不再内联在 `App.tsx` 中；`App.tsx` 现通过导入与转发导出继续给咨询页复用，批量整理源码断言也已切到新文件。
 - 2026-06-13 已把咨询记录编辑/查看弹窗从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationModal.tsx`，并把快速解析、表单派生、结果区/流程卡片和只读报告等 modal 专属 helper 一并迁出；`App.tsx` 现在通过导入和转发导出继续给咨询页与面对面工作台复用，相关源码断言已同步切到新 modal 文件。
 - 2026-06-13 已按用户要求移除工作台左侧导航图标的边框和背景：`frontend/src/features/navigation/Sidebar.tsx` 现在让图标容器保持透明，只通过当前项/悬停时的图标颜色变化表达状态，不再显示额外描边或底色。当前轮 proof 继续使用聚焦导航脚本记录。
 - 2026-06-13 已按用户要求移除工作台左侧导航激活项右侧的蓝色圆点：`frontend/src/features/navigation/Sidebar.tsx` 现在只保留当前项的背景和文字高亮，不再额外显示小圆点提示。当前轮 proof 继续使用聚焦导航脚本记录。

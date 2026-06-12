@@ -145,7 +145,7 @@ test('consultation detail cards use darker dark-mode surfaces instead of translu
 });
 
 test('consultation modal source keeps the create and edit form concise', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /placeholder="老师 ID"/);
   assert.doesNotMatch(source, />截图字段</);
@@ -156,7 +156,7 @@ test('consultation modal source keeps the create and edit form concise', () => {
 });
 
 test('consultation modal source supports quick parsing and structured source metadata confirmation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
 
   assert.match(source, /快速录入/);
   assert.match(source, /智能解析/);
@@ -172,7 +172,7 @@ test('consultation page source adds ai batch entry in the existing action area',
 });
 
 test('consultation page V2.0 exposes owner-only meeting workbench instead of refresh', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(appBlock);
@@ -843,7 +843,7 @@ test('consultation mobile card keeps view edit icons in the top right and remove
 });
 
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -858,7 +858,7 @@ test('consultation batch modal source parses text, previews drafts, and reuses c
 });
 
 test('consultation batch modal source keeps refresh failure separate after successful writes', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -869,7 +869,7 @@ test('consultation batch modal source keeps refresh failure separate after succe
 });
 
 test('consultation batch modal source blocks dismissal while parsing or importing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -879,7 +879,7 @@ test('consultation batch modal source blocks dismissal while parsing or importin
 });
 
 test('consultation batch modal source previews key written fields before confirm', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -892,7 +892,7 @@ test('consultation batch modal source previews key written fields before confirm
 });
 
 test('consultation batch modal source lets users remove individual drafts before import', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -903,7 +903,7 @@ test('consultation batch modal source lets users remove individual drafts before
 });
 
 test('consultation batch modal source attributes write failures to a specific draft and always clears importing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -914,8 +914,8 @@ test('consultation batch modal source attributes write failures to a specific dr
 });
 
 test('approval page source supports editing member display names inline', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+  const source = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};/);
 
   assert.ok(approvalBlock);
   assert.match(approvalBlock[0], /编辑姓名/);
@@ -923,7 +923,7 @@ test('approval page source supports editing member display names inline', () => 
 });
 
 test('consultation batch modal source keeps only remaining drafts after a partial import failure', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -936,7 +936,7 @@ test('consultation batch modal source keeps only remaining drafts after a partia
 });
 
 test('consultation batch modal source preserves the current preview when parsing fails', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -949,7 +949,7 @@ test('consultation batch modal source preserves the current preview when parsing
 });
 
 test('consultation batch modal source keeps imported drafts visible while retries only include unsaved drafts', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -988,7 +988,7 @@ test('quick consultation parser extracts normalized teacher and source metadata'
 });
 
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
-  const appSource = `${readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')}\n${studentCenterSource}`;
+  const appSource = `${readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8')}\n${studentCenterSource}`;
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
   const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
   const indexCssSource = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
@@ -1021,7 +1021,7 @@ test('workspace source applies dark classes to lesson library approval settings 
 });
 
 test('workspace source splits approval and class assignment responsibilities across separate pages', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
   const classManagementBlock = [studentCenterClassSource];
 
@@ -1040,7 +1040,7 @@ test('workspace source splits approval and class assignment responsibilities acr
 });
 
 test('approval page source loads and renders member teaching binding summaries', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1056,7 +1056,7 @@ test('approval page source loads and renders member teaching binding summaries',
 });
 
 test('teacher alias mapping source links website members without guessing the external id', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1070,7 +1070,7 @@ test('teacher alias mapping source links website members without guessing the ex
 });
 
 test('approval page source removes the start binding action from member cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1079,7 +1079,7 @@ test('approval page source removes the start binding action from member cards', 
 });
 
 test('approval member cards link teacher class binding into class management', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
   const classManagementBlock = [studentCenterClassSource];
 
@@ -1095,7 +1095,7 @@ test('approval member cards link teacher class binding into class management', (
 });
 
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1107,7 +1107,7 @@ test('class management source shows current teacher summary and removes multi-te
 });
 
 test('class management source uses one 负责老师 concept instead of separate 班级老师分配 wording', () => {
-  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const appSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1137,7 +1137,7 @@ test('class management source keeps teacher binding selection scoped per class c
 });
 
 test('class management source separates mutation success from best-effort refresh reconciliation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1156,7 +1156,7 @@ test('class management source separates mutation success from best-effort refres
 });
 
 test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1181,7 +1181,7 @@ test('class management source disables conflicting controls while async class or
 });
 
 test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1195,7 +1195,7 @@ test('class management source removes teacher-email UI and the standalone bottom
 });
 
 test('class management source embeds teacher assignment inside each class card and normalizes common class names', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1214,7 +1214,7 @@ test('class management source embeds teacher assignment inside each class card a
 });
 
 test('class management source opens both existing and new class editors in a modal instead of inline cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1228,7 +1228,7 @@ test('class management source opens both existing and new class editors in a mod
 });
 
 test('class management source explains structured class naming without development examples', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1255,7 +1255,7 @@ test('class management source adds a side-by-side student editor card next to th
 });
 
 test('class management source removes click-to-edit helper copy from class cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1263,7 +1263,7 @@ test('class management source removes click-to-edit helper copy from class cards
 });
 
 test('class management source keeps delete and save buttons inside the teacher card footer', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1272,7 +1272,7 @@ test('class management source keeps delete and save buttons inside the teacher c
 });
 
 test('class management source preserves expanded edit cards during manual refresh failures', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1283,7 +1283,7 @@ test('class management source preserves expanded edit cards during manual refres
 });
 
 test('account administration source disables refresh and teacher alias actions while mutations run', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1304,7 +1304,7 @@ test('account administration source disables refresh and teacher alias actions w
 });
 
 test('login source includes password reset and first-login class claim entry points', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classClaimBlock = source.match(/const ClassClaimPage = \([\s\S]*?const LoginModal = \(/);
 
   assert.match(source, /type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
