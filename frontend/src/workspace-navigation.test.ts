@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const sidebarSource = readFileSync(new URL('./features/navigation/Sidebar.tsx', import.meta.url), 'utf8');
 const headerSource = readFileSync(new URL('./features/navigation/Header.tsx', import.meta.url), 'utf8');
+const shellSource = readFileSync(new URL('./features/navigation/WorkspaceShellLayout.tsx', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
@@ -50,7 +51,7 @@ test('review generation source replaces separate lesson input and library pages 
   assert.doesNotMatch(sidebarBlock, /id: 'input'[\s\S]*label:/);
   assert.doesNotMatch(sidebarBlock, /id: 'library'[\s\S]*label:/);
   assert.match(appSource, /'review-generation': '复习生成'/);
-  assert.match(appSource, /import \{ Sidebar \} from '\.\/features\/navigation\/Sidebar';/);
+  assert.match(appSource, /import \{ WorkspaceShellLayout \} from '\.\/features\/navigation\/WorkspaceShellLayout';/);
   assert.match(appSource, /import \{ ReviewGenerationPage \} from '\.\/features\/review-generation\/ReviewGenerationPage';/);
   assert.match(appSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*renderLessonInput=\{\(handleFormSuccess\) => \(/);
   assert.match(appSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
@@ -281,10 +282,10 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
 
   assert.match(appSource, /mobileNavOpen/);
   assert.match(headerSource, /aria-label="打开导航"/);
-  assert.match(appSource, /className="fixed inset-0 z-40 lg:hidden"/);
+  assert.match(shellSource, /className="fixed inset-0 z-40 lg:hidden"/);
   assert.match(appSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
   assert.match(appSource, /className="hidden md:block xl:hidden"/);
-  assert.match(appSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
+  assert.match(shellSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
   assert.match(appSource, /className=\{`grid w-full gap-2 self-start lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] \$\{canManage \? 'grid-cols-3' : 'grid-cols-2'\}`\}/);
   assert.match(appSource, /className=\{`\$\{workspaceSecondaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
   assert.match(appSource, /className=\{`\$\{workspacePrimaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);

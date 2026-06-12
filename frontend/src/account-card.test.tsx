@@ -10,6 +10,7 @@ import * as AppModule from './App';
 const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Sidebar.tsx'), 'utf8');
 const headerSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Header.tsx'), 'utf8');
+const shellSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspaceShellLayout.tsx'), 'utf8');
 const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
 const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
 const classManagementTabSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassManagementTab.tsx'), 'utf8');
@@ -115,8 +116,8 @@ test('workspace shell source keeps sidebar and dashboard dark classes while remo
   assert.match(headerSource, /<header className="sticky top-0 z-10 flex h-20 items-center justify-end[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
   assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.28em\] text-sky-600">Workspace<\/p>/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
-  assert.match(appSource, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(appSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
+  assert.match(shellSource, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
+  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
@@ -130,9 +131,9 @@ test('sidebar account sheet renders above workspace content without relying on a
 });
 
 test('desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar', () => {
-  assert.doesNotMatch(appSource, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(appSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
-  assert.match(appSource, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
+  assert.doesNotMatch(shellSource, /<div className="flex-1 overflow-y-auto">/);
+  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-24' : 'lg:pl-56'\)\}>/);
+  assert.match(shellSource, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
 });
 
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {

@@ -52,8 +52,7 @@ import { LessonInput } from './features/review-generation/LessonInput';
 import { CreditCenterPage } from './features/credits/CreditCenterPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { ApprovalPage } from './features/approval/ApprovalPage';
-import { Header } from './features/navigation/Header';
-import { Sidebar } from './features/navigation/Sidebar';
+import { WorkspaceShellLayout } from './features/navigation/WorkspaceShellLayout';
 import { FloatingFilterBar, FloatingOverviewFilter } from './components/FloatingFilterBar';
 import {
   academicGradeGroups,
@@ -7003,87 +7002,33 @@ export default function App() {
   const activeWorkspacePage = getWorkspacePageFallback(currentUser, activePage);
 
   return (
-    <div className="relative min-h-[100svh] overflow-x-hidden bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] text-slate-900 sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)] dark:text-slate-100">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-8%] top-[8%] h-80 w-80 rounded-full bg-cyan-200/35 blur-[130px] dark:bg-cyan-500/10" />
-        <div className="absolute right-[-10%] top-[12%] h-96 w-96 rounded-full bg-blue-200/30 blur-[150px] dark:bg-blue-500/10" />
-        <div className="absolute bottom-[-14%] left-[28%] h-[28rem] w-[28rem] rounded-full bg-white/75 blur-[120px] dark:bg-slate-900/40" />
-      </div>
-      <div className="relative flex min-h-[100svh] sm:min-h-screen">
-        <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
-          <Sidebar
-            activePage={activeWorkspacePage}
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            setActivePage={navigateWorkspacePage}
-            compact={activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation'}
-            showSmartWrongQuestions={canAccessSmartWrongQuestions(currentUser.role)}
-            showCreditCenter={hasOwnerAccess(currentUser.role)}
-            showAccounts={hasStaffAccess(currentUser.role)}
-            canOpenPage={(page) => canOpenWorkspacePage(currentUser, page)}
-            roleLabel={getRoleLabel(currentUser.role)}
-            onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
-          />
-        </div>
-        <AnimatePresence>
-          {mobileNavOpen && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 lg:hidden"
-            >
-              <div className="absolute inset-0 bg-slate-950/45 sm:backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
-              <motion.div
-                initial={{ x: -24, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -24, opacity: 0 }}
-                transition={{ duration: 0.18 }}
-                className="relative h-full w-[18.5rem] max-w-[86vw]"
-              >
-                <button
-                  type="button"
-                  onClick={() => setMobileNavOpen(false)}
-                  className="absolute right-3 top-3 z-10 flex h-10 w-10 touch-manipulation items-center justify-center rounded-full border border-sky-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-sky-50 hover:text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                  aria-label="关闭导航"
-                >
-                  <X size={18} />
-                </button>
-                <Sidebar
-                  activePage={activeWorkspacePage}
-                  currentUser={currentUser}
-                  onLogout={handleLogout}
-                  setActivePage={navigateWorkspacePage}
-                  onNavigate={() => setMobileNavOpen(false)}
-                  mobile={true}
-                  showSmartWrongQuestions={canAccessSmartWrongQuestions(currentUser.role)}
-                  showCreditCenter={hasOwnerAccess(currentUser.role)}
-                  showAccounts={hasStaffAccess(currentUser.role)}
-                  canOpenPage={(page) => canOpenWorkspacePage(currentUser, page)}
-                  roleLabel={getRoleLabel(currentUser.role)}
-                  onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
-                />
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation' ? 'lg:pl-24' : 'lg:pl-56')}>
-          <Header
-            title={pageTitle[activeWorkspacePage]}
-            onGoHome={() => setShowLanding(true)}
-            isDark={isDark}
-            onToggleDarkMode={() => setIsDark((current) => !current)}
-            onOpenSidebar={() => setMobileNavOpen(true)}
-          />
-          <div className="flex-1">
-            <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
-              <motion.div
-                key={activeWorkspacePage}
-                initial={isMobileViewport ? false : { opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 0, y: -6 }}
-                transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
-              >
+    <WorkspaceShellLayout
+      activeWorkspacePage={activeWorkspacePage}
+      currentUser={currentUser}
+      title={pageTitle[activeWorkspacePage]}
+      isDark={isDark}
+      mobileNavOpen={mobileNavOpen}
+      onGoHome={() => setShowLanding(true)}
+      onToggleDarkMode={() => setIsDark((current) => !current)}
+      onOpenSidebar={() => setMobileNavOpen(true)}
+      onCloseSidebar={() => setMobileNavOpen(false)}
+      onLogout={handleLogout}
+      onNavigatePage={navigateWorkspacePage}
+      onProfileUpdated={(u, d) => setCurrentUser((c) => c ? { ...c, username: u, display_name: d } : c)}
+      showSmartWrongQuestions={canAccessSmartWrongQuestions(currentUser.role)}
+      showCreditCenter={hasOwnerAccess(currentUser.role)}
+      showAccounts={hasStaffAccess(currentUser.role)}
+      canOpenPage={(page) => canOpenWorkspacePage(currentUser, page)}
+      roleLabel={getRoleLabel(currentUser.role)}
+    >
+      <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
+        <motion.div
+          key={activeWorkspacePage}
+          initial={isMobileViewport ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 0, y: -6 }}
+          transition={isMobileViewport ? { duration: 0 } : { duration: 0.18 }}
+        >
                 {activeWorkspacePage === 'dashboard' && (
                   <WorkspaceDashboard
                     currentUser={currentUser}
@@ -7155,11 +7100,8 @@ export default function App() {
                 {activeWorkspacePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
                 {activeWorkspacePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
                 {activeWorkspacePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </main>
-      </div>
-    </div>
+        </motion.div>
+      </AnimatePresence>
+    </WorkspaceShellLayout>
   );
 }

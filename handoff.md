@@ -611,3 +611,13 @@
   - module import proof for `Header` and `App.tsx`
   - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
   - `npx tsx --test --test-name-pattern="header|workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header" src/account-card.test.tsx`
+
+## 2026-06-12 App.tsx eighth split pass
+- Extracted the authenticated workspace frame to `frontend/src/features/navigation/WorkspaceShellLayout.tsx`.
+- Updated `frontend/src/App.tsx` to keep state orchestration and page switching while delegating sidebar, mobile drawer, header, and page shell layout to the extracted workspace frame.
+- Updated `frontend/src/workspace-navigation.test.ts`, `frontend/src/mobile-workspace-performance.test.ts`, and `frontend/src/account-card.test.tsx` so shell-layout source assertions now follow `features/navigation/WorkspaceShellLayout.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round8_proof.sh`:
+  - source extraction checks
+  - module import proof for `WorkspaceShellLayout` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
+  - `npx tsx --test --test-name-pattern="workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header|desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar" src/account-card.test.tsx`
