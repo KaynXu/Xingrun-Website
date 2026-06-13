@@ -257,10 +257,10 @@ export function LandingPage({
                 STARAIN WORKSPACE
               </div>
               <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 dark:text-white sm:text-5xl md:text-6xl">
-                复习生成、错题跟进、教学交付，一个工作台完成
+                AI，在教学工作里直接可用
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
-                给老师、教务和机构负责人使用的教学工作台。
+                覆盖复习生成、错题跟进和教学交付。
               </p>
 
               <div className="mt-10 flex flex-col gap-3 sm:flex-row">
