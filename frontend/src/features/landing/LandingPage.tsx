@@ -283,10 +283,6 @@ export function LandingPage({
               学习全流程 AI 平台
             </span>
           </div>
-          <div className="hidden items-center gap-8 text-sm font-medium text-slate-500 dark:text-slate-400 md:flex">
-            <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
-            <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
-          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={onToggleDarkMode}
