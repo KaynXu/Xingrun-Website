@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已修复 `frontend/src/App.tsx` 当前阻塞 lint 的 3 个 TypeScript 错误：补回本地 `WorkspaceLoading` 组件，并把课程日历前后翻页回调改成零参包装以对齐 `WorkspacePageContent` 当前接口；本轮 proof 会继续保留完整 lint 输出，但剩余报错已不再来自 `App.tsx`。
 - 2026-06-13 已把 `frontend/src/App.tsx` 里残留的 landing/legal 重复定义清走：`LandingLegalDocumentKey`、法律文案常量和 `getLandingLegalPageFromHash()` 不再在 App 内重复维护，入口现在直接复用 `frontend/src/features/landing/LandingPage.tsx` 的类型、helper 和组件，并通过转发导出维持现有测试/调用口。当前轮 proof `/tmp/xingrun_landing_cleanup_proof.sh` 已通过：App 不再内联 landing/legal 常量，landing/legal 页面与 storage guard 定向测试全部通过。
 - 2026-06-13 已把未登录/首次登录相关公共认证 UI 从 `frontend/src/features/consultation/ConsultationMeetingWorkbench.tsx` 抽离到 `frontend/src/features/auth/PublicAuthModals.tsx`，包括 `ClassClaimPage / LoginModal / PasswordResetModal / OrganizationApplyModal / JoinOrganizationModal` 及其 recovery helper；`frontend/src/App.tsx` 现明确从 auth 模块导入这组组件，不再隐式依赖咨询工作台文件里的内部实现。同步更新了 `frontend/src/organization-auth.test.tsx` 和 `frontend/src/account-card.test.tsx`，让源码断言追踪真实 auth 模块。当前轮 proof `/tmp/xingrun_auth_extract_proof.sh` 已通过：auth 模块、咨询工作台和 App 导入链正常，organization auth / storage guard / 首登认领源码断言全部通过。
 - 2026-06-13 已继续清理工作台权限与审批页周边的平行类型：`frontend/src/features/navigation/workspaceAccess.ts` 现直接复用 `frontend/src/appTypes.ts` 的 `Role / WorkspacePage / CurrentUser`，`frontend/src/features/approval/ApprovalPage.tsx` 也已切到同一套共享角色/页面类型，不再各自维护一份 `Role/Page` 联合类型。当前轮 proof `/tmp/xingrun_workspace_types_unify_proof.sh` 已通过：权限模块与审批页导入链正常，且两处重复角色/页面类型定义已移除。

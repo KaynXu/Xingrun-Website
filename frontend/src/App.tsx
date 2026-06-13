@@ -120,6 +120,10 @@ import {
   PasswordResetModal,
 } from './features/auth/PublicAuthModals';
 import {
+  clearJoinInvitePathIfNeeded,
+  getJoinInviteTokenFromPath,
+} from './features/auth/authFlow';
+import {
   academicGradeGroups,
   academicGradeOptions,
   academicStageOptions,
@@ -201,6 +205,13 @@ export { LandingLegalPage, LandingPage, getLandingLegalPageFromHash } from './fe
 
 type Page = WorkspacePage;
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization' | 'password-reset';
+
+const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) => (
+  <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
+    <RefreshCw size={16} className="animate-spin" />
+    <span>{label}</span>
+  </div>
+);
 
 interface Lesson {
   id: number;
@@ -376,21 +387,6 @@ function getInitialMobileViewport(): boolean {
   }
 
   return window.matchMedia?.('(max-width: 1023px)').matches ?? false;
-}
-
-function getJoinInviteTokenFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/join\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-function clearJoinInvitePathIfNeeded(): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  if (!getJoinInviteTokenFromPath(window.location.pathname)) {
-    return;
-  }
-  window.history.replaceState({}, '', '/');
 }
 
 function shiftIsoDate(dateString: string, days: number): string {
@@ -977,8 +973,8 @@ export default function App() {
         calendarCustomSchedules={calendarCustomSchedules}
         calendarPageStepDays={calendarPageStepDays}
         handleCalendarPageStepDaysChange={handleCalendarPageStepDaysChange}
-        handlePreviousCalendarPage={handlePreviousCalendarPage}
-        handleNextCalendarPage={handleNextCalendarPage}
+        handlePreviousCalendarPage={() => handlePreviousCalendarPage(calendarPageStepDays)}
+        handleNextCalendarPage={() => handleNextCalendarPage(calendarPageStepDays)}
         handleScheduleCalendarClass={handleScheduleCalendarClass}
         handleScheduleCalendarCustomItem={handleScheduleCalendarCustomItem}
         handleCreateCalendarCustomItem={handleCreateCalendarCustomItem}
