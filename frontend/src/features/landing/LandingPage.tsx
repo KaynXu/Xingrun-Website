@@ -1,5 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Home, Moon, ShieldCheck, Sun } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  Database,
+  FileText,
+  Home,
+  Moon,
+  ShieldCheck,
+  Sun,
+  Upload,
+  User,
+} from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 
 export type LandingLegalDocumentKey = 'privacy' | 'terms';
 
@@ -28,6 +41,14 @@ const landingLegalDocuments: Record<
         title: 'AI 处理与第三方服务',
         paragraphs: [
           '在你启用相关 AI 能力时，系统可能会将完成处理所必需的教学材料发送给当前配置的模型服务提供方，用于生成摘要、题目或结构化内容。',
+          '我们会尽量控制处理范围，仅在完成对应功能所需的最小范围内进行传输和存储。',
+        ],
+      },
+      {
+        title: '数据保存与安全',
+        paragraphs: [
+          '平台会结合账号权限、机构边界和运行日志对数据访问进行控制，并采取合理的技术与管理措施降低未授权访问、披露或丢失风险。',
+          '如你需要更正、删除相关信息或咨询数据处理方式，可通过平台提供的机构管理与服务支持渠道联系我们。',
         ],
       },
     ],
@@ -38,21 +59,24 @@ const landingLegalDocuments: Record<
     updatedAt: '2026-03-27',
     sections: [
       {
-        title: '账号注册与使用',
+        title: '账号与使用边界',
         paragraphs: [
-          '你应保证注册信息真实、完整，并妥善保管账号与密码，不得向未授权人员共享平台访问权限。',
+          '机构账号、成员账号及其对应权限由平台和机构管理员共同维护。你应确保提交的信息真实、准确，并妥善保管登录凭证。',
+          '未经授权，你不得干扰平台运行、绕过权限控制、非法获取其他机构数据，或将平台用于违反法律法规及教学伦理的场景。',
         ],
       },
       {
-        title: 'AI 生成内容说明',
+        title: 'AI 结果与责任分工',
         paragraphs: [
-          'AI 生成结果仅作为教学支持与效率工具，不当然构成专业、准确或适用于所有场景的最终结论。你应结合课程目标、学生情况和人工审阅进行必要校对后再对外使用。',
+          '平台提供的 AI 生成结果用于辅助教学、整理资料与提升协作效率，不应被视为对教学判断的完全替代。',
+          '机构和使用者应根据自身教学要求对生成内容进行必要复核，并对最终对外交付或教学使用结果负责。',
         ],
       },
       {
-        title: '争议解决',
+        title: '服务调整与争议处理',
         paragraphs: [
-          '本条款的订立、履行与解释适用中华人民共和国相关法律法规。如因使用本服务发生争议，双方应优先友好协商。',
+          '我们可在必要时对平台功能、接口和运营规则进行更新，并通过适当方式通知受影响的用户或机构。',
+          '如因使用本服务发生争议，双方应优先友好协商；协商不成的，按适用法律法规和约定规则处理。',
         ],
       },
     ],
@@ -69,18 +93,77 @@ export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentK
   return null;
 }
 
+function HeroBackgroundGrainient() {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden"
+      aria-hidden="true"
+      data-background="grainient"
+      data-grainient-palette="sky-cyan"
+      data-grainient-motion="pronounced"
+      data-grainient-style="flow-bands"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.54),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.42),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(255,255,255,0.52),transparent_24%),linear-gradient(135deg,rgba(240,249,255,0.99)_0%,rgba(214,239,255,0.97)_42%,rgba(197,228,255,0.95)_100%)] dark:bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.24),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.28),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(125,211,252,0.12),transparent_24%),linear-gradient(135deg,rgba(7,14,25,0.99)_0%,rgba(10,22,38,0.97)_42%,rgba(16,32,54,0.95)_100%)]" />
+      <motion.div
+        className="absolute left-[-14%] top-[-18%] h-[32rem] w-[32rem] rounded-full bg-[radial-gradient(circle,rgba(34,199,232,0.72)_0%,rgba(34,199,232,0.28)_34%,transparent_72%)] opacity-90 blur-[72px] dark:bg-[radial-gradient(circle,rgba(34,199,232,0.42)_0%,rgba(34,199,232,0.16)_34%,transparent_72%)] dark:opacity-95"
+        animate={reduceMotion ? undefined : { x: [0, 88, -52, 0], y: [0, 34, -58, 0], scale: [1, 1.16, 0.9, 1], rotate: [0, 14, -10, 0] }}
+        transition={reduceMotion ? undefined : { duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute right-[-10%] top-[4%] h-[30rem] w-[30rem] rounded-full bg-[radial-gradient(circle,rgba(47,128,237,0.52)_0%,rgba(47,128,237,0.22)_36%,transparent_72%)] opacity-90 blur-[84px] dark:bg-[radial-gradient(circle,rgba(47,128,237,0.34)_0%,rgba(47,128,237,0.16)_36%,transparent_72%)]"
+        animate={reduceMotion ? undefined : { x: [0, -72, 46, 0], y: [0, 40, -34, 0], scale: [1, 0.92, 1.12, 1], rotate: [0, -12, 8, 0] }}
+        transition={reduceMotion ? undefined : { duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
+      />
+      <motion.div
+        className="absolute bottom-[-18%] left-[18%] h-[30rem] w-[36rem] rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.24)_0%,rgba(255,255,255,0.1)_36%,transparent_72%)] opacity-75 blur-[92px] dark:bg-[radial-gradient(circle,rgba(249,115,22,0.18)_0%,rgba(34,197,94,0.08)_36%,transparent_72%)]"
+        animate={reduceMotion ? undefined : { x: [0, 64, -40, 0], y: [0, -54, 30, 0], scale: [1, 1.14, 0.94, 1] }}
+        transition={reduceMotion ? undefined : { duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }}
+      />
+      <motion.div
+        className="absolute inset-[-18%] opacity-[0.34] mix-blend-multiply blur-[18px] dark:opacity-[0.16] dark:mix-blend-screen"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(116deg, rgba(34,199,232,0) 0px, rgba(34,199,232,0) 38px, rgba(34,199,232,0.24) 38px, rgba(34,199,232,0.24) 52px, rgba(255,255,255,0) 52px, rgba(255,255,255,0) 92px, rgba(47,128,237,0.2) 92px, rgba(47,128,237,0.2) 108px, rgba(255,255,255,0) 108px, rgba(255,255,255,0) 156px)',
+          backgroundSize: '220px 220px',
+        }}
+        animate={reduceMotion ? undefined : { x: [0, 148, -96, 0], y: [0, -44, 68, 0], opacity: [0.24, 0.38, 0.28, 0.24] }}
+        transition={reduceMotion ? undefined : { duration: 7, repeat: Infinity, ease: 'linear' }}
+      />
+      <motion.div
+        className="absolute inset-[-10%] opacity-[0.22] mix-blend-soft-light dark:opacity-[0.12]"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(180deg, rgba(255,255,255,0) 0px, rgba(255,255,255,0) 24px, rgba(255,255,255,0.34) 24px, rgba(255,255,255,0.34) 28px, rgba(255,255,255,0) 28px, rgba(255,255,255,0) 58px)',
+          backgroundSize: '100% 120px',
+        }}
+        animate={reduceMotion ? undefined : { y: [0, -64, 0], opacity: [0.16, 0.28, 0.16] }}
+        transition={reduceMotion ? undefined : { duration: 5.2, repeat: Infinity, ease: 'linear' }}
+      />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.12),transparent_68%)] dark:bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),transparent_70%)]" />
+    </div>
+  );
+}
+
 export function LandingLegalPage({ documentKey }: { documentKey: LandingLegalDocumentKey }) {
   const document = landingLegalDocuments[documentKey];
 
   return (
     <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70 dark:bg-[#0d1220] dark:text-slate-100">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-12%] left-[-8%] h-[28rem] w-[28rem] rounded-full bg-sky-200/45 blur-[120px]" />
+        <div className="absolute right-[-10%] top-[10%] h-[24rem] w-[24rem] rounded-full bg-cyan-200/40 blur-[110px]" />
+        <div className="absolute bottom-[-12%] left-[18%] h-[22rem] w-[22rem] rounded-full bg-blue-100/70 blur-[120px]" />
+      </div>
+
       <nav className="sticky top-0 z-50 border-b border-sky-100/80 bg-white/80 backdrop-blur-xl dark:border-white/8 dark:bg-[#0d1220]/95">
         <div className="mx-auto flex h-20 max-w-5xl items-center justify-between gap-4 px-6">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex min-w-0 items-center gap-3">
             <img src="/logo.png" alt="Starain logo" className="h-11 w-11 object-contain" />
             <div className="min-w-0">
               <p className="truncate text-lg font-bold tracking-tight dark:text-white">Starain</p>
-              <p className="text-xs tracking-[0.28em] text-sky-700">学习全流程 AI 平台</p>
+              <p className="text-xs tracking-[0.28em] text-sky-700 dark:text-sky-300">学习全流程 AI 平台</p>
             </div>
           </div>
           <a
@@ -94,7 +177,12 @@ export function LandingLegalPage({ documentKey }: { documentKey: LandingLegalDoc
       </nav>
 
       <main className="relative z-10 mx-auto max-w-5xl px-6 py-16 md:py-24">
-        <div className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 shadow-[0_30px_90px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-800/80 md:p-12">
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="rounded-[2rem] border border-sky-100 bg-white/85 p-8 shadow-[0_30px_90px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-800/80 md:p-12"
+        >
           <div className="flex flex-col gap-5 border-b border-sky-100 pb-8 dark:border-white/10">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
               <ShieldCheck size={14} />
@@ -122,7 +210,7 @@ export function LandingLegalPage({ documentKey }: { documentKey: LandingLegalDoc
               </section>
             ))}
           </div>
-        </div>
+        </motion.div>
       </main>
 
       <footer className="border-t border-sky-100/80 py-20 dark:border-white/8">
@@ -148,24 +236,6 @@ type LandingPageProps = {
   onToggleDarkMode?: () => void;
 };
 
-const landingFeatureCards = [
-  {
-    title: '复习资料生成',
-    text: '把课程目标转化为讲义与教研交付，围绕课堂录音、笔记与教学内容进入平台后形成更稳定的复盘链路。',
-    tone: 'dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)]',
-  },
-  {
-    title: '错题跟进与复习安排',
-    text: '把错误整理成可持续跟进记录，帮助老师逐步安排错题跟进与复习安排。',
-    tone: 'dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(30,41,59,0.88)_100%)]',
-  },
-  {
-    title: '教师协作交付',
-    text: '把课程目标、课堂分析、复习资料生成与教学交付串到同一条协作链路。',
-    tone: 'dark:bg-slate-900/88',
-  },
-];
-
 export function LandingPage({
   onLogin,
   onRegister,
@@ -183,13 +253,18 @@ export function LandingPage({
     if (typeof window === 'undefined') {
       return undefined;
     }
-    const syncHash = () => setHashLegalPage(getLandingLegalPageFromHash(window.location.hash));
-    syncHash();
-    window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
+
+    const syncLandingLegalPage = () => {
+      setHashLegalPage(getLandingLegalPageFromHash(window.location.hash));
+    };
+
+    syncLandingLegalPage();
+    window.addEventListener('hashchange', syncLandingLegalPage);
+    return () => window.removeEventListener('hashchange', syncLandingLegalPage);
   }, []);
 
   const legalPage = activeLegalPage ?? hashLegalPage;
+
   if (legalPage) {
     return <LandingLegalPage documentKey={legalPage} />;
   }
@@ -198,138 +273,404 @@ export function LandingPage({
   const handleJoin = onJoinOrganization ?? (() => undefined);
 
   return (
-    <div
-      className="min-h-screen bg-[#F6FBFF] text-slate-900 dark:bg-[#0d1220] dark:text-slate-100"
-      data-background="grainient"
-      data-grainient-palette="sky-cyan"
-      data-grainient-motion="pronounced"
-      data-grainient-style="flow-bands"
-    >
-      <header className="border-b border-sky-100/80 dark:border-white/8">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-5">
+    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70 dark:bg-[#0d1220] dark:text-slate-100">
+      <nav className="fixed top-0 z-50 w-full border-b border-sky-100/80 bg-white/80 backdrop-blur-xl dark:border-white/8 dark:bg-[#0d1220]/95">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Starain logo" className="h-11 w-11 object-contain" />
-            <div>
-              <p className="text-lg font-bold tracking-tight">Starain</p>
-              <p className="text-xs tracking-[0.28em] text-sky-700">学习全流程 AI 平台</p>
-            </div>
+            <img src="/logo.png" alt="Starain logo" className="h-12 w-12 object-contain" />
+            <span className="text-xl font-bold tracking-tight">星润Starain</span>
+            <span className="hidden text-xs font-semibold uppercase tracking-[0.32em] text-sky-600 sm:block">
+              学习全流程 AI 平台
+            </span>
           </div>
-          <nav className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
-            <a href="#features">查看平台方案</a>
-            <a href="#about">关于 Starain</a>
+          <div className="hidden items-center gap-8 text-sm font-medium text-slate-500 dark:text-slate-400 md:flex">
+            <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
+            <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
+          </div>
+          <div className="flex items-center gap-3">
             <button
-              type="button"
-              aria-label="切换夜间模式"
               onClick={onToggleDarkMode}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-sky-200 bg-white text-slate-700 transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
+              className="rounded-full p-2.5 text-slate-500 transition-colors hover:bg-sky-50 dark:text-slate-400 dark:hover:bg-white/10"
+              aria-label="切换夜间模式"
             >
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-          </nav>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-6 py-16 md:py-24">
-        <section className="grid gap-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-center">
-          <div className="space-y-6">
-            <p className="inline-flex w-fit rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold tracking-[0.24em] text-sky-700 dark:border-sky-500/30 dark:bg-slate-950/35 dark:text-sky-200">
-              用ai创造教育
-            </p>
-            <div className="space-y-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">服务学校与机构的 AI 教育平台</p>
-              <h1 className="max-w-4xl text-5xl font-black tracking-tight text-slate-900 dark:text-white md:text-6xl">
-                Starain 正在把日常教学里最常重复的工作整理进同一套平台流程
-              </h1>
-              <p className="max-w-3xl text-lg leading-8 text-slate-600 dark:text-slate-300">
-                面向学习全流程的 AI 教育平台，从课堂素材到复习交付，把课程目标转化为讲义与教研交付。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={handleRegister} className="rounded-full bg-sky-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(34,199,232,0.24)] transition hover:bg-sky-500">
-                申请开通机构
-              </button>
-              <button type="button" onClick={onLogin} className="rounded-full border border-sky-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10">
-                机构登录
-              </button>
-              <button type="button" onClick={handleJoin} className="rounded-full border border-sky-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10">
-                加入机构
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-sky-100 bg-white/90 p-6 shadow-[0_30px_80px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-900/88">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300">平台概览</p>
-            <div className="mt-6 grid gap-4">
-              <div className="rounded-[1.5rem] border border-sky-100 bg-white p-5 shadow-[0_16px_40px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)]">
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">复习资料</p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">课堂分析、复习资料生成、教学交付。</p>
-              </div>
-              <div className="rounded-[1.5rem] border border-sky-100 bg-white p-5 shadow-[0_16px_40px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(30,41,59,0.88)_100%)]">
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">错题跟进</p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">把错误整理成可持续跟进记录，安排后续复习。</p>
-              </div>
-              <div className="rounded-[1.5rem] border border-sky-100 bg-white p-5 shadow-[0_16px_40px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-slate-900/88">
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">教学交付</p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">把题目整理成可复用的教学素材，支持教师协作交付。</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="features" className="mt-20 grid gap-6 md:grid-cols-3">
-          {landingFeatureCards.map((card) => (
-            <article
-              key={card.title}
-              className={`rounded-[1.75rem] border border-sky-100 bg-white/92 p-6 shadow-[0_18px_44px_rgba(47,128,237,0.06)] ${card.tone}`}
+            <button
+              onClick={handleRegister}
+              className="hidden sm:inline-flex rounded-full border border-sky-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-sky-50 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
             >
-              <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">{card.title}</h2>
-              <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">{card.text}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className="mt-20 grid gap-8 rounded-[2rem] border border-sky-100 bg-white/92 p-8 shadow-[0_24px_54px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.42)_0%,rgba(15,23,42,0.7)_100%)] lg:grid-cols-2">
-          <div className="space-y-4">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">从课堂素材到复习交付</p>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">课堂录音、笔记与教学内容进入平台后</h2>
-            <p className="text-base leading-8 text-slate-600 dark:text-slate-300">
-              把课程目标转化为讲义与教研交付，围绕课堂练习、作业和错题记录，帮助老师逐步整理出更稳定的讲义与练习素材。
-            </p>
+              申请开通机构
+            </button>
+            <button
+              onClick={onLogin}
+              className="rounded-full bg-sky-600 px-6 py-2.5 text-sm font-bold text-white shadow-[0_16px_40px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
+            >
+              立即登录
+            </button>
           </div>
-          <div className="space-y-4 rounded-[1.5rem] border border-sky-100 bg-white/90 p-6 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)]">
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">课堂分析</p>
-            <p className="text-sm text-slate-600 dark:text-slate-300">复习资料生成</p>
-            <p className="text-sm text-slate-600 dark:text-slate-300">教学交付</p>
-            <p className="text-sm text-slate-600 dark:text-slate-300">题目整理</p>
-          </div>
-        </section>
+        </div>
+      </nav>
 
-        <section id="about" className="border-t border-sky-100/80 py-24 dark:border-white/8">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <div className="space-y-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">ABOUT STARAIN</p>
-              <a href="#about" className="text-sky-700 underline-offset-4 hover:underline dark:text-sky-300">关于 Starain</a>
-            </div>
-            <div className="space-y-4">
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">不是从 PPT 里想出来的</p>
-              <p className="text-base leading-8 text-slate-600 dark:text-slate-300">
-                Starain 不是从 PPT 里想出来的，而是从老师真实的课堂复盘、题目整理与复习交付流程里一点点长出来的。
+      <section className="relative min-h-screen overflow-hidden bg-[#F8FBFF] dark:bg-[#0f172a]">
+        <HeroBackgroundGrainient />
+
+        <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl items-end px-6 py-24 md:py-32 lg:py-36">
+          <div className="grid w-full gap-10 lg:grid-cols-[minmax(0,1.12fr)_360px] lg:items-end">
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              className="max-w-3xl"
+            >
+              <motion.span
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08, duration: 0.5 }}
+                className="inline-flex items-center rounded-full border border-white/50 bg-white/55 px-4 py-1.5 text-[11px] font-semibold tracking-[0.32em] text-slate-700 backdrop-blur-md dark:border-white/12 dark:bg-slate-950/35 dark:text-sky-200"
+              >
+                服务学校与机构的 AI 教育平台
+              </motion.span>
+              <motion.h1
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18, duration: 0.72, ease: [0.16, 1, 0.3, 1] }}
+                className="mt-8 max-w-4xl text-4xl font-black leading-[1.02] tracking-tight text-slate-950 dark:text-white sm:text-6xl md:text-7xl"
+              >
+                用ai创造教育
+              </motion.h1>
+
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.32, duration: 0.78 }}
+                className="mt-7 max-w-2xl text-base leading-8 text-slate-700 dark:text-slate-200 sm:text-lg md:text-xl"
+              >
+                从复习资料生成，到错题跟进、讲义整理与教师协作，Starain 正在把日常教学里最常重复的工作整理进同一套平台流程。
+              </motion.p>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.46, duration: 0.78 }}
+                className="mt-8 space-y-3"
+              >
+                {[
+                  ['复习资料生成', '把课堂内容快速整理成学生可直接使用的复习材料。'],
+                  ['错题跟进与复习安排', '围绕错题记录、老师备注和掌握状态，持续安排后续跟进。'],
+                  ['教师协作交付', '让教师、教研与机构团队在同一平台里完成整理、复核与交付。'],
+                ].map(([label, description]) => (
+                  <div key={label} className="flex items-start gap-3 text-left">
+                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.5)]" />
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-700 dark:text-sky-200">{label}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{description}</p>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.58, duration: 0.78 }}
+                className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap"
+              >
+                <a
+                  href="#features"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-8 py-4 text-base font-bold text-white shadow-[0_24px_60px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
+                >
+                  查看平台方案
+                  <ArrowRight size={18} />
+                </a>
+                <button
+                  onClick={handleRegister}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/55 bg-white/55 px-8 py-4 text-base font-bold text-slate-800 backdrop-blur-md transition-all hover:bg-white/72 active:scale-95 dark:border-white/12 dark:bg-slate-950/30 dark:text-slate-100 dark:hover:bg-slate-950/42"
+                >
+                  <User size={18} />
+                  申请开通机构
+                </button>
+                <button
+                  onClick={handleJoin}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-200/70 bg-sky-50/85 px-8 py-4 text-base font-bold text-sky-900 transition-all hover:bg-sky-100 active:scale-95 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                >
+                  <ArrowRight size={18} />
+                  加入已有机构
+                </button>
+              </motion.div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: 28, y: 20 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              transition={{ delay: 0.34, duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
+              className="lg:justify-self-end"
+            >
+              <div className="overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.38)_100%)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.42)_0%,rgba(15,23,42,0.7)_100%)] dark:shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
+                <div className="flex items-center justify-between gap-4 border-b border-slate-200/70 pb-4 dark:border-white/10">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">平台概览</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">面向学习全流程的 AI 教育平台</p>
+                  </div>
+                  <div className="shrink-0 rounded-full border border-emerald-200/80 bg-emerald-50/80 px-4 py-1.5 text-xs font-semibold tracking-[0.18em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 sm:px-5 sm:py-2 sm:text-sm">
+                    已上线
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {[
+                    { icon: Upload, title: '复习资料', body: '课堂内容生成讲义、总结与学生复习材料' },
+                    { icon: CheckCircle2, title: '错题跟进', body: '记录题目、错因与掌握状态，方便老师持续跟进' },
+                    { icon: FileText, title: '教学交付', body: '把课堂内容整理成教师与机构团队都能直接使用的交付材料' },
+                  ].map((item, index) => (
+                    <motion.div
+                      key={item.title}
+                      initial={{ opacity: 0, y: 18 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.52 + index * 0.1, duration: 0.55 }}
+                      className="rounded-[1.5rem] border border-white/60 bg-white/60 p-4 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/34"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-[0_14px_30px_rgba(14,165,233,0.28)]">
+                          <item.icon size={18} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold tracking-[0.18em] text-slate-800 dark:text-slate-100">{item.title}</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.body}</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" className="border-t border-sky-100/80 py-24 dark:border-white/8">
+        <div className="mx-auto max-w-7xl px-6">
+          <motion.div
+            className="mb-16"
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <h2 className="mb-4 text-4xl font-bold dark:text-white md:text-5xl">把真实教学流程整理成可复用的 AI 能力</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300">不是堆叠功能点，而是把一条已经跑通的教育工作流产品化。</p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              className="group relative overflow-hidden rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 shadow-[0_24px_70px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)] md:col-span-2 md:p-10"
+            >
+              <div className="absolute right-0 top-0 p-8 opacity-10 transition-opacity group-hover:opacity-20">
+                <FileText size={200} />
+              </div>
+              <div className="relative z-10 flex h-full flex-col justify-between">
+                <div>
+                  <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-600 text-white">
+                    <FileText size={24} />
+                  </div>
+                  <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">从课堂素材到复习交付</h3>
+                  <p className="max-w-2xl text-lg text-slate-600 dark:text-slate-300">
+                    课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与更稳定的教学交付材料。
+                  </p>
+                </div>
+                <div className="mt-12 flex flex-wrap gap-4">
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">课堂分析</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">复习资料生成</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">教学交付</div>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.92)_0%,_rgba(239,248,255,0.92)_100%)] p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)] md:p-10"
+            >
+              <div>
+                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
+                  <AlertCircle size={24} />
+                </div>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">把错误整理成可持续跟进记录</h3>
+                <p className="text-slate-600 dark:text-slate-300">
+                  不是一次性纠错，而是持续记录高频错误、薄弱点与个性化复习路径。
+                </p>
+              </div>
+              <div className="mt-8 flex flex-wrap gap-2">
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因整理</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">薄弱点追踪</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">个性化复习</span>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col justify-between rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)] md:p-10"
+            >
+              <div>
+                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
+                  <Database size={24} />
+                </div>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">把题目整理成可复用的教学素材</h3>
+                <p className="text-slate-600 dark:text-slate-300">
+                  围绕课堂练习、作业和错题记录，帮助老师逐步整理出更稳定的讲义与练习素材。
+                </p>
+              </div>
+              <div className="mt-8 flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400">
+                <span>题目整理</span>
+                <ArrowRight size={14} />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col items-center gap-10 rounded-[2.5rem] border border-sky-100 bg-white/85 p-6 shadow-[0_24px_70px_rgba(47,128,237,0.06)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96)_0%,rgba(15,23,42,0.9)_100%)] md:col-span-2 md:flex-row md:p-10"
+            >
+              <div className="flex-1">
+                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
+                  <FileText size={24} />
+                </div>
+                <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">把课程目标转化为讲义与教研交付</h3>
+                <p className="text-lg text-slate-600 dark:text-slate-300">
+                  从课程目标到讲义、课堂提纲和教研素材，减少教师重复整理工作。
+                </p>
+              </div>
+              <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(234,245,255,0.96)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(30,41,59,0.88)_100%)] md:w-72">
+                {[
+                  { label: '讲义大纲', tone: 'bg-orange-500', width: '72%' },
+                  { label: '课堂提纲', tone: 'bg-orange-400', width: '58%' },
+                  { label: '教研材料', tone: 'bg-orange-300', width: '33%' },
+                ].map((item, index) => (
+                  <motion.div
+                    key={item.label}
+                    initial={{ opacity: 0, y: 14 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.55, delay: 0.15 + index * 0.12, ease: [0.16, 1, 0.3, 1] }}
+                    className="rounded-2xl border border-sky-100 bg-white/90 p-4 shadow-[0_14px_34px_rgba(47,128,237,0.07)] dark:border-white/10 dark:bg-slate-900/88"
+                  >
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-900 dark:text-white">{item.label}</span>
+                      <span className="rounded-full border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/50 dark:text-sky-300">
+                        AI Draft
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-2 overflow-hidden rounded-full bg-sky-100 dark:bg-slate-600">
+                        <motion.div
+                          initial={{ width: '0%' }}
+                          whileInView={{ width: item.width }}
+                          viewport={{ once: true }}
+                          transition={{ duration: 0.9, delay: 0.35 + index * 0.15, ease: [0.16, 1, 0.3, 1] }}
+                          className={`h-full ${item.tone}`}
+                        />
+                      </div>
+                      <div className="h-2 w-3/4 rounded-full bg-sky-100 dark:bg-slate-600" />
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      <section id="about" className="border-t border-sky-100/80 py-24 dark:border-white/8">
+        <div className="mx-auto max-w-7xl px-6">
+          <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-[1.1fr_0.9fr]">
+            <motion.div
+              className="space-y-6"
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+                ABOUT STARAIN
+              </span>
+              <div>
+                <h2 className="mb-4 text-4xl font-bold text-slate-900 dark:text-white md:text-5xl">关于 Starain</h2>
+                <p className="max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
+                  Starain 不是从 PPT 里想出来的，而是从真实教学现场长出来的。
+                </p>
+              </div>
+              <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400 md:text-base">
+                我们先在自己的教育机构中解决复习资料、错题跟进、讲义整理与教师协作问题，再把这套已经跑通的流程产品化，服务更多同行团队。
               </p>
+            </motion.div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-1">
+              {[
+                {
+                  title: '已验证流程',
+                  body: '课堂素材到复习交付的链路已经在真实教学里跑通。',
+                },
+                {
+                  title: '能力模块化',
+                  body: '错题跟进、复习安排与讲义整理可以在同一条教学链路里持续复用。',
+                },
+                {
+                  title: '服务对象',
+                  body: '聚焦学校、培训机构、国际课程团队与教研运营场景。',
+                },
+              ].map((item, index) => (
+                <motion.div
+                  key={item.title}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: index * 0.08, ease: [0.16, 1, 0.3, 1] }}
+                  className="rounded-[2rem] border border-sky-100 bg-white/85 p-6 shadow-[0_20px_60px_rgba(47,128,237,0.05)] dark:border-white/10 dark:bg-slate-800/80"
+                >
+                  <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                  <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">{item.body}</p>
+                </motion.div>
+              ))}
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
 
       <footer className="border-t border-sky-100/80 py-20 dark:border-white/8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-6 text-sm text-slate-500 dark:text-slate-400 md:flex-row">
-          <div className="space-y-2">
-            <p>© 2026 Starain.</p>
-            <p>保留所有权利</p>
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-8 px-6 md:flex-row">
+          <div className="flex flex-col items-center gap-3 md:items-start">
+            <div className="flex items-center gap-3">
+              <img src="/logo.png" alt="Starain logo" className="h-10 w-10 object-contain" />
+              <span className="text-lg font-bold tracking-tight dark:text-white">星润Starain</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
+                学习全流程 AI 平台
+              </span>
+            </div>
+            <p className="max-w-md text-center text-sm text-gray-500 dark:text-slate-400 md:text-left">
+              面向学校、机构与教学团队，构建从内容生成到教学交付的 AI 能力底座。
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-5">
-            <a href="#privacy-policy">隐私政策</a>
-            <a href="#terms-of-service">服务条款</a>
+          <div className="flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400 md:items-start">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-slate-400">导航</p>
+            <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
+            <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
           </div>
+          <div className="flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400 md:items-start">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-slate-400">法律</p>
+            <a href="#privacy-policy" className="transition-colors hover:text-slate-900 dark:hover:text-white">隐私政策</a>
+            <a href="#terms-of-service" className="transition-colors hover:text-slate-900 dark:hover:text-white">服务条款</a>
+          </div>
+          <p className="text-sm text-slate-500 dark:text-slate-400">© 2026 Starain. 保留所有权利。</p>
         </div>
       </footer>
     </div>
