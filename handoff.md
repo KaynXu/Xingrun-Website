@@ -716,3 +716,12 @@
 - Runnable proof passed via `/tmp/xingrun_sidebar_account_name_proof.sh`:
   - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
   - `rg -n "currentUser\\.username|resolvedRoleLabel|organization_name" src/features/navigation/Sidebar.tsx`
+
+## 2026-06-14 sidebar account sheet simplification
+- Simplified the account sheet header to focus on the login username with an optional secondary display name.
+- Replaced the heavier gradient/profile summary layout with a flatter avatar, a small role pill, and lighter actions.
+- Removed the redundant organization/status metadata block from the sheet.
+- Runnable proof passed via `/tmp/xingrun_sidebar_sheet_simplify_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "shouldShowDisplayName|text-lg font-semibold text-slate-900|rounded-xl bg-sky-100|inline-flex rounded-full bg-slate-100|w-full rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left text-sm|w-full rounded-xl px-1 py-2 text-left text-sm font-medium text-rose-500" src/features/navigation/Sidebar.tsx`
+  - negative check confirming the old organization/status metadata block is removed

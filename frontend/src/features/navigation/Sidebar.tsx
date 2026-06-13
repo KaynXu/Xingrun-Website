@@ -114,26 +114,34 @@ export const SidebarAccountSheet = ({
   }
 
   const resolvedRoleLabel = roleLabel ?? getFallbackRoleLabel(currentUser.role);
+  const shouldShowDisplayName = currentUser.display_name.trim() && currentUser.display_name !== currentUser.username;
 
   const sheet = (
     <div className="fixed inset-0 z-[70]" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-950/32" />
       <div className="absolute bottom-4 left-4 w-[calc(100vw-2rem)] max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className={`${workspaceCardClass} border border-slate-200/70 bg-[#fbfdff] p-6 dark:border-white/10 dark:bg-slate-950/80`}>
+        <div className={`${workspaceCardClass} border border-slate-200/70 bg-[#fbfdff] p-5 dark:border-white/10 dark:bg-slate-950/80`}>
           <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 text-xl font-bold text-white shadow-[0_16px_32px_rgba(34,199,232,0.25)]">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-base font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
                 {currentUser.display_name.slice(0, 1).toUpperCase()}
               </div>
-              <div className="min-w-0">
-                <p className="truncate text-xl font-semibold text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
-                <p className="truncate text-sm text-slate-500 dark:text-slate-400">@{currentUser.username}</p>
+              <div className="min-w-0 pt-0.5">
+                <p className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{currentUser.username}</p>
+                {shouldShowDisplayName && (
+                  <p className="truncate text-sm text-slate-500 dark:text-slate-400">{currentUser.display_name}</p>
+                )}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                    {resolvedRoleLabel}
+                  </span>
+                </div>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
               aria-label="关闭账号面板"
             >
               ×
@@ -174,40 +182,25 @@ export const SidebarAccountSheet = ({
             </div>
           ) : (
             <>
-              <div className={`${workspaceSoftCardClass} mt-5 space-y-3 border border-slate-200/70 bg-white/90 p-4 dark:border-white/10 dark:bg-slate-950/70`}>
-                <div className="flex items-center justify-between gap-4 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">权限</span>
-                  <span className="dark:text-slate-100">{resolvedRoleLabel}</span>
-                </div>
-                <div className="flex items-center justify-between gap-4 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">机构</span>
-                  <span className="dark:text-slate-100">{currentUser.organization_name}</span>
-                </div>
-                <div className="flex items-center justify-between gap-4 text-sm">
-                  <span className="text-slate-500 dark:text-slate-400">状态</span>
-                  <span className="dark:text-slate-100">{currentUser.status === 'active' ? '正常' : currentUser.status}</span>
-                </div>
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 gap-3">
+              <div className="mt-5 space-y-2">
                 <button
                   type="button"
                   onClick={startEdit}
-                  className="w-full rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
+                  className="w-full rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
                 >
                   修改账号 / 姓名
                 </button>
                 <button
                   type="button"
                   onClick={onOpenSettings}
-                  className="w-full rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-left font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
+                  className="w-full rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
                 >
                   查看账号信息
                 </button>
                 <button
                   type="button"
                   onClick={onLogout}
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-medium text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/15"
+                  className="w-full rounded-xl px-1 py-2 text-left text-sm font-medium text-rose-500 transition-colors hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
                 >
                   退出登录
                 </button>
