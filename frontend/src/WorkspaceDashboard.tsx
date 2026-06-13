@@ -63,24 +63,24 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
   const todayQueue = [
     {
       page: 'review-generation' as WorkspacePage,
-      title: '生成高二数学复习资料',
-      meta: '课堂录音和补充笔记已上传',
-      status: '待处理',
-      action: '去生成',
+      title: '高二数学提高班复习资料',
+      meta: '录音和笔记已上传，待整理',
+      status: '待生成',
+      action: '进入',
     },
     {
       page: 'class-feedback-generation' as WorkspacePage,
-      title: '补 2 节课堂反馈',
-      meta: '周三、周四课程还未整理',
-      status: '今天处理',
-      action: '去反馈',
+      title: '周三课堂反馈补录',
+      meta: '还有 2 节课没整理',
+      status: '待补录',
+      action: '进入',
     },
     {
       page: 'smartWrongQuestions' as WorkspacePage,
-      title: '跟进 5 条错题',
-      meta: '高一英语衔接班 · 需要补掌握状态',
-      status: '待跟进',
-      action: '去跟进',
+      title: '高一英语错题状态更新',
+      meta: '5 条题目还没标记掌握情况',
+      status: '待更新',
+      action: '进入',
     },
   ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
 
@@ -88,19 +88,19 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
     {
       page: 'review-generation' as WorkspacePage,
       title: '高一英语语法复习单',
-      meta: '今天 14:20 · 已导出 PDF',
+      meta: '今天 14:20 · 已完成',
       status: '已完成',
     },
     {
       page: 'class-feedback-generation' as WorkspacePage,
       title: '七年级数学课堂反馈',
-      meta: '今天 11:40 · 待补老师备注',
+      meta: '今天 11:40 · 草稿',
       status: '草稿',
     },
     {
       page: 'review-generation' as WorkspacePage,
       title: '立体几何阶段复习',
-      meta: '昨天 18:05 · 已发送家长群',
+      meta: '昨天 18:05 · 已完成',
       status: '已完成',
     },
   ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
@@ -128,7 +128,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今日工作</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待处理、最近产出和今天课程都在这里。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天要处理的事都在这里。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => {
@@ -151,7 +151,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日待办</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先处理会影响今天上课和课后交付的任务。</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先看今天还没收尾的事项。</p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                   {todayQueue.length} 项
@@ -183,7 +183,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
               <p className="text-base font-semibold text-slate-900 dark:text-slate-100">最近产出</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">刚做完和还没收尾的文档都放在这里。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近生成和整理过的内容。</p>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
               {recentOutputs.map((item) => (
@@ -231,7 +231,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
               <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今天课程</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">课前和课后要接的动作直接挂在课程后面。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天的课和对应要做的事。</p>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
               {scheduleItems.map((item) => (
@@ -279,24 +279,24 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
   const attentionItems = [
     {
       organization: '星润 Starain',
-      issue: '账号审批积压 4 条，今天还没有处理。',
+      issue: '4 条账号审批还没处理。',
       status: '优先处理',
       page: 'accounts' as WorkspacePage,
-      action: '去审批',
+      action: '进入',
     },
     {
       organization: '青禾校区',
-      issue: '今天 6 节课里还有 3 节没有课堂反馈。',
+      issue: '今天还有 3 节课没补课堂反馈。',
       status: '待跟进',
       page: 'class-feedback-generation' as WorkspacePage,
-      action: '看反馈',
+      action: '进入',
     },
     {
       organization: '城南教学点',
-      issue: '近 3 天复习文档产出偏低，需要确认老师是否正常使用。',
+      issue: '近 3 天复习资料产出偏低。',
       status: '需要观察',
       page: 'review-generation' as WorkspacePage,
-      action: '看生成',
+      action: '进入',
     },
   ];
 
@@ -348,7 +348,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天的积压、异常和机构动态。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">积压、异常和机构动态。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
@@ -364,10 +364,10 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
         <section className={`${styles.cardClass} overflow-hidden p-0`}>
           <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
             <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">需要关注的机构</p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">优先看今天积压、漏处理和异常偏低的机构。</p>
-              </div>
+                <div>
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">需要关注的机构</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天需要处理和继续观察的机构。</p>
+                </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                 {attentionItems.length} 条提醒
               </span>
@@ -421,7 +421,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">先清掉账号审批</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天有 2 个机构还卡在开通环节。</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">还有机构卡在开通环节。</p>
                 </div>
                 <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
               </button>
@@ -432,7 +432,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">再看课堂反馈积压</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">优先处理今天已经下课但还没整理的班级。</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先补今天下课后的反馈。</p>
                 </div>
                 <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
               </button>
@@ -443,7 +443,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">最后看低产出机构</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">确认老师是否正常在生成复习资料和讲义。</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">再看今天产出偏低的机构。</p>
                 </div>
                 <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
               </button>
@@ -553,23 +553,23 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
     {
       page: 'class-feedback-generation' as WorkspacePage,
       title: '今天还有 3 节课没补课堂反馈',
-      meta: '优先处理已下课班级，避免教务继续催收集。',
+      meta: '优先处理今天已下课的班级。',
       status: '优先处理',
-      action: '去反馈',
+      action: '进入',
     },
     {
       page: 'classes' as WorkspacePage,
       title: '2 个班级本周排课还没确认',
-      meta: '周六衔接班和高二数学班需要确认老师安排。',
+      meta: '周六衔接班和高二数学班待确认。',
       status: '待确认',
-      action: '看班级',
+      action: '进入',
     },
     {
       page: canOpenAccounts ? ('accounts' as WorkspacePage) : ('consultation' as WorkspacePage),
       title: canOpenAccounts ? '4 条账号审批待处理' : '5 条家长咨询还没跟进',
-      meta: canOpenAccounts ? '今天新加入的老师还没完成开通。' : '有 2 条是今天新增咨询，建议优先回。',
+      meta: canOpenAccounts ? '今天新增老师还没完成开通。' : '今天新增咨询还没回访。',
       status: canOpenAccounts ? '待审批' : '待回访',
-      action: canOpenAccounts ? '去审批' : '去咨询',
+      action: '进入',
     },
   ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
 
@@ -613,7 +613,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待处理事项、班级进度和今日状态。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待处理事项和班级进度都在这里。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
@@ -632,7 +632,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-base font-semibold text-slate-900 dark:text-slate-100">待处理事项</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天最容易卡住教务和老师协同的事情放前面。</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先看今天没收尾的事。</p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                   {pendingItems.length} 项
@@ -664,7 +664,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
               <p className="text-base font-semibold text-slate-900 dark:text-slate-100">班级进度</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天上课的班级，重点看还没收尾的那几节。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天上课班级的处理情况。</p>
             </div>
             <div className="overflow-x-auto">
               <div className="min-w-[620px]">

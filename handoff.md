@@ -796,3 +796,11 @@
   - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
   - `rg -n "今日工作|机构观察|机构工作台|待处理、最近产出和今天课程都在这里|今天的积压、异常和机构动态|待处理事项、班级进度和今日状态" src/WorkspaceDashboard.tsx`
   - negative check confirming the older narrated copy is removed
+
+## 2026-06-14 dashboard demo-copy cleanup
+- Replaced more narrated and presentation-like dashboard copy with shorter, plainer operational language across member, platform, and organization dashboards.
+- Tightened task labels and mock data descriptions so the page reads more like a real admin workspace than a staged demo.
+- Runnable proof passed via `/tmp/xingrun_dashboard_demo_copy_cleanup_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天要处理的事都在这里|先看今天还没收尾的事项|最近生成和整理过的内容|今天的课和对应要做的事|积压、异常和机构动态|今天需要处理和继续观察的机构|待处理事项和班级进度都在这里|先看今天没收尾的事|今天上课班级的处理情况" src/WorkspaceDashboard.tsx`
+  - negative check confirming the older narrated copy is removed
