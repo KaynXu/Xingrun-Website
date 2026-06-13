@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PlusCircle, RefreshCw } from 'lucide-react';
 import { ClassFeedbackGenerationWorkspace } from '../../ClassFeedbackGenerationWorkspace';
+import { getCurrentClassDisplayName } from '../../classDisplay';
 import {
   buildClassFeedbackPeriodPreview,
   buildCreateClassFeedbackTaskRequest,
@@ -25,7 +26,6 @@ import {
   type ClassFeedbackStageName,
   type StageLabelGroup,
 } from '../../classFeedbackGeneration';
-import { formatClassDisplayName } from '../../domain/classNaming';
 import {
   apiFetch,
   getTodayIsoDate,
@@ -66,10 +66,6 @@ function inferClassFeedbackStageName(dateString: string): ClassFeedbackStageName
     return '秋季';
   }
   return '寒假';
-}
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
 }
 
 function syncMemberScopedClassSelection(

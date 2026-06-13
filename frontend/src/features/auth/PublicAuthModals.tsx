@@ -3,11 +3,11 @@ import { AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import type { ClassItem, CurrentUser } from '../../appTypes';
+import { getCurrentClassDisplayName } from '../../classDisplay';
 import {
   academicGradeGroups,
   academicGradeOptions,
   academicStageOptions,
-  formatClassDisplayName,
   getAcademicGradeRank,
   getAcademicStageFromGrade,
   normalizeAcademicGradeLabel,
@@ -28,10 +28,6 @@ const academicSubjectFilterOptions = ['全部学科', ...academicSubjectOptions]
 const studentCenterStageOptions = [...academicStageOptions];
 const studentCenterGradeOptions = [...academicGradeOptions];
 const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
-}
 
 function buildRecoveryPayload(
   recoveryMethod: RecoveryMethod,

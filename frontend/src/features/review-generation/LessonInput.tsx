@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Upload } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ClassItem, CurrentUser } from '../../appTypes';
-import { formatClassDisplayName } from '../../domain/classNaming';
+import { getCurrentClassDisplayName } from '../../classDisplay';
 import {
   apiFetch,
   apiUploadFormWithProgress,
@@ -46,10 +46,6 @@ function getTodayIsoDate(): string {
   const now = new Date();
   const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
   return localDate.toISOString().slice(0, 10);
-}
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
 }
 
 function syncMemberScopedClassSelection(
