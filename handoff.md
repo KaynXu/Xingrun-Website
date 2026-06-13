@@ -693,3 +693,19 @@
   - source extraction checks
   - module import proof for `WorkspacePageContent` and `App.tsx`
   - `npx tsx --test src/workspace-navigation.test.ts`
+
+## 2026-06-14 merge restore-landing-history into develop
+- Confirmed remote metadata with `git fetch origin develop` before merging.
+- Verified local `develop` was not behind `origin/develop`, and `codex/restore-landing-history` was not behind local `develop`.
+- Merged `codex/restore-landing-history` into local `develop` with `--no-ff`.
+- Merge commit: `1e6a85f9 Merge branch 'codex/restore-landing-history' into develop`.
+- No push was performed.
+- Unrelated local dirty files remain in the worktree by explicit user approval.
+
+## 2026-06-14 sidebar scroll and compact pass
+- Tightened the desktop workspace sidebar width and reduced the nav item padding, radius, and footer card spacing.
+- Switched the sidebar shell to `overflow-hidden` with the nav list as the dedicated scroll container so wheel scrolling stays on the menu area.
+- Narrowed the selected navigation background by adding inner horizontal gutters around each section item.
+- Runnable proof passed via `/tmp/xingrun_sidebar_compact_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "overflow-hidden border-r|w-\\[17\\.25rem\\]|space-y-3 overflow-y-auto|space-y-0\\.5 px-1|rounded-xl px-2\\.5 py-2|rounded-xl border border-slate-200/70 bg-white/95 p-2\\.5" src/features/navigation/Sidebar.tsx`

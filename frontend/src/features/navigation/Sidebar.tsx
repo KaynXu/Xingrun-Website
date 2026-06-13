@@ -292,15 +292,15 @@ export function Sidebar({
   return (
     <div
       className={cn(
-        'flex flex-col border-r border-slate-200/70 bg-[#fbfdff] dark:border-white/10 dark:bg-[#0b1220]',
+        'flex flex-col overflow-hidden border-r border-slate-200/70 bg-[#fbfdff] dark:border-white/10 dark:bg-[#0b1220]',
         mobile
           ? 'h-full w-full overflow-y-auto overscroll-y-auto [-webkit-overflow-scrolling:touch] shadow-[18px_0_48px_rgba(15,23,42,0.08)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.48)]'
           : compact
-            ? 'h-screen w-64 shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]'
-            : 'h-screen w-[18.5rem] shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
+            ? 'h-screen w-[15.5rem] shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]'
+            : 'h-screen w-[17.25rem] shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
       )}
     >
-      <div className={cn('border-b border-slate-200/70 py-6 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-6')}>
+      <div className={cn('border-b border-slate-200/70 py-5 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-5')}>
         <div className={cn('flex items-center gap-3', compact && !mobile && 'justify-center')}>
           <img src="/logo.png" alt="星润 logo" className="h-10 w-10 object-contain" />
           <div className={cn(compact && !mobile && 'hidden')}>
@@ -312,8 +312,8 @@ export function Sidebar({
 
       <nav
         className={cn(
-          'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-y-auto py-4 [-webkit-overflow-scrolling:touch]',
-          compact && !mobile ? 'px-4' : 'px-4',
+          'min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain py-3 pr-1 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]',
+          compact && !mobile ? 'px-3' : 'px-3',
         )}
       >
         {menuSections.map((section) => (
@@ -321,54 +321,56 @@ export function Sidebar({
             <p className={cn('px-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500', compact && !mobile && 'hidden')}>
               {section.label}
             </p>
-            {section.items.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                title={compact && !mobile ? item.label : undefined}
-                onClick={() => {
-                  setActivePage(item.id);
-                  onNavigate?.();
-                }}
-                className={cn(
-                  'group/nav-item relative flex w-full touch-manipulation items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left transition-all duration-200',
-                  compact && !mobile && 'justify-center px-3',
-                  activePage === item.id
-                    ? 'bg-[#edf2ff] text-slate-900 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.12)] dark:bg-white/10 dark:text-slate-100'
-                    : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100',
-                )}
-              >
-                <span
+            <div className="space-y-0.5 px-1">
+              {section.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  title={compact && !mobile ? item.label : undefined}
+                  onClick={() => {
+                    setActivePage(item.id);
+                    onNavigate?.();
+                  }}
                   className={cn(
-                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-slate-500 transition-colors',
+                    'group/nav-item relative flex w-full touch-manipulation items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200',
+                    compact && !mobile && 'justify-center px-2',
                     activePage === item.id
-                      ? 'text-blue-600 dark:text-sky-300'
-                      : 'group-hover/nav-item:text-slate-700 dark:text-slate-300',
+                      ? 'bg-sky-50 text-slate-900 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.18)] dark:bg-white/10 dark:text-slate-100'
+                      : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100',
                   )}
                 >
-                  <item.icon size={17} />
-                </span>
-                <div className={cn('min-w-0 flex-1', compact && !mobile && 'hidden')}>
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{item.label}</span>
-                  </div>
-                </div>
-                {compact && !mobile && (
-                  <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-40 -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-200/70 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 opacity-0 shadow-[0_10px_24px_rgba(31,42,68,0.14)] transition group-hover/nav-item:opacity-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
-                    {item.label}
+                  <span
+                    className={cn(
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors',
+                      activePage === item.id
+                        ? 'text-blue-600 dark:text-sky-300'
+                        : 'group-hover/nav-item:text-slate-700 dark:text-slate-300',
+                    )}
+                  >
+                    <item.icon size={16} />
                   </span>
-                )}
-              </button>
-            ))}
+                  <div className={cn('min-w-0 flex-1', compact && !mobile && 'hidden')}>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">{item.label}</span>
+                    </div>
+                  </div>
+                  {compact && !mobile && (
+                    <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-40 -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-200/70 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 opacity-0 shadow-[0_10px_24px_rgba(31,42,68,0.14)] transition group-hover/nav-item:opacity-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
+                      {item.label}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         ))}
       </nav>
 
-      <div className={cn('mt-auto border-t border-slate-200/70 p-4 dark:border-white/10', compact && !mobile && 'px-4')}>
+      <div className={cn('mt-auto border-t border-slate-200/70 p-3 dark:border-white/10', compact && !mobile && 'px-3')}>
         <button
           type="button"
           onClick={() => setAccountSheetOpen(true)}
-          className={cn('flex w-full items-center gap-3 rounded-2xl border border-slate-200/70 bg-white/95 p-3 text-left transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10', compact && !mobile && 'justify-center')}
+          className={cn('flex w-full items-center gap-3 rounded-xl border border-slate-200/70 bg-white/95 p-2.5 text-left transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10', compact && !mobile && 'justify-center')}
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 font-bold text-white">
             {currentUser.display_name.slice(0, 1).toUpperCase()}
