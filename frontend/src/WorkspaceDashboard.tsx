@@ -1,4 +1,5 @@
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, FileStack, PlusCircle, Sparkles } from 'lucide-react';
+import { memberDashboardData, organizationDashboardData, platformDashboardData } from './features/dashboard/dashboardMockData';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
 type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
@@ -37,90 +38,11 @@ function canOpenDashboardPage(currentUser: WorkspaceDashboardProps['currentUser'
 }
 
 function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashboardProps) {
-  const quickActions = [
-    {
-      page: 'review-generation' as WorkspacePage,
-      label: '新建复习文档',
-      icon: PlusCircle,
-    },
-    {
-      page: 'class-feedback-generation' as WorkspacePage,
-      label: '补课堂反馈',
-      icon: FileStack,
-    },
-    {
-      page: 'calendar' as WorkspacePage,
-      label: '查看课程日历',
-      icon: CalendarDays,
-    },
-    {
-      page: 'smartWrongQuestions' as WorkspacePage,
-      label: '继续错题跟进',
-      icon: Sparkles,
-    },
-  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
-
-  const todayQueue = [
-    {
-      page: 'review-generation' as WorkspacePage,
-      title: '高二数学提高班复习资料',
-      meta: '录音和笔记已上传，待整理',
-      status: '待生成',
-      action: '进入',
-    },
-    {
-      page: 'class-feedback-generation' as WorkspacePage,
-      title: '周三课堂反馈补录',
-      meta: '还有 2 节课没整理',
-      status: '待补录',
-      action: '进入',
-    },
-    {
-      page: 'smartWrongQuestions' as WorkspacePage,
-      title: '高一英语错题状态更新',
-      meta: '5 条题目还没标记掌握情况',
-      status: '待更新',
-      action: '进入',
-    },
-  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
-
-  const recentOutputs = [
-    {
-      page: 'review-generation' as WorkspacePage,
-      title: '高一英语语法复习单',
-      meta: '今天 14:20 · 已完成',
-      status: '已完成',
-    },
-    {
-      page: 'class-feedback-generation' as WorkspacePage,
-      title: '七年级数学课堂反馈',
-      meta: '今天 11:40 · 草稿',
-      status: '草稿',
-    },
-    {
-      page: 'review-generation' as WorkspacePage,
-      title: '立体几何阶段复习',
-      meta: '昨天 18:05 · 已完成',
-      status: '已完成',
-    },
-  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
-
-  const scheduleItems = [
-    {
-      time: '16:30',
-      title: '高一英语衔接班',
-      detail: '课前需要打开上次错题记录',
-      page: 'smartWrongQuestions' as WorkspacePage,
-      action: '查看错题',
-    },
-    {
-      time: '19:00',
-      title: '高二数学提高班',
-      detail: '下课后直接进入复习生成',
-      page: 'review-generation' as WorkspacePage,
-      action: '打开生成',
-    },
-  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
+  const quickActions = memberDashboardData.quickActions.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const todayQueue = memberDashboardData.todayQueue.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const recentOutputs = memberDashboardData.recentOutputs.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const weeklyStats = memberDashboardData.weeklyStats;
+  const scheduleItems = memberDashboardData.schedule.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
 
   return (
     <div className={`${styles.pageClass} space-y-5`}>
@@ -132,7 +54,14 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => {
-              const Icon = action.icon;
+              const Icon =
+                action.icon === 'plus'
+                  ? PlusCircle
+                  : action.icon === 'file'
+                    ? FileStack
+                    : action.icon === 'calendar'
+                      ? CalendarDays
+                      : Sparkles;
               return (
                 <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
                   <Icon size={16} />
@@ -210,21 +139,13 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
           <section className={`${styles.cardClass} p-5`}>
             <p className="text-base font-semibold text-slate-900 dark:text-slate-100">本周进度</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-              <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">复习资料</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">6</p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">本周已生成</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">课堂反馈</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">2</p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待补记录</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">错题跟进</p>
-                <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">5</p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天要处理</p>
-              </div>
+              {weeklyStats.map((item) => (
+                <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
+                </div>
+              ))}
             </div>
           </section>
 
@@ -261,86 +182,10 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
 }
 
 function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
-  const quickActions = [
-    {
-      page: 'accounts' as WorkspacePage,
-      label: '处理账号审批',
-    },
-    {
-      page: 'classes' as WorkspacePage,
-      label: '查看机构班级',
-    },
-    {
-      page: 'settings' as WorkspacePage,
-      label: '进入系统设置',
-    },
-  ];
-
-  const attentionItems = [
-    {
-      organization: '星润 Starain',
-      issue: '4 条账号审批还没处理。',
-      status: '优先处理',
-      page: 'accounts' as WorkspacePage,
-      action: '进入',
-    },
-    {
-      organization: '青禾校区',
-      issue: '今天还有 3 节课没补课堂反馈。',
-      status: '待跟进',
-      page: 'class-feedback-generation' as WorkspacePage,
-      action: '进入',
-    },
-    {
-      organization: '城南教学点',
-      issue: '近 3 天复习资料产出偏低。',
-      status: '需要观察',
-      page: 'review-generation' as WorkspacePage,
-      action: '进入',
-    },
-  ];
-
-  const platformStats = [
-    { label: '今日活跃机构', value: '12', note: '较昨天 +2' },
-    { label: '今日生成文档', value: '28', note: '复习资料 / 讲义 / 清单' },
-    { label: '待处理审批', value: '7', note: '2 个机构有积压' },
-    { label: '待补课堂反馈', value: '9', note: '优先看今天已下课班级' },
-  ];
-
-  const organizationRows = [
-    {
-      organization: '星润 Starain',
-      teachers: '8',
-      outputs: '11',
-      approvals: '4',
-      status: '审批积压',
-      page: 'accounts' as WorkspacePage,
-    },
-    {
-      organization: '青禾校区',
-      teachers: '6',
-      outputs: '7',
-      approvals: '0',
-      status: '反馈未补',
-      page: 'class-feedback-generation' as WorkspacePage,
-    },
-    {
-      organization: '城南教学点',
-      teachers: '4',
-      outputs: '2',
-      approvals: '1',
-      status: '产出偏低',
-      page: 'review-generation' as WorkspacePage,
-    },
-    {
-      organization: '北辰项目组',
-      teachers: '5',
-      outputs: '8',
-      approvals: '0',
-      status: '运行正常',
-      page: 'classes' as WorkspacePage,
-    },
-  ];
+  const quickActions = platformDashboardData.quickActions;
+  const attentionItems = platformDashboardData.attentionItems;
+  const platformStats = platformDashboardData.stats;
+  const organizationRows = platformDashboardData.organizationRows;
 
   return (
     <div className={`${styles.pageClass} space-y-5`}>
@@ -534,75 +379,12 @@ export function getOrganizationManagementEntries(canOpenAccounts: boolean): Orga
 }
 
 function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAccounts }: WorkspaceDashboardProps) {
-  const quickActions = [
-    {
-      page: 'classes' as WorkspacePage,
-      label: '查看班级安排',
-    },
-    {
-      page: 'class-feedback-generation' as WorkspacePage,
-      label: '补课堂反馈',
-    },
-    {
-      page: canOpenAccounts ? ('accounts' as WorkspacePage) : ('consultation' as WorkspacePage),
-      label: canOpenAccounts ? '处理账号审批' : '查看咨询记录',
-    },
-  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
-
-  const pendingItems = [
-    {
-      page: 'class-feedback-generation' as WorkspacePage,
-      title: '今天还有 3 节课没补课堂反馈',
-      meta: '优先处理今天已下课的班级。',
-      status: '优先处理',
-      action: '进入',
-    },
-    {
-      page: 'classes' as WorkspacePage,
-      title: '2 个班级本周排课还没确认',
-      meta: '周六衔接班和高二数学班待确认。',
-      status: '待确认',
-      action: '进入',
-    },
-    {
-      page: canOpenAccounts ? ('accounts' as WorkspacePage) : ('consultation' as WorkspacePage),
-      title: canOpenAccounts ? '4 条账号审批待处理' : '5 条家长咨询还没跟进',
-      meta: canOpenAccounts ? '今天新增老师还没完成开通。' : '今天新增咨询还没回访。',
-      status: canOpenAccounts ? '待审批' : '待回访',
-      action: '进入',
-    },
-  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
-
-  const progressStats = [
-    { label: '今日上课班级', value: '9', note: '其中 6 节已下课' },
-    { label: '课堂反馈完成', value: '6/9', note: '还差 3 节待补' },
-    { label: '复习资料产出', value: '8', note: '较昨天正常' },
-    { label: canOpenAccounts ? '待审批账号' : '待跟进咨询', value: canOpenAccounts ? '4' : '5', note: canOpenAccounts ? '2 位老师急用' : '2 条今日新增' },
-  ];
-
-  const classRows = [
-    {
-      name: '高二数学提高班',
-      schedule: '19:00',
-      teacher: '周老师',
-      status: '待复习资料',
-      page: 'review-generation' as WorkspacePage,
-    },
-    {
-      name: '七年级英语衔接班',
-      schedule: '16:30',
-      teacher: '王老师',
-      status: '待课堂反馈',
-      page: 'class-feedback-generation' as WorkspacePage,
-    },
-    {
-      name: '高一语文写作班',
-      schedule: '18:00',
-      teacher: '李老师',
-      status: '运行正常',
-      page: 'classes' as WorkspacePage,
-    },
-  ];
+  const quickActions = (canOpenAccounts ? organizationDashboardData.quickActions.withAccounts : organizationDashboardData.quickActions.withoutAccounts)
+    .filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const pendingItems = (canOpenAccounts ? organizationDashboardData.pendingItems.withAccounts : organizationDashboardData.pendingItems.withoutAccounts)
+    .filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const progressStats = canOpenAccounts ? organizationDashboardData.stats.withAccounts : organizationDashboardData.stats.withoutAccounts;
+  const classRows = organizationDashboardData.classRows;
 
   const sideList = getOrganizationManagementEntries(canOpenAccounts)
     .filter((entry) => canOpenDashboardPage(currentUser, entry.page));

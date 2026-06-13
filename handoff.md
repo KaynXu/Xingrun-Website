@@ -804,3 +804,12 @@
   - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
   - `rg -n "今天要处理的事都在这里|先看今天还没收尾的事项|最近生成和整理过的内容|今天的课和对应要做的事|积压、异常和机构动态|今天需要处理和继续观察的机构|待处理事项和班级进度都在这里|先看今天没收尾的事|今天上课班级的处理情况" src/WorkspaceDashboard.tsx`
   - negative check confirming the older narrated copy is removed
+
+## 2026-06-14 dashboard mock data extraction
+- Moved the role-based dashboard demo data out of `WorkspaceDashboard.tsx` into `frontend/src/features/dashboard/dashboardMockData.ts`.
+- Added typed shared dashboard data structures for quick actions, task items, stats, schedules, and role-specific tables so later API integration can replace one module instead of editing view code.
+- Updated `WorkspaceDashboard.tsx` to render from the shared data module and keep the component focused on layout plus page routing.
+- Runnable proof passed via `/tmp/xingrun_dashboard_data_module_proof.sh`:
+  - `npx tsx -e "Promise.all([import('./src/WorkspaceDashboard.tsx'), import('./src/features/dashboard/dashboardMockData.ts')]).then(() => console.log('Dashboard modules import OK'))"`
+  - `rg -n "memberDashboardData|platformDashboardData|organizationDashboardData|weeklyStats = memberDashboardData|platformStats = platformDashboardData\.stats|organizationDashboardData\.pendingItems" src/WorkspaceDashboard.tsx`
+  - `rg -n "export const memberDashboardData|export const platformDashboardData|export const organizationDashboardData|export type DashboardQuickAction|export type DashboardTaskItem|export type DashboardStat" src/features/dashboard/dashboardMockData.ts`
