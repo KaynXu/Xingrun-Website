@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Home,
   PlusCircle,
@@ -82,22 +82,7 @@ import {
   OrganizationApplyModal,
   PasswordResetModal,
 } from './features/auth/PublicAuthModals';
-import {
-  clearJoinInvitePathIfNeeded,
-  getJoinInviteTokenFromPath,
-} from './features/auth/authFlow';
-import {
-  backToLoginState,
-  closePublicAuthState,
-  openApplyOrganizationState,
-  openJoinOrganizationState,
-  openPasswordResetState,
-} from './features/auth/authActions';
-import {
-  getInitialJoinInviteToken,
-  getInitialPublicAuthModal,
-} from './features/auth/authState';
-import type { PublicAuthModal } from './features/auth/authState';
+import { useWorkspaceAuthState } from './features/auth/useWorkspaceAuthState';
 import { StudentPortalPage } from './StudentTodayTasksPage';
 import {
   createClassStudent,
@@ -199,17 +184,23 @@ export default function App() {
     return <StudentPortalPage today={getTodayIsoDate()} />;
   }
 
-  const [token, setToken] = useState<string>(() => getToken());
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(getToken()));
+  const {
+    token,
+    currentUser,
+    setCurrentUser,
+    authReady,
+    publicAuthModal,
+    joinInviteToken,
+    handleLogin: persistLogin,
+    handleLogout: clearWorkspaceAuth,
+    closePublicAuthModal,
+    openApplyOrganization,
+    openJoinOrganization,
+    openPasswordReset,
+    backToLogin,
+  } = useWorkspaceAuthState();
   const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
   const [isMobileViewport, setIsMobileViewport] = useState(getInitialMobileViewport);
-  const [publicAuthModal, setPublicAuthModal] = useState<PublicAuthModal | null>(() =>
-    getInitialPublicAuthModal(typeof window === 'undefined' ? '' : window.location.pathname, Boolean(getToken())),
-  );
-  const [joinInviteToken, setJoinInviteToken] = useState<string | null>(() =>
-    getInitialJoinInviteToken(typeof window === 'undefined' ? '' : window.location.pathname),
-  );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [classBindingTarget, setClassBindingTarget] = useState<ClassBindingTarget | null>(null);
@@ -269,70 +260,6 @@ export default function App() {
   const landingLegalPage = getLandingLegalPageFromHash(landingHash);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    const syncInvitePath = () => {
-      if (token) {
-        clearJoinInvitePathIfNeeded();
-        setJoinInviteToken(null);
-        setPublicAuthModal(null);
-        return;
-      }
-
-      const nextToken = getJoinInviteTokenFromPath(window.location.pathname);
-      setJoinInviteToken(nextToken);
-      if (nextToken && !token) {
-        setPublicAuthModal('join-organization');
-        return;
-      }
-      setPublicAuthModal((current) => (current === 'join-organization' ? null : current));
-    };
-
-    syncInvitePath();
-    window.addEventListener('popstate', syncInvitePath);
-    return () => window.removeEventListener('popstate', syncInvitePath);
-  }, [token]);
-
-  useEffect(() => {
-    if (!token) {
-      setCurrentUser(null);
-      setAuthReady(true);
-      return;
-    }
-
-    let cancelled = false;
-    setAuthReady(false);
-
-    apiFetch<CurrentUser>('/api/me', { reloadOnUnauthorized: false })
-      .then((user) => {
-        if (cancelled) {
-          return;
-        }
-        setCurrentUser(user);
-        setActivePage((page) => getWorkspacePageFallback(user, page));
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-        removeLocalStorageItem('xr_token');
-        setToken('');
-        setCurrentUser(null);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setAuthReady(true);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  useEffect(() => {
     if (!currentUser) {
       setActivePage('dashboard');
       return;
@@ -341,51 +268,15 @@ export default function App() {
   }, [currentUser]);
 
   const handleLogin = (t: string) => {
-    clearJoinInvitePathIfNeeded();
-    writeLocalStorageItem('xr_token', t);
-    setToken(t);
-    setPublicAuthModal(null);
-    setJoinInviteToken(null);
+    persistLogin(t);
     setShowLanding(false);
   };
 
   const handleLogout = () => {
-    clearJoinInvitePathIfNeeded();
-    removeLocalStorageItem('xr_token');
-    setToken('');
-    setCurrentUser(null);
-    setPublicAuthModal(null);
-    setJoinInviteToken(null);
+    clearWorkspaceAuth();
     setShowLanding(false);
     setActivePage('dashboard');
     setMobileNavOpen(false);
-  };
-
-  const closePublicAuthModal = () => {
-    clearJoinInvitePathIfNeeded();
-    const nextState = closePublicAuthState();
-    setJoinInviteToken(nextState.joinInviteToken);
-    setPublicAuthModal(nextState.publicAuthModal);
-  };
-
-  const openApplyOrganization = () => {
-    const nextState = openApplyOrganizationState();
-    setJoinInviteToken(nextState.joinInviteToken);
-    setPublicAuthModal(nextState.publicAuthModal);
-  };
-
-  const openJoinOrganization = () => {
-    const nextState = openJoinOrganizationState(typeof window === 'undefined' ? '' : window.location.pathname);
-    setJoinInviteToken(nextState.joinInviteToken);
-    setPublicAuthModal(nextState.publicAuthModal);
-  };
-
-  const openPasswordReset = () => {
-    setPublicAuthModal(openPasswordResetState());
-  };
-
-  const backToLogin = () => {
-    setPublicAuthModal(backToLoginState());
   };
 
   const navigateWorkspacePage = useCallback((page: Page) => {

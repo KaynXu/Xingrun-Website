@@ -8,6 +8,7 @@ const authActionsSource = readFileSync(resolve(process.cwd(), 'src/features/auth
 const authSource = readFileSync(resolve(process.cwd(), 'src/features/auth/PublicAuthModals.tsx'), 'utf8');
 const authFlowSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authFlow.ts'), 'utf8');
 const authStateSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authState.ts'), 'utf8');
+const authHookSource = readFileSync(resolve(process.cwd(), 'src/features/auth/useWorkspaceAuthState.ts'), 'utf8');
 const accessSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/workspaceAccess.ts'), 'utf8');
 const approvalSource = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
 
@@ -29,6 +30,10 @@ test('landing and login source expose separate organization application and invi
   assert.match(authActionsSource, /export function openJoinOrganizationState/);
   assert.match(authActionsSource, /export function openPasswordResetState/);
   assert.match(authActionsSource, /export function backToLoginState/);
+  assert.match(authHookSource, /export function useWorkspaceAuthState\(\): WorkspaceAuthState \{/);
+  assert.match(authHookSource, /apiFetch<CurrentUser>\('\/api\/me', \{ reloadOnUnauthorized: false \}\)/);
+  assert.match(authHookSource, /writeLocalStorageItem\('xr_token', nextToken\)/);
+  assert.match(authHookSource, /removeLocalStorageItem\('xr_token'\)/);
   assert.match(appSource, /publicAuthModal === 'join-organization'/);
   assert.match(authSource, /if \(!data\.token\)/);
   assert.match(authFlowSource, /export function clearJoinInvitePathIfNeeded/);

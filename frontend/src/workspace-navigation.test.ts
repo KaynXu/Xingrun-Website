@@ -15,6 +15,7 @@ const lessonInputSource = readFileSync(new URL('./features/review-generation/Les
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
 const settingsSource = readFileSync(new URL('./features/settings/SettingsPage.tsx', import.meta.url), 'utf8');
 const approvalPageSource = readFileSync(new URL('./features/approval/ApprovalPage.tsx', import.meta.url), 'utf8');
+const authHookSource = readFileSync(new URL('./features/auth/useWorkspaceAuthState.ts', import.meta.url), 'utf8');
 const consultationPageSource = readFileSync(new URL('./features/consultation/ConsultationPage.tsx', import.meta.url), 'utf8');
 const consultationModalSource = readFileSync(new URL('./features/consultation/ConsultationModal.tsx', import.meta.url), 'utf8');
 const consultationSharedSource = readFileSync(new URL('./features/consultation/consultationShared.tsx', import.meta.url), 'utf8');
@@ -236,7 +237,7 @@ test('workspace navigation falls back when the selected page is not allowed for 
   assert.match(accessSource, /export function getWorkspacePageFallback\(user: VisiblePageUser, page: WorkspacePage\): WorkspacePage \{/);
   assert.match(accessSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
   assert.match(appSource, /const activeWorkspacePage = getWorkspacePageFallback\(currentUser, activePage\);/);
-  assert.match(appSource, /setActivePage\(\(page\) => getWorkspacePageFallback\(user, page\)\);/);
+  assert.match(authHookSource, /setCurrentUser\(user\);/);
   assert.match(appSource, /const navigateWorkspacePage = useCallback\(\(page: Page\) => \{/);
   assert.match(appSource, /setActivePage\(getWorkspacePageFallback\(currentUser, page\)\);/);
   assert.match(shellSource, /setActivePage=\{onNavigatePage\}/);
