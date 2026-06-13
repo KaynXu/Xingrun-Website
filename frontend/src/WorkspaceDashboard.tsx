@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, FileStack, PlusCircle, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, FileStack, PlusCircle, Sparkles } from 'lucide-react';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
 type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
@@ -267,14 +267,243 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
   );
 }
 
-function PlatformWorkspace({ styles }: WorkspaceDashboardProps) {
+function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
+  const quickActions = [
+    {
+      page: 'accounts' as WorkspacePage,
+      label: '处理账号审批',
+    },
+    {
+      page: 'classes' as WorkspacePage,
+      label: '查看机构班级',
+    },
+    {
+      page: 'settings' as WorkspacePage,
+      label: '进入系统设置',
+    },
+  ];
+
+  const attentionItems = [
+    {
+      organization: '星润 Starain',
+      issue: '账号审批积压 4 条，今天还没有处理。',
+      status: '优先处理',
+      page: 'accounts' as WorkspacePage,
+      action: '去审批',
+    },
+    {
+      organization: '青禾校区',
+      issue: '今天 6 节课里还有 3 节没有课堂反馈。',
+      status: '待跟进',
+      page: 'class-feedback-generation' as WorkspacePage,
+      action: '看反馈',
+    },
+    {
+      organization: '城南教学点',
+      issue: '近 3 天复习文档产出偏低，需要确认老师是否正常使用。',
+      status: '需要观察',
+      page: 'review-generation' as WorkspacePage,
+      action: '看生成',
+    },
+  ];
+
+  const platformStats = [
+    { label: '今日活跃机构', value: '12', note: '较昨天 +2' },
+    { label: '今日生成文档', value: '28', note: '复习资料 / 讲义 / 清单' },
+    { label: '待处理审批', value: '7', note: '2 个机构有积压' },
+    { label: '待补课堂反馈', value: '9', note: '优先看今天已下课班级' },
+  ];
+
+  const organizationRows = [
+    {
+      organization: '星润 Starain',
+      teachers: '8',
+      outputs: '11',
+      approvals: '4',
+      status: '审批积压',
+      page: 'accounts' as WorkspacePage,
+    },
+    {
+      organization: '青禾校区',
+      teachers: '6',
+      outputs: '7',
+      approvals: '0',
+      status: '反馈未补',
+      page: 'class-feedback-generation' as WorkspacePage,
+    },
+    {
+      organization: '城南教学点',
+      teachers: '4',
+      outputs: '2',
+      approvals: '1',
+      status: '产出偏低',
+      page: 'review-generation' as WorkspacePage,
+    },
+    {
+      organization: '北辰项目组',
+      teachers: '5',
+      outputs: '8',
+      approvals: '0',
+      status: '运行正常',
+      page: 'classes' as WorkspacePage,
+    },
+  ];
+
   return (
-    <div className={`${styles.pageClass} space-y-6`}>
-      <section className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Platform command</p>
-        <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">平台总览</h3>
+    <div className={`${styles.pageClass} space-y-5`}>
+      <section className={`${styles.cardClass} p-5 md:p-6`}>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今天先看这些机构</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先处理积压和异常，再看整体运行状态。</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {quickActions.map((action) => (
+              <button
+                key={action.page}
+                type="button"
+                onClick={() => setActivePage(action.page)}
+                className={`${styles.secondaryButtonClass} px-4 py-2.5 text-sm`}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        <section className={`${styles.cardClass} overflow-hidden p-0`}>
+          <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">需要关注的机构</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">优先看今天积压、漏处理和异常偏低的机构。</p>
+              </div>
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+                {attentionItems.length} 条提醒
+              </span>
+            </div>
+          </div>
+          <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+            {attentionItems.map((item) => (
+              <div key={`${item.organization}-${item.issue}`} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={16} className="shrink-0 text-amber-500 dark:text-amber-300" />
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.organization}</p>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                      {item.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.issue}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActivePage(item.page)}
+                  className="inline-flex items-center gap-2 self-start text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 md:self-center"
+                >
+                  {item.action}
+                  <ArrowRight size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="space-y-5">
+          <section className={`${styles.cardClass} p-5`}>
+            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">平台运行状态</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              {platformStats.map((item) => (
+                <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={`${styles.cardClass} overflow-hidden p-0`}>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日处理顺序</p>
+            </div>
+            <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+              <button
+                type="button"
+                onClick={() => setActivePage('accounts')}
+                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">先清掉账号审批</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天有 2 个机构还卡在开通环节。</p>
+                </div>
+                <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivePage('class-feedback-generation')}
+                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">再看课堂反馈积压</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">优先处理今天已经下课但还没整理的班级。</p>
+                </div>
+                <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivePage('review-generation')}
+                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">最后看低产出机构</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">确认老师是否正常在生成复习资料和讲义。</p>
+                </div>
+                <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+              </button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section className={`${styles.cardClass} overflow-hidden p-0`}>
+        <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+          <p className="text-base font-semibold text-slate-900 dark:text-slate-100">机构动态</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按机构看今天的活跃、产出和积压状态。</p>
+        </div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr_1fr_120px] gap-4 border-b border-slate-200/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-white/10 dark:text-slate-500">
+              <span>机构</span>
+              <span>活跃老师</span>
+              <span>今日产出</span>
+              <span>待审批</span>
+              <span>状态</span>
+              <span className="text-right">操作</span>
+            </div>
+            {organizationRows.map((row) => (
+              <button
+                key={row.organization}
+                type="button"
+                onClick={() => setActivePage(row.page)}
+                className="grid w-full grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr_1fr_120px] gap-4 border-b border-slate-200/70 px-5 py-4 text-left transition hover:bg-slate-50/80 last:border-b-0 dark:border-white/10 dark:hover:bg-white/5"
+              >
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.organization}</span>
+                <span className="text-sm text-slate-600 dark:text-slate-300">{row.teachers}</span>
+                <span className="text-sm text-slate-600 dark:text-slate-300">{row.outputs}</span>
+                <span className="text-sm text-slate-600 dark:text-slate-300">{row.approvals}</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
+                <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
+                  进入
+                  <ArrowRight size={15} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

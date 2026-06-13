@@ -764,3 +764,11 @@
 - Runnable proof passed via `/tmp/xingrun_member_dashboard_proof.sh`:
   - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
   - `rg -n "今天先做这几件事|今日待办|最近产出|本周进度|今天课程|todayQueue|recentOutputs|scheduleItems|quickActions" src/WorkspaceDashboard.tsx`
+
+## 2026-06-14 platform dashboard first pass
+- Reworked the super-owner workspace dashboard into a platform operations board instead of an empty overview shell.
+- Added four functional areas: quick actions, 需要关注的机构, 平台运行状态 / 今日处理顺序, and 机构动态.
+- Kept the design list-first and task-first so the page reads like an operations console rather than a grid of feature cards.
+- Runnable proof passed via `/tmp/xingrun_platform_dashboard_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天先看这些机构|需要关注的机构|平台运行状态|今日处理顺序|机构动态|attentionItems|platformStats|organizationRows" src/WorkspaceDashboard.tsx`
