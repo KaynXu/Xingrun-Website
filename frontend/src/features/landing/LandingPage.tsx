@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   Sun,
 } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion } from 'motion/react';
 
 export type LandingLegalDocumentKey = 'privacy' | 'terms';
 
@@ -88,43 +88,6 @@ export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentK
     return 'terms';
   }
   return null;
-}
-
-function HeroBackgroundGrainient() {
-  const reduceMotion = useReducedMotion();
-
-  return (
-    <div
-      className="absolute inset-0 overflow-hidden"
-      aria-hidden="true"
-      data-background="grainient"
-      data-grainient-palette="sky-cyan"
-      data-grainient-motion="pronounced"
-      data-grainient-style="flow-bands"
-    >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.54),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.42),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(255,255,255,0.52),transparent_24%),linear-gradient(135deg,rgba(240,249,255,0.99)_0%,rgba(214,239,255,0.97)_42%,rgba(197,228,255,0.95)_100%)] dark:bg-[radial-gradient(circle_at_12%_18%,rgba(34,199,232,0.24),transparent_24%),radial-gradient(circle_at_84%_16%,rgba(47,128,237,0.28),transparent_22%),radial-gradient(circle_at_52%_58%,rgba(125,211,252,0.12),transparent_24%),linear-gradient(135deg,rgba(7,14,25,0.99)_0%,rgba(10,22,38,0.97)_42%,rgba(16,32,54,0.95)_100%)]" />
-      <motion.div
-        className="absolute inset-[-18%] opacity-[0.34] mix-blend-multiply blur-[18px] dark:opacity-[0.16] dark:mix-blend-screen"
-        style={{
-          backgroundImage:
-            'repeating-linear-gradient(116deg, rgba(34,199,232,0) 0px, rgba(34,199,232,0) 38px, rgba(34,199,232,0.24) 38px, rgba(34,199,232,0.24) 52px, rgba(255,255,255,0) 52px, rgba(255,255,255,0) 92px, rgba(47,128,237,0.2) 92px, rgba(47,128,237,0.2) 108px, rgba(255,255,255,0) 108px, rgba(255,255,255,0) 156px)',
-          backgroundSize: '220px 220px',
-        }}
-        animate={reduceMotion ? undefined : { x: [0, 148, -96, 0], y: [0, -44, 68, 0], opacity: [0.24, 0.38, 0.28, 0.24] }}
-        transition={reduceMotion ? undefined : { duration: 7, repeat: Infinity, ease: 'linear' }}
-      />
-      <motion.div
-        className="absolute inset-[-10%] opacity-[0.22] mix-blend-soft-light dark:opacity-[0.12]"
-        style={{
-          backgroundImage:
-            'repeating-linear-gradient(180deg, rgba(255,255,255,0) 0px, rgba(255,255,255,0) 24px, rgba(255,255,255,0.34) 24px, rgba(255,255,255,0.34) 28px, rgba(255,255,255,0) 28px, rgba(255,255,255,0) 58px)',
-          backgroundSize: '100% 120px',
-        }}
-        animate={reduceMotion ? undefined : { y: [0, -64, 0], opacity: [0.16, 0.28, 0.16] }}
-        transition={reduceMotion ? undefined : { duration: 5.2, repeat: Infinity, ease: 'linear' }}
-      />
-    </div>
-  );
 }
 
 export function LandingLegalPage({ documentKey }: { documentKey: LandingLegalDocumentKey }) {
@@ -281,83 +244,140 @@ export function LandingPage({
         </div>
       </nav>
 
-      <section className="relative min-h-screen overflow-hidden bg-[#F8FBFF] dark:bg-[#0f172a]">
-        <HeroBackgroundGrainient />
+      <section className="relative overflow-hidden border-b border-sky-100/80 bg-[linear-gradient(180deg,#f7fbff_0%,#ffffff_76%)] dark:border-white/8 dark:bg-[linear-gradient(180deg,#0d1220_0%,#111827_78%)]">
+        <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.12),transparent_34%),radial-gradient(circle_at_top_right,rgba(47,128,237,0.08),transparent_28%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.12),transparent_32%),radial-gradient(circle_at_top_right,rgba(47,128,237,0.1),transparent_28%)]" />
+        <div
+          className="absolute inset-0 opacity-[0.45] dark:opacity-[0.12]"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(148,163,184,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.12) 1px, transparent 1px)',
+            backgroundPosition: 'center top',
+            backgroundSize: '48px 48px',
+            maskImage: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.12) 72%, transparent 100%)',
+          }}
+        />
 
-        <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl items-end px-6 py-24 md:py-32 lg:py-36">
-          <div className="w-full">
+        <div className="relative z-10 mx-auto max-w-7xl px-6 pb-20 pt-32 md:pb-24 md:pt-36">
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-end">
             <motion.div
-              initial={{ opacity: 0, y: 40 }}
+              initial={{ opacity: 0, y: 28 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
-              className="max-w-3xl"
+              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              className="max-w-2xl"
             >
-              <motion.span
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.08, duration: 0.5 }}
-                className="inline-flex items-center rounded-full border border-white/50 bg-white/55 px-4 py-1.5 text-[11px] font-semibold tracking-[0.32em] text-slate-700 backdrop-blur-md dark:border-white/12 dark:bg-slate-950/35 dark:text-sky-200"
-              >
-                服务学校与机构的 AI 教育平台
-              </motion.span>
-              <motion.h1
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.18, duration: 0.72, ease: [0.16, 1, 0.3, 1] }}
-                className="mt-8 max-w-4xl text-4xl font-black leading-[1.02] tracking-tight text-slate-950 dark:text-white sm:text-6xl md:text-7xl"
-              >
-                用ai创造教育
-              </motion.h1>
+              <div className="inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-2 text-xs font-semibold tracking-[0.22em] text-sky-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-sky-200">
+                面向学校与机构的教学工作台
+              </div>
+              <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 dark:text-white sm:text-5xl md:text-6xl">
+                把复习生成、错题跟进和教学交付收进同一套平台
+              </h1>
+              <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
+                Starain 帮老师、教务和机构负责人在同一条工作流里完成课堂整理、复习输出和后续跟进，少切工具，也少重复整理。
+              </p>
 
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.32, duration: 0.78 }}
-                className="mt-7 max-w-2xl text-base leading-8 text-slate-700 dark:text-slate-200 sm:text-lg md:text-xl"
-              >
-                从复习资料生成，到错题跟进、讲义整理与教师协作，Starain 正在把日常教学里最常重复的工作整理进同一套平台流程。
-              </motion.p>
+              <div className="mt-8 flex flex-col gap-3 text-sm text-slate-600 dark:text-slate-300">
+                <div className="flex items-start gap-3">
+                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-sky-500" />
+                  <p>先完成真实教学任务，再让 AI 补上整理、生成和归档这些重复工作。</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-sky-500" />
+                  <p>机构负责人、老师和教务团队看到的是同一套进度和交付结果，不再分散在多个工具里。</p>
+                </div>
+              </div>
 
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.46, duration: 0.78 }}
-                className="mt-8 space-y-3"
-              >
-                {[
-                  ['复习资料生成', '把课堂内容快速整理成学生可直接使用的复习材料。'],
-                  ['错题跟进与复习安排', '围绕错题记录、老师备注和掌握状态，持续安排后续跟进。'],
-                  ['教师协作交付', '让教师、教研与机构团队在同一平台里完成整理、复核与交付。'],
-                ].map(([label, description]) => (
-                  <div key={label} className="flex items-start gap-3 text-left">
-                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.5)]" />
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-700 dark:text-sky-200">{label}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{description}</p>
-                    </div>
-                  </div>
-                ))}
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.58, duration: 0.78 }}
-                className="mt-10 flex flex-col gap-3 sm:flex-row"
-              >
+              <div className="mt-10 flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={onLogin}
-                  className="inline-flex items-center justify-center rounded-2xl bg-sky-600 px-8 py-4 text-base font-bold text-white shadow-[0_24px_60px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
+                  className="inline-flex items-center justify-center rounded-full bg-sky-600 px-8 py-3.5 text-base font-bold text-white transition-all hover:bg-sky-500 active:scale-95"
                 >
                   立即登录
                 </button>
                 <button
                   onClick={handleRegister}
-                  className="inline-flex items-center justify-center rounded-2xl border border-white/55 bg-white/55 px-8 py-4 text-base font-bold text-slate-800 backdrop-blur-md transition-all hover:bg-white/72 active:scale-95 dark:border-white/12 dark:bg-slate-950/30 dark:text-slate-100 dark:hover:bg-slate-950/42"
+                  className="inline-flex items-center justify-center rounded-full border border-sky-200 bg-white px-8 py-3.5 text-base font-bold text-slate-800 transition-all hover:bg-sky-50 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
                 >
                   申请试用
                 </button>
-              </motion.div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 36 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12, duration: 0.78, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden rounded-[2rem] border border-sky-100 bg-white shadow-[0_16px_48px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-950"
+            >
+              <div className="flex items-center justify-between border-b border-sky-100 px-5 py-4 dark:border-white/10">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">Starain workspace</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">今天最值得推进的三件事</p>
+                </div>
+                <div className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                  机构工作流
+                </div>
+              </div>
+
+              <div className="grid gap-0 lg:grid-cols-[220px_minmax(0,1fr)]">
+                <div className="border-b border-sky-100 bg-sky-50/70 px-4 py-4 dark:border-white/10 dark:bg-white/5 lg:border-b-0 lg:border-r">
+                  <div className="space-y-2">
+                    {[
+                      ['复习生成', '课堂内容整理'],
+                      ['错题跟进', '学生薄弱点'],
+                      ['教学交付', '讲义与协作'],
+                    ].map(([title, subtitle], index) => (
+                      <div
+                        key={title}
+                        className={`rounded-2xl px-4 py-3 ${
+                          index === 0
+                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        <p className="text-sm font-semibold">{title}</p>
+                        <p className="mt-1 text-xs">{subtitle}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="px-5 py-4">
+                  <div className="grid gap-0">
+                    {[
+                      {
+                        title: '复习文档待生成',
+                        body: '把课堂录音和笔记整理成学生可直接使用的复习材料。',
+                        status: '进行中',
+                      },
+                      {
+                        title: '错题跟进待更新',
+                        body: '围绕错因、掌握状态和后续练习安排形成连续记录。',
+                        status: '今日跟进',
+                      },
+                      {
+                        title: '讲义草稿待确认',
+                        body: '把课程目标、教研材料和教师修改意见收进统一交付链路。',
+                        status: '待确认',
+                      },
+                    ].map((item, index) => (
+                      <div
+                        key={item.title}
+                        className={`flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between ${
+                          index === 0 ? '' : 'border-t border-sky-100 dark:border-white/10'
+                        }`}
+                      >
+                        <div className="max-w-lg">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                          <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">{item.body}</p>
+                        </div>
+                        <div className="shrink-0 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
+                          {item.status}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </motion.div>
           </div>
         </div>
