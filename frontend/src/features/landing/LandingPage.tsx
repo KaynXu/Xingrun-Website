@@ -2,14 +2,12 @@ import { useEffect, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
-  CheckCircle2,
   Database,
   FileText,
   Home,
   Moon,
   ShieldCheck,
   Sun,
-  Upload,
   User,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
@@ -295,7 +293,7 @@ export function LandingPage({
         <HeroBackgroundGrainient />
 
         <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl items-end px-6 py-24 md:py-32 lg:py-36">
-          <div className="grid w-full gap-10 lg:grid-cols-[minmax(0,1.12fr)_360px] lg:items-end">
+          <div className="w-full">
             <motion.div
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
@@ -377,51 +375,6 @@ export function LandingPage({
                   加入已有机构
                 </button>
               </motion.div>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, x: 28, y: 20 }}
-              animate={{ opacity: 1, x: 0, y: 0 }}
-              transition={{ delay: 0.34, duration: 0.85, ease: [0.16, 1, 0.3, 1] }}
-              className="lg:justify-self-end"
-            >
-              <div className="overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.72)_0%,rgba(255,255,255,0.38)_100%)] p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.42)_0%,rgba(15,23,42,0.7)_100%)] dark:shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
-                <div className="flex items-center justify-between gap-4 border-b border-slate-200/70 pb-4 dark:border-white/10">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">平台概览</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">面向学习全流程的 AI 教育平台</p>
-                  </div>
-                  <div className="shrink-0 rounded-full border border-emerald-200/80 bg-emerald-50/80 px-4 py-1.5 text-xs font-semibold tracking-[0.18em] text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 sm:px-5 sm:py-2 sm:text-sm">
-                    已上线
-                  </div>
-                </div>
-
-                <div className="mt-5 space-y-3">
-                  {[
-                    { icon: Upload, title: '复习资料', body: '课堂内容生成讲义、总结与学生复习材料' },
-                    { icon: CheckCircle2, title: '错题跟进', body: '记录题目、错因与掌握状态，方便老师持续跟进' },
-                    { icon: FileText, title: '教学交付', body: '把课堂内容整理成教师与机构团队都能直接使用的交付材料' },
-                  ].map((item, index) => (
-                    <motion.div
-                      key={item.title}
-                      initial={{ opacity: 0, y: 18 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.52 + index * 0.1, duration: 0.55 }}
-                      className="rounded-[1.5rem] border border-white/60 bg-white/60 p-4 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/34"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-[0_14px_30px_rgba(14,165,233,0.28)]">
-                          <item.icon size={18} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold tracking-[0.18em] text-slate-800 dark:text-slate-100">{item.title}</p>
-                          <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{item.body}</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
             </motion.div>
           </div>
         </div>

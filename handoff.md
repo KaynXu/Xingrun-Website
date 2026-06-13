@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已按用户要求移除官网首屏右侧“平台概览”整张概览卡：`frontend/src/features/landing/LandingPage.tsx` 首屏现在只保留左侧主标题、说明和机构入口，不再显示“平台概览 / 面向学习全流程的 AI 教育平台 / 已上线 / 复习资料 / 错题跟进 / 教学交付”这一整组卡片内容。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求移除官网首屏背景里的发光光晕层：`frontend/src/features/landing/LandingPage.tsx` 的 `HeroBackgroundGrainient()` 现已删掉 3 个大面积模糊径向 glow 层和中心额外亮晕，只保留底层渐变与动态纹理，页面不会再出现明显的背景发光团。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求移除官网落地页顶部导航里的 `核心方案` 和 `关于 Starain` 两个标签跳转入口；当前 `frontend/src/features/landing/LandingPage.tsx` 顶部仅保留品牌、夜间模式和登录/机构入口，不再在 header 中显示这两个锚点文案。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按 git 历史把官网落地页完整恢复到抽离前的完整品牌化版本：`frontend/src/features/landing/LandingPage.tsx` 现重新带回 grainient 英雄区、右侧平台概览卡、完整 feature bento、about 区、页脚导航列，以及 `申请开通机构 / 立即登录 / 加入已有机构` 这组官网入口；不再是这轮误改出来的简化版。恢复基线参考了抽离前 `App.tsx` 中 landing 的最后完整实现链（以 `e1167892` 这一版视觉结构为准），同时保留当前未登录入口依赖的 `LandingLegalDocumentKey / getLandingLegalPageFromHash / LandingLegalPage` 导出。当前轮 proof `/tmp/xingrun_landing_history_restore_proof.sh` 已通过：源码命中 `HeroBackgroundGrainient / 用ai创造教育 / 平台概览 / 加入已有机构 / ABOUT STARAIN` 等历史标记，`frontend` 下 `npx tsc --noEmit --pretty false` 通过；浏览器刷新后已确认首屏标题为“用ai创造教育”，且页面可见 `平台概览 / 关于 Starain / 错题跟进与复习安排`。
