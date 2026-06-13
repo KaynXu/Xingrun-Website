@@ -2791,6 +2791,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
     lessons = _dashboard_get_lessons(user)
     users = list_users_for_actor(user)
     feedback_tasks = _dashboard_get_class_feedback_tasks(user)
+    open_consultations = _dashboard_get_open_consultations(user)
     pending_registration_requests = list_registration_requests_for_actor(user, "pending")
     pending_organization_requests = list_organization_requests()
 
@@ -2828,6 +2829,13 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         if organization_id <= 0:
             continue
         pending_feedback_by_org[organization_id] = pending_feedback_by_org.get(organization_id, 0) + 1
+
+    pending_consultations_by_org: dict[int, int] = {}
+    for item in open_consultations:
+        organization_id = int(item.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_consultations_by_org[organization_id] = pending_consultations_by_org.get(organization_id, 0) + 1
 
     attention_items: list[dict] = []
     if pending_organization_requests:
@@ -2890,6 +2898,29 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
                 break
 
     if len(attention_items) < 4:
+        consultation_organizations = sorted(
+            organizations,
+            key=lambda item: pending_consultations_by_org.get(int(item.get("id") or 0), 0),
+            reverse=True,
+        )
+        for organization in consultation_organizations:
+            organization_id = int(organization.get("id") or 0)
+            consultation_count = pending_consultations_by_org.get(organization_id, 0)
+            if consultation_count <= 0:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"有 {consultation_count} 条咨询待继续跟进。",
+                    "status": "待咨询",
+                    "page": "consultation",
+                    "action": "进入",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
         quiet_organizations = [
             organization
             for organization in organizations
@@ -2936,9 +2967,9 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
 
     stats = [
         {"label": "机构数", "value": str(len(organizations)), "note": "当前在库机构"},
-        {"label": "成员数", "value": str(len(users)), "note": "含机构管理员和成员"},
         {"label": "待审批", "value": str(total_pending_approvals), "note": "机构申请和成员申请"},
         {"label": "待反馈", "value": str(sum(pending_feedback_by_org.values())), "note": "课堂反馈任务"},
+        {"label": "待咨询", "value": str(sum(pending_consultations_by_org.values())), "note": "未结束咨询记录"},
     ]
 
     organization_rows = []
@@ -2948,10 +2979,13 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         today_output_count = today_output_by_org.get(organization_id, 0)
         week_output_count = week_output_by_org.get(organization_id, 0)
         feedback_count = pending_feedback_by_org.get(organization_id, 0)
+        consultation_count = pending_consultations_by_org.get(organization_id, 0)
         if pending_count > 0:
             status = f"待审批 {pending_count}"
         elif feedback_count > 0:
             status = f"待反馈 {feedback_count}"
+        elif consultation_count > 0:
+            status = f"待咨询 {consultation_count}"
         elif today_output_count > 0:
             status = f"今日资料 {today_output_count}"
         else:
@@ -2963,7 +2997,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
                 "outputs": str(today_output_count),
                 "approvals": str(pending_count),
                 "status": status,
-                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes")),
+                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("consultation" if consultation_count > 0 else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes"))),
             }
         )
 

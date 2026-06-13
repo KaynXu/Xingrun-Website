@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-14 已继续把工作台里的“咨询记录”接成真实数据：`app.py` 的 `/api/dashboard` 聚合现在会真实汇总未结束咨询记录，并把平台工作台里的关注列表、状态卡和机构状态行改成按机构真实 `待咨询` 数量返回；机构状态优先级现已支持 `待审批 / 待反馈 / 待咨询 / 资料产出`。当前轮 proof `/tmp/xingrun_dashboard_consultation_real_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，且源码检查确认 `pending_consultations_by_org / 待咨询 / 咨询待继续跟进 / "page": "consultation"` 这些真实聚合关键标记已存在。
 - 2026-06-14 已继续把工作台里的“课堂反馈”从占位入口接成真实数据：`app.py` 的 `/api/dashboard` 聚合现在会真实统计 `class_feedback_tasks`，并把成员/机构/平台工作台里的待处理项、状态卡和机构状态行改成按真实反馈任务数量返回；包括成员待处理里的 `待处理课堂反馈`、机构待处理和 `待反馈` 统计、平台机构观察里的 `待反馈` 提醒都不再是假数据。当前轮 proof `/tmp/xingrun_dashboard_feedback_real_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，且源码检查确认 `_dashboard_get_class_feedback_tasks / 待处理课堂反馈 / 待反馈 / class-feedback-generation` 这些真实链路关键标记已存在。
 - 2026-06-14 已把工作台页面从前端 demo 数据切到真实数据：后端新增 `GET /api/dashboard` 聚合接口，按 `member / owner|admin / super_owner` 返回各自工作台所需的真实统计、待处理项、机构行和今日排课；前端 `frontend/src/WorkspaceDashboard.tsx` 现改为直接请求该接口渲染，不再依赖本地 `dashboardMockData.ts`，该 demo 文件已删除。当前轮 proof `/tmp/xingrun_dashboard_real_data_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，前端 `WorkspaceDashboard.tsx` 与 `dashboardTypes.ts` 动态 import 成功，且 `frontend/src/features/dashboard/dashboardMockData.ts` 已不存在。
 - 2026-06-14 已按浏览器批注移除顶部 `立即登录` 按钮的阴影光晕：`frontend/src/features/landing/LandingPage.tsx` 当前 header 登录按钮不再带 `shadow-[0_16px_40px_rgba(...)]` 阴影类，只保留实色按钮本身。当前轮 proof 会继续用 landing 页面定向脚本记录。
