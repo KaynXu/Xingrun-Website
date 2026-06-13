@@ -216,8 +216,8 @@ export function LandingPage({
   const handleRegister = onApplyOrganization ?? onRegister ?? (() => undefined);
 
   return (
-    <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70 dark:bg-[#0d1220] dark:text-slate-100">
-      <nav className="fixed top-0 z-50 w-full border-b border-sky-100/80 bg-white/80 backdrop-blur-xl dark:border-white/8 dark:bg-[#0d1220]/95">
+    <div className="min-h-screen bg-white text-slate-900 selection:bg-sky-200/70 dark:bg-slate-950 dark:text-slate-100">
+      <nav className="fixed top-0 z-50 w-full border-b border-slate-200 bg-white/92 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/96">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Starain logo" className="h-12 w-12 object-contain" />
@@ -244,47 +244,24 @@ export function LandingPage({
         </div>
       </nav>
 
-      <section className="relative overflow-hidden border-b border-sky-100/80 bg-[linear-gradient(180deg,#f7fbff_0%,#ffffff_76%)] dark:border-white/8 dark:bg-[linear-gradient(180deg,#0d1220_0%,#111827_78%)]">
-        <div className="absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.12),transparent_34%),radial-gradient(circle_at_top_right,rgba(47,128,237,0.08),transparent_28%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(34,199,232,0.12),transparent_32%),radial-gradient(circle_at_top_right,rgba(47,128,237,0.1),transparent_28%)]" />
-        <div
-          className="absolute inset-0 opacity-[0.45] dark:opacity-[0.12]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(148,163,184,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.12) 1px, transparent 1px)',
-            backgroundPosition: 'center top',
-            backgroundSize: '48px 48px',
-            maskImage: 'linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.12) 72%, transparent 100%)',
-          }}
-        />
-
-        <div className="relative z-10 mx-auto max-w-7xl px-6 pb-20 pt-32 md:pb-24 md:pt-36">
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-end">
+      <section className="border-b border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950">
+        <div className="mx-auto max-w-7xl px-6 pb-20 pt-32 md:pb-24 md:pt-36">
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-center">
             <motion.div
               initial={{ opacity: 0, y: 28 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
               className="max-w-2xl"
             >
-              <div className="inline-flex items-center rounded-full border border-sky-200 bg-white px-4 py-2 text-xs font-semibold tracking-[0.22em] text-sky-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-sky-200">
-                面向学校与机构的教学工作台
+              <div className="inline-flex items-center rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold tracking-[0.22em] text-slate-500 dark:border-white/10 dark:text-slate-400">
+                STARAIN WORKSPACE
               </div>
               <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 dark:text-white sm:text-5xl md:text-6xl">
-                把复习生成、错题跟进和教学交付收进同一套平台
+                复习生成、错题跟进、教学交付，一个工作台完成
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
-                Starain 帮老师、教务和机构负责人在同一条工作流里完成课堂整理、复习输出和后续跟进，少切工具，也少重复整理。
+                给老师、教务和机构负责人使用的教学工作台。
               </p>
-
-              <div className="mt-8 flex flex-col gap-3 text-sm text-slate-600 dark:text-slate-300">
-                <div className="flex items-start gap-3">
-                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-sky-500" />
-                  <p>先完成真实教学任务，再让 AI 补上整理、生成和归档这些重复工作。</p>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-sky-500" />
-                  <p>机构负责人、老师和教务团队看到的是同一套进度和交付结果，不再分散在多个工具里。</p>
-                </div>
-              </div>
 
               <div className="mt-10 flex flex-col gap-3 sm:flex-row">
                 <button
@@ -306,75 +283,142 @@ export function LandingPage({
               initial={{ opacity: 0, y: 36 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12, duration: 0.78, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden rounded-[2rem] border border-sky-100 bg-white shadow-[0_16px_48px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-slate-950"
+              className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_18px_54px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900"
             >
-              <div className="flex items-center justify-between border-b border-sky-100 px-5 py-4 dark:border-white/10">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">Starain workspace</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">今天最值得推进的三件事</p>
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
                 </div>
-                <div className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
-                  机构工作流
+                <div className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
+                  教学工作台
                 </div>
               </div>
 
               <div className="grid gap-0 lg:grid-cols-[220px_minmax(0,1fr)]">
-                <div className="border-b border-sky-100 bg-sky-50/70 px-4 py-4 dark:border-white/10 dark:bg-white/5 lg:border-b-0 lg:border-r">
+                <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03] lg:border-b-0 lg:border-r">
                   <div className="space-y-2">
                     {[
-                      ['复习生成', '课堂内容整理'],
-                      ['错题跟进', '学生薄弱点'],
-                      ['教学交付', '讲义与协作'],
-                    ].map(([title, subtitle], index) => (
-                      <div
-                        key={title}
-                        className={`rounded-2xl px-4 py-3 ${
-                          index === 0
-                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
-                            : 'text-slate-500 dark:text-slate-400'
-                        }`}
-                      >
-                        <p className="text-sm font-semibold">{title}</p>
-                        <p className="mt-1 text-xs">{subtitle}</p>
-                      </div>
-                    ))}
+                      { icon: FileText, title: '复习生成', meta: '12 份文档', active: true },
+                      { icon: AlertCircle, title: '错题跟进', meta: '8 条记录', active: false },
+                      { icon: Database, title: '教学交付', meta: '3 个草稿', active: false },
+                    ].map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <div
+                          key={item.title}
+                          className={`rounded-2xl border px-4 py-3 ${
+                            item.active
+                              ? 'border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900'
+                              : 'border-transparent bg-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="rounded-xl bg-slate-100 p-2 text-slate-600 dark:bg-white/5 dark:text-slate-300">
+                              <Icon className="h-4 w-4" />
+                            </span>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{item.meta}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-400">今日概览</p>
+                    <div className="mt-4 space-y-3">
+                      {[
+                        ['待整理课堂', '4'],
+                        ['待跟进学生', '12'],
+                        ['待确认讲义', '2'],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500 dark:text-slate-400">{label}</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">{value}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
                 <div className="px-5 py-4">
-                  <div className="grid gap-0">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-4 dark:border-white/10">
+                    {['历史文档', '课堂错题', '教学交付'].map((tab, index) => (
+                      <span
+                        key={tab}
+                        className={`rounded-full px-3 py-1 text-sm font-medium ${
+                          index === 0
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                            : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
+                        }`}
+                      >
+                        {tab}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="space-y-3 pt-4">
                     {[
                       {
-                        title: '复习文档待生成',
-                        body: '把课堂录音和笔记整理成学生可直接使用的复习材料。',
-                        status: '进行中',
+                        title: '高一数学｜立体几何复习讲义',
+                        body: '今天 14:20 · 已生成',
+                        status: 'PDF',
                       },
                       {
-                        title: '错题跟进待更新',
-                        body: '围绕错因、掌握状态和后续练习安排形成连续记录。',
-                        status: '今日跟进',
+                        title: '初二英语｜课堂错题回看',
+                        body: '今天 11:35 · 待确认',
+                        status: '跟进',
                       },
                       {
-                        title: '讲义草稿待确认',
-                        body: '把课程目标、教研材料和教师修改意见收进统一交付链路。',
-                        status: '待确认',
+                        title: '教研组｜周讲义整理',
+                        body: '昨天 18:10 · 已归档',
+                        status: '文档',
                       },
                     ].map((item, index) => (
                       <div
                         key={item.title}
-                        className={`flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:justify-between ${
-                          index === 0 ? '' : 'border-t border-sky-100 dark:border-white/10'
+                        className={`rounded-2xl border border-slate-200 px-4 py-4 dark:border-white/10 ${
+                          index === 0 ? '' : ''
                         }`}
                       >
-                        <div className="max-w-lg">
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
-                          <p className="mt-2 text-sm leading-7 text-slate-600 dark:text-slate-300">{item.body}</p>
-                        </div>
-                        <div className="shrink-0 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
-                          {item.status}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">{item.body}</p>
+                          </div>
+                          <div className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/5 dark:text-slate-300">
+                            {item.status}
+                          </div>
                         </div>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {[
+                      { icon: Home, label: '机构视图' },
+                      { icon: ShieldCheck, label: '权限清晰' },
+                      { icon: ArrowRight, label: '继续处理' },
+                    ].map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <div
+                          key={item.label}
+                          className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]"
+                        >
+                          <span className="inline-flex rounded-xl bg-white p-2 text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200">
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {item.label}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

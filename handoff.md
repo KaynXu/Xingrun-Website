@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已继续按用户要求收敛官网 hero 的“AI 味”和装饰噪音：`frontend/src/features/landing/LandingPage.tsx` 首屏现已去掉浅蓝渐变、光晕和背景网格，不再使用“今天最值得推进的三件事 / 机构工作流”这类说明性假场景；左侧文案压缩成更直接的标题加一句用途说明，删除两条口号式 bullet，右侧改成更像真实产品界面的 mock UI（侧栏 + 文档列表 + 状态标签），整体更克制、更像教育 SaaS 官网而不是 AI 宣传页。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求重做官网 hero section：`frontend/src/features/landing/LandingPage.tsx` 首屏现从原来的动效背景 + 口号式文案，改成更接近产品型落地页的清爽布局，参考 `Brisk Teaching` 那种“左侧清晰价值主张 + 右侧产品预览”的结构；背景已改为更轻的浅色层次与细网格，不再依赖大面积动态纹理撑视觉，右侧改成机构工作台预览而不是说明性卡片，整体在保留现有品牌色和后续区块的前提下明显减噪。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求移除官网顶部 `立即登录` 旁边的 `申请开通机构` 按钮；当前 `frontend/src/features/landing/LandingPage.tsx` 顶部操作区只保留夜间模式和 `立即登录`，不再给 header 额外的试用分流。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求收敛官网 hero CTA 逻辑：`frontend/src/features/landing/LandingPage.tsx` 首屏主操作已从 `查看平台方案 / 申请开通机构 / 加入已有机构` 三分流改成仅保留 `立即登录 / 申请试用` 两个更直接的按钮；“加入已有机构” 入口不再占据 hero 操作区，回收到登录链路内部，首屏转化路径更短、噪音更少。当前轮 proof 会继续用 landing 页面定向脚本记录。
