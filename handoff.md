@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已继续微调 landing hero 右侧 mock UI 的高级感：`frontend/src/features/landing/LandingPage.tsx` 这轮没有再改结构，而是把颜色和状态层级收紧。输出卡顶部色条改成更克制的深色系，输入侧提示卡改成更干净的浅青绿色，虚线连接改成更低饱和的蓝灰色，卡片与按钮的活跃态也从“亮色 + 重阴影”收成了更轻的阴影、细 ring 和更克制的浮动。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续把 landing hero 右侧 mock UI 的比例往横向收：`frontend/src/features/landing/LandingPage.tsx` 当前把 hero mock 容器从 `640px` 放宽到 `720px`，右侧输出卡从 2 列扩到大屏 3 列，并压低了卡片内部高度与底部按钮高度，整体变成更明显的横向面板，而不是偏高的竖向卡片。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续把 landing hero 右侧 mock UI 改得更接近 Brisk 截图的结构：`frontend/src/features/landing/LandingPage.tsx` 右侧现不再是“表单详情页”式的两栏工作台，而是改成 `Source Material + 对齐信息卡 + 虚线连接 + 2x3 输出卡片 + 底部 2x3 功能按钮` 的资源生成面板。并加了动态效果：底部按钮会自动轮播高亮，右侧对应输出卡片会同步轻微浮动放大，鼠标移入按钮也能切换激活态。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续修正 landing hero 右侧 mock UI 的比例和层级：`frontend/src/features/landing/LandingPage.tsx` 现把右侧卡片收成更横向的 `max-width`，并把原先偏高的竖向堆叠结构改成更紧凑的两栏界面。左侧输入区现在包含步骤 pills、2x2 表单字段、状态点、编辑按钮和主操作按钮；右侧预览区补了 tabs、顶栏按钮、预览标题、副标题、3 个统计卡、日程卡和底部操作卡，整体更接近真实产品截图。当前轮 proof 会继续用 landing 页面定向脚本记录。

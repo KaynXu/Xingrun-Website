@@ -223,12 +223,12 @@ export function LandingPage({
     '调整难度',
   ];
   const previewOutputs = [
-    { title: '复习计划', tone: 'bg-sky-700' },
-    { title: '讲义大纲', tone: 'bg-teal-700' },
-    { title: '课堂小测', tone: 'bg-fuchsia-800' },
-    { title: '错题讲评', tone: 'bg-cyan-800' },
-    { title: '复习清单', tone: 'bg-lime-700' },
-    { title: '课后练习', tone: 'bg-rose-800' },
+    { title: '复习计划', tone: 'bg-[#315c72]' },
+    { title: '讲义大纲', tone: 'bg-[#516d43]' },
+    { title: '课堂小测', tone: 'bg-[#6d2f4f]' },
+    { title: '错题讲评', tone: 'bg-[#2e5971]' },
+    { title: '复习清单', tone: 'bg-[#7b6a32]' },
+    { title: '课后练习', tone: 'bg-[#5c3b67]' },
   ];
   const [activePreviewIndex, setActivePreviewIndex] = useState(0);
 
@@ -312,48 +312,48 @@ export function LandingPage({
             >
               <div
                 data-hero-preview="review-plans"
-                className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_18px_54px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900"
+                className="overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.05)] ring-1 ring-slate-100/80 dark:border-white/10 dark:bg-slate-900 dark:ring-white/5"
               >
-                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
+                <div className="flex items-center justify-between border-b border-slate-200/80 bg-slate-50/70 px-4 py-3 dark:border-white/10 dark:bg-white/[0.02]">
                   <div className="flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
                     <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
                     <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                    <span className="rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70 dark:bg-white/5 dark:text-slate-400 dark:ring-white/10">
                       Review Plans
                     </span>
-                    <span className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
+                    <span className="rounded-full border border-slate-200/80 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
                       复习计划生成
                     </span>
                   </div>
                 </div>
 
                 <div className="p-3.5">
-                  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/60 p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="rounded-[1.5rem] border border-slate-200/80 bg-slate-50/55 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-white/10 dark:bg-white/[0.03]">
                     <div className="grid gap-3 lg:grid-cols-[128px_22px_minmax(0,1fr)] lg:items-center">
                       <div className="space-y-3">
-                        <div className="rounded-[1.1rem] border border-slate-200 bg-white p-2.5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                        <div className="rounded-[1.1rem] border border-slate-200/80 bg-white p-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-slate-900">
                           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Source Material</p>
                           <div className="mt-2.5 space-y-2">
-                            <div className="h-1.5 w-4/5 rounded-full bg-cyan-200" />
-                            <div className="h-1.5 w-full rounded-full bg-cyan-100" />
-                            <div className="h-1.5 w-3/5 rounded-full bg-cyan-100" />
+                            <div className="h-1.5 w-4/5 rounded-full bg-[#9fe7dc]" />
+                            <div className="h-1.5 w-full rounded-full bg-[#c9f1ea]" />
+                            <div className="h-1.5 w-3/5 rounded-full bg-[#d7f4ef]" />
                           </div>
                           <div className="mt-3 space-y-1.5">
                             {['课堂录音', '补充笔记', '例题讲义'].map((item, index) => (
                               <div key={item} className="flex items-center gap-2">
-                                <span className={`h-1.5 rounded-full ${index === 0 ? 'w-16 bg-cyan-300' : index === 1 ? 'w-12 bg-slate-200 dark:bg-white/10' : 'w-10 bg-slate-200 dark:bg-white/10'}`} />
+                                <span className={`h-1.5 rounded-full ${index === 0 ? 'w-16 bg-[#8cded1]' : index === 1 ? 'w-12 bg-slate-200 dark:bg-white/10' : 'w-10 bg-slate-200 dark:bg-white/10'}`} />
                                 <span className="text-[10px] text-slate-400">{item}</span>
                               </div>
                             ))}
                           </div>
                         </div>
 
-                        <div className="rounded-[1rem] border border-cyan-200 bg-cyan-100/80 p-2.5 dark:border-cyan-500/30 dark:bg-cyan-500/10">
+                        <div className="rounded-[1rem] border border-[#b9e6df] bg-[#def6f1] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-cyan-500/30 dark:bg-cyan-500/10">
                           <div className="flex items-start gap-2">
-                            <span className="mt-0.5 inline-flex rounded-full bg-slate-900 p-1 text-white dark:bg-white dark:text-slate-900">
+                            <span className="mt-0.5 inline-flex rounded-full bg-slate-900 p-1 text-white shadow-sm dark:bg-white dark:text-slate-900">
                               <ShieldCheck className="h-3 w-3" />
                             </span>
                             <div>
@@ -371,22 +371,22 @@ export function LandingPage({
                           <path
                             d="M2 124 C10 124, 12 62, 30 48"
                             fill="none"
-                            stroke="#0f6ea8"
-                            strokeWidth="1.5"
+                            stroke="#4f7392"
+                            strokeWidth="1.25"
                             strokeDasharray="4 4"
                           />
                           <path
                             d="M2 124 C10 124, 12 124, 30 124"
                             fill="none"
-                            stroke="#0f6ea8"
-                            strokeWidth="1.5"
+                            stroke="#4f7392"
+                            strokeWidth="1.25"
                             strokeDasharray="4 4"
                           />
                           <path
                             d="M2 124 C10 124, 12 186, 30 202"
                             fill="none"
-                            stroke="#0f6ea8"
-                            strokeWidth="1.5"
+                            stroke="#4f7392"
+                            strokeWidth="1.25"
                             strokeDasharray="4 4"
                           />
                         </svg>
@@ -399,15 +399,15 @@ export function LandingPage({
                             <motion.div
                               key={output.title}
                               animate={{
-                                y: isActive ? -4 : 0,
-                                scale: isActive ? 1.02 : 1,
-                                opacity: isActive ? 1 : 0.9,
+                                y: isActive ? -3 : 0,
+                                scale: isActive ? 1.015 : 1,
+                                opacity: isActive ? 1 : 0.88,
                               }}
                               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
                               className={`overflow-hidden rounded-[0.95rem] border ${
                                 isActive
-                                  ? 'border-slate-300 bg-white shadow-[0_14px_30px_rgba(15,23,42,0.08)] dark:border-white/15 dark:bg-slate-900'
-                                  : 'border-slate-200 bg-white/92 dark:border-white/10 dark:bg-slate-900/88'
+                                  ? 'border-slate-300/90 bg-white shadow-[0_12px_26px_rgba(15,23,42,0.07)] ring-1 ring-slate-200/60 dark:border-white/15 dark:bg-slate-900'
+                                  : 'border-slate-200/80 bg-white/92 shadow-[0_4px_12px_rgba(15,23,42,0.03)] dark:border-white/10 dark:bg-slate-900/88'
                               }`}
                             >
                               <div className={`h-3 ${output.tone}`} />
@@ -435,8 +435,8 @@ export function LandingPage({
                           onMouseEnter={() => setActivePreviewIndex(index)}
                           className={`rounded-2xl border px-2.5 py-2 text-left text-xs font-medium transition-all ${
                             isActive
-                              ? 'border-sky-300 bg-white text-slate-900 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-sky-400/30 dark:bg-slate-900 dark:text-white'
-                              : 'border-transparent bg-slate-50 text-slate-400 dark:bg-white/[0.03] dark:text-slate-500'
+                              ? 'border-slate-300 bg-white text-slate-900 shadow-[0_10px_18px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/50 dark:border-sky-400/20 dark:bg-slate-900 dark:text-white'
+                              : 'border-transparent bg-slate-50/80 text-slate-400 dark:bg-white/[0.03] dark:text-slate-500'
                           }`}
                         >
                           {action}
