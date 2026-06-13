@@ -257,10 +257,10 @@ export function LandingPage({
                 STARAIN WORKSPACE
               </div>
               <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 dark:text-white sm:text-5xl md:text-6xl">
-                教学团队每天会用的 AI 工具
+                给教学团队用的 AI 工具
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
-                帮老师更快整理复习资料、记录错题和准备讲义。
+                帮老师整理复习资料、记录错题、准备讲义。
               </p>
 
               <div className="mt-10 flex flex-col gap-3 sm:flex-row">
@@ -447,8 +447,8 @@ export function LandingPage({
             viewport={{ once: true }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
-            <h2 className="mb-4 text-4xl font-bold dark:text-white md:text-5xl">先把教学里的高频工作做好</h2>
-            <p className="text-lg text-slate-600 dark:text-slate-300">复习、错题、讲义，这几件事先做顺。</p>
+            <h2 className="mb-4 text-4xl font-bold dark:text-white md:text-5xl">先把复习、错题、讲义这几件事做顺</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300">少一点重复整理，少一点来回找材料。</p>
           </motion.div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -467,9 +467,9 @@ export function LandingPage({
                   <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-600 text-white">
                     <FileText size={24} />
                   </div>
-                  <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">上完课，复习资料很快就能出来</h3>
+                  <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">上完课，复习资料能很快出来</h3>
                   <p className="max-w-2xl text-lg text-slate-600 dark:text-slate-300">
-                    课堂录音、笔记和讲义放进来，学生复习材料和老师后续要用的版本就能接着整理。
+                    课堂录音、笔记和讲义放进来，学生要用的复习材料和老师后续要补的内容会先整理出来。
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
@@ -491,9 +491,9 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
                 </div>
-                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">错题跟进留得住</h3>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">错题记录不会散</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  错因、薄弱点和后续安排都会留下来，下次回看不用重新翻。
+                  错因、薄弱点和后续安排都会留下来，下次回看不用重新翻记录。
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
@@ -514,7 +514,7 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
                 </div>
-                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">题目和讲义能继续复用</h3>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">题目和讲义能反复用</h3>
                 <p className="text-slate-600 dark:text-slate-300">
                   课堂练习、作业和错题会慢慢沉淀成讲义和练习素材。
                 </p>
@@ -536,9 +536,9 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
                   <FileText size={24} />
                 </div>
-                <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">课程目标可以直接往下写</h3>
+                <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">讲义和教研材料可以顺手整理</h3>
                 <p className="text-lg text-slate-600 dark:text-slate-300">
-                  讲义、课堂提纲和教研材料顺着同一份内容往下整理。
+                  同一节课里的课程目标、讲义和提纲放在一起，老师不用来回拼。
                 </p>
               </div>
               <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(234,245,255,0.96)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(30,41,59,0.88)_100%)] md:w-72">
@@ -597,11 +597,11 @@ export function LandingPage({
               <div>
                 <h2 className="mb-4 text-4xl font-bold text-slate-900 dark:text-white md:text-5xl">关于 Starain</h2>
                 <p className="max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
-                  这套产品先在我们自己的教学团队里用。
+                  这套产品先给我们自己的教学团队用。
                 </p>
               </div>
               <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400 md:text-base">
-                复习资料、错题跟进、讲义整理、教师协作，这些工作我们自己每天都在做。哪些地方费时间，哪些地方容易断，我们先把它补上。
+                我们先拿它处理复习资料、错题跟进、讲义整理和教师协作。哪里费时间，哪里容易断，就先改哪里。
               </p>
             </motion.div>
 
@@ -609,11 +609,11 @@ export function LandingPage({
               {[
                 {
                   title: '已验证流程',
-                  body: '课堂素材到复习资料，这条线已经在真实教学里跑过。',
+                  body: '课堂素材到复习资料，这条线我们一直在自己用。',
                 },
                 {
                   title: '能力模块化',
-                  body: '复习、错题、讲义这些环节可以接着往下做，不用每次重来。',
+                  body: '复习、错题、讲义拆开能用，放在一起也顺。',
                 },
                 {
                   title: '服务对象',
@@ -648,7 +648,7 @@ export function LandingPage({
               </span>
             </div>
             <p className="max-w-md text-center text-sm text-gray-500 dark:text-slate-400 md:text-left">
-              给学校、机构和教学团队用的教学工作平台。
+              给学校、机构和教学团队用，主要处理复习、错题和讲义整理。
             </p>
           </div>
           <div className="flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400 md:items-start">
