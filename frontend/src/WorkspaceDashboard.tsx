@@ -550,64 +550,214 @@ export function getOrganizationManagementEntries(canOpenAccounts: boolean): Orga
 }
 
 function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAccounts }: WorkspaceDashboardProps) {
-  const managementEntries = getOrganizationManagementEntries(canOpenAccounts)
+  const quickActions = [
+    {
+      page: 'classes' as WorkspacePage,
+      label: '查看班级安排',
+    },
+    {
+      page: 'class-feedback-generation' as WorkspacePage,
+      label: '补课堂反馈',
+    },
+    {
+      page: canOpenAccounts ? ('accounts' as WorkspacePage) : ('consultation' as WorkspacePage),
+      label: canOpenAccounts ? '处理账号审批' : '查看咨询记录',
+    },
+  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
+
+  const pendingItems = [
+    {
+      page: 'class-feedback-generation' as WorkspacePage,
+      title: '今天还有 3 节课没补课堂反馈',
+      meta: '优先处理已下课班级，避免教务继续催收集。',
+      status: '优先处理',
+      action: '去反馈',
+    },
+    {
+      page: 'classes' as WorkspacePage,
+      title: '2 个班级本周排课还没确认',
+      meta: '周六衔接班和高二数学班需要确认老师安排。',
+      status: '待确认',
+      action: '看班级',
+    },
+    {
+      page: canOpenAccounts ? ('accounts' as WorkspacePage) : ('consultation' as WorkspacePage),
+      title: canOpenAccounts ? '4 条账号审批待处理' : '5 条家长咨询还没跟进',
+      meta: canOpenAccounts ? '今天新加入的老师还没完成开通。' : '有 2 条是今天新增咨询，建议优先回。',
+      status: canOpenAccounts ? '待审批' : '待回访',
+      action: canOpenAccounts ? '去审批' : '去咨询',
+    },
+  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
+
+  const progressStats = [
+    { label: '今日上课班级', value: '9', note: '其中 6 节已下课' },
+    { label: '课堂反馈完成', value: '6/9', note: '还差 3 节待补' },
+    { label: '复习资料产出', value: '8', note: '较昨天正常' },
+    { label: canOpenAccounts ? '待审批账号' : '待跟进咨询', value: canOpenAccounts ? '4' : '5', note: canOpenAccounts ? '2 位老师急用' : '2 条今日新增' },
+  ];
+
+  const classRows = [
+    {
+      name: '高二数学提高班',
+      schedule: '19:00',
+      teacher: '周老师',
+      status: '待复习资料',
+      page: 'review-generation' as WorkspacePage,
+    },
+    {
+      name: '七年级英语衔接班',
+      schedule: '16:30',
+      teacher: '王老师',
+      status: '待课堂反馈',
+      page: 'class-feedback-generation' as WorkspacePage,
+    },
+    {
+      name: '高一语文写作班',
+      schedule: '18:00',
+      teacher: '李老师',
+      status: '运行正常',
+      page: 'classes' as WorkspacePage,
+    },
+  ];
+
+  const sideList = getOrganizationManagementEntries(canOpenAccounts)
     .filter((entry) => canOpenDashboardPage(currentUser, entry.page));
 
   return (
-    <div className={`${styles.pageClass} space-y-6`}>
-      <section className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-6 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)] md:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Operations focus</p>
-        <div className="mt-4 space-y-3">
-          <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">机构运营概览</h3>
-          <p className="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            已开放机构管理、运营观察和 AI 教学入口。
-          </p>
+    <div className={`${styles.pageClass} space-y-5`}>
+      <section className={`${styles.cardClass} p-5 md:p-6`}>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今天先把机构日常调顺</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先清积压，再看班级进度和老师交付。</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {quickActions.map((action) => (
+              <button
+                key={action.page}
+                type="button"
+                onClick={() => setActivePage(action.page)}
+                className={`${styles.secondaryButtonClass} px-4 py-2.5 text-sm`}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
-        <div className={`${styles.cardClass} min-h-28 p-5`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Overview</p>
-          <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">机构运营概览</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总组织级运营指标。</p>
-        </div>
-        <div className={`${styles.cardClass} min-h-28 p-5`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Classes</p>
-          <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">班级管理</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">围绕班级和排课组织日常协同。</p>
-        </div>
-        <div className={`${styles.cardClass} min-h-28 p-5`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">{canOpenAccounts ? 'Approval' : 'Consultation'}</p>
-          <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">{canOpenAccounts ? '账号审批' : '咨询记录'}</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            {canOpenAccounts ? '处理成员开通与组织归属。' : '查看咨询记录与跟进状态。'}
-          </p>
-        </div>
-        <div className={`${styles.cardClass} min-h-28 p-5`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Teaching</p>
-          <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">课堂反馈</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总课堂反馈和错题跟进入口。</p>
-        </div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {managementEntries.map((entry) => (
-          <button
-            key={entry.title}
-            type="button"
-            onClick={() => setActivePage(entry.page)}
-            className={`${styles.cardClass} flex min-h-36 flex-col items-start justify-between p-5 text-left`}
-          >
-            <div>
-              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{entry.title}</p>
-              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{entry.description}</p>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <div className="space-y-5">
+          <section className={`${styles.cardClass} overflow-hidden p-0`}>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">待处理事项</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天最容易卡住教务和老师协同的事情放前面。</p>
+                </div>
+                <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                  {pendingItems.length} 项
+                </span>
+              </div>
             </div>
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
-              进入工作区
-              <ArrowRight size={16} />
-            </span>
-          </button>
-        ))}
+            <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+              {pendingItems.map((item) => (
+                <div key={item.title} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="shrink-0 text-sky-500 dark:text-sky-300" />
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                        {item.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActivePage(item.page)}
+                    className="inline-flex items-center gap-2 self-start text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 md:self-center"
+                  >
+                    {item.action}
+                    <ArrowRight size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={`${styles.cardClass} overflow-hidden p-0`}>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">班级进度</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天上课的班级，重点看还没收尾的那几节。</p>
+            </div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[620px]">
+                <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr_1fr_110px] gap-4 border-b border-slate-200/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-white/10 dark:text-slate-500">
+                  <span>班级</span>
+                  <span>时间</span>
+                  <span>老师</span>
+                  <span>状态</span>
+                  <span className="text-right">操作</span>
+                </div>
+                {classRows.map((row) => (
+                  <button
+                    key={row.name}
+                    type="button"
+                    onClick={() => setActivePage(row.page)}
+                    className="grid w-full grid-cols-[1.5fr_0.8fr_0.8fr_1fr_110px] gap-4 border-b border-slate-200/70 px-5 py-4 text-left transition hover:bg-slate-50/80 last:border-b-0 dark:border-white/10 dark:hover:bg-white/5"
+                  >
+                    <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.name}</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-300">{row.schedule}</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-300">{row.teacher}</span>
+                    <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
+                    <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
+                      进入
+                      <ArrowRight size={15} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="space-y-5">
+          <section className={`${styles.cardClass} p-5`}>
+            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日状态</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              {progressStats.map((item) => (
+                <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={`${styles.cardClass} overflow-hidden p-0`}>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">工作区入口</p>
+            </div>
+            <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+              {sideList.map((entry) => (
+                <button
+                  key={entry.title}
+                  type="button"
+                  onClick={() => setActivePage(entry.page)}
+                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{entry.title}</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{entry.description}</p>
+                  </div>
+                  <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
       </section>
     </div>
   );

@@ -772,3 +772,11 @@
 - Runnable proof passed via `/tmp/xingrun_platform_dashboard_proof.sh`:
   - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
   - `rg -n "今天先看这些机构|需要关注的机构|平台运行状态|今日处理顺序|机构动态|attentionItems|platformStats|organizationRows" src/WorkspaceDashboard.tsx`
+
+## 2026-06-14 organization dashboard first pass
+- Reworked the owner/admin workspace dashboard into an institution operations board focused on pending work, class progress, and daily operational status.
+- Added four functional areas: quick actions, 待处理事项, 班级进度, 今日状态, and 工作区入口.
+- Kept the page task-oriented and list-first so managers can see what needs intervention instead of reading overview copy.
+- Runnable proof passed via `/tmp/xingrun_org_dashboard_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天先把机构日常调顺|待处理事项|班级进度|今日状态|工作区入口|pendingItems|progressStats|classRows|sideList" src/WorkspaceDashboard.tsx`
