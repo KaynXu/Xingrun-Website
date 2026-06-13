@@ -45,6 +45,22 @@ const dashboardQuickActionClass =
 const dashboardInlineActionClass =
   'inline-flex items-center gap-2 text-sm font-medium text-slate-700 transition hover:text-slate-900 dark:text-slate-200 dark:hover:text-white';
 
+function getDashboardStatusBadgeClass(status: string): string {
+  if (status === '已完成' || status === '已确认') {
+    return 'rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20';
+  }
+  if (status === '转写中' || status === '生成中' || status === '排队中') {
+    return 'rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20';
+  }
+  if (status === '失败' || status === '低余额') {
+    return 'rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20';
+  }
+  if (status === '待处理' || status === '待审批' || status === '待跟进' || status === '待反馈' || status === '待咨询') {
+    return 'rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20';
+  }
+  return 'rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300';
+}
+
 const memberQuickActions: DashboardQuickAction[] = [
   { page: 'review-generation', label: '新建复习文档', icon: 'plus' },
   { page: 'class-feedback-generation', label: '补课堂反馈', icon: 'file' },
@@ -219,7 +235,7 @@ function MemberWorkspace({
                       <div className="flex items-center gap-2">
                         <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
                         <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                        <span className={getDashboardStatusBadgeClass(item.status)}>
                           {item.status}
                         </span>
                       </div>
@@ -255,7 +271,7 @@ function MemberWorkspace({
                       <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
                       <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                    <span className={`shrink-0 ${getDashboardStatusBadgeClass(item.status)}`}>
                       {item.status}
                     </span>
                   </button>
@@ -377,7 +393,7 @@ function PlatformWorkspace({
                     <div className="flex items-center gap-2">
                       <AlertTriangle size={16} className="shrink-0 text-amber-500 dark:text-amber-300" />
                       <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.organization}</p>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                      <span className={getDashboardStatusBadgeClass(item.status)}>
                         {item.status}
                       </span>
                     </div>
@@ -586,9 +602,9 @@ function OrganizationWorkspace({
                       <div className="flex items-center gap-2">
                         <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
                         <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                          {item.status}
-                        </span>
+                      <span className={getDashboardStatusBadgeClass(item.status)}>
+                        {item.status}
+                      </span>
                       </div>
                       <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
                     </div>
