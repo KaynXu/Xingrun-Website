@@ -273,7 +273,7 @@ test('class management source wires class filter rules and shared grade controls
 
   assert.match(classManagementBlock, /const classSubjectFilterOptions = classFilterOptions\.subjectOptions;/);
   assert.match(studentCenterSource, /subjectOptions: academicSubjectOptions,/);
-  assert.match(appSource, sharedGradeOptionsPattern);
+  assert.match(studentCenterSource, /const studentCenterGradeOptions = \[\.\.\.academicGradeOptions\];/);
   assert.match(classManagementBlock, /const filteredClasses = resolveFilteredClasses\(\{/);
   assert.match(classEditorModalSource, /value=\{newClass\.form\.current_grade\}/);
   assert.match(classEditorModalSource, /value=\{editingFormState\.current_grade \|\| editingFormState\.grade\}/);

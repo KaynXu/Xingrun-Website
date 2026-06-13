@@ -98,17 +98,6 @@ import {
   getInitialPublicAuthModal,
 } from './features/auth/authState';
 import type { PublicAuthModal } from './features/auth/authState';
-import {
-  academicGradeGroups,
-  academicGradeOptions,
-  academicStageOptions,
-  buildClassDisplayName,
-  getAcademicGradeRank,
-  getAcademicStageFromGrade,
-  inferAcademicCohortYear,
-  normalizeAcademicGradeLabel,
-  normalizeClassNameInput,
-} from './domain/classNaming';
 import { StudentPortalPage } from './StudentTodayTasksPage';
 import {
   createClassStudent,
@@ -178,47 +167,6 @@ export { LandingLegalPage, LandingPage, getLandingLegalPageFromHash } from './fe
 // --- Types ---
 
 type Page = WorkspacePage;
-
-interface Lesson {
-  id: number;
-  date: string;
-  subject: string;
-  grade: string;
-  topic: string;
-  summary: string;
-  weak_points: string;
-  pdf_path: string;
-  class_id: number | null;
-  created_at: string;
-  record_status?: string;
-  generation_error?: string;
-}
-
-interface ReviewPlanCreateResponse {
-  id: number;
-  success?: boolean;
-  status?: string;
-  duplicate?: boolean;
-}
-
-interface ApiSettings {
-  provider: string;
-}
-
-const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
-  ['6年级2班', '六年级 2 班'],
-  ['六年级二班', '六年级 2 班'],
-  ['六年2班', '六年级 2 班'],
-  ['七年级三班', '七年级 3 班'],
-];
-
-const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
-const gradeFilterOptions = ['全部', ...gradeOptions, '未绑定'];
-const academicSubjectOptions = ['数学', '物理', '国际数学'];
-const academicSubjectFilterOptions = ['全部学科', ...academicSubjectOptions];
-const studentCenterStageOptions = [...academicStageOptions];
-const studentCenterGradeOptions = [...academicGradeOptions];
-const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
 
 function getInitialDarkModePreference(): boolean {
   if (typeof window === 'undefined') {
