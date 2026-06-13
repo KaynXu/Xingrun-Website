@@ -261,7 +261,7 @@ export function LandingPage({
             </button>
             <button
               onClick={onLogin}
-              className="rounded-full bg-sky-600 px-6 py-2.5 text-sm font-bold text-white shadow-[0_16px_40px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
+              className="rounded-full bg-sky-600 px-6 py-2.5 text-sm font-bold text-white transition-all hover:bg-sky-500 active:scale-95"
             >
               立即登录
             </button>
