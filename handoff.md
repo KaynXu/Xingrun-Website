@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-14 已把工作台页面从前端 demo 数据切到真实数据：后端新增 `GET /api/dashboard` 聚合接口，按 `member / owner|admin / super_owner` 返回各自工作台所需的真实统计、待处理项、机构行和今日排课；前端 `frontend/src/WorkspaceDashboard.tsx` 现改为直接请求该接口渲染，不再依赖本地 `dashboardMockData.ts`，该 demo 文件已删除。当前轮 proof `/tmp/xingrun_dashboard_real_data_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，前端 `WorkspaceDashboard.tsx` 与 `dashboardTypes.ts` 动态 import 成功，且 `frontend/src/features/dashboard/dashboardMockData.ts` 已不存在。
 - 2026-06-14 已按浏览器批注移除顶部 `立即登录` 按钮的阴影光晕：`frontend/src/features/landing/LandingPage.tsx` 当前 header 登录按钮不再带 `shadow-[0_16px_40px_rgba(...)]` 阴影类，只保留实色按钮本身。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注移除 landing hero 右侧主预览区里这一层嵌套卡片：`frontend/src/features/landing/LandingPage.tsx` 当前 `Source Material + 输出卡片` 这层不再套 `rounded + border + bg-white` 的额外容器，只保留内部真实内容本身，避免出现“卡片里再套一层大卡片”的结构。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注移除 landing hero 右侧主预览区外层灰底：`frontend/src/features/landing/LandingPage.tsx` 当前 `Source Material + 输出卡片` 这层包裹容器已从 `bg-slate-50/55` 改为白底，不再出现整块淡灰背景，只保留内部卡片本身的层级。当前轮 proof 会继续用 landing 页面定向脚本记录。

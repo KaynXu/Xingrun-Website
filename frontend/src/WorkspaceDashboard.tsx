@@ -1,5 +1,16 @@
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, FileStack, PlusCircle, Sparkles } from 'lucide-react';
-import { memberDashboardData, organizationDashboardData, platformDashboardData } from './features/dashboard/dashboardMockData';
+
+import { apiFetch } from './workspaceShared';
+import type {
+  DashboardApiResponse,
+  DashboardMemberData,
+  DashboardOrganizationData,
+  DashboardPage,
+  DashboardPlatformData,
+  DashboardQuickAction,
+  DashboardPlatformPriorityItem,
+} from './features/dashboard/dashboardTypes';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
 type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
@@ -12,6 +23,7 @@ type WorkspaceStyles = {
 
 type WorkspaceDashboardProps = {
   currentUser: {
+    id?: number;
     display_name: string;
     role: WorkspaceRole;
     visible_pages?: WorkspacePage[];
@@ -21,11 +33,63 @@ type WorkspaceDashboardProps = {
   canOpenAccounts: boolean;
 };
 
+type WorkspaceDataState = {
+  loading: boolean;
+  error: string | null;
+  payload: DashboardApiResponse | null;
+};
+
 const dashboardQuickActionClass =
   'inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 dark:hover:text-white';
 
 const dashboardInlineActionClass =
   'inline-flex items-center gap-2 text-sm font-medium text-slate-700 transition hover:text-slate-900 dark:text-slate-200 dark:hover:text-white';
+
+const memberQuickActions: DashboardQuickAction[] = [
+  { page: 'review-generation', label: '新建复习文档', icon: 'plus' },
+  { page: 'class-feedback-generation', label: '补课堂反馈', icon: 'file' },
+  { page: 'calendar', label: '查看课程日历', icon: 'calendar' },
+  { page: 'smartWrongQuestions', label: '继续错题跟进', icon: 'sparkles' },
+];
+
+const platformQuickActions: DashboardQuickAction[] = [
+  { page: 'accounts', label: '处理账号审批' },
+  { page: 'classes', label: '查看机构班级' },
+  { page: 'settings', label: '进入系统设置' },
+];
+
+const organizationQuickActions = {
+  withAccounts: [
+    { page: 'classes', label: '查看班级安排' },
+    { page: 'class-feedback-generation', label: '补课堂反馈' },
+    { page: 'accounts', label: '处理账号审批' },
+  ] satisfies DashboardQuickAction[],
+  withoutAccounts: [
+    { page: 'classes', label: '查看班级安排' },
+    { page: 'class-feedback-generation', label: '补课堂反馈' },
+    { page: 'consultation', label: '查看咨询记录' },
+  ] satisfies DashboardQuickAction[],
+};
+
+const emptyMemberData: DashboardMemberData = {
+  todayQueue: [],
+  recentOutputs: [],
+  weeklyStats: [],
+  schedule: [],
+};
+
+const emptyOrganizationData: DashboardOrganizationData = {
+  pendingItems: [],
+  stats: [],
+  classRows: [],
+};
+
+const emptyPlatformData: DashboardPlatformData = {
+  attentionItems: [],
+  stats: [],
+  organizationRows: [],
+  priorityItems: [],
+};
 
 function canOpenDashboardPage(currentUser: WorkspaceDashboardProps['currentUser'], page: WorkspacePage): boolean {
   if (page === 'dashboard' || page === 'settings') {
@@ -37,20 +101,78 @@ function canOpenDashboardPage(currentUser: WorkspaceDashboardProps['currentUser'
   return currentUser.visible_pages.includes(page);
 }
 
-function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashboardProps) {
-  const quickActions = memberDashboardData.quickActions.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
-  const todayQueue = memberDashboardData.todayQueue.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
-  const recentOutputs = memberDashboardData.recentOutputs.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
-  const weeklyStats = memberDashboardData.weeklyStats;
-  const scheduleItems = memberDashboardData.schedule.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+function DashboardFetchState({ loading, error }: { loading: boolean; error: string | null }) {
+  if (loading) {
+    return <p className="text-sm text-slate-500 dark:text-slate-400">正在加载工作台数据...</p>;
+  }
+  if (error) {
+    return <p className="text-sm text-amber-600 dark:text-amber-300">{error}</p>;
+  }
+  return null;
+}
+
+function DashboardEmptyState({ message }: { message: string }) {
+  return <div className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">{message}</div>;
+}
+
+function useDashboardData(currentUser: WorkspaceDashboardProps['currentUser']): WorkspaceDataState {
+  const [state, setState] = useState<WorkspaceDataState>({
+    loading: true,
+    error: null,
+    payload: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState((previous) => ({ ...previous, loading: true, error: null }));
+
+    apiFetch<DashboardApiResponse>('/api/dashboard')
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setState({ loading: false, error: null, payload });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        const message = error instanceof Error && error.message ? error.message : '工作台数据加载失败';
+        setState({ loading: false, error: message, payload: null });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id, currentUser.role]);
+
+  return state;
+}
+
+function MemberWorkspace({
+  currentUser,
+  setActivePage,
+  styles,
+  data,
+  loading,
+  error,
+}: WorkspaceDashboardProps & { data: DashboardMemberData; loading: boolean; error: string | null }) {
+  const quickActions = memberQuickActions.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const todayQueue = data.todayQueue.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const recentOutputs = data.recentOutputs.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const scheduleItems = data.schedule.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const weeklyStats = data.weeklyStats;
 
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今日工作</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天要处理的事都在这里。</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">工作台</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天的记录和入口都在这里。</p>
+            <div className="mt-2">
+              <DashboardFetchState loading={loading} error={error} />
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => {
@@ -79,8 +201,8 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日待办</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先看今天还没收尾的事项。</p>
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">待处理</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">现在还没收尾的记录。</p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                   {todayQueue.length} 项
@@ -88,91 +210,107 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
               </div>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
-              {todayQueue.map((item) => (
-                <div key={item.title} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                    <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
-                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                        {item.status}
-                      </span>
+              {todayQueue.length === 0 ? (
+                <DashboardEmptyState message="现在没有待处理记录。" />
+              ) : (
+                todayQueue.map((item) => (
+                  <div key={`${item.page}-${item.title}`} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
+                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                          {item.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
                     </div>
-                    <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
+                    <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
+                      {item.action}
+                      <ArrowRight size={15} />
+                    </button>
                   </div>
-                  <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
-                    {item.action}
-                    <ArrowRight size={15} />
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
 
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
-              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">最近产出</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近生成和整理过的内容。</p>
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">最近资料</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近完成的复习资料。</p>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
-              {recentOutputs.map((item) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  onClick={() => setActivePage(item.page)}
-                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                    <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                    {item.status}
-                  </span>
-                </button>
-              ))}
+              {recentOutputs.length === 0 ? (
+                <DashboardEmptyState message="还没有可展示的资料。" />
+              ) : (
+                recentOutputs.map((item) => (
+                  <button
+                    key={`${item.page}-${item.title}`}
+                    type="button"
+                    onClick={() => setActivePage(item.page)}
+                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                      <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                      {item.status}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           </section>
         </div>
 
         <div className="space-y-5">
           <section className={`${styles.cardClass} p-5`}>
-            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">本周进度</p>
+            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">本周统计</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-              {weeklyStats.map((item) => (
-                <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
-                </div>
-              ))}
+              {weeklyStats.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:bg-white/5 dark:text-slate-400">暂无统计。</div>
+              ) : (
+                weeklyStats.map((item) => (
+                  <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
               <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今天课程</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天的课和对应要做的事。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天排课里的班级。</p>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
-              {scheduleItems.map((item) => (
-                <div key={`${item.time}-${item.title}`} className="px-5 py-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex min-w-12 items-center gap-1 pt-0.5 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                      <Clock3 size={14} />
-                      {item.time}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.detail}</p>
-                      <button type="button" onClick={() => setActivePage(item.page)} className={`mt-3 ${dashboardInlineActionClass}`}>
-                        {item.action}
-                        <ArrowRight size={15} />
-                      </button>
+              {scheduleItems.length === 0 ? (
+                <DashboardEmptyState message="今天还没有排课记录。" />
+              ) : (
+                scheduleItems.map((item) => (
+                  <div key={`${item.time}-${item.title}`} className="px-5 py-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex min-w-12 items-center gap-1 pt-0.5 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        <Clock3 size={14} />
+                        {item.time}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.detail}</p>
+                        <button type="button" onClick={() => setActivePage(item.page)} className={`mt-3 ${dashboardInlineActionClass}`}>
+                          {item.action}
+                          <ArrowRight size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -181,25 +319,36 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
   );
 }
 
-function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
-  const quickActions = platformDashboardData.quickActions;
-  const attentionItems = platformDashboardData.attentionItems;
-  const platformStats = platformDashboardData.stats;
-  const organizationRows = platformDashboardData.organizationRows;
+function PlatformWorkspace({
+  currentUser,
+  setActivePage,
+  styles,
+  data,
+  loading,
+  error,
+}: WorkspaceDashboardProps & { data: DashboardPlatformData; loading: boolean; error: string | null }) {
+  const quickActions = platformQuickActions.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const attentionItems = data.attentionItems.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const platformStats = data.stats;
+  const organizationRows = data.organizationRows.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const priorityItems = data.priorityItems.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
 
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">积压、异常和机构动态。</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">平台工作台</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">机构、账号和资料情况。</p>
+            <div className="mt-2">
+              <DashboardFetchState loading={loading} error={error} />
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
-                <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
-                  {action.label}
-                </button>
+              <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
+                {action.label}
+              </button>
             ))}
           </div>
         </div>
@@ -209,48 +358,56 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
         <section className={`${styles.cardClass} overflow-hidden p-0`}>
           <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
             <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">需要关注的机构</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天需要处理和继续观察的机构。</p>
-                </div>
+              <div>
+                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">需要关注的机构</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按真实待处理记录展示。</p>
+              </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                {attentionItems.length} 条提醒
+                {attentionItems.length} 条
               </span>
             </div>
           </div>
           <div className="divide-y divide-slate-200/70 dark:divide-white/10">
-            {attentionItems.map((item) => (
-              <div key={`${item.organization}-${item.issue}`} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle size={16} className="shrink-0 text-amber-500 dark:text-amber-300" />
-                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.organization}</p>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                      {item.status}
-                    </span>
+            {attentionItems.length === 0 ? (
+              <DashboardEmptyState message="现在没有需要额外关注的机构。" />
+            ) : (
+              attentionItems.map((item) => (
+                <div key={`${item.organization}-${item.issue}`} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={16} className="shrink-0 text-amber-500 dark:text-amber-300" />
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.organization}</p>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                        {item.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.issue}</p>
                   </div>
-                  <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.issue}</p>
+                  <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
+                    {item.action}
+                    <ArrowRight size={15} />
+                  </button>
                 </div>
-                <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
-                  {item.action}
-                  <ArrowRight size={15} />
-                </button>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
 
         <div className="space-y-5">
           <section className={`${styles.cardClass} p-5`}>
-            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">平台运行状态</p>
+            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">平台状态</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              {platformStats.map((item) => (
-                <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
-                </div>
-              ))}
+              {platformStats.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:bg-white/5 dark:text-slate-400">暂无统计。</div>
+              ) : (
+                platformStats.map((item) => (
+                  <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
@@ -259,39 +416,24 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
               <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日处理顺序</p>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
-              <button
-                type="button"
-                onClick={() => setActivePage('accounts')}
-                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">先清掉账号审批</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">还有机构卡在开通环节。</p>
-                </div>
-                <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setActivePage('class-feedback-generation')}
-                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">再看课堂反馈积压</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先补今天下课后的反馈。</p>
-                </div>
-                <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setActivePage('review-generation')}
-                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">最后看低产出机构</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">再看今天产出偏低的机构。</p>
-                </div>
-                <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
-              </button>
+              {priorityItems.length === 0 ? (
+                <DashboardEmptyState message="现在没有额外的处理顺序。" />
+              ) : (
+                priorityItems.map((item: DashboardPlatformPriorityItem) => (
+                  <button
+                    key={`${item.page}-${item.title}`}
+                    type="button"
+                    onClick={() => setActivePage(item.page)}
+                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.detail}</p>
+                    </div>
+                    <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
+                  </button>
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -300,36 +442,40 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
       <section className={`${styles.cardClass} overflow-hidden p-0`}>
         <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
           <p className="text-base font-semibold text-slate-900 dark:text-slate-100">机构动态</p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按机构看今天的活跃、产出和积压状态。</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按机构查看成员、资料和审批数量。</p>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
             <div className="grid grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr_1fr_120px] gap-4 border-b border-slate-200/70 px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:border-white/10 dark:text-slate-500">
               <span>机构</span>
-              <span>活跃老师</span>
-              <span>今日产出</span>
+              <span>成员</span>
+              <span>今日资料</span>
               <span>待审批</span>
               <span>状态</span>
               <span className="text-right">操作</span>
             </div>
-            {organizationRows.map((row) => (
-              <button
-                key={row.organization}
-                type="button"
-                onClick={() => setActivePage(row.page)}
-                className="grid w-full grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr_1fr_120px] gap-4 border-b border-slate-200/70 px-5 py-4 text-left transition hover:bg-slate-50/80 last:border-b-0 dark:border-white/10 dark:hover:bg-white/5"
-              >
-                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.organization}</span>
-                <span className="text-sm text-slate-600 dark:text-slate-300">{row.teachers}</span>
-                <span className="text-sm text-slate-600 dark:text-slate-300">{row.outputs}</span>
-                <span className="text-sm text-slate-600 dark:text-slate-300">{row.approvals}</span>
-                <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
-                <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                  进入
-                  <ArrowRight size={15} />
-                </span>
-              </button>
-            ))}
+            {organizationRows.length === 0 ? (
+              <DashboardEmptyState message="现在没有机构数据。" />
+            ) : (
+              organizationRows.map((row) => (
+                <button
+                  key={row.organization}
+                  type="button"
+                  onClick={() => setActivePage(row.page)}
+                  className="grid w-full grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr_1fr_120px] gap-4 border-b border-slate-200/70 px-5 py-4 text-left transition hover:bg-slate-50/80 last:border-b-0 dark:border-white/10 dark:hover:bg-white/5"
+                >
+                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.organization}</span>
+                  <span className="text-sm text-slate-600 dark:text-slate-300">{row.teachers}</span>
+                  <span className="text-sm text-slate-600 dark:text-slate-300">{row.outputs}</span>
+                  <span className="text-sm text-slate-600 dark:text-slate-300">{row.approvals}</span>
+                  <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
+                  <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                    进入
+                    <ArrowRight size={15} />
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -347,45 +493,51 @@ export function getOrganizationManagementEntries(canOpenAccounts: boolean): Orga
   return [
     {
       title: '班级管理',
-      description: '查看班级结构、课程安排和成员协同入口。',
+      description: '查看班级结构和课程安排。',
       page: 'classes',
     },
     ...(canOpenAccounts
       ? [
           {
             title: '账号审批',
-            description: '处理老师与成员账号开通、状态确认和组织归属。',
+            description: '处理成员开通和账号状态。',
             page: 'accounts' as WorkspacePage,
           },
         ]
       : [
           {
             title: '咨询记录',
-            description: '进入咨询记录页，查看家长需求、跟进状态与来源信息。',
+            description: '查看家长咨询和跟进状态。',
             page: 'consultation' as WorkspacePage,
           },
         ]),
     {
       title: '课堂反馈',
-      description: '进入班级反馈工作区，跟进当周教学记录与产出。',
+      description: '进入课堂反馈工作区。',
       page: 'class-feedback-generation',
     },
     {
       title: '智能错题',
-      description: '查看学生错题，继续记录错因和掌握情况。',
+      description: '查看学生错题和跟进记录。',
       page: 'smartWrongQuestions',
     },
   ];
 }
 
-function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAccounts }: WorkspaceDashboardProps) {
-  const quickActions = (canOpenAccounts ? organizationDashboardData.quickActions.withAccounts : organizationDashboardData.quickActions.withoutAccounts)
+function OrganizationWorkspace({
+  currentUser,
+  setActivePage,
+  styles,
+  canOpenAccounts,
+  data,
+  loading,
+  error,
+}: WorkspaceDashboardProps & { data: DashboardOrganizationData; loading: boolean; error: string | null }) {
+  const quickActions = (canOpenAccounts ? organizationQuickActions.withAccounts : organizationQuickActions.withoutAccounts)
     .filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
-  const pendingItems = (canOpenAccounts ? organizationDashboardData.pendingItems.withAccounts : organizationDashboardData.pendingItems.withoutAccounts)
-    .filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
-  const progressStats = canOpenAccounts ? organizationDashboardData.stats.withAccounts : organizationDashboardData.stats.withoutAccounts;
-  const classRows = organizationDashboardData.classRows;
-
+  const pendingItems = data.pendingItems.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
+  const progressStats = data.stats;
+  const classRows = data.classRows.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
   const sideList = getOrganizationManagementEntries(canOpenAccounts)
     .filter((entry) => canOpenDashboardPage(currentUser, entry.page));
 
@@ -395,13 +547,16 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待处理事项和班级进度都在这里。</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">机构今天的记录和入口。</p>
+            <div className="mt-2">
+              <DashboardFetchState loading={loading} error={error} />
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
-                <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
-                  {action.label}
-                </button>
+              <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
+                {action.label}
+              </button>
             ))}
           </div>
         </div>
@@ -414,7 +569,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-base font-semibold text-slate-900 dark:text-slate-100">待处理事项</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先看今天没收尾的事。</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">根据当前真实记录汇总。</p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                   {pendingItems.length} 项
@@ -422,31 +577,35 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
               </div>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
-              {pendingItems.map((item) => (
-                <div key={item.title} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                    <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
-                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                        {item.status}
-                      </span>
+              {pendingItems.length === 0 ? (
+                <DashboardEmptyState message="现在没有待处理事项。" />
+              ) : (
+                pendingItems.map((item) => (
+                  <div key={`${item.page}-${item.title}`} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
+                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                          {item.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
                     </div>
-                    <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
+                    <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
+                      {item.action}
+                      <ArrowRight size={15} />
+                    </button>
                   </div>
-                  <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
-                    {item.action}
-                    <ArrowRight size={15} />
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
 
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
               <p className="text-base font-semibold text-slate-900 dark:text-slate-100">班级进度</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天上课班级的处理情况。</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天排课里的班级。</p>
             </div>
             <div className="overflow-x-auto">
               <div className="min-w-[620px]">
@@ -457,23 +616,27 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
                   <span>状态</span>
                   <span className="text-right">操作</span>
                 </div>
-                {classRows.map((row) => (
-                  <button
-                    key={row.name}
-                    type="button"
-                    onClick={() => setActivePage(row.page)}
-                    className="grid w-full grid-cols-[1.5fr_0.8fr_0.8fr_1fr_110px] gap-4 border-b border-slate-200/70 px-5 py-4 text-left transition hover:bg-slate-50/80 last:border-b-0 dark:border-white/10 dark:hover:bg-white/5"
-                  >
-                    <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.name}</span>
-                    <span className="text-sm text-slate-600 dark:text-slate-300">{row.schedule}</span>
-                    <span className="text-sm text-slate-600 dark:text-slate-300">{row.teacher}</span>
-                    <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
-                    <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                      进入
-                      <ArrowRight size={15} />
-                    </span>
-                  </button>
-                ))}
+                {classRows.length === 0 ? (
+                  <DashboardEmptyState message="今天还没有排课记录。" />
+                ) : (
+                  classRows.map((row) => (
+                    <button
+                      key={`${row.name}-${row.schedule}`}
+                      type="button"
+                      onClick={() => setActivePage(row.page)}
+                      className="grid w-full grid-cols-[1.5fr_0.8fr_0.8fr_1fr_110px] gap-4 border-b border-slate-200/70 px-5 py-4 text-left transition hover:bg-slate-50/80 last:border-b-0 dark:border-white/10 dark:hover:bg-white/5"
+                    >
+                      <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{row.name}</span>
+                      <span className="text-sm text-slate-600 dark:text-slate-300">{row.schedule}</span>
+                      <span className="text-sm text-slate-600 dark:text-slate-300">{row.teacher}</span>
+                      <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
+                      <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                        进入
+                        <ArrowRight size={15} />
+                      </span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -483,13 +646,17 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
           <section className={`${styles.cardClass} p-5`}>
             <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日状态</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              {progressStats.map((item) => (
-                <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
-                </div>
-              ))}
+              {progressStats.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:bg-white/5 dark:text-slate-400">暂无统计。</div>
+              ) : (
+                progressStats.map((item) => (
+                  <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
@@ -521,13 +688,49 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
 }
 
 export function WorkspaceDashboard({ currentUser, setActivePage, styles, canOpenAccounts }: WorkspaceDashboardProps) {
+  const { loading, error, payload } = useDashboardData(currentUser);
+
+  const memberData = useMemo(() => payload?.member ?? emptyMemberData, [payload]);
+  const organizationData = useMemo(() => payload?.organization ?? emptyOrganizationData, [payload]);
+  const platformData = useMemo(() => payload?.platform ?? emptyPlatformData, [payload]);
+
   if (currentUser.role === 'member') {
-    return <MemberWorkspace currentUser={currentUser} setActivePage={setActivePage} styles={styles} canOpenAccounts={canOpenAccounts} />;
+    return (
+      <MemberWorkspace
+        currentUser={currentUser}
+        setActivePage={setActivePage}
+        styles={styles}
+        canOpenAccounts={canOpenAccounts}
+        data={memberData}
+        loading={loading}
+        error={error}
+      />
+    );
   }
 
   if (currentUser.role === 'owner' || currentUser.role === 'admin') {
-    return <OrganizationWorkspace currentUser={currentUser} setActivePage={setActivePage} styles={styles} canOpenAccounts={canOpenAccounts} />;
+    return (
+      <OrganizationWorkspace
+        currentUser={currentUser}
+        setActivePage={setActivePage}
+        styles={styles}
+        canOpenAccounts={canOpenAccounts}
+        data={organizationData}
+        loading={loading}
+        error={error}
+      />
+    );
   }
 
-  return <PlatformWorkspace currentUser={currentUser} setActivePage={setActivePage} styles={styles} canOpenAccounts={canOpenAccounts} />;
+  return (
+    <PlatformWorkspace
+      currentUser={currentUser}
+      setActivePage={setActivePage}
+      styles={styles}
+      canOpenAccounts={canOpenAccounts}
+      data={platformData}
+      loading={loading}
+      error={error}
+    />
+  );
 }
