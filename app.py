@@ -2649,6 +2649,7 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
     today_iso = today_value.isoformat()
     week_start_iso = _dashboard_get_week_start_iso(today_value)
     can_open_accounts = _dashboard_can_open_page(user, "accounts")
+    can_open_credit = _dashboard_can_open_page(user, "credit")
 
     classes = _dashboard_get_today_classes(user)
     class_name_by_id = {
@@ -2673,6 +2674,8 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
         and week_start_iso <= str(lesson.get("created_at") or "")[:10] <= today_iso
     ]
     pending_registrations = list_registration_requests_for_actor(user, "pending") if can_open_accounts else []
+    credit_overview = get_credit_overview(int(user["organization_id"])) if can_open_credit else None
+    credit_balance = int(credit_overview.get("credit_balance") or 0) if isinstance(credit_overview, dict) else None
 
     pending_items: list[dict] = []
     if pending_registrations:
@@ -2705,6 +2708,16 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
                 "meta": latest_feedback_class_name,
                 "status": _dashboard_feedback_status_label(latest_feedback_task),
                 "action": "进入",
+            }
+        )
+    if credit_balance is not None and can_open_credit and credit_balance <= 20:
+        pending_items.append(
+            {
+                "page": "credit",
+                "title": f"积分余额 {credit_balance}",
+                "meta": "额度较低，可能影响后续 AI 生成。",
+                "status": "低余额",
+                "action": "查看",
             }
         )
     if open_consultations and _dashboard_can_open_page(user, "consultation"):
@@ -2768,11 +2781,19 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
         {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "待完成资料记录"},
         {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
         {"label": "待跟进咨询", "value": str(len(open_consultations)), "note": "当前未结束咨询"},
-        {
-            "label": "待审批账号" if can_open_accounts else "本周资料",
-            "value": str(len(pending_registrations) if can_open_accounts else len(week_ready_lessons)),
-            "note": "机构成员申请" if can_open_accounts else "本周已完成资料",
-        },
+        (
+            {
+                "label": "积分余额",
+                "value": str(credit_balance),
+                "note": "当前机构可用额度",
+            }
+            if credit_balance is not None
+            else {
+                "label": "待审批账号" if can_open_accounts else "本周资料",
+                "value": str(len(pending_registrations) if can_open_accounts else len(week_ready_lessons)),
+                "note": "机构成员申请" if can_open_accounts else "本周已完成资料",
+            }
+        ),
     ]
 
     return {
