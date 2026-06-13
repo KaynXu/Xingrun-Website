@@ -333,7 +333,7 @@ export function LandingPage({
                 <div className="p-3.5">
                   <div className="rounded-[1.5rem] border border-slate-200/80 bg-slate-50/55 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-white/10 dark:bg-white/[0.03]">
                     <div className="grid gap-3 lg:grid-cols-[128px_22px_minmax(0,1fr)] lg:items-center">
-                      <div className="space-y-3">
+                      <div>
                         <div className="rounded-[1.1rem] border border-slate-200/80 bg-white p-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-slate-900">
                           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Source Material</p>
                           <div className="mt-2.5 space-y-2">
@@ -348,20 +348,6 @@ export function LandingPage({
                                 <span className="text-[10px] text-slate-400">{item}</span>
                               </div>
                             ))}
-                          </div>
-                        </div>
-
-                        <div className="rounded-[1rem] border border-[#b9e6df] bg-[#def6f1] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-cyan-500/30 dark:bg-cyan-500/10">
-                          <div className="flex items-start gap-2">
-                            <span className="mt-0.5 inline-flex rounded-full bg-slate-900 p-1 text-white shadow-sm dark:bg-white dark:text-slate-900">
-                              <ShieldCheck className="h-3 w-3" />
-                            </span>
-                            <div>
-                              <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">已对齐课程信息</p>
-                              <p className="mt-1 text-[10px] leading-5 text-slate-500 dark:text-slate-300">
-                                高一数学 · 立体几何 · Unit 3
-                              </p>
-                            </div>
                           </div>
                         </div>
                       </div>
