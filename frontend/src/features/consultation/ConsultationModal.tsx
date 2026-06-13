@@ -6,13 +6,13 @@ import type {
   ClassItem,
   CurrentUser,
 } from '../../appTypes';
+import { getCurrentClassDisplayName, getCurrentClassDisplayNameById } from '../../classDisplay';
 import type {
   ConsultationFormValues,
   ConsultationRecord,
   ConsultationResultStage,
   ConsultationTeacherOption,
 } from './consultationTypes';
-import { formatClassDisplayName } from '../../domain/classNaming';
 import { apiFetch, cn, getTodayIsoDate, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
 import { hasStaffAccess } from '../navigation/workspaceAccess';
 import {
@@ -48,20 +48,6 @@ type ConsultationQuickParseKey = keyof Pick<
 >;
 
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
-}
-
-function getCurrentClassDisplayNameById(
-  classes: ClassItem[],
-  classId: number | null | undefined,
-  fallbackName?: string | null,
-  showCohortYear = false,
-): string {
-  const classItem = classId == null ? undefined : classes.find((item) => item.id === classId);
-  return getCurrentClassDisplayName(classItem, showCohortYear) || fallbackName?.trim() || '';
-}
 
 function compactConsultationText(value: string): string {
   return value.replace(/\s+/g, '').trim();

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowRight, ChevronDown, MoreVertical, Pencil, PlusCircle, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem, WorkspacePage, Role } from '../../appTypes';
-import { formatClassDisplayName } from '../../domain/classNaming';
+import { getCurrentClassDisplayName, getCurrentClassDisplayNameById } from '../../classDisplay';
 import {
   canOpenWorkspacePage,
   configurableWorkspacePages,
@@ -97,20 +97,6 @@ function getRoleLabel(role: Role): string {
 
 function canManageOwnerRole(role: Role): boolean {
   return role === 'super_owner';
-}
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
-}
-
-function getCurrentClassDisplayNameById(
-  classes: ClassItem[],
-  classId: number | null | undefined,
-  fallbackName?: string | null,
-  showCohortYear = false,
-): string {
-  const classItem = classId == null ? undefined : classes.find((item) => item.id === classId);
-  return getCurrentClassDisplayName(classItem, showCohortYear) || fallbackName?.trim() || '';
 }
 
 function getMemberBindingStatusLabel(status: MemberBindingSummaryStatus): string {
