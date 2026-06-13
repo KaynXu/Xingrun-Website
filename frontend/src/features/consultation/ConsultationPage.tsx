@@ -3,6 +3,7 @@ import { AlertCircle, CalendarDays, ChevronDown, Cpu, Eye, Pencil, PlusCircle, R
 import { AnimatePresence, motion } from 'motion/react';
 
 import type {
+  ClassItem,
   CurrentUser,
 } from '../../appTypes';
 import type {
@@ -49,7 +50,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   const canEditConsultations = canManage || currentUser.role === 'member';
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
-  const [classes, setClasses] = useState([]);
+  const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
@@ -89,7 +90,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
 
   useEffect(() => {
     let active = true;
-    apiFetch('/api/classes')
+    apiFetch<ClassItem[]>('/api/classes')
       .then((items) => {
         if (active) setClasses(items);
       })

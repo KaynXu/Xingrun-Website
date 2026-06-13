@@ -322,7 +322,7 @@ export default function App() {
     return (
       <>
         <LandingPage
-          onLogin={token ? () => setShowLanding(false) : () => setPublicAuthModal('login')}
+          onLogin={token ? () => setShowLanding(false) : backToLogin}
           onApplyOrganization={() => {
             if (token) {
               setShowLanding(false);

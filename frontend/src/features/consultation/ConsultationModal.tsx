@@ -939,7 +939,7 @@ const ConsultationModal = ({
                 showJumpActions={!readOnly}
                 showOver
                 overDisabled={readOnly}
-                onStageClick={(stage) => setForm((current) => toggleConsultationStage(current, stage))}
+                onStageClick={(stage) => setForm((current) => toggleConsultationStageLight(current, stage))}
                 onStageDoubleClick={(stage) => setForm((current) => moveConsultationStage(current, stage))}
                 onResultChange={(stage) => setForm((current) => setConsultationResultStage(current, stage))}
                 onResultClick={() => {

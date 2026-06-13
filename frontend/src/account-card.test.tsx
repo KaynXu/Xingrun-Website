@@ -16,6 +16,7 @@ const consultationPageSource = readFileSync(resolve(process.cwd(), 'src/features
 const consultationMeetingWorkbenchSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationMeetingWorkbench.tsx'), 'utf8');
 const consultationModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
 const consultationBatchModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
+const consultationSharedSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/consultationShared.tsx'), 'utf8');
 const authSource = readFileSync(resolve(process.cwd(), 'src/features/auth/PublicAuthModals.tsx'), 'utf8');
 const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
 const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
@@ -824,12 +825,12 @@ test('consultation page source keeps desktop and tablet consultations as two-row
   assert.doesNotMatch(consultationPageSource, /2xl:hidden/);
   assert.doesNotMatch(consultationPageSource, /hidden 2xl:block/);
 
-  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const flowBarBlock = consultationSharedSource.match(/export const ConsultationFlowBar = \([\s\S]*?\n};/);
   assert.ok(flowBarBlock);
   assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(1\.75rem,1fr\)\)\]/);
   assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\]/);
   assert.match(flowBarBlock[0], /onStageDoubleClick/);
-  assert.match(source, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
+  assert.match(shellSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
 });
 
 test('consultation mobile card keeps view edit icons in the top right and removes the bottom edit capsule', () => {
