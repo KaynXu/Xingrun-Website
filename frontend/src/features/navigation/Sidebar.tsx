@@ -117,10 +117,15 @@ export const SidebarAccountSheet = ({
   const shouldShowDisplayName = currentUser.display_name.trim() && currentUser.display_name !== currentUser.username;
 
   const sheet = (
-    <div className="fixed inset-0 z-[70]" onClick={onClose}>
-      <div className="absolute inset-0 bg-slate-950/32" />
-      <div className="absolute bottom-4 left-4 w-[calc(100vw-2rem)] max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className={`${workspaceCardClass} border border-slate-200/70 bg-[#fbfdff] p-5 dark:border-white/10 dark:bg-slate-950/80`}>
+    <div className="fixed inset-0 z-[70] pointer-events-none">
+      <button
+        type="button"
+        aria-label="关闭账号面板"
+        onClick={onClose}
+        className="absolute inset-0 pointer-events-auto bg-transparent"
+      />
+      <div className="absolute bottom-4 left-4 w-[calc(100vw-2rem)] max-w-[22rem] pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+        <div className={`${workspaceCardClass} overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-white/10 dark:bg-slate-950/92 dark:shadow-[0_24px_60px_rgba(2,6,23,0.46)]`}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-base font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
@@ -182,28 +187,30 @@ export const SidebarAccountSheet = ({
             </div>
           ) : (
             <>
-              <div className="mt-5 space-y-2">
+              <div className="mt-5 border-t border-slate-200/80 pt-3 dark:border-white/10">
+                <div className="space-y-1">
                 <button
                   type="button"
                   onClick={startEdit}
-                  className="w-full rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
+                  className="w-full rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-white/5"
                 >
                   修改账号 / 姓名
                 </button>
                 <button
                   type="button"
                   onClick={onOpenSettings}
-                  className="w-full rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
+                  className="w-full rounded-xl px-4 py-3 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-white/5"
                 >
                   查看账号信息
                 </button>
                 <button
                   type="button"
                   onClick={onLogout}
-                  className="w-full rounded-xl px-1 py-2 text-left text-sm font-medium text-rose-500 transition-colors hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
+                  className="w-full rounded-xl px-4 py-3 text-left text-sm font-medium text-rose-500 transition-colors hover:bg-rose-50/70 hover:text-rose-600 dark:text-rose-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
                 >
                   退出登录
                 </button>
+                </div>
               </div>
             </>
           )}

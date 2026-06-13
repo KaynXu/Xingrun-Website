@@ -725,3 +725,12 @@
   - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
   - `rg -n "shouldShowDisplayName|text-lg font-semibold text-slate-900|rounded-xl bg-sky-100|inline-flex rounded-full bg-slate-100|w-full rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left text-sm|w-full rounded-xl px-1 py-2 text-left text-sm font-medium text-rose-500" src/features/navigation/Sidebar.tsx`
   - negative check confirming the old organization/status metadata block is removed
+
+## 2026-06-14 sidebar account sheet overlay cleanup
+- Removed the dark modal scrim and converted the account sheet into a lighter floating panel.
+- Kept outside-click dismissal by using an invisible full-screen click target instead of a visible overlay.
+- Tightened the action list styling so the sheet reads more like a simple account menu.
+- Runnable proof passed via `/tmp/xingrun_sidebar_sheet_overlay_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "pointer-events-none|bg-transparent|max-w-\\[22rem\\]|rounded-\\[2rem\\]|shadow-\\[0_24px_60px_rgba\\(15,23,42,0\\.14\\)\\]|border-t border-slate-200/80 pt-3" src/features/navigation/Sidebar.tsx`
+  - negative check confirming `bg-slate-950/32` is removed
