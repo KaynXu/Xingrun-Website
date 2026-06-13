@@ -98,9 +98,7 @@ import {
 import { FloatingFilterBar, FloatingOverviewFilter } from './components/FloatingFilterBar';
 import type {
   ClassBindingTarget,
-  ClassItem,
   CurrentUser,
-  Role,
   UserItem,
   WorkspacePage,
 } from './appTypes';
@@ -139,7 +137,6 @@ import {
   academicGradeOptions,
   academicStageOptions,
   buildClassDisplayName,
-  formatClassDisplayName,
   getAcademicGradeRank,
   getAcademicStageFromGrade,
   inferAcademicCohortYear,
@@ -242,78 +239,6 @@ interface ApiSettings {
   provider: string;
 }
 
-interface RegistrationRequestItem {
-  id: number;
-  username: string;
-  display_name: string;
-  organization_name: string;
-  status: string;
-  created_at: string;
-}
-
-interface OrganizationRequestItem {
-  id: number;
-  organization_name: string;
-  username: string;
-  display_name: string;
-  status: string;
-  created_at: string;
-}
-
-interface OrganizationInviteInfo {
-  organization_name: string;
-  invite_code: string;
-  invite_link: string;
-  join_path?: string;
-}
-
-interface OrganizationSummaryItem {
-  id: number;
-  name: string;
-  created_at: string;
-  member_count: number;
-  owner_count: number;
-  class_count: number;
-  lesson_count: number;
-}
-
-type MemberBindingSummaryStatus = 'healthy' | 'needs_review' | 'incomplete';
-
-interface MemberBindingSummary {
-  user_id: number;
-  mini_teacher_bound: boolean;
-  responsible_classes: Array<{
-    id: number;
-    name: string;
-  }>;
-  mapping_summary: {
-    status: MemberBindingSummaryStatus;
-    mapped_count: number;
-    needs_review_count: number;
-    unmapped_count: number;
-    ambiguous_count: number;
-  };
-}
-
-interface ApprovalPageProps {
-  currentUser: CurrentUser;
-  onOpenClassBinding: (target: ClassBindingTarget) => void;
-}
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
-}
-
-function getCurrentClassDisplayNameById(
-  classes: ClassItem[],
-  classId: number | null | undefined,
-  fallbackName?: string | null,
-  showCohortYear = false,
-): string {
-  const classItem = classId == null ? undefined : classes.find((item) => item.id === classId);
-  return getCurrentClassDisplayName(classItem, showCohortYear) || fallbackName?.trim() || '';
-}
-
 const NORMALIZATION_EXAMPLES: Array<[string, string]> = [
   ['6年级2班', '六年级 2 班'],
   ['六年级二班', '六年级 2 班'],
@@ -328,37 +253,6 @@ const academicSubjectFilterOptions = ['全部学科', ...academicSubjectOptions]
 const studentCenterStageOptions = [...academicStageOptions];
 const studentCenterGradeOptions = [...academicGradeOptions];
 const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
-function canManageOwnerRole(role: Role): boolean {
-  return role === 'super_owner';
-}
-
-function getMemberBindingStatusLabel(status: MemberBindingSummaryStatus): string {
-  if (status === 'healthy') return '正常';
-  if (status === 'needs_review') return '待复核';
-  return '未完成';
-}
-
-function getMemberBindingStatusBadgeClass(status: MemberBindingSummaryStatus): string {
-  if (status === 'healthy') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300';
-  }
-  if (status === 'needs_review') {
-    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
-  }
-  return 'border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
-}
-function getRoleBadgeClass(role: Role): string {
-  if (role === 'super_owner') {
-    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
-  }
-  if (role === 'owner') {
-    return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300';
-  }
-  if (role === 'admin') {
-    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
-  }
-  return 'border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
-}
 
 function getInitialDarkModePreference(): boolean {
   if (typeof window === 'undefined') {

@@ -264,7 +264,7 @@ test('workspace navigation source exposes explicit super owner hierarchy for acc
   assert.match(appDisplaySource, /if \(role === 'super_owner'\) return '超级管理员';/);
   assert.match(appDisplaySource, /if \(role === 'owner'\) return '机构负责人';/);
   assert.match(accessSource, /export function hasOwnerAccess\(role: WorkspaceRole\): boolean \{/);
-  assert.match(appSource, /function canManageOwnerRole\(role: Role\): boolean \{/);
+  assert.match(approvalPageSource, /function canManageOwnerRole\(role: Role\): boolean \{/);
   assert.match(approvalPageSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面/);
 });
 
