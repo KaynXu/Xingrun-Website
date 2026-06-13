@@ -33,6 +33,19 @@ Xingrun-Website/
 
 ## 3. 本地启动（推荐）
 
+### 3.0 一键启动前后端
+
+```bash
+cd /Users/ark.mini/Desktop/Xingrun-Website
+npm run dev
+```
+
+说明：
+- 这个命令需要在仓库根目录执行
+- 会同时启动后端 API 和 `frontend` 里的 Vite 开发服务器
+- 依赖前提仍与原来一致：后端 `.venv` 和前端 `frontend/node_modules` 需要先准备好
+- 停止根目录 `npm run dev` 时，会一起结束前后端开发进程
+
 ### 3.1 后端
 
 ```bash
