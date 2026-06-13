@@ -124,6 +124,11 @@ import {
   getJoinInviteTokenFromPath,
 } from './features/auth/authFlow';
 import {
+  getInitialJoinInviteToken,
+  getInitialPublicAuthModal,
+} from './features/auth/authState';
+import type { PublicAuthModal } from './features/auth/authState';
+import {
   academicGradeGroups,
   academicGradeOptions,
   academicStageOptions,
@@ -204,7 +209,6 @@ export { LandingLegalPage, LandingPage, getLandingLegalPageFromHash } from './fe
 // --- Types ---
 
 type Page = WorkspacePage;
-type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization' | 'password-reset';
 
 const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) => (
   <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
@@ -440,21 +444,12 @@ export default function App() {
   const [authReady, setAuthReady] = useState<boolean>(() => !Boolean(getToken()));
   const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
   const [isMobileViewport, setIsMobileViewport] = useState(getInitialMobileViewport);
-  const [publicAuthModal, setPublicAuthModal] = useState<PublicAuthModal | null>(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    if (getToken()) {
-      return null;
-    }
-    return getJoinInviteTokenFromPath(window.location.pathname) ? 'join-organization' : null;
-  });
-  const [joinInviteToken, setJoinInviteToken] = useState<string | null>(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    return getJoinInviteTokenFromPath(window.location.pathname);
-  });
+  const [publicAuthModal, setPublicAuthModal] = useState<PublicAuthModal | null>(() =>
+    getInitialPublicAuthModal(typeof window === 'undefined' ? '' : window.location.pathname, Boolean(getToken())),
+  );
+  const [joinInviteToken, setJoinInviteToken] = useState<string | null>(() =>
+    getInitialJoinInviteToken(typeof window === 'undefined' ? '' : window.location.pathname),
+  );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [classBindingTarget, setClassBindingTarget] = useState<ClassBindingTarget | null>(null);

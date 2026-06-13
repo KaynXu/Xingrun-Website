@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 const authSource = readFileSync(resolve(process.cwd(), 'src/features/auth/PublicAuthModals.tsx'), 'utf8');
 const authFlowSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authFlow.ts'), 'utf8');
+const authStateSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authState.ts'), 'utf8');
 const accessSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/workspaceAccess.ts'), 'utf8');
 const approvalSource = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
 
@@ -19,6 +20,9 @@ test('landing and login source expose separate organization application and invi
   assert.match(authSource, /申请开通机构/);
   assert.match(authSource, /加入已有机构/);
   assert.match(authFlowSource, /export function getJoinInviteTokenFromPath/);
+  assert.match(authStateSource, /export type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
+  assert.match(authStateSource, /export function getInitialPublicAuthModal/);
+  assert.match(authStateSource, /export function getInitialJoinInviteToken/);
   assert.match(appSource, /publicAuthModal === 'join-organization'/);
   assert.match(authSource, /if \(!data\.token\)/);
   assert.match(authFlowSource, /export function clearJoinInvitePathIfNeeded/);
