@@ -8,7 +8,6 @@ import {
   Moon,
   ShieldCheck,
   Sun,
-  User,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 
@@ -222,7 +221,7 @@ export function LandingPage({
   onLogin,
   onRegister,
   onApplyOrganization,
-  onJoinOrganization,
+  onJoinOrganization: _onJoinOrganization,
   activeLegalPage,
   isDark = false,
   onToggleDarkMode,
@@ -252,7 +251,6 @@ export function LandingPage({
   }
 
   const handleRegister = onApplyOrganization ?? onRegister ?? (() => undefined);
-  const handleJoin = onJoinOrganization ?? (() => undefined);
 
   return (
     <div className="min-h-screen bg-[#F6FBFF] text-slate-900 selection:bg-sky-200/70 dark:bg-[#0d1220] dark:text-slate-100">
@@ -351,28 +349,19 @@ export function LandingPage({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.58, duration: 0.78 }}
-                className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap"
+                className="mt-10 flex flex-col gap-3 sm:flex-row"
               >
-                <a
-                  href="#features"
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-8 py-4 text-base font-bold text-white shadow-[0_24px_60px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
-                >
-                  查看平台方案
-                  <ArrowRight size={18} />
-                </a>
                 <button
-                  onClick={handleRegister}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/55 bg-white/55 px-8 py-4 text-base font-bold text-slate-800 backdrop-blur-md transition-all hover:bg-white/72 active:scale-95 dark:border-white/12 dark:bg-slate-950/30 dark:text-slate-100 dark:hover:bg-slate-950/42"
+                  onClick={onLogin}
+                  className="inline-flex items-center justify-center rounded-2xl bg-sky-600 px-8 py-4 text-base font-bold text-white shadow-[0_24px_60px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
                 >
-                  <User size={18} />
-                  申请开通机构
+                  立即登录
                 </button>
                 <button
-                  onClick={handleJoin}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-sky-200/70 bg-sky-50/85 px-8 py-4 text-base font-bold text-sky-900 transition-all hover:bg-sky-100 active:scale-95 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100 dark:hover:bg-sky-500/20"
+                  onClick={handleRegister}
+                  className="inline-flex items-center justify-center rounded-2xl border border-white/55 bg-white/55 px-8 py-4 text-base font-bold text-slate-800 backdrop-blur-md transition-all hover:bg-white/72 active:scale-95 dark:border-white/12 dark:bg-slate-950/30 dark:text-slate-100 dark:hover:bg-slate-950/42"
                 >
-                  <ArrowRight size={18} />
-                  加入已有机构
+                  申请试用
                 </button>
               </motion.div>
             </motion.div>
