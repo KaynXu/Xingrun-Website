@@ -331,7 +331,7 @@ export function LandingPage({
                 </div>
 
                 <div className="p-3.5">
-                  <div className="rounded-[1.5rem] border border-slate-200/80 bg-white p-3.5 dark:border-white/10 dark:bg-slate-900">
+                  <div className="p-1">
                     <div className="grid gap-3 lg:grid-cols-[128px_22px_minmax(0,1fr)] lg:items-center">
                       <div>
                         <div className="rounded-[1.1rem] border border-slate-200/80 bg-white p-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-slate-900">
