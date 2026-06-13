@@ -6,6 +6,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import * as AppModule from './App';
+import { parseConsultationQuickEntry } from './features/consultation/ConsultationModal';
 
 const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Sidebar.tsx'), 'utf8');
@@ -966,13 +967,6 @@ test('consultation batch modal source keeps imported drafts visible while retrie
 });
 
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
-  const parseConsultationQuickEntry = (AppModule as {
-    parseConsultationQuickEntry?: (
-      input: string,
-      teacherOptions: Array<{ teacher_id: string; display_name: string; aliases: string[] }>,
-    ) => Record<string, string>;
-  }).parseConsultationQuickEntry;
-
   assert.equal(typeof parseConsultationQuickEntry, 'function');
 
   const parsed = parseConsultationQuickEntry!(

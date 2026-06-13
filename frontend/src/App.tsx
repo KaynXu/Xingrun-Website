@@ -46,45 +46,11 @@ import { WorkspaceShellLayout } from './features/navigation/WorkspaceShellLayout
 import { ConsultationMeetingWorkbench } from './features/consultation/ConsultationMeetingWorkbench';
 import { ConsultationPage } from './features/consultation/ConsultationPage';
 import {
-  buildConsultationBatchCreatePayload,
-  ConsultationModal,
-  normalizeConsultationTeacherOption,
-  parseConsultationQuickEntry,
-  toConsultationFormValues,
-} from './features/consultation/ConsultationModal';
-import { ConsultationBatchModal } from './features/consultation/ConsultationBatchModal';
-import {
-  ConsultationCardExpandableText,
-  ConsultationFlowBar,
-  ConsultationStatusLamp,
-  buildConsultationTeacherDirectory,
-  clearConsultationResultStage,
-  consultationFilterGroups,
-  consultationFilterLabels,
-  consultationFlowStages,
   consultationInputClass,
   consultationLabelClass,
-  consultationMeetingVersion,
   consultationPanelClass,
-  consultationProcessStages,
-  consultationResultShortLabel,
-  consultationStageDisplayLabel,
-  consultationStageShortLabel,
   consultationSurfaceClass,
   consultationValueClass,
-  endConsultationValues,
-  getConsultationFilterKey,
-  getConsultationOver30SectionLabel,
-  getConsultationSourceLabel,
-  getConsultationTeacherName,
-  isConsultationEnded,
-  isConsultationResultStage,
-  moveConsultationStage,
-  normalizeConsultationRecord,
-  restoreConsultationValues,
-  setConsultationResultStage,
-  sortConsultationsForFilter,
-  toggleConsultationStageLight,
 } from './features/consultation/consultationShared';
 
 import {
@@ -278,40 +244,6 @@ function getInitialMobileViewport(): boolean {
 
   return window.matchMedia?.('(max-width: 1023px)').matches ?? false;
 }
-
-export {
-  ConsultationBatchModal,
-  ConsultationCardExpandableText,
-  ConsultationFlowBar,
-  ConsultationModal,
-  ConsultationStatusLamp,
-  buildConsultationTeacherDirectory,
-  clearConsultationResultStage,
-  consultationFilterGroups,
-  consultationFilterLabels,
-  consultationFlowStages,
-  consultationMeetingVersion,
-  consultationProcessStages,
-  consultationResultShortLabel,
-  consultationStageDisplayLabel,
-  consultationStageShortLabel,
-  endConsultationValues,
-  getConsultationFilterKey,
-  getConsultationOver30SectionLabel,
-  getConsultationSourceLabel,
-  getConsultationTeacherName,
-  isConsultationEnded,
-  isConsultationResultStage,
-  moveConsultationStage,
-  normalizeConsultationRecord,
-  normalizeConsultationTeacherOption,
-  parseConsultationQuickEntry,
-  restoreConsultationValues,
-  setConsultationResultStage,
-  sortConsultationsForFilter,
-  toConsultationFormValues,
-  toggleConsultationStageLight,
-};
 
 export default function App() {
   const studentPortalMode = typeof window !== 'undefined' && window.location.pathname.startsWith('/student');
