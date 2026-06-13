@@ -256,10 +256,10 @@ export function Sidebar({
   roleLabel?: string;
 }) {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
-  const dashboardItems: SidebarEntry[] = [
+  const dashboardItems = ([
     { id: 'dashboard', icon: LayoutDashboard, label: '工作台' },
-  ].filter((item) => canOpenPage(item.id));
-  const teachingItems: SidebarEntry[] = [
+  ] satisfies SidebarEntry[]).filter((item) => canOpenPage(item.id));
+  const teachingItems = ([
     { id: 'review-generation', icon: Library, label: '复习生成' },
     { id: 'class-feedback-generation', icon: FileText, label: '课堂反馈' },
     { id: 'consultation', icon: MessageSquare, label: '咨询记录' },
@@ -267,8 +267,8 @@ export function Sidebar({
     ...(showSmartWrongQuestions
       ? [{ id: 'smartWrongQuestions', icon: Cpu, label: '智能错题' } satisfies SidebarEntry]
       : []),
-  ].filter((item) => canOpenPage(item.id));
-  const organizationManagementItems: SidebarEntry[] = [
+  ] satisfies SidebarEntry[]).filter((item) => canOpenPage(item.id));
+  const organizationManagementItems = ([
     { id: 'classes', icon: Home, label: '学管中心' },
     ...(showCreditCenter
       ? [{ id: 'credit', icon: Bell, label: '积分中心' } satisfies SidebarEntry]
@@ -276,10 +276,10 @@ export function Sidebar({
     ...(showAccounts
       ? [{ id: 'accounts', icon: User, label: '账号审批' } satisfies SidebarEntry]
       : []),
-  ].filter((item) => canOpenPage(item.id));
-  const systemItems: SidebarEntry[] = [
+  ] satisfies SidebarEntry[]).filter((item) => canOpenPage(item.id));
+  const systemItems = ([
     { id: 'settings', icon: Settings, label: '系统设置' },
-  ].filter((item) => canOpenPage(item.id));
+  ] satisfies SidebarEntry[]).filter((item) => canOpenPage(item.id));
   const menuSections = [
     { label: '总览', items: dashboardItems },
     { label: '教学工作', items: teachingItems },

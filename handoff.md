@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已修复 `frontend/src/features/navigation/Sidebar.tsx` 的导航项类型宽化问题：`dashboard / teaching / organization / system` 四组菜单现在用 `satisfies SidebarEntry[]` 约束后再 `filter()`，`id` 不再被推断成泛化的 `string`，本轮 lint 剩余报错已不再来自侧边栏文件。
 - 2026-06-13 已把角色中文文案 helper 从 `frontend/src/App.tsx` 和 `frontend/src/features/settings/SettingsPage.tsx` 收口到新模块 `frontend/src/appDisplay.ts`，当前 `App.tsx` 与设置页都直接复用 `getRoleLabel()`，不再各自维护同一份角色展示文案；这一轮故意没有动 `ApprovalPage.tsx`，因为审批页还带有自己的成员绑定状态语义，先避免把展示口径搅在一起。当前轮 proof `/tmp/xingrun_role_label_extract_proof.sh` 已通过：新 helper 导入链正常，且 `organization-auth` / `app-storage-guard` 定向前端测试全部通过。
 - 2026-06-13 已把未登录入口里 `close/open/back` 这组 public auth 事件切换 helper 从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authActions.ts`，包括 `closePublicAuthState()`、`openApplyOrganizationState()`、`openJoinOrganizationState()`、`openPasswordResetState()` 和 `backToLoginState()`；`App.tsx` 现在只负责调用 helper 并落状态，不再内联这组切换细节。当前轮 proof `/tmp/xingrun_auth_actions_extract_proof.sh` 已通过：auth actions 模块可导入，App 已改为复用新 helper，organization auth 与 storage guard 定向测试全部通过。
 - 2026-06-13 已把未登录入口的 public auth 初始状态 helper 从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authState.ts`，包括 `PublicAuthModal` 类型、`getInitialPublicAuthModal()` 和 `getInitialJoinInviteToken()`；`App.tsx` 不再内联这两段初始化闭包，`frontend/src/organization-auth.test.tsx` 也已同步跟到新模块。当前轮 proof `/tmp/xingrun_auth_state_extract_proof.sh` 已通过：App 不再本地维护 public auth 初始状态 helper，organization auth 与 storage guard 定向测试全部通过。
