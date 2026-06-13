@@ -741,3 +741,10 @@
 - Runnable proof passed via `/tmp/xingrun_shell_alignment_proof.sh`:
   - `npx tsx -e "Promise.all([import('./src/features/navigation/Sidebar.tsx'), import('./src/features/navigation/Header.tsx'), import('./src/features/navigation/WorkspaceShellLayout.tsx')]).then(() => console.log('Navigation shell modules import OK'))"`
   - `rg -n "h-\\[4\\.75rem\\]|h-9 w-9 object-contain|w-\\[17\\.25rem\\] max-w-\\[86vw\\]|lg:pl-\\[15\\.5rem\\]|lg:pl-\\[17\\.25rem\\]" src/features/navigation/Sidebar.tsx src/features/navigation/Header.tsx src/features/navigation/WorkspaceShellLayout.tsx`
+
+## 2026-06-14 header description removal
+- Removed the per-page descriptive subtitle from the workspace header, leaving a title-only top bar.
+- Runnable proof passed via `/tmp/xingrun_header_copy_removal_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Header.tsx').then(() => console.log('Header module import OK'))"`
+  - `rg -n "text-lg font-semibold tracking-tight text-slate-900|flex h-\\[4\\.75rem\\] items-center justify-between" src/features/navigation/Header.tsx`
+  - negative check confirming `围绕教学、班级与反馈继续推进工作` is removed

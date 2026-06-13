@@ -23,9 +23,6 @@ export function Header({
       <div className="flex h-[4.75rem] items-center justify-between gap-4 px-4 sm:px-6 md:px-8">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">{title}</h1>
-          <p className="mt-1 hidden truncate text-sm text-slate-500 md:block dark:text-slate-400">
-            围绕教学、班级与反馈继续推进工作
-          </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           {onOpenSidebar && (
