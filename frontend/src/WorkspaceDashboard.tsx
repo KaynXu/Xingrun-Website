@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowRight, PlusCircle } from 'lucide-react';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
@@ -108,80 +107,14 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
   );
 }
 
-function PlatformWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashboardProps) {
+function PlatformWorkspace({ styles }: WorkspaceDashboardProps) {
   return (
     <div className={`${styles.pageClass} space-y-6`}>
-      <section className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-6 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)] md:p-8">
+      <section className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Platform command</p>
-        <div className="mt-4 space-y-3">
-          <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">平台总览</h3>
-          <p className="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            AI 平台的跨机构观察、账号审批和系统设置入口。
-          </p>
-        </div>
+        <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">平台总览</h3>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className={`${styles.cardClass} min-h-32 p-5`}>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Overview</p>
-          <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">平台总览</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">汇总 AI 平台跨机构运行指标和核心状态。</p>
-        </div>
-        <button type="button" onClick={() => setActivePage('classes')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Organizations</p>
-            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">查看机构状态、活跃度和跨机构运营数据。</p>
-          </div>
-          <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
-            查看机构工作区
-            <ArrowRight size={16} />
-          </span>
-        </button>
-        <button type="button" onClick={() => setActivePage('accounts')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Approval</p>
-            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">账号审批</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">处理跨机构账号开通、归属确认与审批入口。</p>
-          </div>
-          <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
-            进入审批
-            <ArrowRight size={16} />
-          </span>
-        </button>
-        <button type="button" onClick={() => setActivePage('settings')} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Settings</p>
-            <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-slate-100">系统设置</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">进入系统级配置，维护平台运行所需的全局参数。</p>
-          </div>
-          <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
-            打开设置
-            <ArrowRight size={16} />
-          </span>
-        </button>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-        <div className={`${styles.cardClass} p-6`}>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
-              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                汇总组织状态、平台覆盖面和异常排查入口。
-              </p>
-            </div>
-            <ArrowRight size={18} className="shrink-0 text-sky-500 dark:text-sky-400" />
-          </div>
-        </div>
-
-        <div className={`${styles.cardClass} p-6`}>
-          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">系统设置</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            平台级设置入口。
-          </p>
-        </div>
-      </section>
     </div>
   );
 }

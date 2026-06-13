@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   BookOpenCheck,
@@ -196,7 +196,6 @@ export function StudentTodayTasksContent({
   const activeTaskIndex = activeTask ? tasks.findIndex((task) => task.lesson_id === activeTask.lesson_id) : -1;
   const taskPosition = activeTaskIndex >= 0 ? activeTaskIndex + 1 : taskCount ? 1 : 0;
   const progressPercent = taskCount ? Math.max(8, (taskPosition / taskCount) * 100) : 0;
-  const activeTaskStep = activeTask ? getTaskStepText(activeTask) : '';
   const activeDownloadPath = activeTask ? buildAuthedPath(activeTask.pdf_download_url || activeTask.pdf_url) : '';
   const activeOpenPath = activeTask ? buildAuthedPath(activeTask.pdf_url) : '';
 

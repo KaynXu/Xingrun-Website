@@ -64,11 +64,58 @@ export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOpti
   return res.json() as Promise<T>;
 }
 
+export function apiUploadFormWithProgress<T = unknown>(
+  path: string,
+  body: FormData,
+  onProgress: (progress: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    const token = getToken();
+    if (token) {
+      xhr.setRequestHeader('X-Auth-Token', token);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) {
+        return;
+      }
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        removeLocalStorageItem('xr_token');
+        window.location.reload();
+      }
+      let payload: T & { error?: string };
+      try {
+        payload = JSON.parse(xhr.responseText || '{}') as T & { error?: string };
+      } catch {
+        payload = { error: xhr.statusText } as T & { error?: string };
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(payload.error || xhr.statusText));
+        return;
+      }
+      onProgress(100);
+      resolve(payload);
+    };
+    xhr.onerror = () => reject(new Error('上传失败，请重试'));
+    xhr.send(body);
+  });
+}
+
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
 }
 
-export const workspacePageClass = 'px-6 py-6 md:px-8 md:py-8 xl:px-10 xl:py-10';
+export function getTodayIsoDate(): string {
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+export const workspacePageClass = 'mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8 xl:px-10 xl:py-10';
 export const workspaceCardClass =
   'rounded-[1.75rem] border border-sky-100/90 bg-white/88 shadow-[0_22px_54px_rgba(47,128,237,0.08)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78 dark:shadow-[0_24px_60px_rgba(2,6,23,0.52)]';
 export const workspaceSoftCardClass =

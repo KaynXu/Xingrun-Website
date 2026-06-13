@@ -10,16 +10,14 @@ import {
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
   workspaceSoftCardClass,
-} from './App';
+} from './workspaceShared';
 import {
   buildMemberStudentNotebookSummaries,
   buildWeeklyWrongQuestionActivitySummaryPath,
-  buildWeeklyWrongQuestionFollowupArchivePath,
   buildWeeklyWrongQuestionFollowupMessagePath,
   buildWrongQuestionPracticePackCreatePath,
   buildWrongQuestionPracticePackDetailPath,
   buildWrongQuestionPracticePackListPath,
-  buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath,
   buildWeeklyWrongQuestionFollowupPracticeSheetPath,
   buildWeeklyWrongQuestionFollowupsPath,
   buildWrongQuestionDetailPath,
@@ -38,7 +36,6 @@ import {
   buildWrongQuestionTopicSummaries,
   filterWrongQuestionRecordsByTopic,
   filterWrongQuestionRecordsForMemberNotebook,
-  getWrongQuestionSemanticModel,
   getWrongQuestionSourceLabel,
   hydrateWrongQuestionReviewDraftFromDetail,
   isPrimarySchoolWrongQuestionRecord,
@@ -504,7 +501,6 @@ function extractSavedWrongQuestionResponseRecord(response: unknown): unknown {
 
 export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPageProps) {
   const hasStaffScope = currentUser.role === 'super_owner' || currentUser.role === 'owner' || currentUser.role === 'admin';
-  const isMemberScope = currentUser.role === 'member';
   const usesStudentNotebook = true;
   const canViewWeeklyActivitySummary = currentUser.role === 'super_owner';
   const [filters, setFilters] = useState<WrongQuestionFilters>(initialFilters);
@@ -564,7 +560,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
   const [weeklyFollowupNotice, setWeeklyFollowupNotice] = useState('');
   const [generatingWeeklyFollowupStudentId, setGeneratingWeeklyFollowupStudentId] = useState<number | null>(null);
   const [generatingWeeklyPracticeStudentId, setGeneratingWeeklyPracticeStudentId] = useState<number | null>(null);
-  const [batchGeneratingWeeklyPractice, setBatchGeneratingWeeklyPractice] = useState(false);
   const [practicePackMode, setPracticePackMode] = useState<WrongQuestionPracticePackMode>('topic');
   const [practicePackTarget, setPracticePackTarget] = useState('');
   const [practicePackVolume, setPracticePackVolume] = useState<WrongQuestionPracticePackVolume>('standard');
@@ -2096,35 +2091,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
     }
   };
 
-  const handleBatchGenerateWeeklyPracticeSheets = async () => {
-    if (!activeWeeklyFollowupClassId) {
-      setWeeklyFollowupError('请选择班级。');
-      setWeeklyFollowupNotice('');
-      return;
-    }
-
-    setBatchGeneratingWeeklyPractice(true);
-    setWeeklyFollowupError('');
-    setWeeklyFollowupNotice('');
-
-    try {
-      const response = await apiFetch<{ created_count?: unknown }>(buildWeeklyWrongQuestionFollowupPracticeSheetBatchPath(), {
-        method: 'POST',
-        body: JSON.stringify({
-          class_id: activeWeeklyFollowupClassId,
-          week_start: weeklyFollowupWeekStart,
-        }),
-      });
-      const createdCount = typeof response.created_count === 'number' ? response.created_count : 0;
-      setWeeklyFollowupNotice(`已提交 ${createdCount} 份错题练习生成任务。`);
-      await handleLoadWeeklyFollowups();
-    } catch (generateError) {
-      setWeeklyFollowupError(generateError instanceof Error ? generateError.message : '批量生成错题练习失败');
-    } finally {
-      setBatchGeneratingWeeklyPractice(false);
-    }
-  };
-
   const handleGeneratePracticePack = async () => {
     if (!activeWeeklyFollowupClassId) {
       setWeeklyFollowupError('请选择班级。');
@@ -2231,19 +2197,6 @@ export function SmartWrongQuestionsPage({ currentUser }: SmartWrongQuestionsPage
       setWeeklyFollowupError(copyError instanceof Error ? copyError.message : '复制失败');
       setWeeklyFollowupNotice('');
     }
-  };
-
-  const handleOpenWeeklyFollowupArchive = () => {
-    if (!activeWeeklyFollowupClassId) {
-      setWeeklyFollowupError('请选择班级。');
-      setWeeklyFollowupNotice('');
-      return;
-    }
-
-    const archivePath = buildWrongQuestionAuthedPath(
-      buildWeeklyWrongQuestionFollowupArchivePath(activeWeeklyFollowupClassId, weeklyFollowupWeekStart),
-    );
-    globalThis.window?.open?.(archivePath, '_blank', 'noopener,noreferrer');
   };
 
   const selectedKnowledgePointText = selectedDraft?.selectedKnowledgePoints.join('\n') ?? '';

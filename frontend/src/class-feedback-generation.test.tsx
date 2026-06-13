@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -18,6 +17,7 @@ import {
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const classFeedbackPageSource = readFileSync(new URL('./features/class-feedback/ClassFeedbackGenerationPage.tsx', import.meta.url), 'utf8');
 
 function sourceBetween(source: string, startMarker: string, endMarker: string): string {
   const start = source.indexOf(startMarker);
@@ -286,12 +286,12 @@ test('hasCompleteClassFeedbackGeneratedContent requires summary and every studen
 
 test('App source handles pending and incomplete class feedback generation responses through refresh path', () => {
   const generateHandler = sourceBetween(
-    appSource,
+    classFeedbackPageSource,
     'const handleGenerateClassFeedback = useCallback(async () => {',
     'const handleCopyClassFeedbackSummary = async () => {',
   );
   const hydrateHandler = sourceBetween(
-    appSource,
+    classFeedbackPageSource,
     'const hydrateClassFeedbackTask = useCallback(',
     'useEffect(() => {',
   );
@@ -423,49 +423,51 @@ test('ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for
 });
 
 test('App source wires the standalone class feedback page and existing class student APIs', () => {
-  assert.match(appSource, /const \[activeClassFeedbackTaskId, setActiveClassFeedbackTaskId\] = useState<number \| null>\(null\);/);
-  assert.match(appSource, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
-  assert.match(appSource, /await createClassFeedbackTask\(\{/);
-  assert.match(appSource, /const classFeedbackPeriodPreview = useMemo\(/);
-  assert.match(appSource, /buildClassFeedbackPeriodPreview\(/);
-  assert.match(appSource, /buildCreateClassFeedbackTaskRequest\(/);
-  assert.match(appSource, /await saveClassFeedbackTaskDraft\(activeClassFeedbackTaskId, \{/);
-  assert.match(appSource, /classStatusTags: classFeedbackStatusTags/);
-  assert.doesNotMatch(appSource, /onAddStudent=\{handleAddStudent\}/);
-  assert.match(appSource, /await generateClassFeedbackTask\(activeClassFeedbackTaskId, \{/);
-  assert.match(appSource, /formatClassFeedbackStudentCopyText\(sortedClassFeedbackStudents\)/);
-  assert.match(appSource, /const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'/);
-  assert.match(appSource, /const sortedClassFeedbackStudents = useMemo/);
-  assert.match(appSource, /已命中 \$\{matchedLessonCount\} 节课次记录/);
-  assert.match(appSource, /反馈阶段：\$\{classFeedbackPeriodPreview\.label\}/);
-  assert.match(appSource, /覆盖范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
-  assert.match(appSource, /lesson\.date >= classFeedbackPeriodPreview\.startDate/);
-  assert.match(appSource, /lesson\.date <= classFeedbackPeriodPreview\.endDate/);
-  assert.match(appSource, /await confirmClassFeedbackTask\(activeClassFeedbackTaskId, payload\);/);
-  assert.match(appSource, /<ClassFeedbackGenerationWorkspace/);
-  assert.doesNotMatch(appSource, /反馈周期：\$\{classFeedbackPeriodPreview\.label\}/);
-  assert.doesNotMatch(appSource, /时间范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
-  assert.doesNotMatch(appSource, /请选择时间范围后创建反馈任务/);
+  assert.match(appSource, /import \{ ClassFeedbackGenerationPage \} from '\.\/features\/class-feedback\/ClassFeedbackGenerationPage';/);
+  assert.match(appSource, /activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage\(currentUser, 'class-feedback-generation'\) && <ClassFeedbackGenerationPage currentUser=\{currentUser\} \/>/);
+  assert.match(classFeedbackPageSource, /const \[activeClassFeedbackTaskId, setActiveClassFeedbackTaskId\] = useState<number \| null>\(null\);/);
+  assert.match(classFeedbackPageSource, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(classFeedbackPageSource, /await createClassFeedbackTask\(\{/);
+  assert.match(classFeedbackPageSource, /const classFeedbackPeriodPreview = useMemo\(/);
+  assert.match(classFeedbackPageSource, /buildClassFeedbackPeriodPreview\(/);
+  assert.match(classFeedbackPageSource, /buildCreateClassFeedbackTaskRequest\(/);
+  assert.match(classFeedbackPageSource, /await saveClassFeedbackTaskDraft\(activeClassFeedbackTaskId, \{/);
+  assert.match(classFeedbackPageSource, /classStatusTags: classFeedbackStatusTags/);
+  assert.doesNotMatch(classFeedbackPageSource, /onAddStudent=\{handleAddStudent\}/);
+  assert.match(classFeedbackPageSource, /await generateClassFeedbackTask\(activeClassFeedbackTaskId, \{/);
+  assert.match(classFeedbackPageSource, /formatClassFeedbackStudentCopyText\(sortedClassFeedbackStudents\)/);
+  assert.match(classFeedbackPageSource, /const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'/);
+  assert.match(classFeedbackPageSource, /const sortedClassFeedbackStudents = useMemo/);
+  assert.match(classFeedbackPageSource, /已命中 \$\{matchedLessonCount\} 节课次记录/);
+  assert.match(classFeedbackPageSource, /反馈阶段：\$\{classFeedbackPeriodPreview\.label\}/);
+  assert.match(classFeedbackPageSource, /覆盖范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
+  assert.match(classFeedbackPageSource, /lesson\.date >= classFeedbackPeriodPreview\.startDate/);
+  assert.match(classFeedbackPageSource, /lesson\.date <= classFeedbackPeriodPreview\.endDate/);
+  assert.match(classFeedbackPageSource, /await confirmClassFeedbackTask\(activeClassFeedbackTaskId, payload\);/);
+  assert.match(classFeedbackPageSource, /<ClassFeedbackGenerationWorkspace/);
+  assert.doesNotMatch(classFeedbackPageSource, /反馈周期：\$\{classFeedbackPeriodPreview\.label\}/);
+  assert.doesNotMatch(classFeedbackPageSource, /时间范围：\$\{classFeedbackPeriodPreview\.startDate\} 至 \$\{classFeedbackPeriodPreview\.endDate\}/);
+  assert.doesNotMatch(classFeedbackPageSource, /请选择时间范围后创建反馈任务/);
 });
 
 test('App source no longer renders the class feedback intro hero section', () => {
-  assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.3em\] text-sky-600">Stage Feedback<\/p>/);
-  assert.doesNotMatch(appSource, /<h3 className=\{`\$\{workspaceSectionTitleClass\} mt-3`\}>课堂反馈<\/h3>/);
-  assert.doesNotMatch(appSource, /选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。/);
+  assert.doesNotMatch(classFeedbackPageSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.3em\] text-sky-600">Stage Feedback<\/p>/);
+  assert.doesNotMatch(classFeedbackPageSource, /<h3 className=\{`\$\{workspaceSectionTitleClass\} mt-3`\}>课堂反馈<\/h3>/);
+  assert.doesNotMatch(classFeedbackPageSource, /选择班级和时间范围后，汇总阶段素材并生成班级总评与学生个性化反馈。/);
 });
 
 test('App source injects the class feedback control bar into the workspace header instead of rendering it above the workspace', () => {
-  assert.match(appSource, /const classFeedbackControlBar = \(/);
-  assert.match(appSource, /const classFeedbackHeaderAside = \(/);
-  assert.match(appSource, /<select[\s\S]*value=\{classFeedbackPeriodMode\}/);
-  assert.match(appSource, /classFeedbackPeriodPreview\.label/);
-  assert.doesNotMatch(appSource, /type="date"\s*\n\s*value=\{startDate\}/);
-  assert.doesNotMatch(appSource, /type="date"\s*\n\s*value=\{endDate\}/);
-  assert.doesNotMatch(appSource, /const \[startDate, setStartDate\]/);
-  assert.doesNotMatch(appSource, /const \[endDate, setEndDate\]/);
-  assert.match(appSource, /<ClassFeedbackGenerationWorkspace[\s\S]*controlBar=\{/);
-  assert.match(appSource, /<ClassFeedbackGenerationWorkspace[\s\S]*headerAside=\{/);
-  assert.doesNotMatch(appSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
+  assert.match(classFeedbackPageSource, /const classFeedbackControlBar = \(/);
+  assert.match(classFeedbackPageSource, /const classFeedbackHeaderAside = \(/);
+  assert.match(classFeedbackPageSource, /<select[\s\S]*value=\{classFeedbackPeriodMode\}/);
+  assert.match(classFeedbackPageSource, /classFeedbackPeriodPreview\.label/);
+  assert.doesNotMatch(classFeedbackPageSource, /type="date"\s*\n\s*value=\{startDate\}/);
+  assert.doesNotMatch(classFeedbackPageSource, /type="date"\s*\n\s*value=\{endDate\}/);
+  assert.doesNotMatch(classFeedbackPageSource, /const \[startDate, setStartDate\]/);
+  assert.doesNotMatch(classFeedbackPageSource, /const \[endDate, setEndDate\]/);
+  assert.match(classFeedbackPageSource, /<ClassFeedbackGenerationWorkspace[\s\S]*controlBar=\{/);
+  assert.match(classFeedbackPageSource, /<ClassFeedbackGenerationWorkspace[\s\S]*headerAside=\{/);
+  assert.doesNotMatch(classFeedbackPageSource, /return \(\s*<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>\s*<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">/);
 });
 
 test('App source anchors class feedback period preview to the top-right and task actions to the bottom-right', () => {
@@ -506,7 +508,7 @@ test('App source anchors class feedback period preview to the top-right and task
   );
 
   assert.match(
-    appSource,
+    classFeedbackPageSource,
     /return \(\s*<div className=\{`\$\{workspacePageClass\} space-y-6`\}>/,
   );
   assert.match(
@@ -514,15 +516,15 @@ test('App source anchors class feedback period preview to the top-right and task
     /grid gap-6 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(19rem,20rem\)\] xl:items-stretch/,
   );
   assert.match(
-    appSource,
+    classFeedbackPageSource,
     /<div className="grid gap-3 sm:grid-cols-2 xl:max-w-\[43rem\] xl:grid-cols-4">/,
   );
   assert.match(
-    appSource,
+    classFeedbackPageSource,
     /<div className="grid gap-3 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-2">/,
   );
   assert.match(
-    appSource,
+    classFeedbackPageSource,
     /const classFeedbackHeaderAside = \(\s*<div className="flex flex-col gap-3 xl:min-h-\[10\.5rem\] xl:justify-between">/,
   );
   assert.match(
@@ -530,30 +532,30 @@ test('App source anchors class feedback period preview to the top-right and task
     /右侧操作区/,
   );
   assert.match(
-    appSource,
+    classFeedbackPageSource,
     /<div className="grid gap-3 sm:grid-cols-2">/,
   );
-  assert.doesNotMatch(appSource, /<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>/);
+  assert.doesNotMatch(classFeedbackPageSource, /<div className=\{`\$\{workspacePageClass\} mx-auto max-w-7xl space-y-6`\}>/);
 });
 
 test('App source synchronizes class feedback member selection against accessible classes', () => {
   const memberSelectionEffect = sourceBetween(
-    appSource,
+    classFeedbackPageSource,
     "if (classesLoading || currentUser.role !== 'member')",
     "if (classesLoading || currentUser.role === 'member' || selectedClassId === null)",
   );
   const staffSelectionEffect = sourceBetween(
-    appSource,
+    classFeedbackPageSource,
     "if (classesLoading || currentUser.role === 'member' || selectedClassId === null)",
     "if (!selectedClassId) {",
   );
 
-  assert.match(appSource, /function syncMemberScopedClassSelection\(/);
-  assert.match(appSource, /const resetClassFeedbackWorkspaceState = useCallback\(/);
-  assert.match(appSource, /resetClassFeedbackWorkspaceState\('班级权限已变化，请重新同步反馈任务。'\);/);
-  assert.match(appSource, /setActiveClassFeedbackTaskId\(null\);/);
-  assert.match(appSource, /setClassFeedbackSummary\(''\);/);
-  assert.match(appSource, /setClassFeedbackStudents\(\[\]\);/);
+  assert.match(classFeedbackPageSource, /function syncMemberScopedClassSelection\(/);
+  assert.match(classFeedbackPageSource, /const resetClassFeedbackWorkspaceState = useCallback\(/);
+  assert.match(classFeedbackPageSource, /resetClassFeedbackWorkspaceState\('班级权限已变化，请重新同步反馈任务。'\);/);
+  assert.match(classFeedbackPageSource, /setActiveClassFeedbackTaskId\(null\);/);
+  assert.match(classFeedbackPageSource, /setClassFeedbackSummary\(''\);/);
+  assert.match(classFeedbackPageSource, /setClassFeedbackStudents\(\[\]\);/);
   assert.match(memberSelectionEffect, /const nextClassId = syncMemberScopedClassSelection\(currentUser\.role, classes, selectedClassId\);/);
   assert.match(memberSelectionEffect, /if \(nextClassId === selectedClassId\)/);
   assert.match(memberSelectionEffect, /resetClassFeedbackWorkspaceState\('班级权限已变化，请重新同步反馈任务。'\);/);
@@ -564,17 +566,17 @@ test('App source synchronizes class feedback member selection against accessible
 
 test('App source clears class feedback busy states and preserves drafts after failed actions', () => {
   const saveHandler = sourceBetween(
-    appSource,
+    classFeedbackPageSource,
     'const saveCurrentClassFeedbackDraft = useCallback(async () => {',
     'useEffect(() => {',
   );
   const generateHandler = sourceBetween(
-    appSource,
+    classFeedbackPageSource,
     'const handleGenerateClassFeedback = useCallback(async () => {',
     'const handleCopyClassFeedbackSummary = async () => {',
   );
   const confirmHandler = sourceBetween(
-    appSource,
+    classFeedbackPageSource,
     'const handleConfirmClassFeedback = useCallback(async () => {',
     'const checkedStudentCount = useMemo(',
   );

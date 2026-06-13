@@ -1757,6 +1757,7 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
     total: pickNumberValue(source, ['total']) ?? rawItems.length,
     items: rawItems.filter(isObjectRecord).map((item) => {
       const rawMessage = isObjectRecord(item.message) ? item.message : null;
+      const rawSourceRecords = item.source_records ?? item.sourceRecords;
       return {
         studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
         studentName: String(item.student_name ?? item.studentName ?? ''),
@@ -1773,8 +1774,8 @@ export function normalizeWeeklyWrongQuestionFollowupResponse(payload: unknown): 
         topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
         representativeReasonSummaries: normalizeStringList(item.representative_reason_summaries ?? item.representativeReasonSummaries),
         sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
-        sourceRecords: Array.isArray(item.source_records ?? item.sourceRecords)
-          ? (item.source_records ?? item.sourceRecords).map((record, index) => normalizeWrongQuestionRecord(record, index))
+        sourceRecords: Array.isArray(rawSourceRecords)
+          ? rawSourceRecords.map((record, index) => normalizeWrongQuestionRecord(record, index))
           : [],
         repeatedCategory: String(item.repeated_category ?? item.repeatedCategory ?? ''),
         repeatedCategoryCount: pickNumberValue(item, ['repeated_category_count', 'repeatedCategoryCount']) ?? 0,
@@ -1847,22 +1848,25 @@ export function normalizeWeeklyWrongQuestionActivitySummaryResponse(payload: unk
       involvedStudentCount: pickNumberValue(item, ['involved_student_count', 'involvedStudentCount']) ?? 0,
       pendingFollowupCount: pickNumberValue(item, ['pending_followup_count', 'pendingFollowupCount']) ?? 0,
     })),
-    studentItems: rawStudentItems.filter(isObjectRecord).map((item) => ({
-      organizationId: pickNumberValue(item, ['organization_id', 'organizationId']) ?? 0,
-      organizationName: String(item.organization_name ?? item.organizationName ?? ''),
-      classId: pickNumberValue(item, ['class_id', 'classId']) ?? 0,
-      className: String(item.class_name ?? item.className ?? ''),
-      studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
-      studentName: String(item.student_name ?? item.studentName ?? ''),
-      weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
-      totalQuestionCount: pickNumberValue(item, ['total_question_count', 'totalQuestionCount']) ?? 0,
-      topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
-      latestCreatedAt: String(item.latest_created_at ?? item.latestCreatedAt ?? ''),
-      sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
-      sourceRecords: Array.isArray(item.source_records ?? item.sourceRecords)
-        ? (item.source_records ?? item.sourceRecords).filter(isObjectRecord).map((record, index) => normalizeWrongQuestionRecord(record, index))
-        : [],
-    })),
+    studentItems: rawStudentItems.filter(isObjectRecord).map((item) => {
+      const rawSourceRecords = item.source_records ?? item.sourceRecords;
+      return {
+        organizationId: pickNumberValue(item, ['organization_id', 'organizationId']) ?? 0,
+        organizationName: String(item.organization_name ?? item.organizationName ?? ''),
+        classId: pickNumberValue(item, ['class_id', 'classId']) ?? 0,
+        className: String(item.class_name ?? item.className ?? ''),
+        studentId: pickNumberValue(item, ['student_id', 'studentId']) ?? 0,
+        studentName: String(item.student_name ?? item.studentName ?? ''),
+        weeklyQuestionCount: pickNumberValue(item, ['weekly_question_count', 'weeklyQuestionCount']) ?? 0,
+        totalQuestionCount: pickNumberValue(item, ['total_question_count', 'totalQuestionCount']) ?? 0,
+        topicCategories: normalizeStringList(item.topic_categories ?? item.topicCategories),
+        latestCreatedAt: String(item.latest_created_at ?? item.latestCreatedAt ?? ''),
+        sourceRecordIds: normalizeStringList(item.source_record_ids ?? item.sourceRecordIds),
+        sourceRecords: Array.isArray(rawSourceRecords)
+          ? rawSourceRecords.filter(isObjectRecord).map((record, index) => normalizeWrongQuestionRecord(record, index))
+          : [],
+      };
+    }),
   };
 }
 

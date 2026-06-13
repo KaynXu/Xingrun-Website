@@ -7,8 +7,47 @@
 
 ### 当前状态
 - 2026-06-13 已补仓库根目录一键本地启动入口：新增根级 `package.json` 和 `scripts/run_dev.mjs`，现在在仓库根目录执行 `npm run dev` 会同时拉起后端 `127.0.0.1:5001` 与前端 Vite `127.0.0.1:3000`，并在退出时一并结束两个开发进程；`README.md` 的本地启动说明也已同步补上。当前轮 proof `/tmp/xingrun_root_npm_dev_proof.sh` 已通过：前端返回 `200`，后端根路由返回 `302 -> http://127.0.0.1:3000/`，启动日志同时出现 Flask 和 Vite ready。
+- 2026-06-13 已把 `frontend/src/features/approval/ApprovalPage.tsx` 里重复的一份角色中文文案 helper 删掉，改为直接复用共享 `frontend/src/appDisplay.ts` 的 `getRoleLabel()`；这样审批页与应用壳、设置页现在共用同一份角色展示口径，后续如果角色文案调整，不会再出现一处改了另一处漏掉的分叉。当前轮 proof `/tmp/xingrun_approval_role_label_dedupe_proof.sh` 已通过：源码检查确认审批页本地 `getRoleLabel` 已移除，且 `tsc --noUnusedLocals --noUnusedParameters` 与 `workspace-navigation / organization-auth` 共 31 条定向前端测试全部通过。
+- 2026-06-13 已清掉当前前端里这批明确的未使用 import / 变量噪音：包括 `frontend/src/App.tsx` 壳层残留导入、若干页面在 React 17+ JSX transform 下多余的 `React` 默认导入、`ApprovalPage / ConsultationMeetingWorkbench / LessonInput / StudentCenterPage / SmartWrongQuestionsPage / StudentTodayTasksPage` 等文件里的未使用状态/参数，以及 `account-card / workspace-navigation / class-management-invite / smart-wrong-questions` 等测试文件里的历史临时变量。同步把 `ConsultationResultCapsule` 调整为导出符号，避免 shared 文件内部留死代码。当前轮 proof `/tmp/xingrun_unused_cleanup_round_proof.sh` 已通过：`frontend` 下 `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` 现已成功通过，无剩余这批 TS 未使用项告警。
+- 2026-06-13 已先收掉一轮真正阻塞前端编译的 TypeScript 错误，但还没有开始清理大批未使用 import/变量：修复了 `frontend/src/App.tsx` 里登录入口仍引用已移除的 `setPublicAuthModal`、`frontend/src/features/consultation/ConsultationModal.tsx` 的阶段切换 helper 名称、`frontend/src/features/consultation/ConsultationPage.tsx` 的班级列表泛型、`frontend/src/features/student-center/model.ts` 与两份 class editor state 测试的 `ClassFormValues` 字段对齐、`frontend/src/smartWrongQuestions.ts` 的 `unknown` 数组收窄，以及 `frontend/src/account-card.test.tsx` 里两处断言误指向未定义 `source`。当前轮 proof `/tmp/xingrun_compile_blockers_round_proof.sh` 已通过：`frontend` 下 `npx tsc --noEmit` 现已成功通过，无剩余普通 TS 编译阻塞。
+- 2026-06-13 只做了一个仍然值得下沉的壳层职责：把登录态恢复、`/api/me` 当前用户拉取、邀请链接 modal 状态和 login/logout 切换从 `frontend/src/App.tsx` 收口到新模块 `frontend/src/features/auth/useWorkspaceAuthState.ts`；`App.tsx` 现在继续保留页面壳、导航和主题响应式职责，但不再内联整段 auth bootstrap 细节。同步把 `frontend/src/organization-auth.test.tsx` 与 `frontend/src/workspace-navigation.test.ts` 的源码断言切到新的 auth hook 归属。当前轮 proof `/tmp/xingrun_app_auth_hook_extract_proof.sh` 已通过：源码检查确认 auth shell state 已从 App 下沉，且 `organization-auth` / `workspace-navigation` / `app-storage-guard` 共 34 条定向前端测试全部通过。
+- 2026-06-13 已清理 `frontend/src/App.tsx` 中残留的不再参与运行的历史类型/常量与 `classNaming` 无用导入，包括 `Lesson / ReviewPlanCreateResponse / ApiSettings / NORMALIZATION_EXAMPLES / gradeOptions / academicSubjectOptions` 等；同时把 `frontend/src/workspace-navigation.test.ts` 的学管年级选项断言改到真实归属 `frontend/src/features/student-center/StudentCenterPage.tsx`。当前轮 proof `/tmp/xingrun_app_dead_constants_cleanup_proof.sh` 已通过：源码检查确认这批 dead constants/types/imports 已从 App 移除，且 `app-storage-guard` 与 `workspace-navigation` 共 29 条定向前端测试全部通过。
+- 2026-06-13 已把剩余 4 处页面内联的班级展示 helper 继续收口到共享模块 `frontend/src/classDisplay.ts`：`frontend/src/features/auth/PublicAuthModals.tsx`、`frontend/src/features/review-generation/LessonInput.tsx`、`frontend/src/features/class-feedback/ClassFeedbackGenerationPage.tsx`、`frontend/src/features/student-center/StudentCenterPage.tsx` 现在都直接复用共享 `getCurrentClassDisplayName()`，不再各自内联同一份 `formatClassDisplayName` 包装。当前轮 proof `/tmp/xingrun_class_display_extract_round2_proof.sh` 已通过：4 个页面的共享 helper 导入链正常，且 `organization-auth` / `workspace-navigation` / `app-storage-guard` 共 34 条定向前端测试全部通过。
+- 2026-06-13 已把班级展示 helper 从页面内部开始收口到共享模块 `frontend/src/classDisplay.ts`：新增 `getCurrentClassDisplayName()` 和 `getCurrentClassDisplayNameById()`，并让 `frontend/src/features/consultation/ConsultationModal.tsx` 与 `frontend/src/features/approval/ApprovalPage.tsx` 直接复用，不再各自内联同一份班级名格式化逻辑。当前轮 proof `/tmp/xingrun_class_display_extract_proof.sh` 已通过：共享 helper 导入链正常，且 `workspace-navigation` 与 `organization-auth` 共 31 条定向前端测试全部通过。
+- 2026-06-13 已移除 `frontend/src/App.tsx` 里残留的咨询模块中转导出：`ConsultationBatchModal / ConsultationModal / ConsultationFlowBar / ConsultationStatusLamp / ConsultationCardExpandableText / consultationMeetingVersion / parseConsultationQuickEntry / toConsultationFormValues / normalizeConsultationTeacherOption` 以及一整组 consultation shared helper/常量不再先 import 到 App 再 re-export，`App.tsx` 现在只保留自己运行时真正会用到的咨询壳子依赖。同步把 `frontend/src/account-card.test.tsx` 中唯一仍通过 `AppModule.parseConsultationQuickEntry` 取函数的历史用法改成直接从 `frontend/src/features/consultation/ConsultationModal.tsx` 导入。当前轮 proof `/tmp/xingrun_app_consultation_export_cleanup_proof.sh` 已通过：源码检查确认咨询中转 residue 已从 App 清走，且与本轮改动直接相关的 3 条定向前端测试全部通过。
+- 2026-06-13 已清掉 `frontend/src/App.tsx` 里残留的审批页专属死代码：`RegistrationRequestItem / OrganizationRequestItem / OrganizationInviteInfo / OrganizationSummaryItem / MemberBindingSummaryStatus / MemberBindingSummary / ApprovalPageProps` 这组仅供审批页使用的类型，以及 `getCurrentClassDisplayNameById / canManageOwnerRole / getMemberBindingStatusLabel / getMemberBindingStatusBadgeClass / getRoleBadgeClass` 这组仅供审批页使用的 helper，现已全部留在 `frontend/src/features/approval/ApprovalPage.tsx` 自己维护，`App.tsx` 不再继续承载审批页内部结构。同步把 `frontend/src/workspace-navigation.test.ts` 的源码断言改到真实归属文件。当前轮 proof `/tmp/xingrun_app_approval_deadcode_cleanup_proof.sh` 已通过：源码检查确认审批专属类型/helper 已从 App 移除，且 `workspace-navigation` 26 条定向前端测试全部通过。
+- 2026-06-13 已补前端项目缺失的 React JSX 类型依赖：`frontend/package.json` 现显式加入 `@types/react` 与 `@types/react-dom`，`ConsultationMeetingWorkbench.tsx` 这类文件在编辑器里不再因为缺少 `JSX.IntrinsicElements` / React namespace 而整页飘红；当前 lint 剩余问题已转为普通业务类型错误，不再是 JSX 基础类型配置问题。
+- 2026-06-13 已清理 `frontend/src/features/consultation/ConsultationMeetingWorkbench.tsx` 的 lint 阻塞：补回工作台实际需要的 import（图标、`hasOwnerAccess`、`workspaceCardClass`、consultation surface/input class），并删除误残留在该文件尾部的 landing/legal 大段页面代码；本轮 lint 剩余报错已不再来自面对面工作台文件。
+- 2026-06-13 已把课程日历整页状态从 `frontend/src/App.tsx` 抽到新模块 `frontend/src/features/calendar/CalendarWorkspacePage.tsx`：课程班级/排期/自定义事项的加载、副作用、分页日期、排课与删除 handler 现在都在独立 calendar feature 内维护，`frontend/src/features/navigation/WorkspacePageContent.tsx` 只保留 `calendar` 页签到 `<CalendarWorkspacePage currentUser={currentUser} />` 的接线，`App.tsx` 不再承担这组日历状态与 CRUD 逻辑。同步把 `frontend/src/course-calendar.test.tsx` 和 `frontend/src/workspace-navigation.test.ts` 的源码断言切到新结构。当前轮 proof `/tmp/xingrun_calendar_workspace_extract_proof.sh` 已通过：源码接线检查通过，`course-calendar` 与 `workspace-navigation` 共 40 条定向前端测试全部通过。
+- 2026-06-13 已修复 `frontend/src/features/approval/ApprovalPage.tsx` 当前这批 lint 阻塞：补回 `useCallback`、图标/motion/shared style imports，恢复本地 `getCurrentClassDisplayNameById / getMemberBindingStatusBadgeClass / getRoleBadgeClass` helper，并把 `TeacherAliasEntry` 对齐到真实接口字段 `display_name / aliases / linked_username`；本轮 lint 剩余报错已不再来自审批页。
+- 2026-06-13 已修复 `frontend/src/features/navigation/Sidebar.tsx` 的导航项类型宽化问题：`dashboard / teaching / organization / system` 四组菜单现在用 `satisfies SidebarEntry[]` 约束后再 `filter()`，`id` 不再被推断成泛化的 `string`，本轮 lint 剩余报错已不再来自侧边栏文件。
+- 2026-06-13 已把角色中文文案 helper 从 `frontend/src/App.tsx` 和 `frontend/src/features/settings/SettingsPage.tsx` 收口到新模块 `frontend/src/appDisplay.ts`，当前 `App.tsx` 与设置页都直接复用 `getRoleLabel()`，不再各自维护同一份角色展示文案；这一轮故意没有动 `ApprovalPage.tsx`，因为审批页还带有自己的成员绑定状态语义，先避免把展示口径搅在一起。当前轮 proof `/tmp/xingrun_role_label_extract_proof.sh` 已通过：新 helper 导入链正常，且 `organization-auth` / `app-storage-guard` 定向前端测试全部通过。
+- 2026-06-13 已把未登录入口里 `close/open/back` 这组 public auth 事件切换 helper 从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authActions.ts`，包括 `closePublicAuthState()`、`openApplyOrganizationState()`、`openJoinOrganizationState()`、`openPasswordResetState()` 和 `backToLoginState()`；`App.tsx` 现在只负责调用 helper 并落状态，不再内联这组切换细节。当前轮 proof `/tmp/xingrun_auth_actions_extract_proof.sh` 已通过：auth actions 模块可导入，App 已改为复用新 helper，organization auth 与 storage guard 定向测试全部通过。
+- 2026-06-13 已把未登录入口的 public auth 初始状态 helper 从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authState.ts`，包括 `PublicAuthModal` 类型、`getInitialPublicAuthModal()` 和 `getInitialJoinInviteToken()`；`App.tsx` 不再内联这两段初始化闭包，`frontend/src/organization-auth.test.tsx` 也已同步跟到新模块。当前轮 proof `/tmp/xingrun_auth_state_extract_proof.sh` 已通过：App 不再本地维护 public auth 初始状态 helper，organization auth 与 storage guard 定向测试全部通过。
+- 2026-06-13 已把加入机构邀请链接相关的小工具从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authFlow.ts`，`getJoinInviteTokenFromPath()` 与 `clearJoinInvitePathIfNeeded()` 现在作为独立 auth flow helper 供入口复用；`frontend/src/organization-auth.test.tsx` 的源码断言也已同步改到新模块。当前轮 proof `/tmp/xingrun_auth_flow_extract_proof.sh` 已通过：App 不再内联这两个 helper，organization auth 与 storage guard 定向测试全部通过。
+- 2026-06-13 已修复 `frontend/src/App.tsx` 当前阻塞 lint 的 3 个 TypeScript 错误：补回本地 `WorkspaceLoading` 组件，并把课程日历前后翻页回调改成零参包装以对齐 `WorkspacePageContent` 当前接口；本轮 proof 会继续保留完整 lint 输出，但剩余报错已不再来自 `App.tsx`。
+- 2026-06-13 已把 `frontend/src/App.tsx` 里残留的 landing/legal 重复定义清走：`LandingLegalDocumentKey`、法律文案常量和 `getLandingLegalPageFromHash()` 不再在 App 内重复维护，入口现在直接复用 `frontend/src/features/landing/LandingPage.tsx` 的类型、helper 和组件，并通过转发导出维持现有测试/调用口。当前轮 proof `/tmp/xingrun_landing_cleanup_proof.sh` 已通过：App 不再内联 landing/legal 常量，landing/legal 页面与 storage guard 定向测试全部通过。
+- 2026-06-13 已把未登录/首次登录相关公共认证 UI 从 `frontend/src/features/consultation/ConsultationMeetingWorkbench.tsx` 抽离到 `frontend/src/features/auth/PublicAuthModals.tsx`，包括 `ClassClaimPage / LoginModal / PasswordResetModal / OrganizationApplyModal / JoinOrganizationModal` 及其 recovery helper；`frontend/src/App.tsx` 现明确从 auth 模块导入这组组件，不再隐式依赖咨询工作台文件里的内部实现。同步更新了 `frontend/src/organization-auth.test.tsx` 和 `frontend/src/account-card.test.tsx`，让源码断言追踪真实 auth 模块。当前轮 proof `/tmp/xingrun_auth_extract_proof.sh` 已通过：auth 模块、咨询工作台和 App 导入链正常，organization auth / storage guard / 首登认领源码断言全部通过。
+- 2026-06-13 已继续清理工作台权限与审批页周边的平行类型：`frontend/src/features/navigation/workspaceAccess.ts` 现直接复用 `frontend/src/appTypes.ts` 的 `Role / WorkspacePage / CurrentUser`，`frontend/src/features/approval/ApprovalPage.tsx` 也已切到同一套共享角色/页面类型，不再各自维护一份 `Role/Page` 联合类型。当前轮 proof `/tmp/xingrun_workspace_types_unify_proof.sh` 已通过：权限模块与审批页导入链正常，且两处重复角色/页面类型定义已移除。
+- 2026-06-13 已把 `CurrentUser / ClassItem / UserItem / ClassBindingTarget / Role / WorkspacePage` 从 `frontend/src/App.tsx` 抽到 `frontend/src/appTypes.ts`，并把 `apiUploadFormWithProgress()` 提升到 `frontend/src/workspaceShared.ts`；审批、咨询、课堂反馈、复习生成、导航壳子、智能错题等页面现在直接依赖共享类型/共享 helper，不再把 `App.tsx` 当作全局类型与上传工具中转站。同步补了独立的 `frontend/src/features/landing/LandingPage.tsx`，把 `LandingPage / LandingLegalPage` 从工作台模块断开并重新接回 `App.tsx`，未登录入口与法律页渲染恢复可用，相关 landing / storage guard / 定向咨询源码断言 proof 已通过。
+- 2026-06-13 已把咨询领域基础类型收口到 `frontend/src/features/consultation/consultationTypes.ts`，并把 `getTodayIsoDate()` 提升到 `frontend/src/workspaceShared.ts`；咨询列表页、面对面工作台、流程共享组件和两个咨询弹窗现在直接引用各自的咨询类型/共享日期 helper，不再把 `frontend/src/App.tsx` 当作类型仓库。
+- 2026-06-13 已把咨询记录 `AI 批量整理` 弹窗从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationBatchModal.tsx`，解析、预览、逐条导入和失败重试相关逻辑不再内联在 `App.tsx` 中；`App.tsx` 现通过导入与转发导出继续给咨询页复用，批量整理源码断言也已切到新文件。
+- 2026-06-13 已把咨询记录编辑/查看弹窗从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationModal.tsx`，并把快速解析、表单派生、结果区/流程卡片和只读报告等 modal 专属 helper 一并迁出；`App.tsx` 现在通过导入和转发导出继续给咨询页与面对面工作台复用，相关源码断言已同步切到新 modal 文件。
+- 2026-06-13 已按用户要求移除工作台左侧导航图标的边框和背景：`frontend/src/features/navigation/Sidebar.tsx` 现在让图标容器保持透明，只通过当前项/悬停时的图标颜色变化表达状态，不再显示额外描边或底色。当前轮 proof 继续使用聚焦导航脚本记录。
+- 2026-06-13 已按用户要求移除工作台左侧导航激活项右侧的蓝色圆点：`frontend/src/features/navigation/Sidebar.tsx` 现在只保留当前项的背景和文字高亮，不再额外显示小圆点提示。当前轮 proof 继续使用聚焦导航脚本记录。
+- 2026-06-13 已按用户要求把工作台左侧导航列表继续收紧：`frontend/src/features/navigation/Sidebar.tsx` 现在缩小了分组间距、按钮纵向 padding 和图标容器尺寸，导航视觉更紧凑，同时仍保留可点击面积与独立滚动。当前轮 proof 继续使用聚焦导航脚本记录。
+- 2026-06-13 已修复工作台左侧导航在移除按钮描述后无法滚动的问题：`frontend/src/features/navigation/Sidebar.tsx` 的主导航容器已补回 `min-h-0 + overflow-y-auto + overscroll`，现在顶部品牌区和底部账号区固定时，中间菜单区可独立纵向滚动。当前轮 proof 继续使用聚焦导航脚本记录。
+- 2026-06-13 已按用户要求把工作台左侧导航按钮下方的说明文字移除：`frontend/src/features/navigation/Sidebar.tsx` 现在仅保留图标 + 标签，不再在每个按钮下方显示描述文案；相关源码断言已同步更新到 `frontend/src/workspace-navigation.test.ts`。本轮 proof 将继续沿用聚焦导航脚本记录。
+- 2026-06-13 已把咨询记录的“面对面模式”工作台从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationMeetingWorkbench.tsx`，`App.tsx` 现在只保留 `consultationMeeting=1` 入口判断与模块接线，不再内联这块 2400+ 行的工作台状态/列表渲染逻辑。当前 `ConsultationMeetingWorkbench` 仍复用 `App.tsx` 已导出的 consultation helper / modal / flow 组件，相关源码断言已同步到 `frontend/src/account-card.test.tsx`，改为直接读取独立 workbench 模块。focused proof 脚本为 `/tmp/xingrun_app_split_round12_proof.sh`，结果通过：新 workbench 模块可导入，`App.tsx` 已只保留入口与挂接，draft/process/save/filter/card 等关键逻辑源码均在独立文件中。
+- 2026-06-13 已把 `develop` 上的导航栏重设计安全并回当前 `codex/app-shell-refactor-round2`：保留当前分支已经完成的导航/咨询模块抽离结构，只把新导航视觉迁入 `frontend/src/features/navigation/{Sidebar,Header,WorkspaceShellLayout}.tsx`，同时清掉 `App.tsx` 合并冲突中的旧内联 Sidebar/Header 壳子。相关源码断言已同步到 `frontend/src/account-card.test.tsx`、`frontend/src/mobile-workspace-performance.test.ts`、`frontend/src/workspace-navigation.test.ts` 和 `frontend/src/workspace-dashboard.test.tsx`。本轮 proof 将以新的聚焦脚本记录。
+- 2026-06-12 已把工作台 `咨询记录` 页面主体从 `frontend/src/App.tsx` 抽离到 `frontend/src/features/consultation/ConsultationPage.tsx`，`App.tsx` 不再内联这页的大段状态和列表渲染逻辑；工作台壳子仍通过 `frontend/src/features/navigation/WorkspacePageContent.tsx` 挂接咨询页，面对面模式 `consultationMeeting=1` 仍保留在 `App.tsx`。为兼容当前渐进式拆分，这一轮 consultation page 先复用 `App.tsx` 中已有的 consultation helper / modal / workbench exports，相关源码断言已同步到 `frontend/src/workspace-navigation.test.ts` 和 `frontend/src/account-card.test.tsx`。本轮 focused proof 脚本为 `/tmp/xingrun_app_split_round11_proof.sh`，结果通过：新页面模块可导入，`App.tsx` 已只保留工作台接线与 meeting workbench 入口，咨询页核心交互与三端列表布局源码均在新文件中。
+- 2026-06-12 已把工作台导航访问规则从 `frontend/src/App.tsx` 继续抽离到 `frontend/src/features/navigation/workspaceAccess.ts`，统一收口 `configurableWorkspacePages`、角色权限判断、可见页面筛选、页面访问校验和 fallback 逻辑；`App.tsx` 与 `frontend/src/features/approval/ApprovalPage.tsx` 现已复用同一套规则，避免两处继续各自维护。相关源码断言已同步到 `frontend/src/workspace-navigation.test.ts` 和 `frontend/src/organization-auth.test.tsx`。本轮 proof 脚本为 `/tmp/xingrun_app_split_round10_proof.sh`，结果通过：共享模块可被 `App.tsx` 和 `ApprovalPage.tsx` 正常导入，31 条定向测试全部通过。
+- 2026-06-12 已新增一键同步生产 SQLite 到本地的脚本 `scripts/sync_remote_db.sh`：默认连接 `49.234.185.86` 的 `/home/ubuntu/Xingrun-Website`，会自动解析实际 DB 路径、在服务器端用 SQLite backup API 生成一致性快照、下载后校验 SHA256 和 `PRAGMA integrity_check`、再备份并覆盖本地 `data/xingrun.db`。常用法：`SSH_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' ./scripts/sync_remote_db.sh`；可用 `LOCAL_DB_PATH` / `LOCAL_BACKUP_DIR` / `REMOTE_DB_PATH` 覆盖默认值。2026-06-12 本地 proof 已通过，核心表计数为 `users=15 / organizations=1 / classes=54 / students=310 / lessons=41`。
 - 2026-06-12 复习计划 eval runner 已从“只校验 fixture 定义”推进到“可选跑 workflow eval”：`python3 -m review_plan_workflow.evals.runner --run-workflow --fixture ... --output ...` 会把 fixture 输入映射进 `generate_single_lesson_review_plan()`，生成 plan 后再跑 schema / quality gate / fixture checks 并输出 JSON 报告；默认命令仍只做 fixture validation，避免单测或日常误触发真实 LLM 调用。当前仍需手动用真实 API key 跑三科 live eval，并做 PDF 视觉 smoke。
 - 2026-06-12 复习计划工作流已补本地 eval runner：`review_plan_workflow.evals.runner` 可验证 fixture 定义，并能用 schema、quality gate、固定复习日、关键词和默认禁用国际课程词检查生成结果；数学/物理 eval fixtures 已改为中国小学/初中/高中校内课程语境，雅思保持 IELTS 独立语境。当前仍未接入 live LLM 批量评测和 PDF 视觉 smoke。
+- 2026-06-12 已补项目级 `PRODUCT.md`，把工作台默认 register 明确为 `product`：面向机构负责人、老师、教务/运营，品牌方向为“专业、克制、可靠”，后续 `impeccable` 相关设计动作可在这份上下文上继续。
+- 2026-06-12 已把 `复习生成` 页面从 `App.tsx` 中抽出到 `frontend/src/features/review-generation/ReviewGenerationPage.tsx`，作为当前 `App.tsx` 拆分的第一刀；同时把“历史文档”从卡片宫格改为列表视图，保留分页、状态轮询、预览/下载/删除和高亮定位，并把 `workspacePageClass` 统一成带 `max-width` 的响应式内容容器，收口各页面宽度。
+- 2026-06-12 已按用户最新纠偏调整工作台统一顶部栏：`frontend/src/App.tsx` 保留顶部信息栏和右侧操作区（移动端打开导航、夜间模式、返回首页、搜索、通知），仅移除了左侧页面文案 `Workspace + 页面标题`；相关源码断言已同步更新到 `frontend/src/account-card.test.tsx` 和 `frontend/src/mobile-workspace-performance.test.ts`。当前这一轮只动了统一 header，不影响各业务页内容区。
 - 2026-06-12 复习计划工作流已补上真正质量闭环：`plan_generator` 会在最终计划 JSON/schema 不合格时做 1 次结构修复重试；`service` 会在 `quality_gate` 判定 score < 85 或 high issue 时调用 `revision` 节点最多 2 次，每次重新跑质量检查，最终返回通过版本或当前最高分版本并记录 warnings / node outputs / usage。旧 `revision_policy` 文件已删除。
 - 2026-06-12 已按用户要求继续清理复习计划旧兼容层：`review_plan_workflow.service` 不再调用旧 `ai_processor` 单节复习计划入口，实际 plan 生成迁入 `review_plan_workflow.nodes.plan_generator` 和 `review_plan_workflow.llm.client.generate_review_plan_json()`；旧 `ai_processor` 单节入口、内联大 prompt 和 style addon 已删除。
 - 2026-06-12 复习计划工作流的“节点上下文层”已作为主生成节点前置输入保留：`service` 会依次执行 `scope_planner / time_allocator / task_blueprint / prompt_bundle_builder`，并把范围、时间分配、任务蓝图、prompt bundle version 写入 `review_plan_runs.node_outputs`。
@@ -524,7 +563,6 @@
 - `6f0b39b` `docs: reaffirm smart wrong question semantic split risk`
 
 ### 当前工作区
-- 2026-06-12 已按参考图重做工作台导航壳层：`frontend/src/App.tsx` 侧栏改为分组式导航（`总览 / 教学工作 / 机构管理 / 系统`）、更克制的浅色面板、说明性二级文案和底部账号卡；顶部 header 改成更轻的操作栏，并把认证后工作区背景从发光渐变收口为纯净浅灰蓝底。已同步更新导航相关源码断言到 `frontend/src/account-card.test.tsx`、`frontend/src/mobile-workspace-performance.test.ts`、`frontend/src/workspace-navigation.test.ts`。本轮 proof 已通过：`npm run build`、`tsx --test src/mobile-workspace-performance.test.ts src/workspace-navigation.test.ts`，以及临时脚本 `/tmp/codex_nav_sidebar_proof.sh`（含源码断言和 mock `/api/me` 的 Playwright 截图，输出图 `/tmp/codex-nav-sidebar-proof.png`）。
 - 当前本地 `develop` 包含智能错题结构化图像方案：识别提示词新增 `diagram_type` / `diagram_spec`，入库和练习单快照新增结构化图字段，PDF payload 会优先把数轴/几何/函数图渲染成 SVG data URL，只有没有结构化图时才回退原图。
 - 已补上用户反馈：函数图不再用 `<polyline>` 折线连接采样点，改为三次贝塞尔 `<path>` 平滑曲线；几何图不再按 x/y 轴分别拉伸，而是等比例缩放并居中，避免正方形被画成长方形。
 - 云端最近两道几何题样张已重新生成并打开：`/Users/xiaodi/Desktop/cloud-two-geometry-structured-demo-20260522.pdf`；其中正方形题的结构化图已保持正方形比例。
@@ -553,3 +591,79 @@
   - 下一步最值得做什么
   - 风险有没有新增或解除
   - 哪些残留已经清掉
+
+## 2026-06-12 App.tsx second split pass
+- Extracted `SettingsPage` to `frontend/src/features/settings/SettingsPage.tsx`.
+- Extracted `CreditCenterPage` to `frontend/src/features/credits/CreditCenterPage.tsx`.
+- Updated `frontend/src/App.tsx` imports and removed inlined settings/credit page implementations.
+- Updated `frontend/src/workspace-navigation.test.ts` to follow the new source-of-truth files for settings and credit page structure assertions.
+- Runnable proof passed via `/tmp/xingrun_app_split_round2_targeted_proof.sh`:
+  - module import proof: `CreditCenterPage`, `SettingsPage`, `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts`
+- Note: full `npx tsc --noEmit` is currently blocked by pre-existing unrelated errors in `src/features/student-center/*` and `src/smartWrongQuestions.ts`.
+
+## 2026-06-12 App.tsx third split pass
+- Extracted `ClassFeedbackGenerationPage` to `frontend/src/features/class-feedback/ClassFeedbackGenerationPage.tsx`.
+- Removed the inlined class feedback page implementation and page-specific helpers from `frontend/src/App.tsx`.
+- Updated `frontend/src/class-feedback-generation.test.tsx` so page-structure assertions now follow `features/class-feedback/ClassFeedbackGenerationPage.tsx` instead of the old inlined `App.tsx` block.
+- Runnable proof passed via `/tmp/xingrun_app_split_round3_proof.sh`:
+  - source extraction checks
+  - module import proof for `ClassFeedbackGenerationPage` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/class-feedback-generation.test.tsx`
+
+## 2026-06-12 App.tsx fourth split pass
+- Extracted `ApprovalPage` to `frontend/src/features/approval/ApprovalPage.tsx`.
+- Updated `frontend/src/App.tsx` to render the extracted approval page component from the new feature path.
+- Updated `frontend/src/workspace-navigation.test.ts` so approval-related structure assertions now follow `features/approval/ApprovalPage.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round4_proof.sh`:
+  - source extraction checks
+  - module import proof for `ApprovalPage` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts`
+
+## 2026-06-12 App.tsx fifth split pass
+- Extracted `LessonInput` to `frontend/src/features/review-generation/LessonInput.tsx`.
+- Updated `frontend/src/App.tsx` to render the extracted lesson composer component from the new feature path.
+- Updated `frontend/src/workspace-navigation.test.ts` and `frontend/src/review-generation-async.test.tsx` so review-generation assertions now follow `features/review-generation/LessonInput.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round5_proof.sh`:
+  - source extraction checks
+  - module import proof for `LessonInput` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/review-generation-async.test.tsx`
+
+## 2026-06-12 App.tsx sixth split pass
+- Extracted `Sidebar` and `SidebarAccountSheet` to `frontend/src/features/navigation/Sidebar.tsx`.
+- Updated `frontend/src/App.tsx` to keep shell state and page routing while importing the extracted navigation shell.
+- Updated `frontend/src/workspace-navigation.test.ts`, `frontend/src/mobile-workspace-performance.test.ts`, and `frontend/src/account-card.test.tsx` so sidebar-related source assertions now follow `features/navigation/Sidebar.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round6_proof.sh`:
+  - source extraction checks
+  - module import proof for `Sidebar`, `SidebarAccountSheet`, and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
+  - `npx tsx --test --test-name-pattern="sidebar|workspace shell source keeps sidebar|desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar" src/account-card.test.tsx`
+
+## 2026-06-12 App.tsx seventh split pass
+- Extracted `Header` to `frontend/src/features/navigation/Header.tsx`.
+- Updated `frontend/src/App.tsx` to keep shell composition while importing the extracted top header component.
+- Updated `frontend/src/workspace-navigation.test.ts`, `frontend/src/mobile-workspace-performance.test.ts`, and `frontend/src/account-card.test.tsx` so header-related source assertions now follow `features/navigation/Header.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round7_proof.sh`:
+  - source extraction checks
+  - module import proof for `Header` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
+  - `npx tsx --test --test-name-pattern="header|workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header" src/account-card.test.tsx`
+
+## 2026-06-12 App.tsx eighth split pass
+- Extracted the authenticated workspace frame to `frontend/src/features/navigation/WorkspaceShellLayout.tsx`.
+- Updated `frontend/src/App.tsx` to keep state orchestration and page switching while delegating sidebar, mobile drawer, header, and page shell layout to the extracted workspace frame.
+- Updated `frontend/src/workspace-navigation.test.ts`, `frontend/src/mobile-workspace-performance.test.ts`, and `frontend/src/account-card.test.tsx` so shell-layout source assertions now follow `features/navigation/WorkspaceShellLayout.tsx`.
+- Runnable proof passed via `/tmp/xingrun_app_split_round8_proof.sh`:
+  - source extraction checks
+  - module import proof for `WorkspaceShellLayout` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts src/mobile-workspace-performance.test.ts`
+  - `npx tsx --test --test-name-pattern="workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header|desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar" src/account-card.test.tsx`
+
+## 2026-06-12 App.tsx ninth split pass
+- Extracted the authenticated page-switching block to `frontend/src/features/navigation/WorkspacePageContent.tsx`.
+- Updated `frontend/src/App.tsx` to keep top-level state, permissions, and page fallback logic while delegating workspace content rendering to the extracted content switcher.
+- Updated `frontend/src/workspace-navigation.test.ts` so page-render and import assertions now follow `features/navigation/WorkspacePageContent.tsx` where appropriate.
+- Runnable proof passed via `/tmp/xingrun_app_split_round9_proof.sh`:
+  - source extraction checks
+  - module import proof for `WorkspacePageContent` and `App.tsx`
+  - `npx tsx --test src/workspace-navigation.test.ts`
