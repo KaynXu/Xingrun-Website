@@ -36,8 +36,6 @@ import {
   Info,
   Save,
 } from 'lucide-react';
-import type { CourseCalendarCustomItemRecord, CourseCalendarCustomScheduleRecord, CourseCalendarScheduleRecord, CourseCalendarTimeBlock } from './courseCalendarData';
-import { getCurrentWeekTuesday } from './courseCalendarData';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 export {
   resolveTeacherBindingRollbackClassItem,
@@ -218,13 +216,6 @@ export { LandingLegalPage, LandingPage, getLandingLegalPageFromHash } from './fe
 
 type Page = WorkspacePage;
 
-const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) => (
-  <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
-    <RefreshCw size={16} className="animate-spin" />
-    <span>{label}</span>
-  </div>
-);
-
 interface Lesson {
   id: number;
   date: string;
@@ -394,12 +385,6 @@ function getInitialMobileViewport(): boolean {
   return window.matchMedia?.('(max-width: 1023px)').matches ?? false;
 }
 
-function shiftIsoDate(dateString: string, days: number): string {
-  const base = new Date(`${dateString}T12:00:00`);
-  base.setDate(base.getDate() + days);
-  return base.toISOString().slice(0, 10);
-}
-
 export {
   ConsultationBatchModal,
   ConsultationCardExpandableText,
@@ -458,14 +443,6 @@ export default function App() {
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
   );
-  const [calendarClasses, setCalendarClasses] = useState<ClassItem[]>([]);
-  const [calendarSchedules, setCalendarSchedules] = useState<CourseCalendarScheduleRecord[]>([]);
-  const [calendarCustomItems, setCalendarCustomItems] = useState<CourseCalendarCustomItemRecord[]>([]);
-  const [calendarCustomSchedules, setCalendarCustomSchedules] = useState<CourseCalendarCustomScheduleRecord[]>([]);
-  const [calendarLoading, setCalendarLoading] = useState(false);
-  const [calendarError, setCalendarError] = useState('');
-  const [calendarAnchorDate, setCalendarAnchorDate] = useState<string>(() => getCurrentWeekTuesday(getTodayIsoDate()));
-  const [calendarPageStepDays, setCalendarPageStepDays] = useState(6);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -582,59 +559,6 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!token || !currentUser) {
-      setCalendarClasses([]);
-      setCalendarSchedules([]);
-      setCalendarCustomItems([]);
-      setCalendarCustomSchedules([]);
-      setCalendarLoading(false);
-      setCalendarError('');
-      setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
-      return;
-    }
-
-    if (!authReady) {
-      return;
-    }
-
-    let cancelled = false;
-    setCalendarLoading(true);
-    setCalendarError('');
-
-    Promise.all([
-      apiFetch<ClassItem[]>('/api/classes'),
-      apiFetch<{ items: CourseCalendarScheduleRecord[] }>('/api/course-calendar/schedules'),
-      apiFetch<{ items: CourseCalendarCustomItemRecord[] }>('/api/course-calendar/custom-items'),
-      apiFetch<{ items: CourseCalendarCustomScheduleRecord[] }>('/api/course-calendar/custom-schedules'),
-    ])
-      .then(([classes, schedulePayload, customItemPayload, customSchedulePayload]) => {
-        if (cancelled) {
-          return;
-        }
-        setCalendarClasses(classes);
-        setCalendarSchedules(schedulePayload.items);
-        setCalendarCustomItems(customItemPayload.items);
-        setCalendarCustomSchedules(customSchedulePayload.items);
-        setCalendarAnchorDate(getCurrentWeekTuesday(getTodayIsoDate()));
-      })
-      .catch((error) => {
-        console.error(error);
-        if (!cancelled) {
-          setCalendarError(error instanceof Error ? error.message : '课程日历加载失败，请刷新重试。');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setCalendarLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authReady, currentUser, token]);
-
-  useEffect(() => {
     if (!currentUser) {
       setActivePage('dashboard');
       return;
@@ -706,135 +630,6 @@ export default function App() {
     setClassBindingTarget(target);
     navigateWorkspacePage('classes');
     setMobileNavOpen(false);
-  };
-
-  const handlePreviousCalendarPage = (dayCount: number) => {
-    setCalendarAnchorDate((current) => shiftIsoDate(current, -dayCount));
-  };
-
-  const handleNextCalendarPage = (dayCount: number) => {
-    setCalendarAnchorDate((current) => shiftIsoDate(current, dayCount));
-  };
-
-  const handleCalendarPageStepDaysChange = (dayCount: number) => {
-    setCalendarPageStepDays(Math.max(1, Math.min(14, Math.trunc(dayCount) || 6)));
-  };
-
-  const handleScheduleCalendarClass = (classId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
-    apiFetch<{ item: CourseCalendarScheduleRecord }>('/api/course-calendar/schedules', {
-      method: 'POST',
-      body: JSON.stringify({
-        class_id: classId,
-        date,
-        time_block: timeBlock,
-        start_offset_minutes: startOffsetMinutes,
-      }),
-    })
-      .then(({ item }) => {
-        setCalendarSchedules((current) => [
-          ...current.filter(
-            (schedule) =>
-              schedule.id !== item.id
-              && !(schedule.class_id === item.class_id && schedule.date === item.date && schedule.time_block === item.time_block),
-          ),
-          item,
-        ]);
-      })
-      .catch((error) => {
-        console.error(error);
-        if (typeof window !== 'undefined') {
-          window.alert(error instanceof Error ? error.message : '新增课程排期失败');
-        }
-      });
-  };
-
-  const handleDeleteCalendarSchedule = (scheduleId: number) => {
-    apiFetch<{ ok: boolean; removed: boolean }>(`/api/course-calendar/schedules/${scheduleId}`, {
-      method: 'DELETE',
-    })
-      .then(() => {
-        setCalendarSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
-      })
-      .catch((error) => {
-        console.error(error);
-        if (typeof window !== 'undefined') {
-          window.alert(error instanceof Error ? error.message : '删除课程排期失败');
-        }
-      });
-  };
-
-  const handleCreateCalendarCustomItem = (item: { title: string; time_range: string; note: string; visibility: 'private' | 'organization' }) => {
-    return apiFetch<{ item: CourseCalendarCustomItemRecord }>('/api/course-calendar/custom-items', {
-      method: 'POST',
-      body: JSON.stringify(item),
-    })
-      .then(({ item: createdItem }) => {
-        setCalendarCustomItems((current) => [createdItem, ...current.filter((existing) => existing.id !== createdItem.id)]);
-        return createdItem;
-      })
-      .catch((error) => {
-        console.error(error);
-        throw error;
-      });
-  };
-
-  const handleDeleteCalendarCustomItem = (itemId: number) => {
-    apiFetch<{ ok: boolean; removed: boolean }>(`/api/course-calendar/custom-items/${itemId}`, {
-      method: 'DELETE',
-    })
-      .then(() => {
-        setCalendarCustomItems((current) => current.filter((item) => item.id !== itemId));
-        setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.custom_item_id !== itemId));
-      })
-      .catch((error) => {
-        console.error(error);
-        if (typeof window !== 'undefined') {
-          window.alert(error instanceof Error ? error.message : '删除自定义事项失败');
-        }
-      });
-  };
-
-  const handleScheduleCalendarCustomItem = (customItemId: number, date: string, timeBlock: CourseCalendarTimeBlock, startOffsetMinutes = 0) => {
-    apiFetch<{ item: CourseCalendarCustomScheduleRecord }>('/api/course-calendar/custom-schedules', {
-      method: 'POST',
-      body: JSON.stringify({
-        custom_item_id: customItemId,
-        date,
-        time_block: timeBlock,
-        start_offset_minutes: startOffsetMinutes,
-      }),
-    })
-      .then(({ item }) => {
-        setCalendarCustomSchedules((current) => [
-          ...current.filter(
-            (schedule) =>
-              schedule.id !== item.id
-              && !(schedule.custom_item_id === item.custom_item_id && schedule.date === item.date && schedule.time_block === item.time_block),
-          ),
-          item,
-        ]);
-      })
-      .catch((error) => {
-        console.error(error);
-        if (typeof window !== 'undefined') {
-          window.alert(error instanceof Error ? error.message : '新增自定义事项排期失败');
-        }
-      });
-  };
-
-  const handleDeleteCalendarCustomSchedule = (scheduleId: number) => {
-    apiFetch<{ ok: boolean; removed: boolean }>(`/api/course-calendar/custom-schedules/${scheduleId}`, {
-      method: 'DELETE',
-    })
-      .then(() => {
-        setCalendarCustomSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
-      })
-      .catch((error) => {
-        console.error(error);
-        if (typeof window !== 'undefined') {
-          window.alert(error instanceof Error ? error.message : '删除自定义事项排期失败');
-        }
-      });
   };
 
   const pageTitle: Record<Page, string> = {
@@ -961,25 +756,6 @@ export default function App() {
         navigateWorkspacePage={navigateWorkspacePage}
         handleReviewGenerationSuccess={handleReviewGenerationSuccess}
         ConsultationPageComponent={ConsultationPage}
-        calendarLoading={calendarLoading}
-        calendarError={calendarError}
-        calendarAnchorDate={calendarAnchorDate}
-        getTodayIsoDate={getTodayIsoDate}
-        calendarClasses={calendarClasses}
-        calendarSchedules={calendarSchedules}
-        calendarCustomItems={calendarCustomItems}
-        calendarCustomSchedules={calendarCustomSchedules}
-        calendarPageStepDays={calendarPageStepDays}
-        handleCalendarPageStepDaysChange={handleCalendarPageStepDaysChange}
-        handlePreviousCalendarPage={() => handlePreviousCalendarPage(calendarPageStepDays)}
-        handleNextCalendarPage={() => handleNextCalendarPage(calendarPageStepDays)}
-        handleScheduleCalendarClass={handleScheduleCalendarClass}
-        handleScheduleCalendarCustomItem={handleScheduleCalendarCustomItem}
-        handleCreateCalendarCustomItem={handleCreateCalendarCustomItem}
-        handleDeleteCalendarCustomItem={handleDeleteCalendarCustomItem}
-        handleDeleteCalendarSchedule={handleDeleteCalendarSchedule}
-        handleDeleteCalendarCustomSchedule={handleDeleteCalendarCustomSchedule}
-        WorkspaceLoadingComponent={WorkspaceLoading}
         classBindingTarget={classBindingTarget}
         handleClearClassBindingTarget={() => setClassBindingTarget(null)}
         handleOpenClassBinding={handleOpenClassBinding}

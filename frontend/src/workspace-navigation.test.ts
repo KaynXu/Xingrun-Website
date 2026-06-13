@@ -8,12 +8,17 @@ const headerSource = readFileSync(new URL('./features/navigation/Header.tsx', im
 const shellSource = readFileSync(new URL('./features/navigation/WorkspaceShellLayout.tsx', import.meta.url), 'utf8');
 const contentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
 const accessSource = readFileSync(new URL('./features/navigation/workspaceAccess.ts', import.meta.url), 'utf8');
+const appDisplaySource = readFileSync(new URL('./appDisplay.ts', import.meta.url), 'utf8');
+const appTypesSource = readFileSync(new URL('./appTypes.ts', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
 const settingsSource = readFileSync(new URL('./features/settings/SettingsPage.tsx', import.meta.url), 'utf8');
 const approvalPageSource = readFileSync(new URL('./features/approval/ApprovalPage.tsx', import.meta.url), 'utf8');
 const consultationPageSource = readFileSync(new URL('./features/consultation/ConsultationPage.tsx', import.meta.url), 'utf8');
+const consultationModalSource = readFileSync(new URL('./features/consultation/ConsultationModal.tsx', import.meta.url), 'utf8');
+const consultationSharedSource = readFileSync(new URL('./features/consultation/consultationShared.tsx', import.meta.url), 'utf8');
+const calendarWorkspaceSource = readFileSync(new URL('./features/calendar/CalendarWorkspacePage.tsx', import.meta.url), 'utf8');
 const studentCenterSource = readFileSync(new URL('./features/student-center/StudentCenterPage.tsx', import.meta.url), 'utf8');
 const classManagementTabSource = readFileSync(new URL('./features/student-center/ClassManagementTab.tsx', import.meta.url), 'utf8');
 const classEditorModalSource = readFileSync(new URL('./features/student-center/ClassEditorModal.tsx', import.meta.url), 'utf8');
@@ -32,7 +37,7 @@ function requireMatch(source: string, pattern: RegExp): string {
 test('workspace navigation wires consultation and calendar pages into the shell', () => {
   const sidebarBlock = sidebarSource;
 
-  assert.match(appSource, /type Page =[\s\S]*'dashboard'[\s\S]*'review-generation'[\s\S]*'class-feedback-generation'[\s\S]*'consultation'[\s\S]*'calendar'[\s\S]*'smartWrongQuestions'[\s\S]*'classes'[\s\S]*'accounts'[\s\S]*'credit'[\s\S]*'settings';/);
+  assert.match(appSource, /type Page = WorkspacePage;/);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '课堂反馈'/);
   assert.match(appSource, /'class-feedback-generation': '课堂反馈'/);
   assert.doesNotMatch(sidebarBlock, /id: 'student-tasks'/);
@@ -43,7 +48,9 @@ test('workspace navigation wires consultation and calendar pages into the shell'
   assert.match(contentSource, /activeWorkspacePage === 'consultation'[\s\S]*<ConsultationPageComponent currentUser=\{currentUser\}/);
   assert.match(sidebarBlock, /id: 'calendar'[\s\S]*label: '课程日历'/);
   assert.match(appSource, /calendar: '课程日历'/);
-  assert.match(contentSource, /activeWorkspacePage === 'calendar'[\s\S]*<CourseCalendarPage/);
+  assert.match(contentSource, /import \{ CalendarWorkspacePage \} from '\.\.\/calendar\/CalendarWorkspacePage';/);
+  assert.match(contentSource, /activeWorkspacePage === 'calendar'[\s\S]*<CalendarWorkspacePage currentUser=\{currentUser\} \/>/);
+  assert.match(calendarWorkspaceSource, /export function CalendarWorkspacePage\(\{ currentUser \}: \{ currentUser: CurrentUser \}\)/);
   assert.doesNotMatch(appSource, /QuestionBank/);
 });
 
@@ -251,9 +258,11 @@ test('workspace navigation keeps role and unauthenticated permission paths expli
 });
 
 test('workspace navigation source exposes explicit super owner hierarchy for account controls', () => {
-  assert.match(appSource, /type Role = 'super_owner' \| 'owner' \| 'admin' \| 'member';/);
-  assert.match(appSource, /if \(role === 'super_owner'\) return '超级管理员';/);
-  assert.match(appSource, /if \(role === 'owner'\) return '机构负责人';/);
+  assert.match(appSource, /import type \{[\s\S]*Role,[\s\S]*\} from '\.\/appTypes';/);
+  assert.match(appTypesSource, /export type Role = 'super_owner' \| 'owner' \| 'admin' \| 'member';/);
+  assert.match(appSource, /import \{ getRoleLabel \} from '\.\/appDisplay';/);
+  assert.match(appDisplaySource, /if \(role === 'super_owner'\) return '超级管理员';/);
+  assert.match(appDisplaySource, /if \(role === 'owner'\) return '机构负责人';/);
   assert.match(accessSource, /export function hasOwnerAccess\(role: WorkspaceRole\): boolean \{/);
   assert.match(appSource, /function canManageOwnerRole\(role: Role\): boolean \{/);
   assert.match(approvalPageSource, /超级管理员可以设置或撤销机构负责人；机构负责人只可切换管理员与普通成员权限；管理员可调整成员可见页面/);
@@ -298,21 +307,20 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
 });
 
 test('consultation workspace source shows source channel metadata and keeps the quick parse controls', () => {
-  assert.match(appSource, /来源渠道主类/);
-  assert.match(appSource, /const sourceChannel = record\.source_channel \|\| '未标注来源渠道';/);
-  assert.match(consultationPageSource, /consultation_subject\?\.\s*trim\(\) \|\| '未填写咨询科目'/);
-  assert.match(appSource, /快速录入/);
-  assert.match(appSource, /智能解析/);
-  assert.match(appSource, /来源渠道备注/);
+  assert.match(consultationModalSource, /来源渠道主类/);
+  assert.match(consultationSharedSource, /const sourceChannel = record\.source_channel \|\| '未标注来源渠道';/);
+  assert.match(consultationPageSource, /record\.consultation_subject \|\| '未填写'/);
+  assert.match(consultationModalSource, /快速录入/);
+  assert.match(consultationModalSource, /智能解析/);
+  assert.match(consultationModalSource, /来源渠道备注/);
   assert.match(consultationPageSource, /apiFetch<ConsultationTeacherOption\[]>\('\/api\/consultation-teachers'\)/);
 });
 
 test('consultation workspace source allows staff edits and uses the new follow-up status set', () => {
-  assert.match(appSource, /const consultationStatusOptions = \['待邀约', '跟进中', '已报班', '已劝退'\];/);
-  assert.match(appSource, /follow_up_status: '待邀约',/);
+  assert.match(consultationModalSource, /follow_up_status: '待邀约',/);
   assert.match(accessSource, /export function hasStaffAccess\(role: WorkspaceRole\): boolean \{/);
-  assert.match(appSource, /const canEdit = hasStaffAccess\(currentUser\.role\) \|\| currentUser\.role === 'member';/);
-  assert.match(appSource, /\{readOnly && canEdit && \(/);
+  assert.match(consultationModalSource, /const canEdit = hasStaffAccess\(currentUser\.role\) \|\| currentUser\.role === 'member';/);
+  assert.match(consultationModalSource, /\{readOnly && canEdit && \(/);
   assert.match(consultationPageSource, /const canManage = hasStaffAccess\(currentUser\.role\);/);
   assert.match(consultationPageSource, /const canEditConsultations = canManage \|\| currentUser\.role === 'member';/);
   assert.match(consultationPageSource, /onDelete=\{canManage \? handleDelete : undefined\}/);

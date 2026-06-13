@@ -215,7 +215,7 @@ test('course calendar uses unified current class display names for scheduled cla
     ],
   );
 
-  assert.equal(schedule.className, '四年级·1班');
+  assert.equal(schedule.className, '数学·四年级·1班');
 });
 
 test('course calendar uses unified current class display names for draggable class rail', () => {
@@ -235,7 +235,7 @@ test('course calendar uses unified current class display names for draggable cla
     },
   ]);
 
-  assert.equal(railItem.name, '四年级·1班');
+  assert.equal(railItem.name, '数学·四年级·1班');
 });
 
 test('course calendar page avoids a nested min-h-screen container inside the workspace shell', () => {
@@ -554,42 +554,47 @@ test('course calendar clears pending drop after canceling adjustment or failed s
 
 test('app loads course calendar schedules separately from review plans', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const calendarEffect = appSource.match(/setCalendarLoading\(true\);[\s\S]*?return \(\) => \{\s*cancelled = true;\s*\};/);
+  const contentSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspacePageContent.tsx'), 'utf8');
+  const calendarWorkspaceSource = readFileSync(resolve(process.cwd(), 'src/features/calendar/CalendarWorkspacePage.tsx'), 'utf8');
+  const calendarEffect = calendarWorkspaceSource.match(/setCalendarLoading\(true\);[\s\S]*?return \(\) => \{\s*cancelled = true;\s*\};/);
 
   assert.ok(calendarEffect);
+  assert.match(contentSource, /import \{ CalendarWorkspacePage \} from '\.\.\/calendar\/CalendarWorkspacePage';/);
+  assert.match(contentSource, /activeWorkspacePage === 'calendar' && canOpenWorkspacePage\(currentUser, 'calendar'\) && <CalendarWorkspacePage currentUser=\{currentUser\} \/>/);
+  assert.doesNotMatch(appSource, /const \[calendarLoading, setCalendarLoading\] = useState\(false\);/);
   assert.match(calendarEffect[0], /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(calendarEffect[0], /apiFetch<\{ items: CourseCalendarScheduleRecord\[] \}>\('\/api\/course-calendar\/schedules/);
   assert.match(calendarEffect[0], /apiFetch<\{ items: CourseCalendarCustomItemRecord\[] \}>\('\/api\/course-calendar\/custom-items/);
   assert.match(calendarEffect[0], /apiFetch<\{ items: CourseCalendarCustomScheduleRecord\[] \}>\('\/api\/course-calendar\/custom-schedules/);
   assert.doesNotMatch(calendarEffect[0], /\/api\/review-plans/);
-  assert.match(appSource, /apiFetch<\{ item: CourseCalendarScheduleRecord \}>\('\/api\/course-calendar\/schedules'/);
-  assert.match(appSource, /apiFetch<\{ item: CourseCalendarCustomItemRecord \}>\('\/api\/course-calendar\/custom-items'/);
-  assert.match(appSource, /apiFetch<\{ item: CourseCalendarCustomScheduleRecord \}>\('\/api\/course-calendar\/custom-schedules'/);
-  assert.match(appSource, /window\.alert\(error instanceof Error \? error\.message : '删除自定义事项失败'\)/);
+  assert.match(calendarWorkspaceSource, /apiFetch<\{ item: CourseCalendarScheduleRecord \}>\('\/api\/course-calendar\/schedules'/);
+  assert.match(calendarWorkspaceSource, /apiFetch<\{ item: CourseCalendarCustomItemRecord \}>\('\/api\/course-calendar\/custom-items'/);
+  assert.match(calendarWorkspaceSource, /apiFetch<\{ item: CourseCalendarCustomScheduleRecord \}>\('\/api\/course-calendar\/custom-schedules'/);
+  assert.match(calendarWorkspaceSource, /window\.alert\(error instanceof Error \? error\.message : '删除自定义事项失败'\)/);
 });
 
 test('app exposes a recoverable course calendar list-load failure path', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const calendarEffect = appSource.match(/setCalendarLoading\(true\);[\s\S]*?return \(\) => \{\s*cancelled = true;\s*\};/);
-  const calendarRender = appSource.match(/\{activeWorkspacePage === 'calendar' &&[\s\S]*?\{activeWorkspacePage === 'smartWrongQuestions'/);
+  const calendarWorkspaceSource = readFileSync(resolve(process.cwd(), 'src/features/calendar/CalendarWorkspacePage.tsx'), 'utf8');
+  const calendarEffect = calendarWorkspaceSource.match(/setCalendarLoading\(true\);[\s\S]*?return \(\) => \{\s*cancelled = true;\s*\};/);
 
   assert.ok(calendarEffect);
-  assert.ok(calendarRender);
-  assert.match(appSource, /const \[calendarError, setCalendarError\] = useState\(''\);/);
+  assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
+  assert.match(calendarWorkspaceSource, /const \[calendarError, setCalendarError\] = useState\(''\);/);
   assert.match(calendarEffect[0], /setCalendarError\(''\);/);
   assert.match(
     calendarEffect[0],
     /setCalendarError\(error instanceof Error \? error\.message : '课程日历加载失败，请刷新重试。'\);/,
   );
   assert.match(calendarEffect[0], /setCalendarLoading\(false\);/);
-  assert.match(calendarRender[0], /calendarError/);
-  assert.match(calendarRender[0], /课程日历加载失败/);
+  assert.match(calendarWorkspaceSource, /calendarError &&/);
+  assert.match(calendarWorkspaceSource, /课程日历加载失败：\{calendarError\}/);
 });
 
 test('app shows a user-facing error when course calendar schedule saves fail', () => {
-  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const scheduleClassBlock = appSource.match(/const handleScheduleCalendarClass =[\s\S]*?const handleDeleteCalendarSchedule =/);
-  const scheduleCustomBlock = appSource.match(/const handleScheduleCalendarCustomItem =[\s\S]*?const handleDeleteCalendarCustomSchedule =/);
+  const calendarWorkspaceSource = readFileSync(resolve(process.cwd(), 'src/features/calendar/CalendarWorkspacePage.tsx'), 'utf8');
+  const scheduleClassBlock = calendarWorkspaceSource.match(/const handleScheduleCalendarClass =[\s\S]*?const handleDeleteCalendarSchedule =/);
+  const scheduleCustomBlock = calendarWorkspaceSource.match(/const handleScheduleCalendarCustomItem =[\s\S]*?const handleDeleteCalendarCustomSchedule =/);
 
   assert.ok(scheduleClassBlock);
   assert.ok(scheduleCustomBlock);
@@ -604,10 +609,10 @@ test('app shows a user-facing error when course calendar schedule saves fail', (
 });
 
 test('app shows a user-facing error when course calendar delete or refresh actions fail', () => {
-  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const deleteScheduleBlock = appSource.match(/const handleDeleteCalendarSchedule =[\s\S]*?const handleCreateCalendarCustomItem =/);
-  const deleteCustomItemBlock = appSource.match(/const handleDeleteCalendarCustomItem =[\s\S]*?const handleScheduleCalendarCustomItem =/);
-  const deleteCustomScheduleBlock = appSource.match(/const handleDeleteCalendarCustomSchedule =[\s\S]*?const pageTitle:/);
+  const calendarWorkspaceSource = readFileSync(resolve(process.cwd(), 'src/features/calendar/CalendarWorkspacePage.tsx'), 'utf8');
+  const deleteScheduleBlock = calendarWorkspaceSource.match(/const handleDeleteCalendarSchedule =[\s\S]*?const handleCreateCalendarCustomItem =/);
+  const deleteCustomItemBlock = calendarWorkspaceSource.match(/const handleDeleteCalendarCustomItem =[\s\S]*?const handleScheduleCalendarCustomItem =/);
+  const deleteCustomScheduleBlock = calendarWorkspaceSource.match(/const handleDeleteCalendarCustomSchedule =[\s\S]*?if \(calendarLoading\) \{/);
 
   assert.ok(deleteScheduleBlock);
   assert.ok(deleteCustomItemBlock);
