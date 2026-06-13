@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-14 已按浏览器批注移除 landing hero 右侧主预览区外层灰底：`frontend/src/features/landing/LandingPage.tsx` 当前 `Source Material + 输出卡片` 这层包裹容器已从 `bg-slate-50/55` 改为白底，不再出现整块淡灰背景，只保留内部卡片本身的层级。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注把官网首屏高度锁到一屏内：`frontend/src/features/landing/LandingPage.tsx` 的 hero 容器现改为 `min-h-[calc(100vh-80px)]` 并垂直居中，确保首屏内容单独占满当前视口，不再在初始视图里提前露出第二段“先把复习、错题、讲义这几件事做顺”。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注修正 landing hero 右侧 source material 的换行问题：`frontend/src/features/landing/LandingPage.tsx` 里 `课堂录音 / 补充笔记 / 例题讲义` 这组标签现已加 `whitespace-nowrap`，不再在窄宽度下拆成两行。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按用户要求移除 landing hero 右侧 mock UI 里的“已对齐课程信息”卡片：`frontend/src/features/landing/LandingPage.tsx` 当前左侧 source material 区只保留源材料卡，不再显示浅青色的对齐信息提示块，避免这一列显得更高、更碎。当前轮 proof 会继续用 landing 页面定向脚本记录。
