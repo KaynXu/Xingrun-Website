@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-14 已按浏览器批注修正 landing hero 右侧 source material 的换行问题：`frontend/src/features/landing/LandingPage.tsx` 里 `课堂录音 / 补充笔记 / 例题讲义` 这组标签现已加 `whitespace-nowrap`，不再在窄宽度下拆成两行。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按用户要求移除 landing hero 右侧 mock UI 里的“已对齐课程信息”卡片：`frontend/src/features/landing/LandingPage.tsx` 当前左侧 source material 区只保留源材料卡，不再显示浅青色的对齐信息提示块，避免这一列显得更高、更碎。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续微调 landing hero 右侧 mock UI 的高级感：`frontend/src/features/landing/LandingPage.tsx` 这轮没有再改结构，而是把颜色和状态层级收紧。输出卡顶部色条改成更克制的深色系，输入侧提示卡改成更干净的浅青绿色，虚线连接改成更低饱和的蓝灰色，卡片与按钮的活跃态也从“亮色 + 重阴影”收成了更轻的阴影、细 ring 和更克制的浮动。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续把 landing hero 右侧 mock UI 的比例往横向收：`frontend/src/features/landing/LandingPage.tsx` 当前把 hero mock 容器从 `640px` 放宽到 `720px`，右侧输出卡从 2 列扩到大屏 3 列，并压低了卡片内部高度与底部按钮高度，整体变成更明显的横向面板，而不是偏高的竖向卡片。当前轮 proof 会继续用 landing 页面定向脚本记录。

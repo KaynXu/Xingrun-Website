@@ -345,7 +345,7 @@ export function LandingPage({
                             {['课堂录音', '补充笔记', '例题讲义'].map((item, index) => (
                               <div key={item} className="flex items-center gap-2">
                                 <span className={`h-1.5 rounded-full ${index === 0 ? 'w-16 bg-[#8cded1]' : index === 1 ? 'w-12 bg-slate-200 dark:bg-white/10' : 'w-10 bg-slate-200 dark:bg-white/10'}`} />
-                                <span className="text-[10px] text-slate-400">{item}</span>
+                                <span className="whitespace-nowrap text-[10px] text-slate-400">{item}</span>
                               </div>
                             ))}
                           </div>
