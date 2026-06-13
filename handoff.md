@@ -788,3 +788,11 @@
   - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
   - `rg -n "dashboardQuickActionClass|dashboardInlineActionClass|bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600|text-emerald-500|text-slate-700 dark:text-slate-200" src/WorkspaceDashboard.tsx`
   - remaining sky accent scan returned no matches in `WorkspaceDashboard.tsx`
+
+## 2026-06-14 dashboard header copy cleanup
+- Replaced the role dashboard intro copy with shorter, more operational labels and summaries.
+- Removed the more narrated / AI-sounding top-line phrasing from member, organization, and platform dashboards.
+- Runnable proof passed via `/tmp/xingrun_dashboard_copy_tone_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今日工作|机构观察|机构工作台|待处理、最近产出和今天课程都在这里|今天的积压、异常和机构动态|待处理事项、班级进度和今日状态" src/WorkspaceDashboard.tsx`
+  - negative check confirming the older narrated copy is removed

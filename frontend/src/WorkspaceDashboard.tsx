@@ -127,8 +127,8 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今天先做这几件事</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">把复习资料、课堂反馈和错题跟进接上，不用来回找页面。</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今日工作</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待处理、最近产出和今天课程都在这里。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => {
@@ -347,8 +347,8 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今天先看这些机构</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先处理积压和异常，再看整体运行状态。</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构观察</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天的积压、异常和机构动态。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
@@ -612,8 +612,8 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今天先把机构日常调顺</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先清积压，再看班级进度和老师交付。</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构工作台</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待处理事项、班级进度和今日状态。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
