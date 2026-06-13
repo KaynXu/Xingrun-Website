@@ -6,6 +6,9 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已按用户要求移除官网 footer 里的站内导航组：`frontend/src/features/landing/LandingPage.tsx` 页脚不再显示 `核心方案` 和 `关于 Starain` 两个锚点入口，现只保留品牌信息、法律链接和版权信息。当前轮 proof 会继续用 landing 页面定向脚本记录。
+- 2026-06-13 已继续把 `关于 Starain` 的开头收回正常语气：`frontend/src/features/landing/LandingPage.tsx` 不再使用 `从 PPT 里想出来 / 从教学现场长出来` 这种带明显 AI 套话感的修辞，现改为更直接的两句：`这套产品先在我们自己的教学团队里用。` 和 `哪些地方费时间，哪些地方容易断，我们先把它补上。` 这一轮只动 about 文案，不改页面结构。当前轮 proof 会继续用 landing 页面定向脚本记录。
+- 2026-06-13 已按 `humanizer / humanizer-zh` 和用户补充的 marketing psychology 方向，把官网 landing 的主要对外文案继续收紧一轮：`frontend/src/features/landing/LandingPage.tsx` 现已系统移除 `不是……而是……`、`把 X 整理成 Y`、`能力底座 / 产品化 / 学习全流程 AI 平台` 这类抽象或宣传感较重的表达，改成更贴近真实任务的说法，例如主标题收为 `教学团队每天会用的 AI 工具`，功能区改成围绕复习资料、错题跟进、讲义整理这些具体工作展开，mock UI 里的 `AI Draft` 也改成 `草稿`。这一轮重点不是加新卖点，而是让页面读起来更像真人写的产品页面。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续把官网 hero 主文案收短：`frontend/src/features/landing/LandingPage.tsx` 首屏主标题现从“复习生成、错题跟进、教学交付，一个工作台完成”改为更接近产品一句话价值主张的 `AI，在教学工作里直接可用`，副标题收敛为 `覆盖复习生成、错题跟进和教学交付。`，不再使用“收进同一套平台”这类偏宣传的说法。调整方向参考用户点名的 [Brisk Teaching](https://www.briskteaching.com/) 首屏标题结构：短标题先讲产品定位，再用一句补足适用范围。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续按用户要求收敛官网 hero 的“AI 味”和装饰噪音：`frontend/src/features/landing/LandingPage.tsx` 首屏现已去掉浅蓝渐变、光晕和背景网格，不再使用“今天最值得推进的三件事 / 机构工作流”这类说明性假场景；左侧文案压缩成更直接的标题加一句用途说明，删除两条口号式 bullet，右侧改成更像真实产品界面的 mock UI（侧栏 + 文档列表 + 状态标签），整体更克制、更像教育 SaaS 官网而不是 AI 宣传页。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求重做官网 hero section：`frontend/src/features/landing/LandingPage.tsx` 首屏现从原来的动效背景 + 口号式文案，改成更接近产品型落地页的清爽布局，参考 `Brisk Teaching` 那种“左侧清晰价值主张 + 右侧产品预览”的结构；背景已改为更轻的浅色层次与细网格，不再依赖大面积动态纹理撑视觉，右侧改成机构工作台预览而不是说明性卡片，整体在保留现有品牌色和后续区块的前提下明显减噪。当前轮 proof 会继续用 landing 页面定向脚本记录。

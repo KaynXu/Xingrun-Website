@@ -107,7 +107,7 @@ export function LandingLegalPage({ documentKey }: { documentKey: LandingLegalDoc
             <img src="/logo.png" alt="Starain logo" className="h-11 w-11 object-contain" />
             <div className="min-w-0">
               <p className="truncate text-lg font-bold tracking-tight dark:text-white">Starain</p>
-              <p className="text-xs tracking-[0.28em] text-sky-700 dark:text-sky-300">学习全流程 AI 平台</p>
+              <p className="text-xs tracking-[0.28em] text-sky-700 dark:text-sky-300">教学工作平台</p>
             </div>
           </div>
           <a
@@ -223,7 +223,7 @@ export function LandingPage({
             <img src="/logo.png" alt="Starain logo" className="h-12 w-12 object-contain" />
             <span className="text-xl font-bold tracking-tight">星润Starain</span>
             <span className="hidden text-xs font-semibold uppercase tracking-[0.32em] text-sky-600 sm:block">
-              学习全流程 AI 平台
+              教学工作平台
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -257,10 +257,10 @@ export function LandingPage({
                 STARAIN WORKSPACE
               </div>
               <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 dark:text-white sm:text-5xl md:text-6xl">
-                AI，在教学工作里直接可用
+                教学团队每天会用的 AI 工具
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
-                覆盖复习生成、错题跟进和教学交付。
+                复习资料、错题跟进、讲义整理，都能直接接着做。
               </p>
 
               <div className="mt-10 flex flex-col gap-3 sm:flex-row">
@@ -347,7 +347,7 @@ export function LandingPage({
 
                 <div className="px-5 py-4">
                   <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-4 dark:border-white/10">
-                    {['历史文档', '课堂错题', '教学交付'].map((tab, index) => (
+                      {['历史文档', '课堂错题', '教学交付'].map((tab, index) => (
                       <span
                         key={tab}
                         className={`rounded-full px-3 py-1 text-sm font-medium ${
@@ -400,9 +400,9 @@ export function LandingPage({
 
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     {[
-                      { icon: Home, label: '机构视图' },
-                      { icon: ShieldCheck, label: '权限清晰' },
-                      { icon: ArrowRight, label: '继续处理' },
+                      { icon: Home, label: '机构分组' },
+                      { icon: ShieldCheck, label: '成员权限' },
+                      { icon: ArrowRight, label: '继续编辑' },
                     ].map((item) => {
                       const Icon = item.icon;
                       return (
@@ -436,8 +436,8 @@ export function LandingPage({
             viewport={{ once: true }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
-            <h2 className="mb-4 text-4xl font-bold dark:text-white md:text-5xl">把真实教学流程整理成可复用的 AI 能力</h2>
-            <p className="text-lg text-slate-600 dark:text-slate-300">不是堆叠功能点，而是把一条已经跑通的教育工作流产品化。</p>
+            <h2 className="mb-4 text-4xl font-bold dark:text-white md:text-5xl">先把教学里的高频工作做好</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300">复习、错题、讲义，这几件事先做顺。</p>
           </motion.div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -456,15 +456,15 @@ export function LandingPage({
                   <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-600 text-white">
                     <FileText size={24} />
                   </div>
-                  <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">从课堂素材到复习交付</h3>
+                  <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">上完课，复习资料很快就能出来</h3>
                   <p className="max-w-2xl text-lg text-slate-600 dark:text-slate-300">
-                    课堂录音、笔记与教学内容进入平台后，被整理成结构化复习资料、练习内容与更稳定的教学交付材料。
+                    课堂录音、笔记和讲义放进来，学生复习材料和老师后续要用的版本就能接着整理。
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
-                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">课堂分析</div>
-                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">复习资料生成</div>
-                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">教学交付</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">课堂记录</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">复习资料</div>
+                  <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-mono text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">讲义整理</div>
                 </div>
               </div>
             </motion.div>
@@ -480,15 +480,15 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
                 </div>
-                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">把错误整理成可持续跟进记录</h3>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">错题跟进留得住</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  不是一次性纠错，而是持续记录高频错误、薄弱点与个性化复习路径。
+                  错因、薄弱点和后续安排都会留下来，下次回看不用重新翻。
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因整理</span>
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">薄弱点追踪</span>
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">个性化复习</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">错因</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">薄弱点</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[10px] font-bold tracking-widest text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">后续安排</span>
               </div>
             </motion.div>
 
@@ -503,9 +503,9 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
                 </div>
-                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">把题目整理成可复用的教学素材</h3>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">题目和讲义能继续复用</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  围绕课堂练习、作业和错题记录，帮助老师逐步整理出更稳定的讲义与练习素材。
+                  课堂练习、作业和错题会慢慢沉淀成讲义和练习素材。
                 </p>
               </div>
               <div className="mt-8 flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400">
@@ -525,9 +525,9 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
                   <FileText size={24} />
                 </div>
-                <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">把课程目标转化为讲义与教研交付</h3>
+                <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">课程目标可以直接往下写</h3>
                 <p className="text-lg text-slate-600 dark:text-slate-300">
-                  从课程目标到讲义、课堂提纲和教研素材，减少教师重复整理工作。
+                  讲义、课堂提纲和教研材料顺着同一份内容往下整理。
                 </p>
               </div>
               <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(234,245,255,0.96)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(30,41,59,0.88)_100%)] md:w-72">
@@ -547,7 +547,7 @@ export function LandingPage({
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-sm font-medium text-slate-900 dark:text-white">{item.label}</span>
                       <span className="rounded-full border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/50 dark:text-sky-300">
-                        AI Draft
+                        草稿
                       </span>
                     </div>
                     <div className="space-y-2">
@@ -581,16 +581,16 @@ export function LandingPage({
               transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             >
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-                ABOUT STARAIN
+                关于 Starain
               </span>
               <div>
                 <h2 className="mb-4 text-4xl font-bold text-slate-900 dark:text-white md:text-5xl">关于 Starain</h2>
                 <p className="max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
-                  Starain 不是从 PPT 里想出来的，而是从真实教学现场长出来的。
+                  这套产品先在我们自己的教学团队里用。
                 </p>
               </div>
               <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400 md:text-base">
-                我们先在自己的教育机构中解决复习资料、错题跟进、讲义整理与教师协作问题，再把这套已经跑通的流程产品化，服务更多同行团队。
+                复习资料、错题跟进、讲义整理、教师协作，这些工作我们自己每天都在做。哪些地方费时间，哪些地方容易断，我们先把它补上。
               </p>
             </motion.div>
 
@@ -598,15 +598,15 @@ export function LandingPage({
               {[
                 {
                   title: '已验证流程',
-                  body: '课堂素材到复习交付的链路已经在真实教学里跑通。',
+                  body: '课堂素材到复习资料，这条线已经在真实教学里跑过。',
                 },
                 {
                   title: '能力模块化',
-                  body: '错题跟进、复习安排与讲义整理可以在同一条教学链路里持续复用。',
+                  body: '复习、错题、讲义这些环节可以接着往下做，不用每次重来。',
                 },
                 {
                   title: '服务对象',
-                  body: '聚焦学校、培训机构、国际课程团队与教研运营场景。',
+                  body: '学校、培训机构、国际课程团队和教研运营团队都能用。',
                 },
               ].map((item, index) => (
                 <motion.div
@@ -633,17 +633,12 @@ export function LandingPage({
               <img src="/logo.png" alt="Starain logo" className="h-10 w-10 object-contain" />
               <span className="text-lg font-bold tracking-tight dark:text-white">星润Starain</span>
               <span className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-600">
-                学习全流程 AI 平台
+                教学工作平台
               </span>
             </div>
             <p className="max-w-md text-center text-sm text-gray-500 dark:text-slate-400 md:text-left">
-              面向学校、机构与教学团队，构建从内容生成到教学交付的 AI 能力底座。
+              给学校、机构和教学团队用的教学工作平台。
             </p>
-          </div>
-          <div className="flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400 md:items-start">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-slate-400">导航</p>
-            <a href="#features" className="transition-colors hover:text-slate-900 dark:hover:text-white">核心方案</a>
-            <a href="#about" className="transition-colors hover:text-slate-900 dark:hover:text-white">关于 Starain</a>
           </div>
           <div className="flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400 md:items-start">
             <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-slate-400">法律</p>
