@@ -6,6 +6,8 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已继续把 landing hero 右侧 mock UI 的比例往横向收：`frontend/src/features/landing/LandingPage.tsx` 当前把 hero mock 容器从 `640px` 放宽到 `720px`，右侧输出卡从 2 列扩到大屏 3 列，并压低了卡片内部高度与底部按钮高度，整体变成更明显的横向面板，而不是偏高的竖向卡片。当前轮 proof 会继续用 landing 页面定向脚本记录。
+- 2026-06-13 已继续把 landing hero 右侧 mock UI 改得更接近 Brisk 截图的结构：`frontend/src/features/landing/LandingPage.tsx` 右侧现不再是“表单详情页”式的两栏工作台，而是改成 `Source Material + 对齐信息卡 + 虚线连接 + 2x3 输出卡片 + 底部 2x3 功能按钮` 的资源生成面板。并加了动态效果：底部按钮会自动轮播高亮，右侧对应输出卡片会同步轻微浮动放大，鼠标移入按钮也能切换激活态。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续修正 landing hero 右侧 mock UI 的比例和层级：`frontend/src/features/landing/LandingPage.tsx` 现把右侧卡片收成更横向的 `max-width`，并把原先偏高的竖向堆叠结构改成更紧凑的两栏界面。左侧输入区现在包含步骤 pills、2x2 表单字段、状态点、编辑按钮和主操作按钮；右侧预览区补了 tabs、顶栏按钮、预览标题、副标题、3 个统计卡、日程卡和底部操作卡，整体更接近真实产品截图。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续按“像话但不好好说话”的标准收掉 landing 剩余文案：`frontend/src/features/landing/LandingPage.tsx` 这轮主要压缩了 hero 主副标题、功能区 4 张卡、about 两段和 footer 一句，把 `每天会用的 AI 工具 / 这几件事先做顺 / 接着整理 / 留得住 / 顺手整理` 这类还偏悬浮或口气不稳的表达，改成更短、更具体的任务描述，例如 `给教学团队用的 AI 工具`、`上完课，复习资料能很快出来`、`错题记录不会散`、`讲义和教研材料可以顺手整理`。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求把 landing hero 右侧 mock UI 从泛用工作台收成更真实的“复习计划生成”界面：`frontend/src/features/landing/LandingPage.tsx` 现在直接参考本地复习计划链路里的真实节点来展示，包括 `新建复习文档 / 课堂录音 / 课堂笔记 / 同课材料 / 转写 / 生成 / 预览 / 已生成 / 导出 PDF`，并用更像成品界面的布局替换了之前那种泛泛的 tabs + 列表占位。当前轮 proof 会继续用 landing 页面定向脚本记录。

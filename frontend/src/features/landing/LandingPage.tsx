@@ -214,6 +214,31 @@ export function LandingPage({
   }
 
   const handleRegister = onApplyOrganization ?? onRegister ?? (() => undefined);
+  const previewActions = [
+    '生成复习计划',
+    '生成讲义',
+    '生成小测',
+    '讲评错题',
+    '整理白板',
+    '调整难度',
+  ];
+  const previewOutputs = [
+    { title: '复习计划', tone: 'bg-sky-700' },
+    { title: '讲义大纲', tone: 'bg-teal-700' },
+    { title: '课堂小测', tone: 'bg-fuchsia-800' },
+    { title: '错题讲评', tone: 'bg-cyan-800' },
+    { title: '复习清单', tone: 'bg-lime-700' },
+    { title: '课后练习', tone: 'bg-rose-800' },
+  ];
+  const [activePreviewIndex, setActivePreviewIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActivePreviewIndex((current) => (current + 1) % previewActions.length);
+    }, 2400);
+
+    return () => window.clearInterval(timer);
+  }, [previewActions.length]);
 
   return (
     <div className="min-h-screen bg-white text-slate-900 selection:bg-sky-200/70 dark:bg-slate-950 dark:text-slate-100">
@@ -246,7 +271,7 @@ export function LandingPage({
 
       <section className="border-b border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950">
         <div className="mx-auto max-w-7xl px-6 pb-20 pt-32 md:pb-24 md:pt-36">
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-center">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.74fr)_minmax(0,1.26fr)] lg:items-center">
             <motion.div
               initial={{ opacity: 0, y: 28 }}
               animate={{ opacity: 1, y: 0 }}
@@ -283,227 +308,141 @@ export function LandingPage({
               initial={{ opacity: 0, y: 36 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12, duration: 0.78, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_18px_54px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900 lg:ml-auto lg:max-w-[640px]"
+              className="w-full lg:ml-auto lg:max-w-[780px]"
             >
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-white/10">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500 dark:bg-white/5 dark:text-slate-400">
-                    Review Plans
-                  </span>
-                  <span className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
-                    复习计划生成
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid gap-0 lg:grid-cols-[238px_minmax(0,1fr)]">
-                <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03] lg:border-b-0 lg:border-r">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">新建复习文档</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">课堂录音 + 补充笔记</p>
-                      </div>
-                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
-                        进行中
-                      </span>
-                    </div>
-
-                    <div className="mt-4 flex items-center gap-2">
-                      {['上传', '转写', '生成'].map((step, index) => (
-                        <span
-                          key={step}
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                            index === 2
-                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                              : index === 1
-                                ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'
-                                : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
-                          }`}
-                        >
-                          {step}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      {[
-                        ['班级', '高一数学'],
-                        ['科目', '数学'],
-                        ['课题', '立体几何'],
-                        ['日期', '06-12'],
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.04]">
-                          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
-                          <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-200">{value}</p>
-                        </div>
-                      ))}
-                    </div>
+              <div
+                data-hero-preview="review-plans"
+                className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_18px_54px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900"
+              >
+                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
                   </div>
-
-                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-400">输入内容</p>
-                      <button className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
-                        编辑
-                      </button>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {[
-                        ['课堂录音', 'audio-0612.m4a', true],
-                        ['课堂笔记', '已补充 286 字', false],
-                        ['同课材料', '例题讲义 2 份', false],
-                      ].map(([label, value, active]) => (
-                        <div
-                          key={String(label)}
-                          className={`rounded-xl border px-3 py-2.5 ${
-                            active
-                              ? 'border-sky-200 bg-sky-50/80 dark:border-sky-500/30 dark:bg-sky-500/10'
-                              : 'border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.02]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
-                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <button className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">
-                      开始生成
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                      Review Plans
+                    </span>
+                    <span className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
+                      复习计划生成
+                    </span>
                   </div>
                 </div>
 
-                <div className="px-4 py-4">
-                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-3 dark:border-white/10">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {['表单', '预览', 'PDF'].map((tab, index) => (
-                        <span
-                          key={tab}
-                          className={`rounded-full px-3 py-1 text-sm font-medium ${
-                            index === 1
-                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                              : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
-                          }`}
-                        >
-                          {tab}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="hidden items-center gap-2 sm:flex">
-                      <button className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
-                        保存草稿
-                      </button>
-                      <button className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white dark:bg-white dark:text-slate-900">
-                        导出 PDF
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-4">
-                    <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">立体几何复习计划</p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">高一数学提高班 · 今天 14:20</p>
-                        </div>
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-                          已生成
-                        </span>
-                      </div>
-
-                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                        {[
-                          ['课堂重点', '3 条'],
-                          ['易错提醒', '2 条'],
-                          ['复习任务', '5 天'],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-2xl border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-slate-900">
-                            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
-                            <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">{value}</p>
+                <div className="p-3.5">
+                  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/60 p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
+                    <div className="grid gap-3 lg:grid-cols-[128px_22px_minmax(0,1fr)] lg:items-center">
+                      <div className="space-y-3">
+                        <div className="rounded-[1.1rem] border border-slate-200 bg-white p-2.5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Source Material</p>
+                          <div className="mt-2.5 space-y-2">
+                            <div className="h-1.5 w-4/5 rounded-full bg-cyan-200" />
+                            <div className="h-1.5 w-full rounded-full bg-cyan-100" />
+                            <div className="h-1.5 w-3/5 rounded-full bg-cyan-100" />
                           </div>
-                        ))}
-                      </div>
-
-                      <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/10">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">预览</p>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">学生版复习计划</p>
-                          </div>
-                          <button className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
-                            查看全文
-                          </button>
-                        </div>
-
-                        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-                          <div className="space-y-2">
-                            {['Day 1 课堂重点', 'Day 3 错题重做', 'Day 7 课堂小结'].map((item, index) => (
-                              <div
-                                key={item}
-                                className={`rounded-xl px-3 py-2.5 text-sm ${
-                                  index === 0
-                                    ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'
-                                    : 'bg-slate-50 text-slate-600 dark:bg-white/[0.04] dark:text-slate-300'
-                                }`}
-                              >
-                                {item}
+                          <div className="mt-3 space-y-1.5">
+                            {['课堂录音', '补充笔记', '例题讲义'].map((item, index) => (
+                              <div key={item} className="flex items-center gap-2">
+                                <span className={`h-1.5 rounded-full ${index === 0 ? 'w-16 bg-cyan-300' : index === 1 ? 'w-12 bg-slate-200 dark:bg-white/10' : 'w-10 bg-slate-200 dark:bg-white/10'}`} />
+                                <span className="text-[10px] text-slate-400">{item}</span>
                               </div>
                             ))}
                           </div>
+                        </div>
 
-                          <div className="space-y-3">
-                            {[
-                              ['课堂重点', '线面角、二面角、法向量'],
-                              ['易错点', '条件翻译、体积转化、作辅助线'],
-                              ['复习安排', '先看例题，再回做错题，最后整理一页小结。'],
-                            ].map(([label, value]) => (
-                              <div key={label} className="flex items-start gap-3">
-                                <span className="mt-1.5 h-2 w-2 rounded-full bg-sky-500" />
-                                <div>
-                                  <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
-                                  <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{value}</p>
+                        <div className="rounded-[1rem] border border-cyan-200 bg-cyan-100/80 p-2.5 dark:border-cyan-500/30 dark:bg-cyan-500/10">
+                          <div className="flex items-start gap-2">
+                            <span className="mt-0.5 inline-flex rounded-full bg-slate-900 p-1 text-white dark:bg-white dark:text-slate-900">
+                              <ShieldCheck className="h-3 w-3" />
+                            </span>
+                            <div>
+                              <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">已对齐课程信息</p>
+                              <p className="mt-1 text-[10px] leading-5 text-slate-500 dark:text-slate-300">
+                                高一数学 · 立体几何 · Unit 3
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="relative hidden h-full lg:block">
+                        <svg viewBox="0 0 32 248" className="h-full w-full">
+                          <path
+                            d="M2 124 C10 124, 12 62, 30 48"
+                            fill="none"
+                            stroke="#0f6ea8"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 4"
+                          />
+                          <path
+                            d="M2 124 C10 124, 12 124, 30 124"
+                            fill="none"
+                            stroke="#0f6ea8"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 4"
+                          />
+                          <path
+                            d="M2 124 C10 124, 12 186, 30 202"
+                            fill="none"
+                            stroke="#0f6ea8"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 4"
+                          />
+                        </svg>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-3">
+                        {previewOutputs.map((output, index) => {
+                          const isActive = index === activePreviewIndex;
+                          return (
+                            <motion.div
+                              key={output.title}
+                              animate={{
+                                y: isActive ? -4 : 0,
+                                scale: isActive ? 1.02 : 1,
+                                opacity: isActive ? 1 : 0.9,
+                              }}
+                              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                              className={`overflow-hidden rounded-[0.95rem] border ${
+                                isActive
+                                  ? 'border-slate-300 bg-white shadow-[0_14px_30px_rgba(15,23,42,0.08)] dark:border-white/15 dark:bg-slate-900'
+                                  : 'border-slate-200 bg-white/92 dark:border-white/10 dark:bg-slate-900/88'
+                              }`}
+                            >
+                              <div className={`h-3 ${output.tone}`} />
+                              <div className="space-y-1.5 p-2.5">
+                                <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-100">{output.title}</p>
+                                <div className="space-y-1">
+                                  <div className="h-1.5 w-4/5 rounded-full bg-slate-200 dark:bg-white/10" />
+                                  <div className="h-1.5 w-3/5 rounded-full bg-slate-100 dark:bg-white/5" />
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
+                            </motion.div>
+                          );
+                        })}
                       </div>
                     </div>
+                  </div>
 
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      {[
-                        { icon: FileText, label: '上传课堂文件', meta: '录音 / PDF' },
-                        { icon: ShieldCheck, label: '转写完成', meta: '自动识别' },
-                        { icon: ArrowRight, label: '导出 PDF', meta: '学生版' },
-                      ].map((item) => {
-                        const Icon = item.icon;
-                        return (
-                          <div
-                            key={item.label}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="inline-flex rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                                <Icon className="h-4 w-4" />
-                              </span>
-                              <span className="text-[11px] text-slate-400">{item.meta}</span>
-                            </div>
-                            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">
-                              {item.label}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 xl:grid-cols-6">
+                    {previewActions.map((action, index) => {
+                      const isActive = index === activePreviewIndex;
+                      return (
+                        <button
+                          key={action}
+                          type="button"
+                          onMouseEnter={() => setActivePreviewIndex(index)}
+                          className={`rounded-2xl border px-2.5 py-2 text-left text-xs font-medium transition-all ${
+                            isActive
+                              ? 'border-sky-300 bg-white text-slate-900 shadow-[0_12px_24px_rgba(15,23,42,0.06)] dark:border-sky-400/30 dark:bg-slate-900 dark:text-white'
+                              : 'border-transparent bg-slate-50 text-slate-400 dark:bg-white/[0.03] dark:text-slate-500'
+                          }`}
+                        >
+                          {action}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
