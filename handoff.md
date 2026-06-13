@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已补前端项目缺失的 React JSX 类型依赖：`frontend/package.json` 现显式加入 `@types/react` 与 `@types/react-dom`，`ConsultationMeetingWorkbench.tsx` 这类文件在编辑器里不再因为缺少 `JSX.IntrinsicElements` / React namespace 而整页飘红；当前 lint 剩余问题已转为普通业务类型错误，不再是 JSX 基础类型配置问题。
 - 2026-06-13 已清理 `frontend/src/features/consultation/ConsultationMeetingWorkbench.tsx` 的 lint 阻塞：补回工作台实际需要的 import（图标、`hasOwnerAccess`、`workspaceCardClass`、consultation surface/input class），并删除误残留在该文件尾部的 landing/legal 大段页面代码；本轮 lint 剩余报错已不再来自面对面工作台文件。
 - 2026-06-13 已把课程日历整页状态从 `frontend/src/App.tsx` 抽到新模块 `frontend/src/features/calendar/CalendarWorkspacePage.tsx`：课程班级/排期/自定义事项的加载、副作用、分页日期、排课与删除 handler 现在都在独立 calendar feature 内维护，`frontend/src/features/navigation/WorkspacePageContent.tsx` 只保留 `calendar` 页签到 `<CalendarWorkspacePage currentUser={currentUser} />` 的接线，`App.tsx` 不再承担这组日历状态与 CRUD 逻辑。同步把 `frontend/src/course-calendar.test.tsx` 和 `frontend/src/workspace-navigation.test.ts` 的源码断言切到新结构。当前轮 proof `/tmp/xingrun_calendar_workspace_extract_proof.sh` 已通过：源码接线检查通过，`course-calendar` 与 `workspace-navigation` 共 40 条定向前端测试全部通过。
 - 2026-06-13 已修复 `frontend/src/features/approval/ApprovalPage.tsx` 当前这批 lint 阻塞：补回 `useCallback`、图标/motion/shared style imports，恢复本地 `getCurrentClassDisplayNameById / getMemberBindingStatusBadgeClass / getRoleBadgeClass` helper，并把 `TeacherAliasEntry` 对齐到真实接口字段 `display_name / aliases / linked_username`；本轮 lint 剩余报错已不再来自审批页。
