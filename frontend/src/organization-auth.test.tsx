@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 const authSource = readFileSync(resolve(process.cwd(), 'src/features/auth/PublicAuthModals.tsx'), 'utf8');
+const authFlowSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authFlow.ts'), 'utf8');
 const accessSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/workspaceAccess.ts'), 'utf8');
 const approvalSource = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
 
@@ -17,10 +18,10 @@ test('landing and login source expose separate organization application and invi
   assert.match(appSource, /join-organization/);
   assert.match(authSource, /申请开通机构/);
   assert.match(authSource, /加入已有机构/);
-  assert.match(appSource, /getJoinInviteTokenFromPath/);
+  assert.match(authFlowSource, /export function getJoinInviteTokenFromPath/);
   assert.match(appSource, /publicAuthModal === 'join-organization'/);
   assert.match(authSource, /if \(!data\.token\)/);
-  assert.match(appSource, /clearJoinInvitePathIfNeeded/);
+  assert.match(authFlowSource, /export function clearJoinInvitePathIfNeeded/);
   assert.doesNotMatch(authSource, /organization_name:\s*'星润Starain'/);
   assert.doesNotMatch(authSource, /\/api\/register-request/);
 });
