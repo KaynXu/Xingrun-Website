@@ -780,3 +780,11 @@
 - Runnable proof passed via `/tmp/xingrun_org_dashboard_proof.sh`:
   - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
   - `rg -n "今天先把机构日常调顺|待处理事项|班级进度|今日状态|工作区入口|pendingItems|progressStats|classRows|sideList" src/WorkspaceDashboard.tsx`
+
+## 2026-06-14 dashboard accent color tone pass
+- Reduced blue accent usage across the role-based dashboards and shifted quick actions, inline actions, and count badges to a more neutral slate hierarchy.
+- Kept positive progress markers on a restrained emerald accent instead of using blue for every emphasis point.
+- Runnable proof passed via `/tmp/xingrun_dashboard_color_tone_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "dashboardQuickActionClass|dashboardInlineActionClass|bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600|text-emerald-500|text-slate-700 dark:text-slate-200" src/WorkspaceDashboard.tsx`
+  - remaining sky accent scan returned no matches in `WorkspaceDashboard.tsx`

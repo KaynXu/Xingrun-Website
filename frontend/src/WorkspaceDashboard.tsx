@@ -20,6 +20,12 @@ type WorkspaceDashboardProps = {
   canOpenAccounts: boolean;
 };
 
+const dashboardQuickActionClass =
+  'inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10 dark:hover:text-white';
+
+const dashboardInlineActionClass =
+  'inline-flex items-center gap-2 text-sm font-medium text-slate-700 transition hover:text-slate-900 dark:text-slate-200 dark:hover:text-white';
+
 function canOpenDashboardPage(currentUser: WorkspaceDashboardProps['currentUser'], page: WorkspacePage): boolean {
   if (page === 'dashboard' || page === 'settings') {
     return true;
@@ -128,12 +134,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
             {quickActions.map((action) => {
               const Icon = action.icon;
               return (
-                <button
-                  key={action.page}
-                  type="button"
-                  onClick={() => setActivePage(action.page)}
-                  className={`${styles.secondaryButtonClass} px-4 py-2.5 text-sm`}
-                >
+                <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
                   <Icon size={16} />
                   {action.label}
                 </button>
@@ -152,7 +153,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
                   <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日待办</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先处理会影响今天上课和课后交付的任务。</p>
                 </div>
-                <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                   {todayQueue.length} 项
                 </span>
               </div>
@@ -162,7 +163,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
                 <div key={item.title} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="shrink-0 text-sky-500 dark:text-sky-300" />
+                    <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
                       <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
                         {item.status}
@@ -170,11 +171,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
                     </div>
                     <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setActivePage(item.page)}
-                    className="inline-flex items-center gap-2 self-start text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 md:self-center"
-                  >
+                  <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
                     {item.action}
                     <ArrowRight size={15} />
                   </button>
@@ -247,11 +244,7 @@ function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashbo
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.detail}</p>
-                      <button
-                        type="button"
-                        onClick={() => setActivePage(item.page)}
-                        className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
-                      >
+                      <button type="button" onClick={() => setActivePage(item.page)} className={`mt-3 ${dashboardInlineActionClass}`}>
                         {item.action}
                         <ArrowRight size={15} />
                       </button>
@@ -359,14 +352,9 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
-              <button
-                key={action.page}
-                type="button"
-                onClick={() => setActivePage(action.page)}
-                className={`${styles.secondaryButtonClass} px-4 py-2.5 text-sm`}
-              >
-                {action.label}
-              </button>
+                <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
+                  {action.label}
+                </button>
             ))}
           </div>
         </div>
@@ -380,7 +368,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
                 <p className="text-base font-semibold text-slate-900 dark:text-slate-100">需要关注的机构</p>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">优先看今天积压、漏处理和异常偏低的机构。</p>
               </div>
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                 {attentionItems.length} 条提醒
               </span>
             </div>
@@ -398,11 +386,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
                   </div>
                   <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.issue}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePage(item.page)}
-                  className="inline-flex items-center gap-2 self-start text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 md:self-center"
-                >
+                <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
                   {item.action}
                   <ArrowRight size={15} />
                 </button>
@@ -439,7 +423,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">先清掉账号审批</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天有 2 个机构还卡在开通环节。</p>
                 </div>
-                <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+                <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
               </button>
               <button
                 type="button"
@@ -450,7 +434,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">再看课堂反馈积压</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">优先处理今天已经下课但还没整理的班级。</p>
                 </div>
-                <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+                <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
               </button>
               <button
                 type="button"
@@ -461,7 +445,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">最后看低产出机构</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">确认老师是否正常在生成复习资料和讲义。</p>
                 </div>
-                <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+                <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
               </button>
             </div>
           </section>
@@ -495,7 +479,7 @@ function PlatformWorkspace({ setActivePage, styles }: WorkspaceDashboardProps) {
                 <span className="text-sm text-slate-600 dark:text-slate-300">{row.outputs}</span>
                 <span className="text-sm text-slate-600 dark:text-slate-300">{row.approvals}</span>
                 <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
-                <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
+                <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                   进入
                   <ArrowRight size={15} />
                 </span>
@@ -633,14 +617,9 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
-              <button
-                key={action.page}
-                type="button"
-                onClick={() => setActivePage(action.page)}
-                className={`${styles.secondaryButtonClass} px-4 py-2.5 text-sm`}
-              >
-                {action.label}
-              </button>
+                <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
+                  {action.label}
+                </button>
             ))}
           </div>
         </div>
@@ -655,7 +634,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
                   <p className="text-base font-semibold text-slate-900 dark:text-slate-100">待处理事项</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天最容易卡住教务和老师协同的事情放前面。</p>
                 </div>
-                <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
                   {pendingItems.length} 项
                 </span>
               </div>
@@ -665,7 +644,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
                 <div key={item.title} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="shrink-0 text-sky-500 dark:text-sky-300" />
+                    <CheckCircle2 size={16} className="shrink-0 text-emerald-500 dark:text-emerald-300" />
                       <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
                         {item.status}
@@ -673,11 +652,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
                     </div>
                     <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setActivePage(item.page)}
-                    className="inline-flex items-center gap-2 self-start text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 md:self-center"
-                  >
+                  <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
                     {item.action}
                     <ArrowRight size={15} />
                   </button>
@@ -711,7 +686,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
                     <span className="text-sm text-slate-600 dark:text-slate-300">{row.schedule}</span>
                     <span className="text-sm text-slate-600 dark:text-slate-300">{row.teacher}</span>
                     <span className="text-sm text-slate-500 dark:text-slate-400">{row.status}</span>
-                    <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-sky-600 dark:text-sky-400">
+                    <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                       进入
                       <ArrowRight size={15} />
                     </span>
@@ -752,7 +727,7 @@ function OrganizationWorkspace({ currentUser, setActivePage, styles, canOpenAcco
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{entry.title}</p>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{entry.description}</p>
                   </div>
-                  <ArrowRight size={15} className="shrink-0 text-sky-500 dark:text-sky-400" />
+                  <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
                 </button>
               ))}
             </div>
