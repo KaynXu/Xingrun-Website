@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已按用户要求移除官网顶部 `立即登录` 旁边的 `申请开通机构` 按钮；当前 `frontend/src/features/landing/LandingPage.tsx` 顶部操作区只保留夜间模式和 `立即登录`，不再给 header 额外的试用分流。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求收敛官网 hero CTA 逻辑：`frontend/src/features/landing/LandingPage.tsx` 首屏主操作已从 `查看平台方案 / 申请开通机构 / 加入已有机构` 三分流改成仅保留 `立即登录 / 申请试用` 两个更直接的按钮；“加入已有机构” 入口不再占据 hero 操作区，回收到登录链路内部，首屏转化路径更短、噪音更少。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求移除官网首屏右侧“平台概览”整张概览卡：`frontend/src/features/landing/LandingPage.tsx` 首屏现在只保留左侧主标题、说明和机构入口，不再显示“平台概览 / 面向学习全流程的 AI 教育平台 / 已上线 / 复习资料 / 错题跟进 / 教学交付”这一整组卡片内容。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求移除官网首屏背景里的发光光晕层：`frontend/src/features/landing/LandingPage.tsx` 的 `HeroBackgroundGrainient()` 现已删掉 3 个大面积模糊径向 glow 层和中心额外亮晕，只保留底层渐变与动态纹理，页面不会再出现明显的背景发光团。当前轮 proof 会继续用 landing 页面定向脚本记录。

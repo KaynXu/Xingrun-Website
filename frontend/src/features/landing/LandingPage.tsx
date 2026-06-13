@@ -272,12 +272,6 @@ export function LandingPage({
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <button
-              onClick={handleRegister}
-              className="hidden sm:inline-flex rounded-full border border-sky-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-sky-50 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
-            >
-              申请开通机构
-            </button>
-            <button
               onClick={onLogin}
               className="rounded-full bg-sky-600 px-6 py-2.5 text-sm font-bold text-white shadow-[0_16px_40px_rgba(34,199,232,0.28)] transition-all hover:bg-sky-500 active:scale-95"
             >
