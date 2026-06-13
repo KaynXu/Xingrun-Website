@@ -2452,6 +2452,50 @@ def _dashboard_review_status_label(lesson: dict) -> str:
     return "待处理"
 
 
+def _dashboard_get_class_feedback_tasks(user: dict) -> list[dict]:
+    role = str(user.get("role") or "")
+    params: list[object] = []
+    query = """
+        SELECT *
+        FROM class_feedback_tasks
+    """
+    if role == "super_owner":
+        query += " ORDER BY updated_at DESC, id DESC"
+    elif role in {"owner", "admin"}:
+        query += " WHERE organization_id=? ORDER BY updated_at DESC, id DESC"
+        params.append(int(user.get("organization_id") or 0))
+    else:
+        owned_class_ids = [class_id for class_id in get_user_class_ids(int(user["id"])) if int(class_id or 0) > 0]
+        query += " WHERE teacher_user_id=?"
+        params.append(int(user["id"]))
+        if owned_class_ids:
+            placeholders = ",".join("?" for _ in owned_class_ids)
+            query += f" OR class_id IN ({placeholders})"
+            params.extend(owned_class_ids)
+        query += " ORDER BY updated_at DESC, id DESC"
+    with get_conn() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _dashboard_feedback_state(task: dict) -> str:
+    status = str(task.get("status") or "").strip()
+    if status == "confirmed":
+        return "confirmed"
+    if status in {"pending", "queued", "processing", "generating"}:
+        return "generating"
+    return "draft"
+
+
+def _dashboard_feedback_status_label(task: dict) -> str:
+    state = _dashboard_feedback_state(task)
+    if state == "confirmed":
+        return "已确认"
+    if state == "generating":
+        return "生成中"
+    return "待反馈"
+
+
 def _dashboard_time_label(schedule: dict) -> str:
     raw = str(schedule.get("time_block") or "").strip()
     if "-" in raw:
@@ -2503,6 +2547,7 @@ def _dashboard_build_member_payload(user: dict) -> dict:
     lessons = _dashboard_get_lessons(user)
     open_consultations = _dashboard_get_open_consultations(user)
     today_schedules = _dashboard_get_today_schedules(user, today_iso)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
 
     pending_lessons = [
         lesson
@@ -2510,6 +2555,7 @@ def _dashboard_build_member_payload(user: dict) -> dict:
         if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
     ]
     ready_lessons = [lesson for lesson in lessons if _dashboard_review_state(lesson) == "ready"]
+    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
     week_ready_lessons = [
         lesson
         for lesson in ready_lessons
@@ -2524,6 +2570,18 @@ def _dashboard_build_member_payload(user: dict) -> dict:
                 "title": _dashboard_lesson_title(lesson, class_name_by_id),
                 "meta": _dashboard_lesson_meta(lesson, class_name_by_id),
                 "status": _dashboard_review_status_label(lesson),
+                "action": "进入",
+            }
+        )
+    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation") and len(today_queue) < 3:
+        latest_feedback_task = active_feedback_tasks[0]
+        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
+        today_queue.append(
+            {
+                "page": "class-feedback-generation",
+                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
+                "meta": latest_feedback_class_name,
+                "status": _dashboard_feedback_status_label(latest_feedback_task),
                 "action": "进入",
             }
         )
@@ -2563,7 +2621,7 @@ def _dashboard_build_member_payload(user: dict) -> dict:
     weekly_stats = [
         {"label": "本周资料", "value": str(len(week_ready_lessons)), "note": "本周生成完成"},
         {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "含转写中和失败记录"},
-        {"label": "待跟进咨询", "value": str(len(open_consultations)), "note": "当前未结束咨询"},
+        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
     ]
 
     schedule = [
@@ -2601,11 +2659,13 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
     lessons = _dashboard_get_lessons(user)
     open_consultations = _dashboard_get_open_consultations(user)
     today_schedules = _dashboard_get_today_schedules(user, today_iso)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
     pending_lessons = [
         lesson
         for lesson in lessons
         if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
     ]
+    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
     week_ready_lessons = [
         lesson
         for lesson in lessons
@@ -2632,6 +2692,18 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
                 "title": f"待处理复习资料 {len(pending_lessons)} 份",
                 "meta": "包含转写中、生成中和失败记录",
                 "status": "待处理",
+                "action": "进入",
+            }
+        )
+    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation"):
+        latest_feedback_task = active_feedback_tasks[0]
+        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
+        pending_items.append(
+            {
+                "page": "class-feedback-generation",
+                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
+                "meta": latest_feedback_class_name,
+                "status": _dashboard_feedback_status_label(latest_feedback_task),
                 "action": "进入",
             }
         )
@@ -2662,12 +2734,25 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
         for lesson in pending_lessons
         if int(lesson.get("class_id") or 0) > 0
     }
+    feedback_by_class_id = {
+        int(task.get("class_id") or 0): task
+        for task in active_feedback_tasks
+        if int(task.get("class_id") or 0) > 0
+    }
     class_rows = []
     for schedule in today_schedules[:6]:
         class_id = int(schedule.get("class_id") or 0)
         linked_lesson = pending_by_class_id.get(class_id)
-        row_page = "review-generation" if linked_lesson else ("calendar" if _dashboard_can_open_page(user, "calendar") else "classes")
-        row_status = _dashboard_review_status_label(linked_lesson) if linked_lesson else "已排课"
+        linked_feedback_task = feedback_by_class_id.get(class_id)
+        if linked_feedback_task is not None:
+            row_page = "class-feedback-generation"
+            row_status = _dashboard_feedback_status_label(linked_feedback_task)
+        elif linked_lesson is not None:
+            row_page = "review-generation"
+            row_status = _dashboard_review_status_label(linked_lesson)
+        else:
+            row_page = "calendar" if _dashboard_can_open_page(user, "calendar") else "classes"
+            row_status = "已排课"
         class_rows.append(
             {
                 "name": _dashboard_class_name(schedule.get("class_name"), fallback=class_name_by_id.get(class_id, "未命名班级")),
@@ -2681,6 +2766,7 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
     stats = [
         {"label": "今日排课", "value": str(len(today_schedules)), "note": "今天课程安排"},
         {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "待完成资料记录"},
+        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
         {"label": "待跟进咨询", "value": str(len(open_consultations)), "note": "当前未结束咨询"},
         {
             "label": "待审批账号" if can_open_accounts else "本周资料",
@@ -2704,6 +2790,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
     organizations = list_organizations()
     lessons = _dashboard_get_lessons(user)
     users = list_users_for_actor(user)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
     pending_registration_requests = list_registration_requests_for_actor(user, "pending")
     pending_organization_requests = list_organization_requests()
 
@@ -2732,6 +2819,15 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         if organization_id <= 0:
             continue
         pending_registration_by_org[organization_id] = pending_registration_by_org.get(organization_id, 0) + 1
+
+    pending_feedback_by_org: dict[int, int] = {}
+    for task in feedback_tasks:
+        if _dashboard_feedback_state(task) == "confirmed":
+            continue
+        organization_id = int(task.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_feedback_by_org[organization_id] = pending_feedback_by_org.get(organization_id, 0) + 1
 
     attention_items: list[dict] = []
     if pending_organization_requests:
@@ -2769,6 +2865,29 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         )
         if len(attention_items) >= 4:
             break
+
+    if len(attention_items) < 4:
+        feedback_organizations = sorted(
+            organizations,
+            key=lambda item: pending_feedback_by_org.get(int(item.get("id") or 0), 0),
+            reverse=True,
+        )
+        for organization in feedback_organizations:
+            organization_id = int(organization.get("id") or 0)
+            feedback_count = pending_feedback_by_org.get(organization_id, 0)
+            if feedback_count <= 0:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"有 {feedback_count} 条课堂反馈任务待处理。",
+                    "status": "待反馈",
+                    "page": "class-feedback-generation",
+                    "action": "进入",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
 
     if len(attention_items) < 4:
         quiet_organizations = [
@@ -2819,7 +2938,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         {"label": "机构数", "value": str(len(organizations)), "note": "当前在库机构"},
         {"label": "成员数", "value": str(len(users)), "note": "含机构管理员和成员"},
         {"label": "待审批", "value": str(total_pending_approvals), "note": "机构申请和成员申请"},
-        {"label": "今日资料", "value": str(sum(today_output_by_org.values())), "note": "今天新增复习资料"},
+        {"label": "待反馈", "value": str(sum(pending_feedback_by_org.values())), "note": "课堂反馈任务"},
     ]
 
     organization_rows = []
@@ -2828,11 +2947,15 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         pending_count = pending_registration_by_org.get(organization_id, 0)
         today_output_count = today_output_by_org.get(organization_id, 0)
         week_output_count = week_output_by_org.get(organization_id, 0)
-        status = (
-            f"待审批 {pending_count}"
-            if pending_count > 0
-            else (f"今日资料 {today_output_count}" if today_output_count > 0 else f"本周资料 {week_output_count}")
-        )
+        feedback_count = pending_feedback_by_org.get(organization_id, 0)
+        if pending_count > 0:
+            status = f"待审批 {pending_count}"
+        elif feedback_count > 0:
+            status = f"待反馈 {feedback_count}"
+        elif today_output_count > 0:
+            status = f"今日资料 {today_output_count}"
+        else:
+            status = f"本周资料 {week_output_count}"
         organization_rows.append(
             {
                 "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
@@ -2840,7 +2963,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
                 "outputs": str(today_output_count),
                 "approvals": str(pending_count),
                 "status": status,
-                "page": "accounts" if pending_count > 0 else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes"),
+                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes")),
             }
         )
 
