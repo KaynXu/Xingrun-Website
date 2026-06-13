@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已把未登录入口里 `close/open/back` 这组 public auth 事件切换 helper 从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authActions.ts`，包括 `closePublicAuthState()`、`openApplyOrganizationState()`、`openJoinOrganizationState()`、`openPasswordResetState()` 和 `backToLoginState()`；`App.tsx` 现在只负责调用 helper 并落状态，不再内联这组切换细节。当前轮 proof `/tmp/xingrun_auth_actions_extract_proof.sh` 已通过：auth actions 模块可导入，App 已改为复用新 helper，organization auth 与 storage guard 定向测试全部通过。
 - 2026-06-13 已把未登录入口的 public auth 初始状态 helper 从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authState.ts`，包括 `PublicAuthModal` 类型、`getInitialPublicAuthModal()` 和 `getInitialJoinInviteToken()`；`App.tsx` 不再内联这两段初始化闭包，`frontend/src/organization-auth.test.tsx` 也已同步跟到新模块。当前轮 proof `/tmp/xingrun_auth_state_extract_proof.sh` 已通过：App 不再本地维护 public auth 初始状态 helper，organization auth 与 storage guard 定向测试全部通过。
 - 2026-06-13 已把加入机构邀请链接相关的小工具从 `frontend/src/App.tsx` 抽到 `frontend/src/features/auth/authFlow.ts`，`getJoinInviteTokenFromPath()` 与 `clearJoinInvitePathIfNeeded()` 现在作为独立 auth flow helper 供入口复用；`frontend/src/organization-auth.test.tsx` 的源码断言也已同步改到新模块。当前轮 proof `/tmp/xingrun_auth_flow_extract_proof.sh` 已通过：App 不再内联这两个 helper，organization auth 与 storage guard 定向测试全部通过。
 - 2026-06-13 已修复 `frontend/src/App.tsx` 当前阻塞 lint 的 3 个 TypeScript 错误：补回本地 `WorkspaceLoading` 组件，并把课程日历前后翻页回调改成零参包装以对齐 `WorkspacePageContent` 当前接口；本轮 proof 会继续保留完整 lint 输出，但剩余报错已不再来自 `App.tsx`。

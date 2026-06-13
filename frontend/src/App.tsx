@@ -124,6 +124,13 @@ import {
   getJoinInviteTokenFromPath,
 } from './features/auth/authFlow';
 import {
+  backToLoginState,
+  closePublicAuthState,
+  openApplyOrganizationState,
+  openJoinOrganizationState,
+  openPasswordResetState,
+} from './features/auth/authActions';
+import {
   getInitialJoinInviteToken,
   getInitialPublicAuthModal,
 } from './features/auth/authState';
@@ -664,27 +671,29 @@ export default function App() {
 
   const closePublicAuthModal = () => {
     clearJoinInvitePathIfNeeded();
-    setJoinInviteToken(null);
-    setPublicAuthModal(null);
+    const nextState = closePublicAuthState();
+    setJoinInviteToken(nextState.joinInviteToken);
+    setPublicAuthModal(nextState.publicAuthModal);
   };
 
   const openApplyOrganization = () => {
-    setJoinInviteToken(null);
-    setPublicAuthModal('apply-organization');
+    const nextState = openApplyOrganizationState();
+    setJoinInviteToken(nextState.joinInviteToken);
+    setPublicAuthModal(nextState.publicAuthModal);
   };
 
   const openJoinOrganization = () => {
-    const nextToken = typeof window === 'undefined' ? null : getJoinInviteTokenFromPath(window.location.pathname);
-    setJoinInviteToken(nextToken);
-    setPublicAuthModal('join-organization');
+    const nextState = openJoinOrganizationState(typeof window === 'undefined' ? '' : window.location.pathname);
+    setJoinInviteToken(nextState.joinInviteToken);
+    setPublicAuthModal(nextState.publicAuthModal);
   };
 
   const openPasswordReset = () => {
-    setPublicAuthModal('password-reset');
+    setPublicAuthModal(openPasswordResetState());
   };
 
   const backToLogin = () => {
-    setPublicAuthModal('login');
+    setPublicAuthModal(backToLoginState());
   };
 
   const navigateWorkspacePage = useCallback((page: Page) => {
