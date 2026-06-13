@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { MoreVertical, Pencil, PlusCircle, RefreshCw, Save, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, ArrowRight, ChevronDown, MoreVertical, Pencil, PlusCircle, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem, WorkspacePage, Role } from '../../appTypes';
 import { formatClassDisplayName } from '../../domain/classNaming';
 import {
@@ -17,6 +18,7 @@ import {
   workspacePageClass,
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
+  workspaceSoftCardClass,
 } from '../../workspaceShared';
 type Page = WorkspacePage;
 
@@ -75,7 +77,9 @@ interface MemberBindingSummary {
 
 interface TeacherAliasEntry {
   wecom_userid: string;
-  alias_names: string[];
+  display_name: string;
+  aliases: string[];
+  linked_username?: string;
   updated_at?: string | null;
 }
 
@@ -99,16 +103,33 @@ function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCoho
   return formatClassDisplayName(item, { showCohortYear });
 }
 
+function getCurrentClassDisplayNameById(
+  classes: ClassItem[],
+  classId: number | null | undefined,
+  fallbackName?: string | null,
+  showCohortYear = false,
+): string {
+  const classItem = classId == null ? undefined : classes.find((item) => item.id === classId);
+  return getCurrentClassDisplayName(classItem, showCohortYear) || fallbackName?.trim() || '';
+}
+
 function getMemberBindingStatusLabel(status: MemberBindingSummaryStatus): string {
   if (status === 'healthy') return '正常';
   if (status === 'needs_review') return '待处理';
   return '未完成';
 }
 
-function getMemberBindingStatusTone(status: MemberBindingSummaryStatus): string {
+function getMemberBindingStatusBadgeClass(status: MemberBindingSummaryStatus): string {
   if (status === 'healthy') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300';
   if (status === 'needs_review') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
   return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300';
+}
+
+function getRoleBadgeClass(role: Role): string {
+  if (role === 'super_owner') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300';
+  if (role === 'owner') return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300';
+  if (role === 'admin') return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
+  return 'border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
 }
 
 type ApprovalPageProps = {
