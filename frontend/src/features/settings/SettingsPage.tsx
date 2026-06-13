@@ -1,17 +1,11 @@
 import type { CurrentUser } from '../../appTypes';
+import { getRoleLabel } from '../../appDisplay';
 import {
   workspaceCardClass,
   workspacePageClass,
   workspaceSecondaryButtonClass,
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
-
-function getRoleLabel(role: CurrentUser['role']): string {
-  if (role === 'super_owner') return '超级管理员';
-  if (role === 'owner') return '机构负责人';
-  if (role === 'admin') return '管理员';
-  return '机构成员';
-}
 
 type SettingsPageProps = {
   currentUser: CurrentUser;
