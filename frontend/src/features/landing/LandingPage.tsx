@@ -292,53 +292,56 @@ export function LandingPage({
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
                 </div>
                 <div className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
-                  教学工作台
+                  复习计划生成
                 </div>
               </div>
 
-              <div className="grid gap-0 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="grid gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">
                 <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03] lg:border-b-0 lg:border-r">
-                  <div className="space-y-2">
-                    {[
-                      { icon: FileText, title: '复习生成', meta: '12 份文档', active: true },
-                      { icon: AlertCircle, title: '错题跟进', meta: '8 条记录', active: false },
-                      { icon: Database, title: '教学交付', meta: '3 个草稿', active: false },
-                    ].map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <div
-                          key={item.title}
-                          className={`rounded-2xl border px-4 py-3 ${
-                            item.active
-                              ? 'border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900'
-                              : 'border-transparent bg-transparent'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="rounded-xl bg-slate-100 p-2 text-slate-600 dark:bg-white/5 dark:text-slate-300">
-                              <Icon className="h-4 w-4" />
-                            </span>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">{item.meta}</p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">新建复习文档</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">课堂录音 + 补充笔记</p>
+                      </div>
+                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                        进行中
+                      </span>
+                    </div>
 
-                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
-                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-400">今日概览</p>
                     <div className="mt-4 space-y-3">
                       {[
-                        ['待整理课堂', '4'],
-                        ['待跟进学生', '12'],
-                        ['待确认讲义', '2'],
+                        ['班级', '高一数学提高班'],
+                        ['科目', '数学'],
+                        ['课题', '立体几何复习'],
+                        ['日期', '2026-06-12'],
                       ].map(([label, value]) => (
-                        <div key={label} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-500 dark:text-slate-400">{label}</span>
-                          <span className="font-semibold text-slate-900 dark:text-white">{value}</span>
+                        <div key={label} className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/[0.04]">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                          <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-200">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-400">输入内容</p>
+                    <div className="mt-3 space-y-2">
+                      {[
+                        ['课堂录音', 'audio-0612.m4a'],
+                        ['课堂笔记', '已补充 286 字'],
+                        ['同课材料', '例题讲义 2 份'],
+                      ].map(([label, value], index) => (
+                        <div
+                          key={label}
+                          className={`rounded-xl border px-3 py-3 ${
+                            index === 0
+                              ? 'border-sky-200 bg-sky-50/80 dark:border-sky-500/30 dark:bg-sky-500/10'
+                              : 'border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.02]'
+                          }`}
+                        >
+                          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{value}</p>
                         </div>
                       ))}
                     </div>
@@ -347,11 +350,11 @@ export function LandingPage({
 
                 <div className="px-5 py-4">
                   <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-4 dark:border-white/10">
-                      {['历史文档', '课堂错题', '教学交付'].map((tab, index) => (
+                    {['转写', '生成', '预览'].map((tab, index) => (
                       <span
                         key={tab}
                         className={`rounded-full px-3 py-1 text-sm font-medium ${
-                          index === 0
+                          index === 2
                             ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
                             : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
                         }`}
@@ -361,64 +364,72 @@ export function LandingPage({
                     ))}
                   </div>
 
-                  <div className="space-y-3 pt-4">
-                    {[
-                      {
-                        title: '高一数学｜立体几何复习讲义',
-                        body: '今天 14:20 · 已生成',
-                        status: 'PDF',
-                      },
-                      {
-                        title: '初二英语｜课堂错题回看',
-                        body: '今天 11:35 · 待确认',
-                        status: '跟进',
-                      },
-                      {
-                        title: '教研组｜周讲义整理',
-                        body: '昨天 18:10 · 已归档',
-                        status: '文档',
-                      },
-                    ].map((item, index) => (
-                      <div
-                        key={item.title}
-                        className={`rounded-2xl border border-slate-200 px-4 py-4 dark:border-white/10 ${
-                          index === 0 ? '' : ''
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
-                            <p className="text-sm text-slate-500 dark:text-slate-400">{item.body}</p>
+                  <div className="space-y-4 pt-4">
+                    <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">立体几何复习计划</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">高一数学提高班 · 今天 14:20</p>
+                        </div>
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                          已生成
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        {[
+                          ['课堂重点', '3 条'],
+                          ['易错提醒', '2 条'],
+                          ['复习任务', '5 天'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-2xl border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-slate-900">
+                            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                            <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100">{value}</p>
                           </div>
-                          <div className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/5 dark:text-slate-300">
-                            {item.status}
-                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+                        <div className="space-y-3">
+                          {[
+                            ['课堂重点', '线面角、二面角、法向量'],
+                            ['易错点', '条件翻译、体积转化、作辅助线'],
+                            ['复习安排', 'Day 1 例题回看 · Day 3 错题重做 · Day 7 课堂小结'],
+                          ].map(([label, value]) => (
+                            <div key={label} className="flex items-start gap-3">
+                              <span className="mt-1 h-2 w-2 rounded-full bg-sky-500" />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
+                                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{value}</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    {[
-                      { icon: Home, label: '机构分组' },
-                      { icon: ShieldCheck, label: '成员权限' },
-                      { icon: ArrowRight, label: '继续编辑' },
-                    ].map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <div
-                          key={item.label}
-                          className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]"
-                        >
-                          <span className="inline-flex rounded-xl bg-white p-2 text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200">
-                            <Icon className="h-4 w-4" />
-                          </span>
-                          <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">
-                            {item.label}
-                          </p>
-                        </div>
-                      );
-                    })}
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {[
+                        { icon: FileText, label: '上传课堂文件' },
+                        { icon: ShieldCheck, label: '转写完成' },
+                        { icon: ArrowRight, label: '导出 PDF' },
+                      ].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <div
+                            key={item.label}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]"
+                          >
+                            <span className="inline-flex rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                              <Icon className="h-4 w-4" />
+                            </span>
+                            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+                              {item.label}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>

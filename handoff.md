@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已按用户要求把 landing hero 右侧 mock UI 从泛用工作台收成更真实的“复习计划生成”界面：`frontend/src/features/landing/LandingPage.tsx` 现在直接参考本地复习计划链路里的真实节点来展示，包括 `新建复习文档 / 课堂录音 / 课堂笔记 / 同课材料 / 转写 / 生成 / 预览 / 已生成 / 导出 PDF`，并用更像成品界面的布局替换了之前那种泛泛的 tabs + 列表占位。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已把 hero 副标题里不自然的动作词收掉：`frontend/src/features/landing/LandingPage.tsx` 首屏副标题现从 `复习资料、错题跟进、讲义整理，都能直接接着做。` 改为更具体的 `帮老师更快整理复习资料、记录错题和准备讲义。`，避免“接着做”这种语义悬空的表达。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求移除官网 footer 里的站内导航组：`frontend/src/features/landing/LandingPage.tsx` 页脚不再显示 `核心方案` 和 `关于 Starain` 两个锚点入口，现只保留品牌信息、法律链接和版权信息。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续把 `关于 Starain` 的开头收回正常语气：`frontend/src/features/landing/LandingPage.tsx` 不再使用 `从 PPT 里想出来 / 从教学现场长出来` 这种带明显 AI 套话感的修辞，现改为更直接的两句：`这套产品先在我们自己的教学团队里用。` 和 `哪些地方费时间，哪些地方容易断，我们先把它补上。` 这一轮只动 about 文案，不改页面结构。当前轮 proof 会继续用 landing 页面定向脚本记录。
