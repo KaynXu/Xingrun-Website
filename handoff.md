@@ -756,3 +756,11 @@
   - `npx tsx -e "import('./src/features/navigation/Header.tsx').then(() => console.log('Header module import OK'))"`
   - `rg -n "title: _title|justify-end gap-4 px-4|flex items-center gap-2 sm:gap-3" src/features/navigation/Header.tsx`
   - negative check confirming the old `<h1>` title block is removed
+
+## 2026-06-14 member dashboard first pass
+- Reworked the member workspace dashboard from a simple entry grid into a task-oriented home screen.
+- Added a quick action row plus three functional sections: 今日待办, 最近产出, and 今天课程.
+- Added a compact 本周进度 summary so the member role sees workload and output status at a glance.
+- Runnable proof passed via `/tmp/xingrun_member_dashboard_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天先做这几件事|今日待办|最近产出|本周进度|今天课程|todayQueue|recentOutputs|scheduleItems|quickActions" src/WorkspaceDashboard.tsx`

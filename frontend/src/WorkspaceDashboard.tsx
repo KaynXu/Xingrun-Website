@@ -1,4 +1,4 @@
-import { ArrowRight, PlusCircle } from 'lucide-react';
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, FileStack, PlusCircle, Sparkles } from 'lucide-react';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
 type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
@@ -31,76 +31,236 @@ function canOpenDashboardPage(currentUser: WorkspaceDashboardProps['currentUser'
 }
 
 function MemberWorkspace({ currentUser, setActivePage, styles }: WorkspaceDashboardProps) {
-  const teachingEntries = [
+  const quickActions = [
     {
       page: 'review-generation' as WorkspacePage,
-      title: '复习生成',
-      description: '生成讲义、错题回顾和 AI 阶段复习资料。',
+      label: '新建复习文档',
+      icon: PlusCircle,
     },
     {
       page: 'class-feedback-generation' as WorkspacePage,
-      title: '课堂反馈',
-      description: '进入班级反馈生成，整理本节课教学结论。',
+      label: '补课堂反馈',
+      icon: FileStack,
     },
     {
       page: 'calendar' as WorkspacePage,
-      title: '课程日历',
-      description: '查看课程安排，切换到本周和后续排课视图。',
+      label: '查看课程日历',
+      icon: CalendarDays,
     },
     {
       page: 'smartWrongQuestions' as WorkspacePage,
-      title: '智能错题',
-      description: '查看学生错题，记录错因和掌握情况。',
+      label: '继续错题跟进',
+      icon: Sparkles,
+    },
+  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
+
+  const todayQueue = [
+    {
+      page: 'review-generation' as WorkspacePage,
+      title: '生成高二数学复习资料',
+      meta: '课堂录音和补充笔记已上传',
+      status: '待处理',
+      action: '去生成',
+    },
+    {
+      page: 'class-feedback-generation' as WorkspacePage,
+      title: '补 2 节课堂反馈',
+      meta: '周三、周四课程还未整理',
+      status: '今天处理',
+      action: '去反馈',
+    },
+    {
+      page: 'smartWrongQuestions' as WorkspacePage,
+      title: '跟进 5 条错题',
+      meta: '高一英语衔接班 · 需要补掌握状态',
+      status: '待跟进',
+      action: '去跟进',
+    },
+  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
+
+  const recentOutputs = [
+    {
+      page: 'review-generation' as WorkspacePage,
+      title: '高一英语语法复习单',
+      meta: '今天 14:20 · 已导出 PDF',
+      status: '已完成',
+    },
+    {
+      page: 'class-feedback-generation' as WorkspacePage,
+      title: '七年级数学课堂反馈',
+      meta: '今天 11:40 · 待补老师备注',
+      status: '草稿',
+    },
+    {
+      page: 'review-generation' as WorkspacePage,
+      title: '立体几何阶段复习',
+      meta: '昨天 18:05 · 已发送家长群',
+      status: '已完成',
+    },
+  ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
+
+  const scheduleItems = [
+    {
+      time: '16:30',
+      title: '高一英语衔接班',
+      detail: '课前需要打开上次错题记录',
+      page: 'smartWrongQuestions' as WorkspacePage,
+      action: '查看错题',
+    },
+    {
+      time: '19:00',
+      title: '高二数学提高班',
+      detail: '下课后直接进入复习生成',
+      page: 'review-generation' as WorkspacePage,
+      action: '打开生成',
     },
   ].filter((entry) => canOpenDashboardPage(currentUser, entry.page));
 
   return (
-    <div className={`${styles.pageClass} space-y-6`}>
-      <section className="rounded-[2rem] border border-sky-100 bg-[radial-gradient(circle_at_top_left,_rgba(34,199,232,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,255,255,0.98)_0%,_rgba(236,246,255,0.92)_52%,_rgba(223,241,255,0.96)_100%)] p-6 shadow-[0_24px_72px_rgba(47,128,237,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(135deg,_rgba(15,23,42,0.98)_0%,_rgba(17,24,39,0.95)_52%,_rgba(30,41,59,0.96)_100%)] dark:shadow-[0_28px_80px_rgba(2,6,23,0.36)] md:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">Teaching flow</p>
-        <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-3">
-            <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">快速开始</h3>
-            <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-              已开放 AI 复习生成、课堂反馈、课程日历和智能错题入口。
-            </p>
+    <div className={`${styles.pageClass} space-y-5`}>
+      <section className={`${styles.cardClass} p-5 md:p-6`}>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">今天先做这几件事</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">把复习资料、课堂反馈和错题跟进接上，不用来回找页面。</p>
           </div>
-          {canOpenDashboardPage(currentUser, 'review-generation') && (
-            <button type="button" onClick={() => setActivePage('review-generation')} className={styles.primaryButtonClass}>
-              <PlusCircle size={18} />
-              新建复习文档
-            </button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.page}
+                  type="button"
+                  onClick={() => setActivePage(action.page)}
+                  className={`${styles.secondaryButtonClass} px-4 py-2.5 text-sm`}
+                >
+                  <Icon size={16} />
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {teachingEntries.map((entry) => (
-          <button key={entry.page} type="button" onClick={() => setActivePage(entry.page)} className={`${styles.cardClass} flex min-h-32 flex-col items-start justify-between p-5 text-left`}>
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{entry.title}</span>
-            <span className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">{entry.description}</span>
-          </button>
-        ))}
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-        <div className={`${styles.cardClass} p-6`}>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">我的教学概览</p>
-              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                汇总班级、课堂反馈和复习资料入口。
-              </p>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
+        <div className="space-y-5">
+          <section className={`${styles.cardClass} overflow-hidden p-0`}>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日待办</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先处理会影响今天上课和课后交付的任务。</p>
+                </div>
+                <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                  {todayQueue.length} 项
+                </span>
+              </div>
             </div>
-            <ArrowRight size={18} className="shrink-0 text-sky-500 dark:text-sky-400" />
-          </div>
+            <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+              {todayQueue.map((item) => (
+                <div key={item.title} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="shrink-0 text-sky-500 dark:text-sky-300" />
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                        {item.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActivePage(item.page)}
+                    className="inline-flex items-center gap-2 self-start text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 md:self-center"
+                  >
+                    {item.action}
+                    <ArrowRight size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={`${styles.cardClass} overflow-hidden p-0`}>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">最近产出</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">刚做完和还没收尾的文档都放在这里。</p>
+            </div>
+            <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+              {recentOutputs.map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  onClick={() => setActivePage(item.page)}
+                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                    <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">{item.meta}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                    {item.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
         </div>
 
-        <div className={`${styles.cardClass} p-6`}>
-          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">最近工作</p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            展示复习生成、课堂反馈和错题跟进的最近记录。
-          </p>
+        <div className="space-y-5">
+          <section className={`${styles.cardClass} p-5`}>
+            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">本周进度</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">复习资料</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">6</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">本周已生成</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">课堂反馈</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">2</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">待补记录</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">错题跟进</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">5</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天要处理</p>
+              </div>
+            </div>
+          </section>
+
+          <section className={`${styles.cardClass} overflow-hidden p-0`}>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今天课程</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">课前和课后要接的动作直接挂在课程后面。</p>
+            </div>
+            <div className="divide-y divide-slate-200/70 dark:divide-white/10">
+              {scheduleItems.map((item) => (
+                <div key={`${item.time}-${item.title}`} className="px-5 py-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex min-w-12 items-center gap-1 pt-0.5 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                      <Clock3 size={14} />
+                      {item.time}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.detail}</p>
+                      <button
+                        type="button"
+                        onClick={() => setActivePage(item.page)}
+                        className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-sky-600 transition hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+                      >
+                        {item.action}
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       </section>
     </div>
