@@ -109,7 +109,9 @@ import type {
 import {
   LandingLegalPage,
   LandingPage,
+  getLandingLegalPageFromHash,
 } from './features/landing/LandingPage';
+import type { LandingLegalDocumentKey } from './features/landing/LandingPage';
 import {
   ClassClaimPage,
   JoinOrganizationModal,
@@ -193,12 +195,11 @@ export {
   writeLocalStorageItem,
 } from './workspaceShared';
 export { SidebarAccountSheet } from './features/navigation/Sidebar';
-export { LandingLegalPage, LandingPage } from './features/landing/LandingPage';
+export { LandingLegalPage, LandingPage, getLandingLegalPageFromHash } from './features/landing/LandingPage';
 
 // --- Types ---
 
 type Page = WorkspacePage;
-type LandingLegalDocumentKey = 'privacy' | 'terms';
 type PublicAuthModal = 'login' | 'apply-organization' | 'join-organization' | 'password-reset';
 
 interface Lesson {
@@ -350,109 +351,6 @@ function getRoleBadgeClass(role: Role): string {
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300';
   }
   return 'border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300';
-}
-
-const LANDING_LEGAL_DOCUMENTS: Record<
-  LandingLegalDocumentKey,
-  {
-    title: string;
-    eyebrow: string;
-    summary: string;
-    updatedAt: string;
-    sections: Array<{ title: string; paragraphs: string[] }>;
-  }
-> = {
-  privacy: {
-    title: '隐私政策',
-    eyebrow: 'PRIVACY POLICY',
-    summary:
-      '本政策说明 Starain 在账号申请、课堂材料上传、AI 处理与教学交付过程中如何收集、使用、保存与保护相关信息。',
-    updatedAt: '2026-03-27',
-    sections: [
-      {
-        title: '我们如何收集和使用信息',
-        paragraphs: [
-          '当你申请注册、登录或使用机构账号时，我们会收集并使用你主动提交的账号信息、姓名、机构名称以及必要的身份校验信息，用于完成账号开通、权限管理与服务支持。',
-          '当你使用产品处理教学内容时，我们可能处理课堂录音、笔记、PDF、课程主题、题目素材以及对应的 AI 生成结果，用于生成课后复习资料、题库内容、讲义草稿和相关教学交付材料。',
-        ],
-      },
-      {
-        title: 'AI 处理与第三方服务',
-        paragraphs: [
-          '在你启用相关 AI 能力时，系统可能会将完成处理所必需的教学材料发送给当前配置的模型服务提供方，例如 OpenAI、DeepSeek 或其他经系统接入的服务，用于生成摘要、题目或结构化内容。',
-          '我们会尽量控制发送范围，仅处理与你所选功能直接相关的内容，并要求相关服务链路遵循适用的数据保护与安全要求。',
-        ],
-      },
-      {
-        title: '信息保存与安全保护',
-        paragraphs: [
-          '你的账号信息、机构信息、课堂材料和生成结果可能被保存在本地数据库、文件存储或部署环境中，用于维持服务连续性、历史记录查看、结果下载以及后续教学复用。',
-          '我们会采取访问控制、权限隔离、最小化暴露和必要的运维措施保护相关信息，但你也应避免上传与教学服务无关或超出授权范围的敏感内容。',
-        ],
-      },
-      {
-        title: '你的权利与联系我们',
-        paragraphs: [
-          '你可以基于适用法律和服务能力，申请查询、更正、删除相关账号信息，或就账号停用、机构权限和数据处理问题与我们联系。',
-          '如果你对本政策或个人信息处理有疑问，可通过产品运营或机构对接渠道联系 Starain 团队，我们会在合理范围内进行说明与处理。',
-        ],
-      },
-    ],
-  },
-  terms: {
-    title: '服务条款',
-    eyebrow: 'TERMS OF SERVICE',
-    summary:
-      '本条款用于说明你访问和使用 Starain 时的账号规则、服务边界、内容责任与争议处理方式。',
-    updatedAt: '2026-03-27',
-    sections: [
-      {
-        title: '账号注册与使用',
-        paragraphs: [
-          '你应确保注册、申请或机构开通时提供的信息真实、完整、可持续更新，并妥善保管账号、密码与登录凭证。因账号保管不当造成的风险与损失，由账号持有人或所属机构承担相应责任。',
-          '未经授权，你不得冒用他人身份、共享受限账号、绕过审批流程或以任何方式干扰平台的正常使用秩序。',
-        ],
-      },
-      {
-        title: '服务内容与使用边界',
-        paragraphs: [
-          'Starain 当前提供并持续迭代的能力包括但不限于课后复习资料生成、题目整理、教学材料整理以及其他面向学校、机构和教学团队的 AI 教学交付支持能力。',
-          '我们会持续优化产品功能，但不承诺所有展示中的方案模块都已在当前版本全面上线，也不保证服务在任何时间点都完全不中断。',
-        ],
-      },
-      {
-        title: '上传内容责任',
-        paragraphs: [
-          '你应确保上传、录入或提交的课堂录音、笔记、PDF、题目和其他材料具备合法来源，并已取得开展教学处理、内部使用或授权共享所需的权利。',
-          '对于违反法律法规、侵犯第三方权利或明显超出教学使用场景的内容，我们有权拒绝处理、限制访问或采取其他必要措施。',
-        ],
-      },
-      {
-        title: 'AI 生成内容说明',
-        paragraphs: [
-          'AI 生成结果仅作为教学支持与效率工具，不当然构成专业、准确或适用于所有场景的最终结论。你应结合课程目标、学生情况和人工审阅进行必要校对后再对外使用。',
-          '因模型局限、素材质量或上下文缺失导致的偏差、遗漏或不准确内容，平台将在合理范围内持续改进，但不对未经人工复核直接使用所引发的后果承担无限责任。',
-        ],
-      },
-      {
-        title: '争议解决',
-        paragraphs: [
-          '本条款的订立、履行与解释适用中华人民共和国相关法律法规。',
-          '如因使用本服务发生争议，双方应优先友好协商；协商不成的，可向服务提供方所在地有管辖权的人民法院提起诉讼，或依双方另行签署的书面协议执行。',
-        ],
-      },
-    ],
-  },
-};
-
-export function getLandingLegalPageFromHash(hash: string): LandingLegalDocumentKey | null {
-  if (hash === '#privacy-policy') {
-    return 'privacy';
-  }
-  if (hash === '#terms-of-service') {
-    return 'terms';
-  }
-  return null;
 }
 
 function getInitialDarkModePreference(): boolean {
