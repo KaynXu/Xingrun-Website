@@ -300,9 +300,9 @@ export function Sidebar({
             : 'h-screen w-[17.25rem] shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
       )}
     >
-      <div className={cn('border-b border-slate-200/70 py-5 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-5')}>
+      <div className={cn('flex h-[4.75rem] items-center border-b border-slate-200/70 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-5')}>
         <div className={cn('flex items-center gap-3', compact && !mobile && 'justify-center')}>
-          <img src="/logo.png" alt="星润 logo" className="h-10 w-10 object-contain" />
+          <img src="/logo.png" alt="星润 logo" className="h-9 w-9 object-contain" />
           <div className={cn(compact && !mobile && 'hidden')}>
             <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Starain 工作台</h1>
             <p className="mt-1 text-xs font-semibold uppercase tracking-[0.26em] text-slate-400 dark:text-slate-500">机构工作台</p>

@@ -734,3 +734,10 @@
   - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
   - `rg -n "pointer-events-none|bg-transparent|max-w-\\[22rem\\]|rounded-\\[2rem\\]|shadow-\\[0_24px_60px_rgba\\(15,23,42,0\\.14\\)\\]|border-t border-slate-200/80 pt-3" src/features/navigation/Sidebar.tsx`
   - negative check confirming `bg-slate-950/32` is removed
+
+## 2026-06-14 workspace shell alignment pass
+- Compressed the sidebar brand area and matched it to the workspace header height so the top divider lines align.
+- Updated the desktop and mobile shell offsets to use the real sidebar widths, removing the visual gap between the fixed sidebar and the main content.
+- Runnable proof passed via `/tmp/xingrun_shell_alignment_proof.sh`:
+  - `npx tsx -e "Promise.all([import('./src/features/navigation/Sidebar.tsx'), import('./src/features/navigation/Header.tsx'), import('./src/features/navigation/WorkspaceShellLayout.tsx')]).then(() => console.log('Navigation shell modules import OK'))"`
+  - `rg -n "h-\\[4\\.75rem\\]|h-9 w-9 object-contain|w-\\[17\\.25rem\\] max-w-\\[86vw\\]|lg:pl-\\[15\\.5rem\\]|lg:pl-\\[17\\.25rem\\]" src/features/navigation/Sidebar.tsx src/features/navigation/Header.tsx src/features/navigation/WorkspaceShellLayout.tsx`

@@ -20,7 +20,7 @@ export function Header({
 }) {
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-[rgba(251,253,255,0.88)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0f172a]/88">
-      <div className="flex h-20 items-center justify-between gap-4 px-4 sm:px-6 md:px-8">
+      <div className="flex h-[4.75rem] items-center justify-between gap-4 px-4 sm:px-6 md:px-8">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">{title}</h1>
           <p className="mt-1 hidden truncate text-sm text-slate-500 md:block dark:text-slate-400">

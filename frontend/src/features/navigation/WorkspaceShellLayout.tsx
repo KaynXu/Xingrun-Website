@@ -92,7 +92,7 @@ export function WorkspaceShellLayout({
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -24, opacity: 0 }}
                 transition={{ duration: 0.18 }}
-                className="relative h-full w-[18.5rem] max-w-[86vw]"
+              className="relative h-full w-[17.25rem] max-w-[86vw]"
               >
                 <button
                   type="button"
@@ -120,7 +120,7 @@ export function WorkspaceShellLayout({
             </motion.div>
           )}
         </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', compactSidebar ? 'lg:pl-64' : 'lg:pl-[18.5rem]')}>
+        <main className={cn('flex min-w-0 flex-1 flex-col', compactSidebar ? 'lg:pl-[15.5rem]' : 'lg:pl-[17.25rem]')}>
           <Header
             title={title}
             onGoHome={onGoHome}
