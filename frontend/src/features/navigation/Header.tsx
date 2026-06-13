@@ -6,7 +6,7 @@ const headerButtonClass =
   'flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/70 bg-white/90 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white';
 
 export function Header({
-  title,
+  title: _title,
   onGoHome,
   isDark,
   onToggleDarkMode,
@@ -20,10 +20,7 @@ export function Header({
 }) {
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-[rgba(251,253,255,0.88)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0f172a]/88">
-      <div className="flex h-[4.75rem] items-center justify-between gap-4 px-4 sm:px-6 md:px-8">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">{title}</h1>
-        </div>
+      <div className="flex h-[4.75rem] items-center justify-end gap-4 px-4 sm:px-6 md:px-8">
         <div className="flex items-center gap-2 sm:gap-3">
           {onOpenSidebar && (
             <button

@@ -748,3 +748,11 @@
   - `npx tsx -e "import('./src/features/navigation/Header.tsx').then(() => console.log('Header module import OK'))"`
   - `rg -n "text-lg font-semibold tracking-tight text-slate-900|flex h-\\[4\\.75rem\\] items-center justify-between" src/features/navigation/Header.tsx`
   - negative check confirming `围绕教学、班级与反馈继续推进工作` is removed
+
+## 2026-06-14 header title removal
+- Removed the remaining page title block from the workspace header and right-aligned the header actions.
+- Kept the existing header prop shape intact to avoid broader workspace wiring changes.
+- Runnable proof passed via `/tmp/xingrun_header_title_removal_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Header.tsx').then(() => console.log('Header module import OK'))"`
+  - `rg -n "title: _title|justify-end gap-4 px-4|flex items-center gap-2 sm:gap-3" src/features/navigation/Header.tsx`
+  - negative check confirming the old `<h1>` title block is removed
