@@ -2613,9 +2613,9 @@ def _dashboard_build_member_payload(user: dict) -> dict:
             "page": "review-generation",
             "title": _dashboard_lesson_title(lesson, class_name_by_id),
             "meta": _dashboard_lesson_meta(lesson, class_name_by_id),
-            "status": "已完成",
+            "status": _dashboard_review_status_label(lesson),
         }
-        for lesson in ready_lessons[:3]
+        for lesson in [item for item in lessons if _dashboard_review_state(item) != "empty"][:4]
     ]
 
     weekly_stats = [

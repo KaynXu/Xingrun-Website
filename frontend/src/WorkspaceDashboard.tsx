@@ -237,12 +237,12 @@ function MemberWorkspace({
 
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
-              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">最近资料</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近完成的复习资料。</p>
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">最近记录</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">最近复习资料的状态流转。</p>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
               {recentOutputs.length === 0 ? (
-                <DashboardEmptyState message="还没有可展示的资料。" />
+                <DashboardEmptyState message="还没有复习资料记录。" />
               ) : (
                 recentOutputs.map((item) => (
                   <button
