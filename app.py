@@ -2858,6 +2858,16 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
             continue
         pending_consultations_by_org[organization_id] = pending_consultations_by_org.get(organization_id, 0) + 1
 
+    low_credit_by_org: dict[int, int] = {}
+    for organization in organizations:
+        organization_id = int(organization.get("id") or 0)
+        if organization_id <= 0:
+            continue
+        overview = get_credit_overview(organization_id)
+        credit_balance = int(overview.get("credit_balance") or 0)
+        if credit_balance <= 20:
+            low_credit_by_org[organization_id] = credit_balance
+
     attention_items: list[dict] = []
     if pending_organization_requests:
         attention_items.append(
@@ -2942,6 +2952,28 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
                 break
 
     if len(attention_items) < 4:
+        low_credit_organizations = sorted(
+            organizations,
+            key=lambda item: low_credit_by_org.get(int(item.get("id") or 0), 999999),
+        )
+        for organization in low_credit_organizations:
+            organization_id = int(organization.get("id") or 0)
+            credit_balance = low_credit_by_org.get(organization_id)
+            if credit_balance is None:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"当前积分余额 {credit_balance}，建议尽快处理。",
+                    "status": "低余额",
+                    "page": "credit",
+                    "action": "查看",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
         quiet_organizations = [
             organization
             for organization in organizations
@@ -2990,7 +3022,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         {"label": "机构数", "value": str(len(organizations)), "note": "当前在库机构"},
         {"label": "待审批", "value": str(total_pending_approvals), "note": "机构申请和成员申请"},
         {"label": "待反馈", "value": str(sum(pending_feedback_by_org.values())), "note": "课堂反馈任务"},
-        {"label": "待咨询", "value": str(sum(pending_consultations_by_org.values())), "note": "未结束咨询记录"},
+        {"label": "低余额机构", "value": str(len(low_credit_by_org)), "note": "余额 20 及以下"},
     ]
 
     organization_rows = []
@@ -3001,12 +3033,15 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         week_output_count = week_output_by_org.get(organization_id, 0)
         feedback_count = pending_feedback_by_org.get(organization_id, 0)
         consultation_count = pending_consultations_by_org.get(organization_id, 0)
+        credit_balance = low_credit_by_org.get(organization_id)
         if pending_count > 0:
             status = f"待审批 {pending_count}"
         elif feedback_count > 0:
             status = f"待反馈 {feedback_count}"
         elif consultation_count > 0:
             status = f"待咨询 {consultation_count}"
+        elif credit_balance is not None:
+            status = f"余额 {credit_balance}"
         elif today_output_count > 0:
             status = f"今日资料 {today_output_count}"
         else:
@@ -3018,7 +3053,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
                 "outputs": str(today_output_count),
                 "approvals": str(pending_count),
                 "status": status,
-                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("consultation" if consultation_count > 0 else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes"))),
+                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("consultation" if consultation_count > 0 else ("credit" if credit_balance is not None else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes")))),
             }
         )
 
