@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CalendarDays, CheckCircle2, ChevronDown, Eye, FileText, MessageSquare, Pencil, Upload, User, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, CalendarDays, CheckCircle2, ChevronDown, Eye, MessageSquare, Pencil, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import type { ClassItem, CurrentUser } from '../../appTypes';
@@ -15,13 +15,8 @@ import {
   ConsultationFlowBar,
   ConsultationStatusLamp,
   buildConsultationTeacherDirectory,
-  consultationFlowStages,
   consultationInputClass,
   consultationMeetingVersion,
-  consultationProcessStages,
-  consultationResultShortLabel,
-  consultationStageDisplayLabel,
-  consultationStageShortLabel,
   consultationSurfaceClass,
   endConsultationValues,
   getConsultationSourceLabel,
@@ -34,15 +29,10 @@ import {
   apiFetch,
   cn,
   getTodayIsoDate,
-  readLocalStorageItem,
   workspaceCardClass,
-  workspaceGhostButtonClass,
   workspacePageClass,
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
-  workspaceSectionTextClass,
-  workspaceSectionTitleClass,
-  workspaceSoftCardClass,
   writeLocalStorageItem,
 } from '../../workspaceShared';
 

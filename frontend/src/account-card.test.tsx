@@ -217,7 +217,6 @@ test('consultation modal keeps save beside close and supports keyboard save shor
 });
 
 test('consultation meeting workbench keeps local drafts until final save', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -245,7 +244,6 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
 });
 
 test('consultation meeting workbench has lighter secondary filters and terminal age filters', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -260,7 +258,6 @@ test('consultation meeting workbench has lighter secondary filters and terminal 
 });
 
 test('consultation meeting workbench uses a grouped teacher popover instead of a select', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -274,7 +271,6 @@ test('consultation meeting workbench uses a grouped teacher popover instead of a
 });
 
 test('consultation meeting workbench can directly mark a card processed with motion feedback', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -320,7 +316,6 @@ test('compact sidebar shows immediate labels on icon hover', () => {
 });
 
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -336,7 +331,6 @@ test('consultation meeting workbench reuses the same responsive card scheme as t
 });
 
 test('consultation meeting workbench final save and close guard are explicit', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
@@ -834,7 +828,6 @@ test('consultation page source keeps desktop and tablet consultations as two-row
 });
 
 test('consultation mobile card keeps view edit icons in the top right and removes the bottom edit capsule', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const mobileCard = consultationPageSource.match(/const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) => \{[\s\S]*?\n  \};/);
   assert.ok(mobileCard);
   assert.match(mobileCard[0], /getRecordResultPill\(record\)/);
@@ -1093,11 +1086,10 @@ test('approval member cards link teacher class binding into class management', (
 });
 
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(source, /teacher_user_id\?: number \| null;/);
+  assert.match(consultationBatchModalSource, /teacher_user_id\?: number \| null;/);
   assert.match(classManagementBlock[0], /当前负责老师：/);
   assert.match(classManagementBlock[0], /teacherSummary = currentTeacher\?\.name \|\| item\.teacher_name \|\| '未分配老师';/);
   assert.doesNotMatch(classManagementBlock[0], /已分配 \{selectedTeacherIds\.length\} 位老师/);
@@ -1105,7 +1097,6 @@ test('class management source shows current teacher summary and removes multi-te
 });
 
 test('class management source uses one 负责老师 concept instead of separate 班级老师分配 wording', () => {
-  const appSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1135,7 +1126,6 @@ test('class management source keeps teacher binding selection scoped per class c
 });
 
 test('class management source separates mutation success from best-effort refresh reconciliation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1154,7 +1144,6 @@ test('class management source separates mutation success from best-effort refres
 });
 
 test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1179,11 +1168,10 @@ test('class management source disables conflicting controls while async class or
 });
 
 test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.doesNotMatch(source, /interface ClassFormValues \{[\s\S]*teacher_email: string;/);
+  assert.doesNotMatch(consultationBatchModalSource, /interface ClassFormValues \{[\s\S]*teacher_email: string;/);
   assert.doesNotMatch(classManagementBlock[0], /teacher_email:\s*form\.teacher_email\.trim\(\)/);
   assert.doesNotMatch(classManagementBlock[0], /老师邮箱/);
   assert.doesNotMatch(classManagementBlock[0], /未填写邮箱/);
@@ -1193,12 +1181,11 @@ test('class management source removes teacher-email UI and the standalone bottom
 });
 
 test('class management source embeds teacher assignment inside each class card and normalizes common class names', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
-  assert.match(source, /\['七年级三班', '七年级 3 班'\]/);
+  assert.match(consultationBatchModalSource, /\['6年级2班', '六年级 2 班'\]/);
+  assert.match(consultationBatchModalSource, /\['七年级三班', '七年级 3 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
   assert.match(classManagementBlock[0], /<select[\s\S]*value=\{newClass\.teacherUserId == null \? '' : String\(newClass\.teacherUserId\)\}/);
   assert.match(classManagementBlock[0], /<select[\s\S]*value=\{editing\.currentTeacherUserId == null \? '' : String\(editing\.currentTeacherUserId\)\}/);
@@ -1212,7 +1199,6 @@ test('class management source embeds teacher assignment inside each class card a
 });
 
 test('class management source opens both existing and new class editors in a modal instead of inline cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1226,7 +1212,6 @@ test('class management source opens both existing and new class editors in a mod
 });
 
 test('class management source explains structured class naming without development examples', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1253,7 +1238,6 @@ test('class management source adds a side-by-side student editor card next to th
 });
 
 test('class management source removes click-to-edit helper copy from class cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1261,7 +1245,6 @@ test('class management source removes click-to-edit helper copy from class cards
 });
 
 test('class management source keeps delete and save buttons inside the teacher card footer', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1270,7 +1253,6 @@ test('class management source keeps delete and save buttons inside the teacher c
 });
 
 test('class management source preserves expanded edit cards during manual refresh failures', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);

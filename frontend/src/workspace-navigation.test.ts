@@ -24,11 +24,6 @@ const studentCenterSource = readFileSync(new URL('./features/student-center/Stud
 const classManagementTabSource = readFileSync(new URL('./features/student-center/ClassManagementTab.tsx', import.meta.url), 'utf8');
 const classEditorModalSource = readFileSync(new URL('./features/student-center/ClassEditorModal.tsx', import.meta.url), 'utf8');
 
-const fixedGradeValues = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
-const sharedGradeOptionsPattern = new RegExp(
-  `const gradeOptions\\s*=\\s*\\[\\s*${fixedGradeValues.map((value) => `'${value}'`).join('\\s*,\\s*')}\\s*\\];`,
-);
-
 function requireMatch(source: string, pattern: RegExp): string {
   const match = source.match(pattern);
   assert.ok(match);

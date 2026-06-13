@@ -1,12 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Upload } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ClassItem, CurrentUser } from '../../appTypes';
-import { getCurrentClassDisplayName } from '../../classDisplay';
 import {
   apiFetch,
   apiUploadFormWithProgress,
-  buildAuthedPath,
   cn,
   workspaceCardClass,
   workspaceFieldClass,
@@ -17,21 +15,6 @@ import {
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
 
-type Lesson = {
-  id: number;
-  date: string;
-  subject: string;
-  grade: string;
-  topic: string;
-  summary: string;
-  weak_points: string;
-  pdf_path: string;
-  class_id: number | null;
-  created_at: string;
-  record_status?: string;
-  generation_error?: string;
-};
-
 type ReviewPlanCreateResponse = {
   id: number;
   success?: boolean;
@@ -39,14 +22,7 @@ type ReviewPlanCreateResponse = {
   duplicate?: boolean;
 };
 
-const gradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
-
-function getTodayIsoDate(): string {
-  const now = new Date();
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return localDate.toISOString().slice(0, 10);
-}
 
 function syncMemberScopedClassSelection(
   role: CurrentUser['role'],

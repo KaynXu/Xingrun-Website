@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Home, Moon, ShieldCheck, Sun } from 'lucide-react';
 
 export type LandingLegalDocumentKey = 'privacy' | 'terms';

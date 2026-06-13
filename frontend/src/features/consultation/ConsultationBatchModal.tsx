@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Cpu, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { apiFetch, cn, workspaceFieldClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSoftCardClass } from '../../workspaceShared';
 import { buildConsultationBatchCreatePayload } from './ConsultationModal';
-import type { ConsultationBatchDraftItem, ConsultationBatchParseResponse, ConsultationFormValues } from './consultationTypes';
+import type { ConsultationBatchDraftItem, ConsultationBatchParseResponse } from './consultationTypes';
 
 const ConsultationBatchModal = ({
   open,

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PlusCircle, RefreshCw } from 'lucide-react';
 import { ClassFeedbackGenerationWorkspace } from '../../ClassFeedbackGenerationWorkspace';
 import { getCurrentClassDisplayName } from '../../classDisplay';

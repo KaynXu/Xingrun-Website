@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, ChevronDown, MoreVertical, Pencil, PlusCircle, RefreshCw, Save, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AlertCircle, ArrowRight, ChevronDown, Pencil, PlusCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ClassBindingTarget, ClassItem, CurrentUser, UserItem, WorkspacePage, Role } from '../../appTypes';
-import { getCurrentClassDisplayName, getCurrentClassDisplayNameById } from '../../classDisplay';
+import { getCurrentClassDisplayNameById } from '../../classDisplay';
 import {
   canOpenWorkspacePage,
   configurableWorkspacePages,
@@ -81,11 +81,6 @@ interface TeacherAliasEntry {
   aliases: string[];
   linked_username?: string;
   updated_at?: string | null;
-}
-
-interface TeacherAliasEditingState {
-  wecom_userid: string;
-  alias_names: string;
 }
 
 function getRoleLabel(role: Role): string {

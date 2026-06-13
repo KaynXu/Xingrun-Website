@@ -457,11 +457,6 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
   };
 }
 
-function getConsultationStudentMeta(record: ConsultationRecord): string {
-  const childName = record.child_name?.trim();
-  return childName ? `学生姓名：${childName}` : '学生姓名待补充';
-}
-
 const ConsultationReadOnlyReport = ({
   form,
   record,

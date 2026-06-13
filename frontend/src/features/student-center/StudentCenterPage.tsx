@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { getCurrentClassDisplayName } from '../../classDisplay';
 import {
@@ -1166,7 +1166,7 @@ export function StudentCenterPage({
     newClass: classEditorNewClass,
     editing: classEditorEditing,
   } = classEditorModalState;
-  const { editingClass, editingFormState } = classEditorMode;
+  const { editingClass } = classEditorMode;
   const getClassDisplayName = (item: ClassItem) => getCurrentClassDisplayName(item, showClassCohortYear);
   const resetClassFormDraft = (classId: number | 'new') => {
     if (classId === 'new') {

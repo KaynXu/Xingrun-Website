@@ -325,7 +325,7 @@ export const ConsultationStatusLamp = ({ stage }: { stage: string }) => {
   return <span className={`inline-block h-2 w-2 rounded-full ${lampClass}`} title={status} aria-label={status} />;
 };
 
-const ConsultationResultCapsule = ({
+export const ConsultationResultCapsule = ({
   stage,
   completedStages,
   blockedByCurrentProcess = false,

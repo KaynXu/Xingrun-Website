@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { WorkspaceDashboard, getOrganizationManagementEntries } from './WorkspaceDashboard';
 

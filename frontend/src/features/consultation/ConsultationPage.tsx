@@ -483,7 +483,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     const frozen = isConsultationEnded(record.flow_stage);
     return (
       <div className={`min-w-0 overflow-visible ${frozen ? 'opacity-75' : ''}`}>
-        {renderInlineFlow(record, busy)}
+        {mobile ? renderB3MobileTimeline(record, busy) : renderInlineFlow(record, busy)}
       </div>
     );
   };
@@ -578,7 +578,6 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     const busy = isBusy && selectedRecord?.id === record.id;
     const needDetail = record.need_detail?.trim();
     const followUpNote = record.follow_up_note?.trim();
-    const frozen = isConsultationEnded(record.flow_stage);
     const sectionLabel = getVisibleRecordSectionLabel(record, index);
     return (
       <React.Fragment key={record.id}>
@@ -610,7 +609,6 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     const busy = isBusy && selectedRecord?.id === record.id;
     const needDetail = record.need_detail?.trim();
     const followUpNote = record.follow_up_note?.trim();
-    const frozen = isConsultationEnded(record.flow_stage);
     const sectionLabel = getVisibleRecordSectionLabel(record, index);
     return (
       <React.Fragment key={record.id}>

@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowRight, PlusCircle } from 'lucide-react';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';

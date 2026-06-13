@@ -3,40 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Home,
-  PlusCircle,
-  Database,
-  CalendarDays,
-  Settings,
-  Search,
-  User,
-  MessageSquare,
-  FileText,
-  Download,
-  Trash2,
-  Eye,
-  EyeOff,
-  Pencil,
-  Upload,
-  Cpu,
-  CheckCircle2,
-  Filter,
-  ArrowRight,
-  ArrowUp,
-  RefreshCw,
-  AlertCircle,
-  ShieldCheck,
-  Moon,
-  Sun,
-  X,
-  ChevronDown,
-  ChevronRight,
-  Info,
-  Save,
-} from 'lucide-react';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { useState, useEffect, useCallback } from 'react';
+import { AnimatePresence } from 'motion/react';
 export {
   resolveTeacherBindingRollbackClassItem,
   resolveTeacherBindingRollbackTeacherBindings,
@@ -45,36 +13,23 @@ import { WorkspacePageContent } from './features/navigation/WorkspacePageContent
 import { WorkspaceShellLayout } from './features/navigation/WorkspaceShellLayout';
 import { ConsultationMeetingWorkbench } from './features/consultation/ConsultationMeetingWorkbench';
 import { ConsultationPage } from './features/consultation/ConsultationPage';
-import {
-  consultationInputClass,
-  consultationLabelClass,
-  consultationPanelClass,
-  consultationSurfaceClass,
-  consultationValueClass,
-} from './features/consultation/consultationShared';
 
 import {
   canAccessSmartWrongQuestions,
   canOpenWorkspacePage,
-  configurableWorkspacePages,
   getWorkspacePageFallback,
   hasOwnerAccess,
   hasStaffAccess,
 } from './features/navigation/workspaceAccess';
-import { FloatingFilterBar, FloatingOverviewFilter } from './components/FloatingFilterBar';
 import type {
   ClassBindingTarget,
-  CurrentUser,
-  UserItem,
   WorkspacePage,
 } from './appTypes';
 import { getRoleLabel } from './appDisplay';
 import {
-  LandingLegalPage,
   LandingPage,
   getLandingLegalPageFromHash,
 } from './features/landing/LandingPage';
-import type { LandingLegalDocumentKey } from './features/landing/LandingPage';
 import {
   ClassClaimPage,
   JoinOrganizationModal,
@@ -85,27 +40,8 @@ import {
 import { useWorkspaceAuthState } from './features/auth/useWorkspaceAuthState';
 import { StudentPortalPage } from './StudentTodayTasksPage';
 import {
-  createClassStudent,
-  deleteClassStudent,
-} from './classFeedbackGeneration';
-import {
-  apiFetch,
-  apiUploadFormWithProgress,
-  buildAuthedPath,
-  cn,
   getTodayIsoDate,
-  getToken,
   readLocalStorageItem,
-  removeLocalStorageItem,
-  workspaceCardClass,
-  workspaceFieldClass,
-  workspaceGhostButtonClass,
-  workspacePageClass,
-  workspacePrimaryButtonClass,
-  workspaceSecondaryButtonClass,
-  workspaceSectionTextClass,
-  workspaceSectionTitleClass,
-  workspaceSoftCardClass,
   writeLocalStorageItem,
 } from './workspaceShared';
 export type {
