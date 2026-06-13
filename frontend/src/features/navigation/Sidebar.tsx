@@ -366,19 +366,18 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className={cn('mt-auto border-t border-slate-200/70 p-3 dark:border-white/10', compact && !mobile && 'px-3')}>
+      <div className={cn('mt-auto p-3', compact && !mobile && 'px-3')}>
         <button
           type="button"
           onClick={() => setAccountSheetOpen(true)}
-          className={cn('flex w-full items-center gap-3 rounded-xl border border-slate-200/70 bg-white/95 p-2.5 text-left transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10', compact && !mobile && 'justify-center')}
+          className={cn('flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-slate-100/80 dark:hover:bg-white/5', compact && !mobile && 'justify-center')}
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 via-cyan-500 to-blue-500 font-bold text-white">
             {currentUser.display_name.slice(0, 1).toUpperCase()}
           </div>
           <div className={cn('min-w-0 flex-1', compact && !mobile && 'hidden')}>
-            <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{currentUser.display_name}</p>
-            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{currentUser.organization_name}</p>
-            <p className="truncate text-[11px] text-slate-400 dark:text-slate-500">{resolvedRoleLabel}</p>
+            <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{currentUser.username}</p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{resolvedRoleLabel}</p>
           </div>
           <MoreVertical size={16} className={cn('shrink-0 text-slate-400 dark:text-slate-500', compact && !mobile && 'hidden')} />
         </button>

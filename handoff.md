@@ -709,3 +709,10 @@
 - Runnable proof passed via `/tmp/xingrun_sidebar_compact_proof.sh`:
   - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
   - `rg -n "overflow-hidden border-r|w-\\[17\\.25rem\\]|space-y-3 overflow-y-auto|space-y-0\\.5 px-1|rounded-xl px-2\\.5 py-2|rounded-xl border border-slate-200/70 bg-white/95 p-2\\.5" src/features/navigation/Sidebar.tsx`
+
+## 2026-06-14 sidebar account footer cleanup
+- Simplified the sidebar footer account summary to show the login username and role only.
+- Removed the organization name from the sidebar footer so it no longer duplicates the details sheet.
+- Runnable proof passed via `/tmp/xingrun_sidebar_account_name_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "currentUser\\.username|resolvedRoleLabel|organization_name" src/features/navigation/Sidebar.tsx`
