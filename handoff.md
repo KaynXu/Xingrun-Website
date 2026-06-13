@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-13 已把 hero 副标题里不自然的动作词收掉：`frontend/src/features/landing/LandingPage.tsx` 首屏副标题现从 `复习资料、错题跟进、讲义整理，都能直接接着做。` 改为更具体的 `帮老师更快整理复习资料、记录错题和准备讲义。`，避免“接着做”这种语义悬空的表达。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按用户要求移除官网 footer 里的站内导航组：`frontend/src/features/landing/LandingPage.tsx` 页脚不再显示 `核心方案` 和 `关于 Starain` 两个锚点入口，现只保留品牌信息、法律链接和版权信息。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已继续把 `关于 Starain` 的开头收回正常语气：`frontend/src/features/landing/LandingPage.tsx` 不再使用 `从 PPT 里想出来 / 从教学现场长出来` 这种带明显 AI 套话感的修辞，现改为更直接的两句：`这套产品先在我们自己的教学团队里用。` 和 `哪些地方费时间，哪些地方容易断，我们先把它补上。` 这一轮只动 about 文案，不改页面结构。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-13 已按 `humanizer / humanizer-zh` 和用户补充的 marketing psychology 方向，把官网 landing 的主要对外文案继续收紧一轮：`frontend/src/features/landing/LandingPage.tsx` 现已系统移除 `不是……而是……`、`把 X 整理成 Y`、`能力底座 / 产品化 / 学习全流程 AI 平台` 这类抽象或宣传感较重的表达，改成更贴近真实任务的说法，例如主标题收为 `教学团队每天会用的 AI 工具`，功能区改成围绕复习资料、错题跟进、讲义整理这些具体工作展开，mock UI 里的 `AI Draft` 也改成 `草稿`。这一轮重点不是加新卖点，而是让页面读起来更像真人写的产品页面。当前轮 proof 会继续用 landing 页面定向脚本记录。

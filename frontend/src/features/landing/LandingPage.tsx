@@ -260,7 +260,7 @@ export function LandingPage({
                 教学团队每天会用的 AI 工具
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
-                复习资料、错题跟进、讲义整理，都能直接接着做。
+                帮老师更快整理复习资料、记录错题和准备讲义。
               </p>
 
               <div className="mt-10 flex flex-col gap-3 sm:flex-row">
