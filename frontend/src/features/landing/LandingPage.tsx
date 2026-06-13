@@ -283,23 +283,28 @@ export function LandingPage({
               initial={{ opacity: 0, y: 36 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12, duration: 0.78, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_18px_54px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900"
+              className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_18px_54px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900 lg:ml-auto lg:max-w-[640px]"
             >
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5 dark:border-white/10">
                 <div className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
                   <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
                 </div>
-                <div className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
-                  复习计划生成
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                    Review Plans
+                  </span>
+                  <span className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
+                    复习计划生成
+                  </span>
                 </div>
               </div>
 
-              <div className="grid gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">
+              <div className="grid gap-0 lg:grid-cols-[238px_minmax(0,1fr)]">
                 <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-white/10 dark:bg-white/[0.03] lg:border-b-0 lg:border-r">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">新建复习文档</p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">课堂录音 + 补充笔记</p>
@@ -309,63 +314,102 @@ export function LandingPage({
                       </span>
                     </div>
 
-                    <div className="mt-4 space-y-3">
+                    <div className="mt-4 flex items-center gap-2">
+                      {['上传', '转写', '生成'].map((step, index) => (
+                        <span
+                          key={step}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                            index === 2
+                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                              : index === 1
+                                ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'
+                                : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
+                          }`}
+                        >
+                          {step}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2">
                       {[
-                        ['班级', '高一数学提高班'],
+                        ['班级', '高一数学'],
                         ['科目', '数学'],
-                        ['课题', '立体几何复习'],
-                        ['日期', '2026-06-12'],
+                        ['课题', '立体几何'],
+                        ['日期', '06-12'],
                       ].map(([label, value]) => (
-                        <div key={label} className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/[0.04]">
-                          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                        <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.04]">
+                          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
                           <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-200">{value}</p>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
-                    <p className="text-xs font-semibold tracking-[0.18em] text-slate-400">输入内容</p>
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold tracking-[0.18em] text-slate-400">输入内容</p>
+                      <button className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
+                        编辑
+                      </button>
+                    </div>
                     <div className="mt-3 space-y-2">
                       {[
-                        ['课堂录音', 'audio-0612.m4a'],
-                        ['课堂笔记', '已补充 286 字'],
-                        ['同课材料', '例题讲义 2 份'],
-                      ].map(([label, value], index) => (
+                        ['课堂录音', 'audio-0612.m4a', true],
+                        ['课堂笔记', '已补充 286 字', false],
+                        ['同课材料', '例题讲义 2 份', false],
+                      ].map(([label, value, active]) => (
                         <div
-                          key={label}
-                          className={`rounded-xl border px-3 py-3 ${
-                            index === 0
+                          key={String(label)}
+                          className={`rounded-xl border px-3 py-2.5 ${
+                            active
                               ? 'border-sky-200 bg-sky-50/80 dark:border-sky-500/30 dark:bg-sky-500/10'
                               : 'border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.02]'
                           }`}
                         >
-                          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          </div>
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{value}</p>
                         </div>
                       ))}
                     </div>
+
+                    <button className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">
+                      开始生成
+                    </button>
                   </div>
                 </div>
 
-                <div className="px-5 py-4">
-                  <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-4 dark:border-white/10">
-                    {['转写', '生成', '预览'].map((tab, index) => (
-                      <span
-                        key={tab}
-                        className={`rounded-full px-3 py-1 text-sm font-medium ${
-                          index === 2
-                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                            : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
-                        }`}
-                      >
-                        {tab}
-                      </span>
-                    ))}
+                <div className="px-4 py-4">
+                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-3 dark:border-white/10">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {['表单', '预览', 'PDF'].map((tab, index) => (
+                        <span
+                          key={tab}
+                          className={`rounded-full px-3 py-1 text-sm font-medium ${
+                            index === 1
+                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                              : 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
+                          }`}
+                        >
+                          {tab}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="hidden items-center gap-2 sm:flex">
+                      <button className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
+                        保存草稿
+                      </button>
+                      <button className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white dark:bg-white dark:text-slate-900">
+                        导出 PDF
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="space-y-4 pt-4">
-                    <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="space-y-3 pt-4">
+                    <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">立体几何复习计划</p>
@@ -376,7 +420,7 @@ export function LandingPage({
                         </span>
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
                         {[
                           ['课堂重点', '3 条'],
                           ['易错提醒', '2 条'],
@@ -389,40 +433,70 @@ export function LandingPage({
                         ))}
                       </div>
 
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
-                        <div className="space-y-3">
-                          {[
-                            ['课堂重点', '线面角、二面角、法向量'],
-                            ['易错点', '条件翻译、体积转化、作辅助线'],
-                            ['复习安排', 'Day 1 例题回看 · Day 3 错题重做 · Day 7 课堂小结'],
-                          ].map(([label, value]) => (
-                            <div key={label} className="flex items-start gap-3">
-                              <span className="mt-1 h-2 w-2 rounded-full bg-sky-500" />
-                              <div>
-                                <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
-                                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{value}</p>
+                      <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-900">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/10">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">预览</p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">学生版复习计划</p>
+                          </div>
+                          <button className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            查看全文
+                          </button>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                          <div className="space-y-2">
+                            {['Day 1 课堂重点', 'Day 3 错题重做', 'Day 7 课堂小结'].map((item, index) => (
+                              <div
+                                key={item}
+                                className={`rounded-xl px-3 py-2.5 text-sm ${
+                                  index === 0
+                                    ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'
+                                    : 'bg-slate-50 text-slate-600 dark:bg-white/[0.04] dark:text-slate-300'
+                                }`}
+                              >
+                                {item}
                               </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
+
+                          <div className="space-y-3">
+                            {[
+                              ['课堂重点', '线面角、二面角、法向量'],
+                              ['易错点', '条件翻译、体积转化、作辅助线'],
+                              ['复习安排', '先看例题，再回做错题，最后整理一页小结。'],
+                            ].map(([label, value]) => (
+                              <div key={label} className="flex items-start gap-3">
+                                <span className="mt-1.5 h-2 w-2 rounded-full bg-sky-500" />
+                                <div>
+                                  <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{label}</p>
+                                  <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{value}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-2 sm:grid-cols-3">
                       {[
-                        { icon: FileText, label: '上传课堂文件' },
-                        { icon: ShieldCheck, label: '转写完成' },
-                        { icon: ArrowRight, label: '导出 PDF' },
+                        { icon: FileText, label: '上传课堂文件', meta: '录音 / PDF' },
+                        { icon: ShieldCheck, label: '转写完成', meta: '自动识别' },
+                        { icon: ArrowRight, label: '导出 PDF', meta: '学生版' },
                       ].map((item) => {
                         const Icon = item.icon;
                         return (
                           <div
                             key={item.label}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-white/[0.03]"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]"
                           >
-                            <span className="inline-flex rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                              <Icon className="h-4 w-4" />
-                            </span>
+                            <div className="flex items-center justify-between">
+                              <span className="inline-flex rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                                <Icon className="h-4 w-4" />
+                              </span>
+                              <span className="text-[11px] text-slate-400">{item.meta}</span>
+                            </div>
                             <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">
                               {item.label}
                             </p>
