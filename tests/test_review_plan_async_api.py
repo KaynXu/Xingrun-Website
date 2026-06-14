@@ -51,7 +51,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_returns_202_and_creates_pending_lesson(
         self,
         _mock_has_api_key,
@@ -102,7 +102,46 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_post_review_plan_uses_review_plan_model_override(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        config_runtime.write_file_config({
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-4.1",
+        })
+
+        response = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "初二",
+                "topic": "一次函数",
+                "weak_points": "斜率判断",
+                "summary_text": "课堂总结文本",
+                "input_type": "text",
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        lesson = lesson_manager.get_lesson(payload["id"])
+        self.assertIsNotNone(lesson)
+        self.assertEqual(lesson["review_chat_provider"], "openai")
+        self.assertEqual(lesson["review_chat_model"], "gpt-4.1")
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["chat_provider"], "openai")
+        self.assertEqual(thread_kwargs["chat_model"], "gpt-4.1")
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
     @patch("ai_processor.transcribe_audio", side_effect=AssertionError("audio transcription must run in worker"))
     def test_post_audio_review_plan_returns_202_before_transcription(
         self,
@@ -156,7 +195,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_merges_same_lesson_materials_into_summary(
         self,
         _mock_has_api_key,
@@ -194,7 +233,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:processed-review-plan")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_returns_existing_lesson_for_processed_duplicate(
         self,
         _mock_has_api_key,
@@ -255,7 +294,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:duplicate-review-plan")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_rejects_duplicate_request_key_before_creating_pending_lesson(
         self,
         _mock_has_api_key,
@@ -295,7 +334,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:long-running-review-plan")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_duplicate_stays_blocked_after_execution_ttl_window(
         self,
         _mock_has_api_key,
@@ -336,7 +375,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_returns_402_when_credits_are_insufficient(
         self,
         _mock_has_api_key,
@@ -367,7 +406,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app._current_ai_request_key", return_value="header:preflight-crash")
     @patch("app.ensure_feature_credits_available", side_effect=RuntimeError("db boom"))
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_releases_request_identity_when_preflight_crashes(
         self,
         _mock_has_api_key,

@@ -28,10 +28,13 @@ from flask import Flask, abort, redirect, request, send_file, jsonify, send_from
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from config_runtime import (
+    chat_model_for_provider,
     env_controlled_keys,
     get_runtime_config,
     load_file_config,
     normalize_chat_provider,
+    resolve_review_plan_model,
+    resolve_review_plan_provider,
     write_file_config,
 )
 import ai_processor
@@ -279,11 +282,16 @@ def _default_ai_provider_name() -> str:
 
 
 def _default_chat_model_name() -> str:
-    cfg = get_config()
-    provider = _default_ai_provider_name()
-    if provider == "deepseek":
-        return str(cfg.get("deepseek_model", "deepseek-v4-pro") or "deepseek-v4-pro")
-    return "gpt-4o"
+    return chat_model_for_provider(_default_ai_provider_name(), get_config())
+
+
+def _review_plan_ai_provider_name() -> str:
+    return resolve_review_plan_provider(get_config())
+
+
+def _review_plan_chat_model_name() -> str:
+    provider = _review_plan_ai_provider_name()
+    return resolve_review_plan_model(get_config(), provider=provider)
 
 
 def _normalize_ai_usage_payload(usage: object, *, provider: str, model: str) -> dict:
@@ -1597,6 +1605,16 @@ def _start_monthly_plan_generation_thread(**job_kwargs) -> None:
 def has_api_key():
     cfg = get_config()
     provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
+    if provider == "deepseek":
+        key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
+    else:
+        key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
+    return bool(key.strip())
+
+
+def has_review_plan_api_key():
+    cfg = get_config()
+    provider = _review_plan_ai_provider_name()
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
     else:
@@ -7416,7 +7434,7 @@ def api_lesson_create():
     user, error = _require_auth()
     if error:
         return error
-    if not has_api_key():
+    if not has_review_plan_api_key():
         return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
     
     if request.is_json:
@@ -7446,8 +7464,8 @@ def api_lesson_create():
     audio_path = ""
     audio_request_key = None
     initial_record_status = "pending"
-    chat_provider = _default_ai_provider_name()
-    chat_model = _default_chat_model_name()
+    chat_provider = _review_plan_ai_provider_name()
+    chat_model = _review_plan_chat_model_name()
     
     if input_type == "text" or request.is_json:
         raw_text = data.get("summary_text", "").strip()
@@ -7933,6 +7951,8 @@ def api_settings_get():
         return (k[:4] + "..." + k[-4:]) if len(k) > 8 else ("*" * len(k) if k else "")
     return jsonify({
         "provider": cfg.get("provider", "deepseek"),
+        "review_plan_provider": cfg.get("review_plan_provider", ""),
+        "review_plan_model": cfg.get("review_plan_model", ""),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
         "deepseek_set": bool(cfg.get("deepseek_api_key")),
@@ -7954,6 +7974,10 @@ def api_settings_save():
     controlled_keys = env_controlled_keys()
     if "provider" in data and "provider" not in controlled_keys:
         cfg["provider"] = normalize_chat_provider(data["provider"])
+    if "review_plan_provider" in data and "review_plan_provider" not in controlled_keys:
+        cfg["review_plan_provider"] = normalize_chat_provider(data["review_plan_provider"]) if str(data["review_plan_provider"] or "").strip() else ""
+    if "review_plan_model" in data and "review_plan_model" not in controlled_keys:
+        cfg["review_plan_model"] = str(data["review_plan_model"] or "").strip()
     for key in ("openai_api_key", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
