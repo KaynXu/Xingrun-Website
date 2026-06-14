@@ -227,7 +227,7 @@ export function LessonInput({
   };
 
   return (
-    <div className={`${workspacePageClass} mx-auto max-w-6xl`}>
+    <div className={workspacePageClass}>
       <AnimatePresence mode="wait">
         {isLoading ? (
           <motion.div
@@ -261,10 +261,9 @@ export function LessonInput({
           >
             <div className="space-y-5">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Lesson Intake</p>
                 <h3 className={`${workspaceSectionTitleClass} mt-3`}>生成复习文档</h3>
                 <p className={`${workspaceSectionTextClass} mt-2`}>
-                  上传录音或粘贴笔记，生成 AI 复习资料和教学素材。
+                  上传录音或粘贴笔记，生成复习资料和教学素材。
                 </p>
               </div>
               <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
@@ -306,12 +305,12 @@ export function LessonInput({
 
             <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
               <div className="space-y-6">
-                <div className="inline-flex gap-2 rounded-2xl border border-sky-100 bg-white/85 p-1 shadow-sm dark:border-white/10 dark:bg-white/5">
+                <div className="inline-flex gap-2 rounded-2xl border border-sky-100 bg-white/85 p-1 dark:border-white/10 dark:bg-white/5">
                   <button
                     onClick={() => setInputType('text')}
                     className={cn(
                       'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                      inputType === 'text' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
+                      inputType === 'text' ? 'bg-sky-600 text-white' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
                     )}
                   >
                     文字笔记
@@ -320,7 +319,7 @@ export function LessonInput({
                     onClick={() => setInputType('file')}
                     className={cn(
                       'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                      inputType === 'file' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
+                      inputType === 'file' ? 'bg-sky-600 text-white' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
                     )}
                   >
                     上传文件
@@ -330,7 +329,7 @@ export function LessonInput({
                 {inputType === 'file' ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className={`${workspaceCardClass} cursor-pointer p-12 text-center transition-all hover:border-sky-200 hover:shadow-[0_24px_64px_rgba(47,128,237,0.1)] dark:hover:border-white/15 dark:hover:shadow-[0_28px_72px_rgba(2,6,23,0.4)]`}
+                    className={`${workspaceCardClass} cursor-pointer p-12 text-center transition-all hover:border-sky-200 dark:hover:border-white/15`}
                   >
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 transition-transform hover:scale-105 dark:bg-white/5 dark:text-sky-300">
                       <Upload size={32} />

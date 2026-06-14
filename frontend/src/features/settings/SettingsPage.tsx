@@ -14,7 +14,7 @@ type SettingsPageProps = {
 
 export function SettingsPage({ currentUser, onLogout }: SettingsPageProps) {
   return (
-    <div className={`${workspacePageClass} mx-auto max-w-3xl space-y-8`}>
+    <div className={`${workspacePageClass} space-y-8`}>
       <h3 className={workspaceSectionTitleClass}>系统设置</h3>
 
       <section className="space-y-4">

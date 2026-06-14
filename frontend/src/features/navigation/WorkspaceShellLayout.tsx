@@ -58,8 +58,6 @@ export function WorkspaceShellLayout({
   roleLabel: string;
   children: ReactNode;
 }) {
-  const compactSidebar = activeWorkspacePage === 'calendar' || activeWorkspacePage === 'consultation';
-
   return (
     <div className="relative min-h-[100svh] overflow-x-hidden bg-[#f5f8fc] text-slate-900 sm:min-h-screen dark:bg-[#020617] dark:text-slate-100">
       <div className="relative flex min-h-[100svh] sm:min-h-screen">
@@ -69,7 +67,7 @@ export function WorkspaceShellLayout({
             currentUser={currentUser}
             onLogout={onLogout}
             setActivePage={onNavigatePage}
-            compact={compactSidebar}
+            compact={false}
             showSmartWrongQuestions={showSmartWrongQuestions}
             showCreditCenter={showCreditCenter}
             showAccounts={showAccounts}
@@ -92,12 +90,12 @@ export function WorkspaceShellLayout({
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -24, opacity: 0 }}
                 transition={{ duration: 0.18 }}
-                className="relative h-full w-[18.5rem] max-w-[86vw]"
+              className="relative h-full w-[17.25rem] max-w-[86vw]"
               >
                 <button
                   type="button"
                   onClick={onCloseSidebar}
-                  className="absolute right-3 top-3 z-10 flex h-10 w-10 touch-manipulation items-center justify-center rounded-full border border-slate-200/70 bg-white/90 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="absolute right-3 top-3 z-10 flex h-10 w-10 touch-manipulation items-center justify-center rounded-full border border-slate-200/70 bg-white/90 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                   aria-label="关闭导航"
                 >
                   <X size={18} />
@@ -120,7 +118,7 @@ export function WorkspaceShellLayout({
             </motion.div>
           )}
         </AnimatePresence>
-        <main className={cn('flex min-w-0 flex-1 flex-col', compactSidebar ? 'lg:pl-64' : 'lg:pl-[18.5rem]')}>
+        <main className="flex min-w-0 flex-1 flex-col lg:pl-[17.25rem]">
           <Header
             title={title}
             onGoHome={onGoHome}

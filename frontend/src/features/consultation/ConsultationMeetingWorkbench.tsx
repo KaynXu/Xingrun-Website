@@ -302,19 +302,19 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
 
   const getMeetingRecordResultPill = (record: ConsultationRecord) => {
     if (record.flow_stage === '成功进班') {
-      return { label: '☀️ 成功进班', className: 'bg-sky-500 text-white shadow-[0_8px_18px_rgba(14,165,233,0.22)]' };
+      return { label: '☀️ 成功进班', className: 'bg-sky-500 text-white' };
     }
     if (record.flow_stage === '试听失败') {
       return { label: '😢 试听未成', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
     }
     if (record.flow_stage === '咨询结束') {
-      return { label: 'OVER', className: 'bg-rose-500 text-white shadow-[0_8px_18px_rgba(244,63,94,0.22)]' };
+      return { label: 'OVER', className: 'bg-rose-500 text-white' };
     }
     return { label: '未选择结果', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
   };
 
   const renderMeetingDesktopCard = (record: ConsultationRecord) => (
-    <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+    <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70">
       <div className="grid grid-cols-[96px_88px_112px_minmax(120px,160px)_120px_132px_96px] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
         {renderMeetingInfoCell('日期', record.date || '—')}
         {renderMeetingInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
@@ -336,7 +336,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
   );
 
   const renderMeetingPadCard = (record: ConsultationRecord) => (
-    <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+    <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70">
       <div className="grid grid-cols-[0.82fr_1fr_1fr_5.8rem] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
         {renderMeetingInfoCell('日期', record.date || '—')}
         {renderMeetingInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
@@ -362,7 +362,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
   const renderMeetingMobileCard = (record: ConsultationRecord) => {
     const resultPill = getMeetingRecordResultPill(record);
     return (
-      <article className="relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+      <article className="relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 dark:border-white/10 dark:bg-slate-950/70">
         <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
           <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
           <div className="flex min-w-0 items-center gap-2">
@@ -426,7 +426,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
             className={cn(
               'h-8 rounded-full border px-3 text-xs font-bold transition',
               statusValue === item.key
-                ? 'border-sky-200 bg-sky-500 text-white shadow-[0_8px_18px_rgba(14,165,233,0.16)]'
+                ? 'border-sky-200 bg-sky-500 text-white'
                 : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
             )}
           >
@@ -451,7 +451,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
               className={cn(
                 'h-7 rounded-full border px-2.5 text-[11px] font-bold transition',
                 ageValue === item.key
-                  ? 'border-emerald-200 bg-emerald-500 text-white shadow-[0_8px_18px_rgba(34,197,94,0.16)]'
+                  ? 'border-emerald-200 bg-emerald-500 text-white'
                   : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
               )}
             >
@@ -519,7 +519,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.98 }}
                   transition={{ duration: 0.14 }}
-                  className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-[#D9EEF7] bg-white p-3 shadow-[0_18px_42px_rgba(31,42,68,0.14)] dark:border-white/10 dark:bg-slate-950"
+                  className="absolute right-0 top-12 z-30 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-[#D9EEF7] bg-white p-3 dark:border-white/10 dark:bg-slate-950"
                 >
                   <button
                     type="button"
@@ -594,7 +594,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
               onClick={() => setWorkbenchTab('pending')}
               className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
                 workbenchTab === 'pending'
-                  ? 'bg-white text-[#0EA5E9] shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                  ? 'bg-white text-[#0EA5E9] dark:bg-sky-400/15 dark:text-sky-100'
                   : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
@@ -606,7 +606,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
               onClick={() => setWorkbenchTab('processed')}
               className={`flex h-10 items-center justify-center gap-2 rounded-xl text-sm font-extrabold transition ${
                 workbenchTab === 'processed'
-                  ? 'bg-white text-[#22B981] shadow-sm dark:bg-emerald-400/15 dark:text-emerald-100'
+                  ? 'bg-white text-[#22B981] dark:bg-emerald-400/15 dark:text-emerald-100'
                   : 'text-[#7188A6] hover:text-[#1F2A44] dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >

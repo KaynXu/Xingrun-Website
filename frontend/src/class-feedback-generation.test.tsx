@@ -17,6 +17,7 @@ import {
 import { ClassFeedbackGenerationWorkspace } from './ClassFeedbackGenerationWorkspace';
 
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const workspacePageContentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
 const classFeedbackPageSource = readFileSync(new URL('./features/class-feedback/ClassFeedbackGenerationPage.tsx', import.meta.url), 'utf8');
 
 function sourceBetween(source: string, startMarker: string, endMarker: string): string {
@@ -423,8 +424,9 @@ test('ClassFeedbackGenerationWorkspace reuses shared workspace style helpers for
 });
 
 test('App source wires the standalone class feedback page and existing class student APIs', () => {
-  assert.match(appSource, /import \{ ClassFeedbackGenerationPage \} from '\.\/features\/class-feedback\/ClassFeedbackGenerationPage';/);
-  assert.match(appSource, /activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage\(currentUser, 'class-feedback-generation'\) && <ClassFeedbackGenerationPage currentUser=\{currentUser\} \/>/);
+  assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
+  assert.match(workspacePageContentSource, /import \{ ClassFeedbackGenerationPage \} from '\.\.\/class-feedback\/ClassFeedbackGenerationPage';/);
+  assert.match(workspacePageContentSource, /activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage\(currentUser, 'class-feedback-generation'\) && <ClassFeedbackGenerationPage currentUser=\{currentUser\} \/>/);
   assert.match(classFeedbackPageSource, /const \[activeClassFeedbackTaskId, setActiveClassFeedbackTaskId\] = useState<number \| null>\(null\);/);
   assert.match(classFeedbackPageSource, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(classFeedbackPageSource, /await createClassFeedbackTask\(\{/);

@@ -2347,6 +2347,726 @@ def _serialize_lessons_for_response(lessons: object) -> list[dict]:
     return serialized_lessons
 
 
+_DASHBOARD_PENDING_REVIEW_STATUSES = {"pending", "queued", "processing", "transcribing", "generating"}
+_DASHBOARD_TERMINAL_CONSULTATION_STAGES = {"成功进班", "试听失败", "咨询结束"}
+
+
+def _dashboard_can_open_page(user: dict, page: str) -> bool:
+    if page in {"dashboard", "settings"}:
+        return True
+    visible_pages = user.get("visible_pages")
+    if not isinstance(visible_pages, list):
+        return True
+    return page in visible_pages
+
+
+def _dashboard_parse_datetime(value: object) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    normalized = raw.replace(" ", "T")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _dashboard_item_datetime(item: dict, *field_names: str) -> datetime:
+    for field_name in field_names:
+        parsed = _dashboard_parse_datetime(item.get(field_name))
+        if parsed is not None:
+            return parsed
+    return datetime.fromtimestamp(0)
+
+
+def _dashboard_sort_desc(items: list[dict], *field_names: str) -> list[dict]:
+    return sorted(
+        items,
+        key=lambda item: (_dashboard_item_datetime(item, *field_names), int(item.get("id") or 0)),
+        reverse=True,
+    )
+
+
+def _dashboard_get_today_classes(user: dict) -> list[dict]:
+    role = str(user.get("role") or "")
+    if role in {"super_owner", "owner", "admin"}:
+        return list_classes_for_actor(user)
+    return _filter_classes_for_user(user, list_classes())
+
+
+def _dashboard_get_lessons(user: dict) -> list[dict]:
+    lessons = list_lessons_for_actor(user)
+    return _dashboard_sort_desc(
+        _serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)),
+        "created_at",
+        "date",
+    )
+
+
+def _dashboard_get_open_consultations(user: dict) -> list[dict]:
+    consultations = list_consultations_for_actor(user, query="", search_mode="fuzzy")
+    return [
+        item
+        for item in consultations
+        if isinstance(item, dict)
+        and str(item.get("flow_stage") or "").strip() not in _DASHBOARD_TERMINAL_CONSULTATION_STAGES
+    ]
+
+
+def _dashboard_get_today_schedules(user: dict, today_iso: str) -> list[dict]:
+    items = list_course_calendar_schedules_for_actor(
+        user,
+        start_date=today_iso,
+        end_date=today_iso,
+    )
+    return _dashboard_sort_desc(items, "created_at", "date")
+
+
+def _dashboard_get_week_start_iso(today_value: date) -> str:
+    return (today_value - timedelta(days=today_value.weekday())).isoformat()
+
+
+def _dashboard_review_state(lesson: dict) -> str:
+    status = str(lesson.get("record_status") or "").strip()
+    if status in _DASHBOARD_PENDING_REVIEW_STATUSES:
+        return "pending"
+    if status in {"failed", "expired"}:
+        return "failed"
+    if str(lesson.get("pdf_path") or "").strip():
+        return "ready"
+    if status == "ready":
+        return "missing-output"
+    return "empty"
+
+
+def _dashboard_review_status_label(lesson: dict) -> str:
+    status = str(lesson.get("record_status") or "").strip()
+    if status == "transcribing":
+        return "转写中"
+    if status == "generating":
+        return "生成中"
+    if status in {"pending", "queued", "processing"}:
+        return "排队中"
+    if status in {"failed", "expired"}:
+        return "失败"
+    if _dashboard_review_state(lesson) == "ready":
+        return "已完成"
+    return "待处理"
+
+
+def _dashboard_get_class_feedback_tasks(user: dict) -> list[dict]:
+    role = str(user.get("role") or "")
+    params: list[object] = []
+    query = """
+        SELECT *
+        FROM class_feedback_tasks
+    """
+    if role == "super_owner":
+        query += " ORDER BY updated_at DESC, id DESC"
+    elif role in {"owner", "admin"}:
+        query += " WHERE organization_id=? ORDER BY updated_at DESC, id DESC"
+        params.append(int(user.get("organization_id") or 0))
+    else:
+        owned_class_ids = [class_id for class_id in get_user_class_ids(int(user["id"])) if int(class_id or 0) > 0]
+        query += " WHERE teacher_user_id=?"
+        params.append(int(user["id"]))
+        if owned_class_ids:
+            placeholders = ",".join("?" for _ in owned_class_ids)
+            query += f" OR class_id IN ({placeholders})"
+            params.extend(owned_class_ids)
+        query += " ORDER BY updated_at DESC, id DESC"
+    with get_conn() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _dashboard_feedback_state(task: dict) -> str:
+    status = str(task.get("status") or "").strip()
+    if status == "confirmed":
+        return "confirmed"
+    if status in {"pending", "queued", "processing", "generating"}:
+        return "generating"
+    return "draft"
+
+
+def _dashboard_feedback_status_label(task: dict) -> str:
+    state = _dashboard_feedback_state(task)
+    if state == "confirmed":
+        return "已确认"
+    if state == "generating":
+        return "生成中"
+    return "待反馈"
+
+
+def _dashboard_time_label(schedule: dict) -> str:
+    raw = str(schedule.get("time_block") or "").strip()
+    if "-" in raw:
+        return raw.split("-", 1)[0].strip()
+    return raw or "--:--"
+
+
+def _dashboard_class_name(value: object, fallback: str = "未命名班级") -> str:
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def _dashboard_lesson_title(lesson: dict, class_name_by_id: dict[int, str]) -> str:
+    class_name = class_name_by_id.get(int(lesson.get("class_id") or 0), "")
+    topic = str(lesson.get("topic") or "").strip()
+    subject = str(lesson.get("subject") or "").strip()
+    if class_name and topic:
+        return f"{class_name} · {topic}"
+    if class_name and subject:
+        return f"{class_name} · {subject}"
+    return topic or class_name or subject or f"复习资料 #{lesson.get('id')}"
+
+
+def _dashboard_lesson_meta(lesson: dict, class_name_by_id: dict[int, str]) -> str:
+    lesson_date = str(lesson.get("date") or "").strip()
+    class_name = class_name_by_id.get(int(lesson.get("class_id") or 0), "")
+    parts = [part for part in (lesson_date, class_name) if part]
+    return " · ".join(parts) or f"记录 #{lesson.get('id')}"
+
+
+def _dashboard_schedule_detail(schedule: dict) -> str:
+    teacher_name = str(schedule.get("teacher_name") or "").strip()
+    subject = str(schedule.get("subject") or "").strip()
+    parts = [part for part in (teacher_name, subject) if part]
+    return " · ".join(parts) or "查看课程安排"
+
+
+def _dashboard_build_member_payload(user: dict) -> dict:
+    today_value = date.today()
+    today_iso = today_value.isoformat()
+    week_start_iso = _dashboard_get_week_start_iso(today_value)
+
+    classes = _dashboard_get_today_classes(user)
+    class_name_by_id = {
+        int(item.get("id") or 0): _dashboard_class_name(item.get("name"))
+        for item in classes
+        if int(item.get("id") or 0) > 0
+    }
+    lessons = _dashboard_get_lessons(user)
+    open_consultations = _dashboard_get_open_consultations(user)
+    today_schedules = _dashboard_get_today_schedules(user, today_iso)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
+
+    pending_lessons = [
+        lesson
+        for lesson in lessons
+        if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
+    ]
+    ready_lessons = [lesson for lesson in lessons if _dashboard_review_state(lesson) == "ready"]
+    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
+    week_ready_lessons = [
+        lesson
+        for lesson in ready_lessons
+        if week_start_iso <= str(lesson.get("created_at") or "")[:10] <= today_iso
+    ]
+
+    today_queue: list[dict] = []
+    for lesson in pending_lessons[:2]:
+        today_queue.append(
+            {
+                "page": "review-generation",
+                "title": _dashboard_lesson_title(lesson, class_name_by_id),
+                "meta": _dashboard_lesson_meta(lesson, class_name_by_id),
+                "status": _dashboard_review_status_label(lesson),
+                "action": "进入",
+            }
+        )
+    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation") and len(today_queue) < 3:
+        latest_feedback_task = active_feedback_tasks[0]
+        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
+        today_queue.append(
+            {
+                "page": "class-feedback-generation",
+                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
+                "meta": latest_feedback_class_name,
+                "status": _dashboard_feedback_status_label(latest_feedback_task),
+                "action": "进入",
+            }
+        )
+    if open_consultations and _dashboard_can_open_page(user, "consultation") and len(today_queue) < 3:
+        earliest = min(open_consultations, key=lambda item: str(item.get("date") or "9999-12-31"))
+        today_queue.append(
+            {
+                "page": "consultation",
+                "title": f"待跟进咨询 {len(open_consultations)} 条",
+                "meta": f"{str(earliest.get('date') or '').strip() or today_iso} 起有咨询待处理",
+                "status": "待跟进",
+                "action": "进入",
+            }
+        )
+    if today_schedules and _dashboard_can_open_page(user, "calendar") and len(today_queue) < 3:
+        first_schedule = today_schedules[0]
+        today_queue.append(
+            {
+                "page": "calendar",
+                "title": f"今天排课 {len(today_schedules)} 节",
+                "meta": _dashboard_class_name(first_schedule.get("class_name")),
+                "status": "已排课",
+                "action": "查看",
+            }
+        )
+
+    recent_outputs = [
+        {
+            "page": "review-generation",
+            "title": _dashboard_lesson_title(lesson, class_name_by_id),
+            "meta": _dashboard_lesson_meta(lesson, class_name_by_id),
+            "status": _dashboard_review_status_label(lesson),
+        }
+        for lesson in [item for item in lessons if _dashboard_review_state(item) != "empty"][:4]
+    ]
+
+    weekly_stats = [
+        {"label": "本周资料", "value": str(len(week_ready_lessons)), "note": "本周生成完成"},
+        {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "含转写中和失败记录"},
+        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
+    ]
+
+    schedule = [
+        {
+            "time": _dashboard_time_label(item),
+            "title": _dashboard_class_name(item.get("class_name")),
+            "detail": _dashboard_schedule_detail(item),
+            "page": "calendar",
+            "action": "查看日历",
+        }
+        for item in today_schedules[:4]
+        if _dashboard_can_open_page(user, "calendar")
+    ]
+
+    return {
+        "todayQueue": today_queue,
+        "recentOutputs": recent_outputs,
+        "weeklyStats": weekly_stats,
+        "schedule": schedule,
+    }
+
+
+def _dashboard_build_organization_payload(user: dict) -> dict:
+    today_value = date.today()
+    today_iso = today_value.isoformat()
+    week_start_iso = _dashboard_get_week_start_iso(today_value)
+    can_open_accounts = _dashboard_can_open_page(user, "accounts")
+    can_open_credit = _dashboard_can_open_page(user, "credit")
+
+    classes = _dashboard_get_today_classes(user)
+    class_name_by_id = {
+        int(item.get("id") or 0): _dashboard_class_name(item.get("name"))
+        for item in classes
+        if int(item.get("id") or 0) > 0
+    }
+    lessons = _dashboard_get_lessons(user)
+    open_consultations = _dashboard_get_open_consultations(user)
+    today_schedules = _dashboard_get_today_schedules(user, today_iso)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
+    pending_lessons = [
+        lesson
+        for lesson in lessons
+        if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
+    ]
+    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
+    week_ready_lessons = [
+        lesson
+        for lesson in lessons
+        if _dashboard_review_state(lesson) == "ready"
+        and week_start_iso <= str(lesson.get("created_at") or "")[:10] <= today_iso
+    ]
+    pending_registrations = list_registration_requests_for_actor(user, "pending") if can_open_accounts else []
+    credit_overview = get_credit_overview(int(user["organization_id"])) if can_open_credit else None
+    credit_balance = int(credit_overview.get("credit_balance") or 0) if isinstance(credit_overview, dict) else None
+
+    pending_items: list[dict] = []
+    if pending_registrations:
+        pending_items.append(
+            {
+                "page": "accounts",
+                "title": f"待审批账号 {len(pending_registrations)} 条",
+                "meta": "新成员申请还没处理",
+                "status": "待审批",
+                "action": "进入",
+            }
+        )
+    if pending_lessons:
+        pending_items.append(
+            {
+                "page": "review-generation",
+                "title": f"待处理复习资料 {len(pending_lessons)} 份",
+                "meta": "包含转写中、生成中和失败记录",
+                "status": "待处理",
+                "action": "进入",
+            }
+        )
+    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation"):
+        latest_feedback_task = active_feedback_tasks[0]
+        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
+        pending_items.append(
+            {
+                "page": "class-feedback-generation",
+                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
+                "meta": latest_feedback_class_name,
+                "status": _dashboard_feedback_status_label(latest_feedback_task),
+                "action": "进入",
+            }
+        )
+    if credit_balance is not None and can_open_credit and credit_balance <= 20:
+        pending_items.append(
+            {
+                "page": "credit",
+                "title": f"积分余额 {credit_balance}",
+                "meta": "额度较低，可能影响后续 AI 生成。",
+                "status": "低余额",
+                "action": "查看",
+            }
+        )
+    if open_consultations and _dashboard_can_open_page(user, "consultation"):
+        pending_items.append(
+            {
+                "page": "consultation",
+                "title": f"待跟进咨询 {len(open_consultations)} 条",
+                "meta": "按日期顺序继续处理",
+                "status": "待跟进",
+                "action": "进入",
+            }
+        )
+    if today_schedules:
+        target_page = "calendar" if _dashboard_can_open_page(user, "calendar") else "classes"
+        pending_items.append(
+            {
+                "page": target_page,
+                "title": f"今天排课 {len(today_schedules)} 节",
+                "meta": "查看今天班级安排",
+                "status": "已排课",
+                "action": "查看",
+            }
+        )
+
+    pending_by_class_id = {
+        int(lesson.get("class_id") or 0): lesson
+        for lesson in pending_lessons
+        if int(lesson.get("class_id") or 0) > 0
+    }
+    feedback_by_class_id = {
+        int(task.get("class_id") or 0): task
+        for task in active_feedback_tasks
+        if int(task.get("class_id") or 0) > 0
+    }
+    class_rows = []
+    for schedule in today_schedules[:6]:
+        class_id = int(schedule.get("class_id") or 0)
+        linked_lesson = pending_by_class_id.get(class_id)
+        linked_feedback_task = feedback_by_class_id.get(class_id)
+        if linked_feedback_task is not None:
+            row_page = "class-feedback-generation"
+            row_status = _dashboard_feedback_status_label(linked_feedback_task)
+        elif linked_lesson is not None:
+            row_page = "review-generation"
+            row_status = _dashboard_review_status_label(linked_lesson)
+        else:
+            row_page = "calendar" if _dashboard_can_open_page(user, "calendar") else "classes"
+            row_status = "已排课"
+        class_rows.append(
+            {
+                "name": _dashboard_class_name(schedule.get("class_name"), fallback=class_name_by_id.get(class_id, "未命名班级")),
+                "schedule": _dashboard_time_label(schedule),
+                "teacher": str(schedule.get("teacher_name") or "").strip() or "未分配",
+                "status": row_status,
+                "page": row_page,
+            }
+        )
+
+    stats = [
+        {"label": "今日排课", "value": str(len(today_schedules)), "note": "今天课程安排"},
+        {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "待完成资料记录"},
+        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
+        {"label": "待跟进咨询", "value": str(len(open_consultations)), "note": "当前未结束咨询"},
+        (
+            {
+                "label": "积分余额",
+                "value": str(credit_balance),
+                "note": "当前机构可用额度",
+            }
+            if credit_balance is not None
+            else {
+                "label": "待审批账号" if can_open_accounts else "本周资料",
+                "value": str(len(pending_registrations) if can_open_accounts else len(week_ready_lessons)),
+                "note": "机构成员申请" if can_open_accounts else "本周已完成资料",
+            }
+        ),
+    ]
+
+    return {
+        "pendingItems": pending_items[:4],
+        "stats": stats,
+        "classRows": class_rows,
+    }
+
+
+def _dashboard_build_platform_payload(user: dict) -> dict:
+    today_value = date.today()
+    today_iso = today_value.isoformat()
+    week_start_iso = _dashboard_get_week_start_iso(today_value)
+
+    organizations = list_organizations()
+    lessons = _dashboard_get_lessons(user)
+    users = list_users_for_actor(user)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
+    open_consultations = _dashboard_get_open_consultations(user)
+    pending_registration_requests = list_registration_requests_for_actor(user, "pending")
+    pending_organization_requests = list_organization_requests()
+
+    members_by_org: dict[int, int] = {}
+    for item in users:
+        organization_id = int(item.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        members_by_org[organization_id] = members_by_org.get(organization_id, 0) + 1
+
+    today_output_by_org: dict[int, int] = {}
+    week_output_by_org: dict[int, int] = {}
+    for lesson in lessons:
+        organization_id = int(lesson.get("organization_id") or 0)
+        if organization_id <= 0 or _dashboard_review_state(lesson) != "ready":
+            continue
+        created_date = str(lesson.get("created_at") or "")[:10]
+        if created_date == today_iso:
+            today_output_by_org[organization_id] = today_output_by_org.get(organization_id, 0) + 1
+        if week_start_iso <= created_date <= today_iso:
+            week_output_by_org[organization_id] = week_output_by_org.get(organization_id, 0) + 1
+
+    pending_registration_by_org: dict[int, int] = {}
+    for request_item in pending_registration_requests:
+        organization_id = int(request_item.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_registration_by_org[organization_id] = pending_registration_by_org.get(organization_id, 0) + 1
+
+    pending_feedback_by_org: dict[int, int] = {}
+    for task in feedback_tasks:
+        if _dashboard_feedback_state(task) == "confirmed":
+            continue
+        organization_id = int(task.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_feedback_by_org[organization_id] = pending_feedback_by_org.get(organization_id, 0) + 1
+
+    pending_consultations_by_org: dict[int, int] = {}
+    for item in open_consultations:
+        organization_id = int(item.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_consultations_by_org[organization_id] = pending_consultations_by_org.get(organization_id, 0) + 1
+
+    low_credit_by_org: dict[int, int] = {}
+    for organization in organizations:
+        organization_id = int(organization.get("id") or 0)
+        if organization_id <= 0:
+            continue
+        overview = get_credit_overview(organization_id)
+        credit_balance = int(overview.get("credit_balance") or 0)
+        if credit_balance <= 20:
+            low_credit_by_org[organization_id] = credit_balance
+
+    attention_items: list[dict] = []
+    if pending_organization_requests:
+        attention_items.append(
+            {
+                "organization": "机构开通申请",
+                "issue": f"当前有 {len(pending_organization_requests)} 条新机构申请待处理。",
+                "status": "待审批",
+                "page": "accounts",
+                "action": "进入",
+            }
+        )
+
+    organizations_by_pending = sorted(
+        organizations,
+        key=lambda item: (
+            pending_registration_by_org.get(int(item.get("id") or 0), 0),
+            today_output_by_org.get(int(item.get("id") or 0), 0),
+        ),
+        reverse=True,
+    )
+    for organization in organizations_by_pending:
+        organization_id = int(organization.get("id") or 0)
+        pending_count = pending_registration_by_org.get(organization_id, 0)
+        if pending_count <= 0:
+            continue
+        attention_items.append(
+            {
+                "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                "issue": f"有 {pending_count} 条成员账号申请待处理。",
+                "status": "待审批",
+                "page": "accounts",
+                "action": "进入",
+            }
+        )
+        if len(attention_items) >= 4:
+            break
+
+    if len(attention_items) < 4:
+        feedback_organizations = sorted(
+            organizations,
+            key=lambda item: pending_feedback_by_org.get(int(item.get("id") or 0), 0),
+            reverse=True,
+        )
+        for organization in feedback_organizations:
+            organization_id = int(organization.get("id") or 0)
+            feedback_count = pending_feedback_by_org.get(organization_id, 0)
+            if feedback_count <= 0:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"有 {feedback_count} 条课堂反馈任务待处理。",
+                    "status": "待反馈",
+                    "page": "class-feedback-generation",
+                    "action": "进入",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
+        consultation_organizations = sorted(
+            organizations,
+            key=lambda item: pending_consultations_by_org.get(int(item.get("id") or 0), 0),
+            reverse=True,
+        )
+        for organization in consultation_organizations:
+            organization_id = int(organization.get("id") or 0)
+            consultation_count = pending_consultations_by_org.get(organization_id, 0)
+            if consultation_count <= 0:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"有 {consultation_count} 条咨询待继续跟进。",
+                    "status": "待咨询",
+                    "page": "consultation",
+                    "action": "进入",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
+        low_credit_organizations = sorted(
+            organizations,
+            key=lambda item: low_credit_by_org.get(int(item.get("id") or 0), 999999),
+        )
+        for organization in low_credit_organizations:
+            organization_id = int(organization.get("id") or 0)
+            credit_balance = low_credit_by_org.get(organization_id)
+            if credit_balance is None:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"当前积分余额 {credit_balance}，建议尽快处理。",
+                    "status": "低余额",
+                    "page": "credit",
+                    "action": "查看",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
+        quiet_organizations = [
+            organization
+            for organization in organizations
+            if week_output_by_org.get(int(organization.get("id") or 0), 0) == 0
+            and int(organization.get("member_count") or 0) > 0
+        ]
+        for organization in quiet_organizations[: 4 - len(attention_items)]:
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": "最近 7 天没有新增复习资料。",
+                    "status": "需查看",
+                    "page": "review-generation",
+                    "action": "查看",
+                }
+            )
+
+    total_pending_approvals = len(pending_organization_requests) + len(pending_registration_requests)
+    priority_items = []
+    if total_pending_approvals:
+        priority_items.append(
+            {
+                "title": "先处理审批",
+                "detail": f"当前共有 {total_pending_approvals} 条申请待处理。",
+                "page": "accounts",
+            }
+        )
+    if attention_items:
+        primary_attention = attention_items[0]
+        priority_items.append(
+            {
+                "title": f"再看 {primary_attention['organization']}",
+                "detail": str(primary_attention.get("issue") or ""),
+                "page": primary_attention["page"],
+            }
+        )
+    priority_items.append(
+        {
+            "title": "最后看机构班级",
+            "detail": f"当前共有 {sum(int(item.get('class_count') or 0) for item in organizations)} 个班级。",
+            "page": "classes",
+        }
+    )
+
+    stats = [
+        {"label": "机构数", "value": str(len(organizations)), "note": "当前在库机构"},
+        {"label": "待审批", "value": str(total_pending_approvals), "note": "机构申请和成员申请"},
+        {"label": "待反馈", "value": str(sum(pending_feedback_by_org.values())), "note": "课堂反馈任务"},
+        {"label": "低余额机构", "value": str(len(low_credit_by_org)), "note": "余额 20 及以下"},
+    ]
+
+    organization_rows = []
+    for organization in organizations_by_pending:
+        organization_id = int(organization.get("id") or 0)
+        pending_count = pending_registration_by_org.get(organization_id, 0)
+        today_output_count = today_output_by_org.get(organization_id, 0)
+        week_output_count = week_output_by_org.get(organization_id, 0)
+        feedback_count = pending_feedback_by_org.get(organization_id, 0)
+        consultation_count = pending_consultations_by_org.get(organization_id, 0)
+        credit_balance = low_credit_by_org.get(organization_id)
+        if pending_count > 0:
+            status = f"待审批 {pending_count}"
+        elif feedback_count > 0:
+            status = f"待反馈 {feedback_count}"
+        elif consultation_count > 0:
+            status = f"待咨询 {consultation_count}"
+        elif credit_balance is not None:
+            status = f"余额 {credit_balance}"
+        elif today_output_count > 0:
+            status = f"今日资料 {today_output_count}"
+        else:
+            status = f"本周资料 {week_output_count}"
+        organization_rows.append(
+            {
+                "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                "teachers": str(members_by_org.get(organization_id, int(organization.get("member_count") or 0))),
+                "outputs": str(today_output_count),
+                "approvals": str(pending_count),
+                "status": status,
+                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("consultation" if consultation_count > 0 else ("credit" if credit_balance is not None else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes")))),
+            }
+        )
+
+    return {
+        "attentionItems": attention_items,
+        "stats": stats,
+        "organizationRows": organization_rows[:8],
+        "priorityItems": priority_items[:3],
+    }
+
+
 def _serialize_wrong_question_practice_sheet_for_response(sheet: object) -> Optional[dict]:
     if not isinstance(sheet, dict):
         return None
@@ -5570,6 +6290,23 @@ def api_stats():
         "month_lessons": len(list_lessons_for_actor(user, month_str=month_now)),
         "total_pdfs": total_pdfs,
     })
+
+
+@app.route("/api/dashboard", methods=["GET"])
+def api_dashboard():
+    user, error = _require_auth()
+    if error:
+        return error
+
+    role = str(user.get("role") or "")
+    payload = {"role": role}
+    if role == "member":
+        payload["member"] = _dashboard_build_member_payload(user)
+    elif role in {"owner", "admin"}:
+        payload["organization"] = _dashboard_build_organization_payload(user)
+    else:
+        payload["platform"] = _dashboard_build_platform_payload(user)
+    return jsonify(payload)
 
 
 @app.route("/api/classes", methods=["GET"])

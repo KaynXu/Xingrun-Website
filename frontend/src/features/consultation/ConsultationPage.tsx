@@ -360,7 +360,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
         <button
           type="button"
           onClick={() => openViewModal(record)}
-          className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-white/85 text-slate-600 shadow-[0_4px_10px_rgba(14,165,233,0.10)] transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10`}
+          className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-white/85 text-slate-600 transition hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10`}
           title="查看"
           aria-label="查看咨询"
         >
@@ -370,7 +370,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
           <button
             type="button"
             onClick={() => openEditModal(record)}
-            className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-sky-50/85 text-sky-700 shadow-[0_4px_10px_rgba(14,165,233,0.10)] transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20`}
+            className={`${sizeClass} flex items-center justify-center rounded-full border border-sky-100 bg-sky-50/85 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/20`}
             title={frozen ? '查看结束备注' : '编辑这条咨询'}
             aria-label="编辑咨询"
             disabled={busy}
@@ -459,7 +459,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
                 <span
                   className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border text-[10px] font-extrabold leading-none transition ${
                     item.active
-                      ? 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16)]'
+                      ? 'border-[#0EA5E9] bg-[#0EA5E9] text-white'
                       : item.completed
                         ? 'border-[#22B981] bg-[#22B981] text-white'
                         : 'border-slate-300 bg-white text-transparent'
@@ -527,13 +527,13 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
 
   const getRecordResultPill = (record: ConsultationRecord) => {
     if (record.flow_stage === '成功进班') {
-      return { label: '☀️ 成功进班', className: 'bg-sky-500 text-white shadow-[0_8px_18px_rgba(14,165,233,0.22)]' };
+      return { label: '☀️ 成功进班', className: 'bg-sky-500 text-white' };
     }
     if (record.flow_stage === '试听失败') {
       return { label: '😢 试听未成', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
     }
     if (record.flow_stage === '咨询结束') {
-      return { label: 'OVER', className: 'bg-rose-500 text-white shadow-[0_8px_18px_rgba(244,63,94,0.22)]' };
+      return { label: 'OVER', className: 'bg-rose-500 text-white' };
     }
     return { label: '未选择结果', className: 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300' };
   };
@@ -582,7 +582,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70">
           <div className="grid grid-cols-[96px_88px_112px_minmax(120px,160px)_120px_132px_72px] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
@@ -613,7 +613,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70">
           <div className="grid grid-cols-[0.82fr_1fr_1fr_3.6rem] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
@@ -651,7 +651,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+        <article className="relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 dark:border-white/10 dark:bg-slate-950/70">
           <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
             <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
             <div className="flex min-w-0 items-center gap-2">
@@ -711,10 +711,9 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Consultation Log</p>
           <h3 className={`${workspaceSectionTitleClass} mt-3`}>咨询记录</h3>
           <p className={`${workspaceSectionTextClass} mt-2`}>
-            记录家长咨询、跟进状态和后续备注，搜索后会直接按关键词过滤当前列表。
+            记录咨询、跟进和备注，搜索后直接筛当前列表。
           </p>
         </div>
         <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
@@ -797,7 +796,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
                       onClick={() => setActiveFilter((current) => (current === item.key ? null : item.key))}
                       className={`inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-[10px] font-bold transition min-[520px]:gap-1 min-[520px]:px-2 min-[520px]:text-[11px] ${
                         active
-                          ? 'border-sky-200 bg-sky-500 text-white shadow-[0_10px_22px_rgba(14,165,233,0.18)]'
+                          ? 'border-sky-200 bg-sky-500 text-white'
                           : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
                       }`}
                     >
@@ -880,7 +879,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
             onClick={(event) => event.target === event.currentTarget && setRestoreConfirmRecord(null)}
           >
-            <div className="w-full max-w-sm rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-slate-900">
+            <div className="w-full max-w-sm rounded-3xl border border-sky-100 bg-white p-5 dark:border-white/10 dark:bg-slate-900">
               <p className="text-base font-bold text-slate-900 dark:text-white">是否恢复这个咨询？</p>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <button type="button" onClick={handleConfirmRestoreConsultation} className={workspacePrimaryButtonClass}>

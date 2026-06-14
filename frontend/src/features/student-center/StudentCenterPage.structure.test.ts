@@ -3,6 +3,7 @@ import test from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 
 const appSource = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+const workspacePageContentSource = readFileSync(new URL('../navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
 const studentCenterPageUrl = new URL('./StudentCenterPage.tsx', import.meta.url);
 const campusOverviewUrl = new URL('./CampusOverview.tsx', import.meta.url);
 const classManagementTabUrl = new URL('./ClassManagementTab.tsx', import.meta.url);
@@ -14,8 +15,10 @@ const classEditorModalStateUrl = new URL('./classEditorModalState.ts', import.me
 
 test('student center page is extracted from App shell', () => {
   assert.ok(existsSync(studentCenterPageUrl), 'StudentCenterPage.tsx should exist');
-  assert.match(appSource, /import \{ StudentCenterPage \} from '\.\/features\/student-center\/StudentCenterPage';/);
-  assert.match(appSource, /<StudentCenterPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{\(\) => setClassBindingTarget\(null\)\} \/>/);
+  assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
+  assert.match(workspacePageContentSource, /import \{ StudentCenterPage \} from '\.\.\/student-center\/StudentCenterPage';/);
+  assert.match(workspacePageContentSource, /activeWorkspacePage === 'classes' && canOpenWorkspacePage\(currentUser, 'classes'\) && \(/);
+  assert.match(workspacePageContentSource, /<StudentCenterPage currentUser=\{currentUser\} classBindingTarget=\{classBindingTarget\} onClearClassBindingTarget=\{handleClearClassBindingTarget\} \/>/);
   assert.doesNotMatch(appSource, /const ClassManagementPage = \(/);
 
   const studentCenterSource = readFileSync(studentCenterPageUrl, 'utf8');

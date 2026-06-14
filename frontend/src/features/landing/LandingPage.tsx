@@ -278,11 +278,8 @@ export function LandingPage({
               transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
               className="max-w-2xl"
             >
-              <div className="inline-flex items-center rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold tracking-[0.22em] text-slate-500 dark:border-white/10 dark:text-slate-400">
-                STARAIN WORKSPACE
-              </div>
               <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 dark:text-white sm:text-5xl md:text-6xl">
-                给教学团队用的 AI 工具
+                老师工作里的 AI 工具
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
                 帮老师整理复习资料、记录错题、准备讲义。
@@ -322,7 +319,7 @@ export function LandingPage({
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-white px-3 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/70 dark:bg-white/5 dark:text-slate-400 dark:ring-white/10">
-                      Review Plans
+                      复习计划
                     </span>
                     <span className="rounded-full border border-slate-200/80 px-3 py-1 text-[11px] font-medium text-slate-500 dark:border-white/10 dark:text-slate-400">
                       复习计划生成
@@ -335,7 +332,7 @@ export function LandingPage({
                     <div className="grid gap-3 lg:grid-cols-[128px_22px_minmax(0,1fr)] lg:items-center">
                       <div>
                         <div className="rounded-[1.1rem] border border-slate-200/80 bg-white p-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-slate-900">
-                          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Source Material</p>
+                          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">课堂材料</p>
                           <div className="mt-2.5 space-y-2">
                             <div className="h-1.5 w-4/5 rounded-full bg-[#9fe7dc]" />
                             <div className="h-1.5 w-full rounded-full bg-[#c9f1ea]" />
@@ -446,8 +443,8 @@ export function LandingPage({
             viewport={{ once: true }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
-            <h2 className="mb-4 text-4xl font-bold dark:text-white md:text-5xl">先把复习、错题、讲义这几件事做顺</h2>
-            <p className="text-lg text-slate-600 dark:text-slate-300">少一点重复整理，少一点来回找材料。</p>
+            <h2 className="mb-4 text-4xl font-bold dark:text-white md:text-5xl">先把复习、错题、讲义做好</h2>
+            <p className="text-lg text-slate-600 dark:text-slate-300">录音、笔记和讲义放在一起，后续整理更顺手。</p>
           </motion.div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -466,9 +463,9 @@ export function LandingPage({
                   <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-600 text-white">
                     <FileText size={24} />
                   </div>
-                  <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">上完课，复习资料能很快出来</h3>
+                  <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">课堂内容整理成复习资料</h3>
                   <p className="max-w-2xl text-lg text-slate-600 dark:text-slate-300">
-                    课堂录音、笔记和讲义放进来，学生要用的复习材料和老师后续要补的内容会先整理出来。
+                    课堂录音、笔记和讲义放进来，学生复习要用的内容会先整理出来。
                   </p>
                 </div>
                 <div className="mt-12 flex flex-wrap gap-4">
@@ -490,9 +487,9 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500 text-white">
                   <AlertCircle size={24} />
                 </div>
-                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">错题记录不会散</h3>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">错题记录集中保存</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  错因、薄弱点和后续安排都会留下来，下次回看不用重新翻记录。
+                  错因、薄弱点和后续安排放在同一条记录里，回看时不用重新翻。
                 </p>
               </div>
               <div className="mt-8 flex flex-wrap gap-2">
@@ -513,9 +510,9 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-white">
                   <Database size={24} />
                 </div>
-                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">题目和讲义能反复用</h3>
+                <h3 className="mb-4 text-2xl font-bold text-slate-900 dark:text-white">题目和讲义继续整理</h3>
                 <p className="text-slate-600 dark:text-slate-300">
-                  课堂练习、作业和错题会慢慢沉淀成讲义和练习素材。
+                  课堂练习、作业和错题可以继续整理成讲义和练习素材。
                 </p>
               </div>
               <div className="mt-8 flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400">
@@ -535,9 +532,9 @@ export function LandingPage({
                 <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 text-white">
                   <FileText size={24} />
                 </div>
-                <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">讲义和教研材料可以顺手整理</h3>
+                <h3 className="mb-4 text-3xl font-bold text-slate-900 dark:text-white">讲义和教研材料放在一起</h3>
                 <p className="text-lg text-slate-600 dark:text-slate-300">
-                  同一节课里的课程目标、讲义和提纲放在一起，老师不用来回拼。
+                  同一节课的课程目标、讲义和提纲集中整理，备课时不用来回拼。
                 </p>
               </div>
               <div className="flex w-full flex-col gap-3 rounded-3xl border border-sky-100 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96)_0%,_rgba(234,245,255,0.96)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92)_0%,rgba(30,41,59,0.88)_100%)] md:w-72">
@@ -590,33 +587,30 @@ export function LandingPage({
               viewport={{ once: true }}
               transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             >
-              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-4 py-1.5 text-xs font-semibold tracking-[0.28em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-                关于 Starain
-              </span>
               <div>
                 <h2 className="mb-4 text-4xl font-bold text-slate-900 dark:text-white md:text-5xl">关于 Starain</h2>
                 <p className="max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-300">
-                  这套产品先给我们自己的教学团队用。
+                  面向学校、机构和教学团队的日常教学工作。
                 </p>
               </div>
               <p className="max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400 md:text-base">
-                我们先拿它处理复习资料、错题跟进、讲义整理和教师协作。哪里费时间，哪里容易断，就先改哪里。
+                复习资料、错题跟进、讲义整理和教师协作，集中放在同一套工作流里。
               </p>
             </motion.div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-1">
               {[
                 {
-                  title: '已验证流程',
-                  body: '课堂素材到复习资料，这条线我们一直在自己用。',
+                  title: '覆盖流程',
+                  body: '课堂素材、复习资料和讲义整理放在同一条流程里。',
                 },
                 {
-                  title: '能力模块化',
-                  body: '复习、错题、讲义拆开能用，放在一起也顺。',
+                  title: '能力组合',
+                  body: '复习、错题和讲义可以单独使用，也可以接在一起。',
                 },
                 {
-                  title: '服务对象',
-                  body: '学校、培训机构、国际课程团队和教研运营团队都能用。',
+                  title: '适用团队',
+                  body: '学校、培训机构、国际课程团队和教研运营团队都可以使用。',
                 },
               ].map((item, index) => (
                 <motion.div
@@ -646,9 +640,7 @@ export function LandingPage({
                 教学工作平台
               </span>
             </div>
-            <p className="max-w-md text-center text-sm text-gray-500 dark:text-slate-400 md:text-left">
-              给学校、机构和教学团队用，主要处理复习、错题和讲义整理。
-            </p>
+            <p className="max-w-md text-center text-sm text-gray-500 dark:text-slate-400 md:text-left">面向学校、机构和教学团队的教学工作平台。</p>
           </div>
           <div className="flex flex-col items-center gap-2 text-sm text-slate-500 dark:text-slate-400 md:items-start">
             <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-slate-400">法律</p>

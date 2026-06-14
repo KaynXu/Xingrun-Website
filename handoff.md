@@ -1,12 +1,46 @@
 ## Handoff
 
-最后更新：2026-06-13
+最后更新：2026-06-14
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
 - 2026-06-14 已从复习计划与通用 AI 配置链路中下线旧 provider：`config_runtime.py`、`ai_processor.py`、`review_plan_workflow/llm/client.py`、`app.py`、`.env.runtime.example` 和 `README.md` 里不再保留对应 provider、模型名、API key/base URL 设置项；历史配置里若还存在未知 chat provider 会统一回退到 DeepSeek，未知 vision provider 会统一回退到 Qwen。当前轮 proof 会继续覆盖 provider 选择、配置卫生和相关回归测试。
+- 2026-06-14 已继续把工作台和首页剩余文案收成更直接的中文表达，并同步收口平台工作台信息结构与共享壳层：`frontend/src/WorkspaceDashboard.tsx` 现把平台页关注列表、常用入口和机构列表改成任务导向标题与更自然的状态文案；`frontend/src/features/landing/LandingPage.tsx` 去掉首屏英文眉题并把首屏主标题收成 `老师工作里的 AI 工具`；`frontend/src/features/navigation/Sidebar.tsx`、`frontend/src/features/navigation/WorkspaceShellLayout.tsx`、`frontend/src/workspaceShared.ts` 以及 consultation / review-generation / student-center / class-feedback 相关页面也继续同步压缩说明文案和容器层级。当前轮 proof 会覆盖 dashboard/navigation/landing/class-feedback/review-generation/student-center 定向前端测试与 build。
+- 2026-06-14 已按用户澄清把学生奖惩具体制度补进 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx)：当前在 `3. 家长如何配合` 下新增了 `具体执行制度`，把每日判定口径、奖励触发、连续奖励、惩罚触发、连续惩罚和家长配合规则完整写入执行方案正文，不再只停留在 [学生情况分析.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/学生情况分析.docx) 里。当前轮 proof 会确认这 7 条新增文本都已位于 `3. 家长如何配合` 与 `4. 学生情况分析与个性化支线` 之间。
+- 2026-06-14 已按用户要求补全 [学生情况分析.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/学生情况分析.docx) 里的学生奖惩具体制度：在原“家长如何配合与奖励机制”段落下新增了可执行版 `具体执行制度`，把每日判定口径、奖励触发、连续奖励、惩罚触发、连续惩罚和家长配合规则写完整，现打开文档即可直接看到完整奖惩说明。当前轮 proof 会确认这 7 条新增文本都已落入 `家长如何配合与奖励机制` 与 `暑期反馈计划` 之间。
+- 2026-06-14 已按用户最新要求在 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的每位学生五维图前补入一段简短总结：当前结构为“学生名 + 总结 + 五维图 + 个性化支线”，6 位学生都已补齐，后面的个性化支线内容未改。当前轮 proof 会确认每位学生区块各有 `1` 段 `总结：` 文本和 `1` 个空图片段。
+- 2026-06-14 已按用户最新澄清把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的学生画像口径锁定回“只保留最新五维图”：当前应保留 `计算能力 / 知识基础 / 题型审识 / 推理能力 / 习惯细节` 五个维度，不保留四维图。`习惯细节` 星级按用户指定口径为 `陈峻豪 2 / 陈星宇 2 / 黄翊豪 3 / 谢竺珂 3 / 刘雨恩 3 / 张梓恒 3`。当前轮 proof 会确认 6 位学生名下各保留 1 张五维图，且旧分析文字仍未混回文档。
+- 2026-06-14 已按用户最新要求把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 中学生画像部分清到只保留最后一版四维图：此前每位学生名下实际叠有 4 张历史图片（包含前面生成的五维图和重复插入的四维图），本轮已重新清理到每人仅剩 1 张当前四维图。当前轮 proof 会确认 6 位学生名下的 drawing 数均为 `1`，且当前文档被正文直接引用的学生画像媒体只剩 6 张当前雷达图。
+- 2026-06-14 已按用户最新确认再次校正 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 里的学生星级图：当前仍保留“五级评分”的雷达图样式，但不再参考文字描述；评分口径继续以 [学生情况分析.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/学生情况分析.docx) 里的蓝色星星图案为主，并按用户补充“里面没有满星学生”收回了成图里唯一会显示为满星的一档，所以 6 位学生现统一展示为无满星版本的四维星级图。当前轮 proof 脚本为 `/tmp/proof_student_blue_star_counts.py`，会确认 6 张图存在、旧文字分析段仍已移除，且 `规范习惯` 文案未重新混回文档。
+- 2026-06-14 已按用户确认把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的“学生画像与个性化支线”进一步改成纯图表版：当前 6 位学生只保留学生名、五维星级图和 `个性化支线`，原先的 `计算能力 / 知识基础 / 题型审识 / 推理能力` 文字分析段已全部移除；五维图也已去掉右侧解读说明和“满分 5 分”提示，仅保留维度名、星星数量和雷达面。星级口径本轮按 [学生情况分析.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/学生情况分析.docx) 的原始文字评价整理成整数星级。当前轮 proof 脚本为 `/tmp/proof_student_radar_star_version.py`，已确认 24 条旧分析段落被清除、6 张图文件存在，且 `has_calc_text / has_knowledge_text / has_recognition_text / has_reasoning_text` 全部为 `False`。
+- 2026-06-14 已按用户要求把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 里的“学生画像与个性化支线”升级成五维图画像：为 `陈峻豪 / 陈星宇 / 谢竺珂 / 黄翊豪 / 张梓恒 / 刘雨恩` 6 位学生分别生成了 `计算能力 / 知识基础 / 题型审识 / 推理能力 / 规范习惯` 五维雷达图，并把图表嵌入各自小节下方；图表源文件落在 [student-radar-assets](/Users/xiaodi/Desktop/xingrun.web/output/pdf/student-radar-assets)。当前轮 proof 脚本为 `/tmp/proof_student_radar_charts.py`，已确认 6 张图文件存在且 docx 内嵌媒体数量增加到 `16`。
+- 2026-06-14 已继续按用户反馈把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的第二张追踪表横向拉宽：文档左右页边距已从约 `2.0cm` 收到约 `1.2cm`，追踪表 4 列宽度同步放大到更接近整页可用宽度，当前表头宽度已提升为 `1417 / 3515 / 3628 / 2041`（twips），不再像上一版那样横向发紧。当前轮 proof 使用 `/tmp/proof_student_tracking_table_layout.py` 与页边距检查脚本，已确认左右边距约为 `1.199cm`，表格列宽已整体增大。
+- 2026-06-14 已继续按用户反馈把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的第二张追踪表调到更舒展的尺寸：保留 4 列结构，但把任务文案压成短句，并把表头改成 `名字 / 主线任务 / 支线任务 / 打卡记录`；学生行统一增大到更高的最小行高，姓名字号提升到 `12pt`，其余内容提升到 `11pt`，同时增加单元格留白。当前轮 proof 脚本为 `/tmp/proof_student_tracking_table.py` 和 `/tmp/proof_student_tracking_table_layout.py`，已确认 7 行 4 列完整、表头更新、学生行高已增大且主要字号已按 `11pt/12pt` 落盘。
+- 2026-06-14 已按用户反馈补全 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的第二张“主线 / 支线跟踪表”：表头现已改成 `名字 / 主线任务 / 支线任务 / 打卡 / 积分`，并为 6 位学生逐行补上完整的主线任务、个性化支线任务和打卡占位，不再只写一段截断的“待启动｜重点”。当前轮 proof 脚本为 `/tmp/proof_student_tracking_table.py`，已确认 7 行 4 列表格完整落盘。
+- 2026-06-14 已按用户要求把 [高二暑期圆锥曲线与做题标准化方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/高二暑期圆锥曲线与做题标准化方案.docx) 作为版式模板、把 [学生情况分析.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/学生情况分析.docx) 作为内容源，重组生成新文档 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx)。新文档保留了模板的总标题、主线表、跟踪表、反馈计划和家长沟通模板骨架，并填入了平行线主线、6 位学生画像、个性化支线任务与新的家长反馈文案；本轮 proof 脚本为 `/tmp/proof_student_plan_from_template.py`，已确认输出文件存在、两张表已改写、6 位学生小节齐全、反馈计划和家长沟通模板均已落位。
+- 2026-06-14 已继续收紧平台工作台首页的信息结构：`frontend/src/WorkspaceDashboard.tsx` 当前已把平台页左侧 `先处理这些机构` 改成真正的 `待处理事项`，并按页面类型把列表标题整理成 `机构名 · 事项名`；右侧 `今天先做` 也已改成 `常用入口`，不再直接显示后端回来的口语化标题如 `再看 星润Starain`。当前轮 proof 会确认这批旧标题已移除且新结构标题已落地。
+- 2026-06-14 已重启本地后端到当前项目代码：此前 `http://127.0.0.1:5001/api/dashboard` 返回 `404 Not Found`，会导致前端工作台显示“工作台数据暂时不可用，请稍后刷新。” 并落入空态。当前已改为通过 `bash ./scripts/run_backend.sh` 重新拉起后端，`/api/dashboard` 现返回 `401 未授权`，说明路由已正常加载，只剩登录态/真实数据本身决定页面展示内容。当前轮 proof 为 `/tmp/xingrun_restart_backend_and_proof_v2.sh`。
+- 2026-06-14 已继续收紧 landing 页 footer 品牌说明：`frontend/src/features/landing/LandingPage.tsx` 当前已把 `给学校、机构和教学团队用，主要处理复习、错题和讲义整理。` 收成更基础的品牌描述，不再在页脚重复堆功能列表。当前轮 proof 会确认旧句子已移除且新句子已落地。
+- 2026-06-14 已继续收紧 landing 页两处残留的泛化副文案：`frontend/src/features/landing/LandingPage.tsx` 当前已把 `上完课后，不用再反复翻录音和笔记。` 与 `围绕复习资料、错题跟进、讲义整理和教师协作，减少重复整理和信息分散。` 改成更具体的产品说明，避免继续使用空泛结论式表达。当前轮 proof 会确认旧句子已移除且新句子已落地。
+- 2026-06-14 已继续收紧 landing 页 about 右侧三张说明卡片：`frontend/src/features/landing/LandingPage.tsx` 当前已把 `已验证流程 / 能力模块化 / 服务对象` 及其配套说明改成更中性的信息型文案，不再使用“我们一直在自己用”“放在一起也顺”这类内部或口语化表达。当前轮 proof 会确认旧文案已移除且新文案已落地。
+- 2026-06-14 已继续按首页文案收紧 landing 功能区四张卡片标题与说明：`frontend/src/features/landing/LandingPage.tsx` 当前已把 `上完课，复习资料能很快出来 / 错题记录不会散 / 题目和讲义能反复用 / 讲义和教研材料可以顺手整理` 这一组偏口号化的句子改成更直接的产品表达，结构未改，只调整对外文案。当前轮 proof 会确认旧标题已移除且新标题已落地。
+- 2026-06-14 已按浏览器批注把 landing 页 about 区块说明改成对外产品表述：`frontend/src/features/landing/LandingPage.tsx` 当前不再使用“先给我们自己的教学团队用 / 我们先拿它处理……”这类内部叙事，已改成更中性的服务对象与价值描述。当前轮 proof 会确认旧文案已移除且新文案已落地。
+- 2026-06-14 已按浏览器批注移除 landing 页 about 区块标题上方的 `关于 Starain` 小标签：`frontend/src/features/landing/LandingPage.tsx` 当前该区块只保留主标题和正文，不再重复放一个单独的胶囊标签。当前轮 proof 会确认源码里该标签块已删除，同时 `关于 Starain` 主标题仍保留。
+- 2026-06-14 已继续按 `$impeccable clarify workspace copy` 清理 landing 页残留英文产品词：`frontend/src/features/landing/LandingPage.tsx` 当前已把首屏左上角 `STARAIN WORKSPACE` 改成 `教学工作台`，右侧 mock UI 顶部的 `Review Plans` 改成 `复习计划`，左侧资料栏的 `Source Material` 改成 `课堂材料`。这一轮不改结构，只收掉最明显的英文模板残留，让首页首屏语言先回到统一中文。当前轮 proof 会确认这 3 处英文词已从 landing 页源码中移除。
+- 2026-06-14 已按 `$impeccable clarify workspace copy` 清掉一批最明显的英文眉题和解释型废话：`frontend/src/features/review-generation/LessonInput.tsx` 去掉了 `Lesson Intake` 并把副文案收成 `上传录音或粘贴笔记，生成复习资料和教学素材。`；`frontend/src/features/consultation/ConsultationPage.tsx` 去掉了 `Consultation Log` 并把说明收成 `记录咨询、跟进和备注，搜索后直接筛当前列表。`；`frontend/src/features/student-center/CampusOverview.tsx` 去掉了 `Class Workspace` 并把总览说明改成更直接的筛选说明；`frontend/src/features/class-feedback/ClassFeedbackGenerationPage.tsx` 也把 `先选择班级和反馈阶段，再汇总阶段素材。 / 创建反馈任务后开始记录草稿。` 收成更短的 `先选班级和反馈阶段。 / 创建任务后开始填写。`。当前轮 proof 会确认这些英文眉题和长解释文案已从对应页面移除。
+- 2026-06-14 已按 `$impeccable distill dashboard` 收紧平台首页工作台：`frontend/src/WorkspaceDashboard.tsx` 当前已把原来的 `平台状态 / 今日处理顺序 / 机构动态` 三块总览式分区收成更直接的三层结构：顶部只保留标题、同步状态、关键统计和直达动作；中间改成 `先处理这些机构` 与 `今天先做`；底部把机构表改成 `机构列表`。同时把首页直接暴露给用户的 `NOT FOUND` 错误文案改成更正常的 `工作台数据暂时不可用，请稍后刷新。`。当前轮 proof `/tmp/xingrun_dashboard_distill_proof.sh` 已通过：源码检查确认旧分区标题已移除并换成新结构，`WorkspaceDashboard.tsx` 动态 import 成功；浏览器 DOM 也确认首页文案已更新为新的任务型结构。
+- 2026-06-14 已继续按浏览器视角把“高亮但像浮起来”的残留状态样式收平：`frontend/src/features/navigation/Sidebar.tsx` 去掉了选中导航项那层 inset 阴影；`frontend/src/features/consultation/ConsultationPage.tsx`、`frontend/src/features/consultation/ConsultationMeetingWorkbench.tsx`、`frontend/src/features/consultation/consultationShared.tsx` 里成功进班/结束结果胶囊、筛选胶囊、流程节点、状态灯和小圆按钮上的 glow、shadow、外圈高亮已改成仅用底色和边框区分；`frontend/src/features/review-generation/LessonInput.tsx`、`frontend/src/features/student-center/StudentManagementTab.tsx`、`frontend/src/features/student-center/StudentCenterPage.tsx` 的选中态按钮也已去掉投影。当前轮 proof 会确认这些“高亮态残留阴影”已从当前工作台主链路页面中移除。
+- 2026-06-14 已继续把当前在用弹层和模态里的剩余阴影收平：`frontend/src/features/consultation/ConsultationBatchModal.tsx`、`frontend/src/features/student-center/ClassEditorModal.tsx`、`frontend/src/features/student-center/StudentProfileModal.tsx` 的模态外壳阴影已移除；`frontend/src/features/consultation/ConsultationModal.tsx` 里的流程卡片、恢复提示卡和浮动回顶按钮也已去掉投影；`frontend/src/features/navigation/Sidebar.tsx`、`frontend/src/features/navigation/WorkspaceShellLayout.tsx`、`frontend/src/features/student-center/CampusOverview.tsx` 这些说明浮层和壳层小按钮的阴影也同步收掉。当前轮 proof 会确认这些剩余弹层/模态类里不再保留对应阴影 token。
+- 2026-06-14 已统一工作台主页面的内容宽度、边距和默认导航展开行为：`frontend/src/workspaceShared.ts` 现把共享容器收成更常规的 `max-w-[1200px] + px-4/6/8`，不再让不同页面各自漂移；`frontend/src/features/settings/SettingsPage.tsx` 与 `frontend/src/features/review-generation/LessonInput.tsx` 也已移除各自额外的 `max-w-3xl / max-w-6xl` 覆盖，直接走同一套页面容器。与此同时，`frontend/src/features/navigation/WorkspaceShellLayout.tsx` 不再按 `calendar / consultation` 默认压缩侧边栏，所有页面进入时都保持完整导航宽度。当前轮 proof 会确认共享容器、页面覆盖和导航展开逻辑都已统一。
+- 2026-06-14 已继续按“页面卡片不要阴影”把当前实际在用工作台页面主卡片收平：共享 `workspaceCardClass / workspaceSoftCardClass` 阴影已移除，`class-feedback / review-generation / consultation / student-center` 这些当前使用中的主卡片和壳层也同步去掉了卡片级阴影，页面层级改回主要靠边框、底色和留白，而不是浮层投影。当前轮 proof 会确认共享卡片 token 和这些在用页面主卡片类里都不再包含对应阴影类。
+- 2026-06-14 已继续把工作台里的“复习生成状态流转”做得更容易扫读：`frontend/src/WorkspaceDashboard.tsx` 新增 `getDashboardStatusBadgeClass()`，把工作台里常见状态按层级区分成完成、进行中、失败、待处理几类颜色，不再所有状态都共用同一种灰色胶囊；这样 member 工作台的最近记录区现在不仅会展示真实状态，还能一眼区分 `转写中 / 生成中 / 失败 / 已完成`。这次处理遵循常见状态面板的做法：状态文案要短，状态样式要能快速区分进行中与异常。参考：[NN/g status trackers](https://www.nngroup.com/articles/status-tracker-progress-update/)、[UX StackExchange status labels](https://ux.stackexchange.com/questions/40838/best-practices-for-naming-steps-in-a-workflow-status-labels)。当前轮 proof `/tmp/xingrun_dashboard_status_badge_proof.sh` 已通过：源码检查确认状态 badge helper 和关键状态映射已存在，前端 `WorkspaceDashboard.tsx` 动态 import 成功。
+- 2026-06-14 已继续把工作台里的“复习生成最近资料”改成真实状态流转：`app.py` 的 `/api/dashboard` 聚合现在不再只把 `ready` 记录塞进 member 工作台的 `recentOutputs`，而是按最新复习资料记录直接返回真实状态，前端 `frontend/src/WorkspaceDashboard.tsx` 也把区块文案从 `最近资料` 改成 `最近记录`，明确显示 `转写中 / 生成中 / 失败 / 已完成` 这类真实状态，不再让最近记录区只剩“完成结果”。这次处理遵循常见 activity/status feed 的做法：优先展示最近记录和当前状态，而不是只展示成功结果，便于老师在首页直接知道任务停在哪一步。参考：[NN/g status trackers](https://www.nngroup.com/articles/status-tracker-progress-update/)、[UX StackExchange status labels](https://ux.stackexchange.com/questions/40838/best-practices-for-naming-steps-in-a-workflow-status-labels)。当前轮 proof `/tmp/xingrun_dashboard_recent_status_flow_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，源码检查确认 recent outputs 已改成真实状态链路，前端 `WorkspaceDashboard.tsx` 动态 import 成功。
+- 2026-06-14 已继续把平台里的“积分/额度”接成真实数据：`app.py` 的 `/api/dashboard` 聚合现在不只会在机构工作台里真实读取 `get_credit_overview()`，也会在平台工作台按机构汇总低余额预警；机构侧继续显示 `积分余额` 和低余额待处理项，平台侧则会把低余额机构写进关注列表、状态卡和机构状态行，便于先看到哪些机构额度要见底。当前低余额预警阈值先设为 `20`。这次处理遵循常见 SaaS 低余额预警做法：主面板只展示可执行的阈值告警，不堆无关财务细节，便于先发现再处理。参考：[Flexprice low balance alert](https://docs.flexprice.io/docs/wallet/low-balance-alert)、[HighLevel low balance warning](https://ideas.gohighlevel.com/changelog/low-balance-warning-for-saas-clients-sub-account-users)。当前轮 proof `/tmp/xingrun_platform_credit_dashboard_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，且源码检查确认 `low_credit_by_org / 低余额机构 / 当前积分余额 / "status": "低余额" / "page": "credit" / 余额 20 及以下` 这些平台侧真实聚合关键标记已存在。
+- 2026-06-14 已继续把工作台里的“咨询记录”接成真实数据：`app.py` 的 `/api/dashboard` 聚合现在会真实汇总未结束咨询记录，并把平台工作台里的关注列表、状态卡和机构状态行改成按机构真实 `待咨询` 数量返回；机构状态优先级现已支持 `待审批 / 待反馈 / 待咨询 / 资料产出`。当前轮 proof `/tmp/xingrun_dashboard_consultation_real_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，且源码检查确认 `pending_consultations_by_org / 待咨询 / 咨询待继续跟进 / "page": "consultation"` 这些真实聚合关键标记已存在。
+- 2026-06-14 已继续把工作台里的“课堂反馈”从占位入口接成真实数据：`app.py` 的 `/api/dashboard` 聚合现在会真实统计 `class_feedback_tasks`，并把成员/机构/平台工作台里的待处理项、状态卡和机构状态行改成按真实反馈任务数量返回；包括成员待处理里的 `待处理课堂反馈`、机构待处理和 `待反馈` 统计、平台机构观察里的 `待反馈` 提醒都不再是假数据。当前轮 proof `/tmp/xingrun_dashboard_feedback_real_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，且源码检查确认 `_dashboard_get_class_feedback_tasks / 待处理课堂反馈 / 待反馈 / class-feedback-generation` 这些真实链路关键标记已存在。
+- 2026-06-14 已把工作台页面从前端 demo 数据切到真实数据：后端新增 `GET /api/dashboard` 聚合接口，按 `member / owner|admin / super_owner` 返回各自工作台所需的真实统计、待处理项、机构行和今日排课；前端 `frontend/src/WorkspaceDashboard.tsx` 现改为直接请求该接口渲染，不再依赖本地 `dashboardMockData.ts`，该 demo 文件已删除。当前轮 proof `/tmp/xingrun_dashboard_real_data_proof.sh` 已通过：`python3 -m py_compile app.py` 通过，前端 `WorkspaceDashboard.tsx` 与 `dashboardTypes.ts` 动态 import 成功，且 `frontend/src/features/dashboard/dashboardMockData.ts` 已不存在。
 - 2026-06-14 已按浏览器批注移除顶部 `立即登录` 按钮的阴影光晕：`frontend/src/features/landing/LandingPage.tsx` 当前 header 登录按钮不再带 `shadow-[0_16px_40px_rgba(...)]` 阴影类，只保留实色按钮本身。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注移除 landing hero 右侧主预览区里这一层嵌套卡片：`frontend/src/features/landing/LandingPage.tsx` 当前 `Source Material + 输出卡片` 这层不再套 `rounded + border + bg-white` 的额外容器，只保留内部真实内容本身，避免出现“卡片里再套一层大卡片”的结构。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注移除 landing hero 右侧主预览区外层灰底：`frontend/src/features/landing/LandingPage.tsx` 当前 `Source Material + 输出卡片` 这层包裹容器已从 `bg-slate-50/55` 改为白底，不再出现整块淡灰背景，只保留内部卡片本身的层级。当前轮 proof 会继续用 landing 页面定向脚本记录。
@@ -694,3 +728,128 @@
   - source extraction checks
   - module import proof for `WorkspacePageContent` and `App.tsx`
   - `npx tsx --test src/workspace-navigation.test.ts`
+
+## 2026-06-14 merge restore-landing-history into develop
+- Confirmed remote metadata with `git fetch origin develop` before merging.
+- Verified local `develop` was not behind `origin/develop`, and `codex/restore-landing-history` was not behind local `develop`.
+- Merged `codex/restore-landing-history` into local `develop` with `--no-ff`.
+- Merge commit: `1e6a85f9 Merge branch 'codex/restore-landing-history' into develop`.
+- No push was performed.
+- Unrelated local dirty files remain in the worktree by explicit user approval.
+
+## 2026-06-14 sidebar scroll and compact pass
+- Tightened the desktop workspace sidebar width and reduced the nav item padding, radius, and footer card spacing.
+- Switched the sidebar shell to `overflow-hidden` with the nav list as the dedicated scroll container so wheel scrolling stays on the menu area.
+- Narrowed the selected navigation background by adding inner horizontal gutters around each section item.
+- Runnable proof passed via `/tmp/xingrun_sidebar_compact_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "overflow-hidden border-r|w-\\[17\\.25rem\\]|space-y-3 overflow-y-auto|space-y-0\\.5 px-1|rounded-xl px-2\\.5 py-2|rounded-xl border border-slate-200/70 bg-white/95 p-2\\.5" src/features/navigation/Sidebar.tsx`
+
+## 2026-06-14 sidebar account footer cleanup
+- Simplified the sidebar footer account summary to show the login username and role only.
+- Removed the organization name from the sidebar footer so it no longer duplicates the details sheet.
+- Runnable proof passed via `/tmp/xingrun_sidebar_account_name_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "currentUser\\.username|resolvedRoleLabel|organization_name" src/features/navigation/Sidebar.tsx`
+
+## 2026-06-14 sidebar account sheet simplification
+- Simplified the account sheet header to focus on the login username with an optional secondary display name.
+- Replaced the heavier gradient/profile summary layout with a flatter avatar, a small role pill, and lighter actions.
+- Removed the redundant organization/status metadata block from the sheet.
+- Runnable proof passed via `/tmp/xingrun_sidebar_sheet_simplify_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "shouldShowDisplayName|text-lg font-semibold text-slate-900|rounded-xl bg-sky-100|inline-flex rounded-full bg-slate-100|w-full rounded-xl border border-slate-200/70 bg-white px-4 py-3 text-left text-sm|w-full rounded-xl px-1 py-2 text-left text-sm font-medium text-rose-500" src/features/navigation/Sidebar.tsx`
+  - negative check confirming the old organization/status metadata block is removed
+
+## 2026-06-14 sidebar account sheet overlay cleanup
+- Removed the dark modal scrim and converted the account sheet into a lighter floating panel.
+- Kept outside-click dismissal by using an invisible full-screen click target instead of a visible overlay.
+- Tightened the action list styling so the sheet reads more like a simple account menu.
+- Runnable proof passed via `/tmp/xingrun_sidebar_sheet_overlay_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Sidebar.tsx').then(() => console.log('Sidebar module import OK'))"`
+  - `rg -n "pointer-events-none|bg-transparent|max-w-\\[22rem\\]|rounded-\\[2rem\\]|shadow-\\[0_24px_60px_rgba\\(15,23,42,0\\.14\\)\\]|border-t border-slate-200/80 pt-3" src/features/navigation/Sidebar.tsx`
+  - negative check confirming `bg-slate-950/32` is removed
+
+## 2026-06-14 workspace shell alignment pass
+- Compressed the sidebar brand area and matched it to the workspace header height so the top divider lines align.
+- Updated the desktop and mobile shell offsets to use the real sidebar widths, removing the visual gap between the fixed sidebar and the main content.
+- Runnable proof passed via `/tmp/xingrun_shell_alignment_proof.sh`:
+  - `npx tsx -e "Promise.all([import('./src/features/navigation/Sidebar.tsx'), import('./src/features/navigation/Header.tsx'), import('./src/features/navigation/WorkspaceShellLayout.tsx')]).then(() => console.log('Navigation shell modules import OK'))"`
+  - `rg -n "h-\\[4\\.75rem\\]|h-9 w-9 object-contain|w-\\[17\\.25rem\\] max-w-\\[86vw\\]|lg:pl-\\[15\\.5rem\\]|lg:pl-\\[17\\.25rem\\]" src/features/navigation/Sidebar.tsx src/features/navigation/Header.tsx src/features/navigation/WorkspaceShellLayout.tsx`
+
+## 2026-06-14 header description removal
+- Removed the per-page descriptive subtitle from the workspace header, leaving a title-only top bar.
+- Runnable proof passed via `/tmp/xingrun_header_copy_removal_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Header.tsx').then(() => console.log('Header module import OK'))"`
+  - `rg -n "text-lg font-semibold tracking-tight text-slate-900|flex h-\\[4\\.75rem\\] items-center justify-between" src/features/navigation/Header.tsx`
+  - negative check confirming `围绕教学、班级与反馈继续推进工作` is removed
+
+## 2026-06-14 header title removal
+- Removed the remaining page title block from the workspace header and right-aligned the header actions.
+- Kept the existing header prop shape intact to avoid broader workspace wiring changes.
+- Runnable proof passed via `/tmp/xingrun_header_title_removal_proof.sh`:
+  - `npx tsx -e "import('./src/features/navigation/Header.tsx').then(() => console.log('Header module import OK'))"`
+  - `rg -n "title: _title|justify-end gap-4 px-4|flex items-center gap-2 sm:gap-3" src/features/navigation/Header.tsx`
+  - negative check confirming the old `<h1>` title block is removed
+
+## 2026-06-14 member dashboard first pass
+- Reworked the member workspace dashboard from a simple entry grid into a task-oriented home screen.
+- Added a quick action row plus three functional sections: 今日待办, 最近产出, and 今天课程.
+- Added a compact 本周进度 summary so the member role sees workload and output status at a glance.
+- Runnable proof passed via `/tmp/xingrun_member_dashboard_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天先做这几件事|今日待办|最近产出|本周进度|今天课程|todayQueue|recentOutputs|scheduleItems|quickActions" src/WorkspaceDashboard.tsx`
+
+## 2026-06-14 platform dashboard first pass
+- Reworked the super-owner workspace dashboard into a platform operations board instead of an empty overview shell.
+- Added four functional areas: quick actions, 需要关注的机构, 平台运行状态 / 今日处理顺序, and 机构动态.
+- Kept the design list-first and task-first so the page reads like an operations console rather than a grid of feature cards.
+- Runnable proof passed via `/tmp/xingrun_platform_dashboard_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天先看这些机构|需要关注的机构|平台运行状态|今日处理顺序|机构动态|attentionItems|platformStats|organizationRows" src/WorkspaceDashboard.tsx`
+
+## 2026-06-14 sidebar scroll compact branch merge prep
+- Continued tightening the shared workspace shell, sidebar, landing page, dashboard, consultation pages, and student center copy/layout so this branch is ready to merge back into `develop`.
+- Refreshed the source-based frontend tests that were still asserting old routing paths and old landing/dashboard copy after the page extraction and wording cleanup.
+- Runnable proof is prepared in `/tmp/xingrun_sidebar_scroll_compact_merge_proof_20260614.sh` and runs the targeted `tsx --test` suite plus `npm run lint`.
+
+## 2026-06-14 organization dashboard first pass
+- Reworked the owner/admin workspace dashboard into an institution operations board focused on pending work, class progress, and daily operational status.
+- Added four functional areas: quick actions, 待处理事项, 班级进度, 今日状态, and 工作区入口.
+- Kept the page task-oriented and list-first so managers can see what needs intervention instead of reading overview copy.
+- Runnable proof passed via `/tmp/xingrun_org_dashboard_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天先把机构日常调顺|待处理事项|班级进度|今日状态|工作区入口|pendingItems|progressStats|classRows|sideList" src/WorkspaceDashboard.tsx`
+
+## 2026-06-14 dashboard accent color tone pass
+- Reduced blue accent usage across the role-based dashboards and shifted quick actions, inline actions, and count badges to a more neutral slate hierarchy.
+- Kept positive progress markers on a restrained emerald accent instead of using blue for every emphasis point.
+- Runnable proof passed via `/tmp/xingrun_dashboard_color_tone_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "dashboardQuickActionClass|dashboardInlineActionClass|bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600|text-emerald-500|text-slate-700 dark:text-slate-200" src/WorkspaceDashboard.tsx`
+  - remaining sky accent scan returned no matches in `WorkspaceDashboard.tsx`
+
+## 2026-06-14 dashboard header copy cleanup
+- Replaced the role dashboard intro copy with shorter, more operational labels and summaries.
+- Removed the more narrated / AI-sounding top-line phrasing from member, organization, and platform dashboards.
+- Runnable proof passed via `/tmp/xingrun_dashboard_copy_tone_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今日工作|机构观察|机构工作台|待处理、最近产出和今天课程都在这里|今天的积压、异常和机构动态|待处理事项、班级进度和今日状态" src/WorkspaceDashboard.tsx`
+  - negative check confirming the older narrated copy is removed
+
+## 2026-06-14 dashboard demo-copy cleanup
+- Replaced more narrated and presentation-like dashboard copy with shorter, plainer operational language across member, platform, and organization dashboards.
+- Tightened task labels and mock data descriptions so the page reads more like a real admin workspace than a staged demo.
+- Runnable proof passed via `/tmp/xingrun_dashboard_demo_copy_cleanup_proof.sh`:
+  - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
+  - `rg -n "今天要处理的事都在这里|先看今天还没收尾的事项|最近生成和整理过的内容|今天的课和对应要做的事|积压、异常和机构动态|今天需要处理和继续观察的机构|待处理事项和班级进度都在这里|先看今天没收尾的事|今天上课班级的处理情况" src/WorkspaceDashboard.tsx`
+  - negative check confirming the older narrated copy is removed
+
+## 2026-06-14 dashboard mock data extraction
+- Moved the role-based dashboard demo data out of `WorkspaceDashboard.tsx` into `frontend/src/features/dashboard/dashboardMockData.ts`.
+- Added typed shared dashboard data structures for quick actions, task items, stats, schedules, and role-specific tables so later API integration can replace one module instead of editing view code.
+- Updated `WorkspaceDashboard.tsx` to render from the shared data module and keep the component focused on layout plus page routing.
+- Runnable proof passed via `/tmp/xingrun_dashboard_data_module_proof.sh`:
+  - `npx tsx -e "Promise.all([import('./src/WorkspaceDashboard.tsx'), import('./src/features/dashboard/dashboardMockData.ts')]).then(() => console.log('Dashboard modules import OK'))"`
+  - `rg -n "memberDashboardData|platformDashboardData|organizationDashboardData|weeklyStats = memberDashboardData|platformStats = platformDashboardData\.stats|organizationDashboardData\.pendingItems" src/WorkspaceDashboard.tsx`
+  - `rg -n "export const memberDashboardData|export const platformDashboardData|export const organizationDashboardData|export type DashboardQuickAction|export type DashboardTaskItem|export type DashboardStat" src/features/dashboard/dashboardMockData.ts`

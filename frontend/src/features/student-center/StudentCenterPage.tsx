@@ -1406,7 +1406,7 @@ export function StudentCenterPage({
             className={cn(
               'h-10 rounded-xl text-sm font-bold transition',
               studentCenterTab === item.key
-                ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                ? 'bg-white text-sky-700 dark:bg-sky-400/15 dark:text-sky-100'
                 : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
             )}
           >

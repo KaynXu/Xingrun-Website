@@ -91,7 +91,7 @@ export function StudentManagementTab({
             className={[
               'h-9 rounded-full px-4 text-sm font-semibold transition',
               scheduleStatusFilter === item.key
-                ? 'bg-sky-600 text-white shadow-[0_10px_24px_rgba(14,165,233,0.22)]'
+                ? 'bg-sky-600 text-white'
                 : 'border border-sky-100 bg-white text-slate-500 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
             ].join(' ')}
           >

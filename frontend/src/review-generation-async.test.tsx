@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const workspacePageContentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 
 test('review history source polls review plans while pending lessons exist', () => {
@@ -22,5 +23,6 @@ test('review generation source synchronizes member class selection against acces
   assert.match(lessonInputSource, /if \(role !== 'member'\) \{\s*return selectedClassId;/);
   assert.match(lessonInputSource, /if \(classes.length === 1\) \{\s*return classes\[0\]\?\.id \?\? null;/);
   assert.match(lessonInputSource, /setClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
-  assert.match(appSource, /import \{ LessonInput \} from '\.\/features\/review-generation\/LessonInput';/);
+  assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
+  assert.match(workspacePageContentSource, /import \{ LessonInput \} from '\.\.\/review-generation\/LessonInput';/);
 });

@@ -142,7 +142,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [activeClassFeedbackTaskId, setActiveClassFeedbackTaskId] = useState<number | null>(null);
   const [classFeedbackStudents, setClassFeedbackStudents] = useState<ClassFeedbackStudentCard[]>([]);
   const [classFeedbackSummary, setClassFeedbackSummary] = useState('');
-  const [classFeedbackStatusMessage, setClassFeedbackStatusMessage] = useState('先选择班级和反馈阶段，再汇总阶段素材。');
+  const [classFeedbackStatusMessage, setClassFeedbackStatusMessage] = useState('先选班级和反馈阶段。');
   const [classFeedbackStageNotes, setClassFeedbackStageNotes] = useState<ClassFeedbackStageNotes>(
     createEmptyClassFeedbackStageNotes(),
   );
@@ -200,7 +200,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     [classFeedbackPeriodYear],
   );
 
-  const resetClassFeedbackWorkspaceState = useCallback((statusMessage = '先选择班级和反馈阶段，再汇总阶段素材。') => {
+  const resetClassFeedbackWorkspaceState = useCallback((statusMessage = '先选班级和反馈阶段。') => {
     setActiveClassFeedbackTaskId(null);
     setCurrentTaskStatus('draft');
     setTeacherNameLabel(currentUser.display_name);
@@ -686,7 +686,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const classFeedbackDraftStatusLabel = currentTaskStatus === 'confirmed'
     ? '本次反馈已确认。'
     : !activeClassFeedbackTaskId
-      ? '创建反馈任务后开始记录草稿。'
+      ? '创建任务后开始填写。'
       : isSavingClassFeedback
         ? '正在保存草稿...'
         : hasUnsavedDraftChanges
@@ -831,7 +831,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   );
   const classFeedbackHeaderAside = (
     <div className="flex flex-col gap-3 xl:min-h-[10.5rem] xl:justify-between">
-      <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left shadow-sm dark:border-white/10 dark:bg-slate-950/55">
+      <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/85 px-4 py-3 text-left dark:border-white/10 dark:bg-slate-950/55">
         <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">当前周期</div>
         <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{classFeedbackPeriodPreview.label}</div>
         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
