@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 import config_runtime
 import lesson_manager
 import app as app_module
+from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import validate_final_review_plan
@@ -84,6 +85,41 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         plan, errors = validate_final_review_plan(writer_style_single_lesson_plan())
         self.assertIsNotNone(plan)
         self.assertEqual(errors, [])
+
+    def test_generate_review_plan_json_sets_timeout(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "choices": [type("Choice", (), {"message": type("Message", (), {"content": "{\"ok\": true}"})()})()],
+                "usage": type("Usage", (), {"prompt_tokens": 11, "completion_tokens": 22})(),
+                "model": "deepseek-v4-pro",
+            },
+        )()
+        create_mock = unittest.mock.Mock(return_value=response)
+        fake_client = type(
+            "Client",
+            (),
+            {
+                "chat": type(
+                    "Chat",
+                    (),
+                    {"completions": type("Completions", (), {"create": create_mock})()},
+                )()
+            },
+        )()
+        with patch.object(llm_client_module, "get_chat_client", return_value=fake_client):
+            payload, usage = llm_client_module.generate_review_plan_json(
+                system_prompt="system",
+                user_message="user",
+                provider="deepseek",
+                model="deepseek-v4-pro",
+            )
+
+        self.assertEqual(payload, {"ok": True})
+        self.assertEqual(usage["input_tokens"], 11)
+        self.assertEqual(usage["output_tokens"], 22)
+        self.assertEqual(create_mock.call_args.kwargs["timeout"], llm_client_module.REVIEW_PLAN_LLM_TIMEOUT_SECONDS)
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
@@ -384,6 +420,44 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(serialized["workflow_warnings"][0]["code"], "demo")
         self.assertEqual(serialized["quality_review"]["score"], 88)
         self.assertEqual(serialized["style_version"], "physics-master-style.v1")
+
+    def test_new_running_review_plan_run_interrupts_previous_running_run(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初三",
+            topic="二次函数",
+            summary="课堂总结文本",
+            weak_points="最值",
+        )
+        lesson_manager.save_review_plan_run(
+            lesson_id=lesson_id,
+            organization_id=1,
+            trace_id="trace-old",
+            status="running",
+        )
+        lesson_manager.save_review_plan_run(
+            lesson_id=lesson_id,
+            organization_id=1,
+            trace_id="trace-new",
+            status="running",
+        )
+
+        with lesson_manager.get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT trace_id, status
+                FROM review_plan_runs
+                WHERE lesson_id=?
+                ORDER BY id
+                """,
+                (lesson_id,),
+            ).fetchall()
+
+        self.assertEqual(
+            [(row["trace_id"], row["status"]) for row in rows],
+            [("trace-old", "interrupted"), ("trace-new", "running")],
+        )
 
 
 if __name__ == "__main__":

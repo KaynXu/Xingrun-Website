@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+REVIEW_PLAN_LLM_TIMEOUT_SECONDS = 180.0
 
 
 _BARE_LATEX_COMMAND_RE = re.compile(
@@ -173,6 +174,7 @@ def generate_review_plan_json(
         ],
         temperature=0.3,
         response_format={"type": "json_object"},
+        timeout=REVIEW_PLAN_LLM_TIMEOUT_SECONDS,
     )
     raw = response.choices[0].message.content
     return loads_model_json(raw), usage_dict(response, provider=provider_name, model_fallback=model_name)
