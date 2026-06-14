@@ -281,9 +281,9 @@ export function getConsultationSourceLabel(record: ConsultationRecord): string {
 }
 
 export const consultationSurfaceClass =
-  'border border-[#D9EEF7] bg-white shadow-[0_10px_28px_rgba(31,42,68,0.05)] dark:border-white/10 dark:bg-slate-950/78';
+  'border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/78';
 export const consultationPanelClass =
-  'rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_8px_22px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/72';
+  'rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/72';
 export const consultationLabelClass =
   'consultation-field-label text-[11px] font-bold leading-4 text-[#7188A6] dark:text-slate-300';
 export const consultationValueClass =
@@ -318,10 +318,10 @@ export const consultationResultShortLabel = (stage: string) => {
 export const ConsultationStatusLamp = ({ stage }: { stage: string }) => {
   const status = deriveConsultationDisplayStatus(stage);
   const lampClass = stage === '咨询结束'
-    ? 'bg-rose-500 shadow-[0_0_0_3px_rgba(239,68,68,0.13),0_0_10px_rgba(239,68,68,0.34)]'
+    ? 'bg-rose-500'
     : status === '正在跟进'
-      ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(34,197,94,0.14),0_0_10px_rgba(34,197,94,0.42)]'
-      : 'bg-slate-400 shadow-[0_0_0_3px_rgba(148,163,184,0.12)]';
+      ? 'bg-emerald-500'
+      : 'bg-slate-400';
   return <span className={`inline-block h-2 w-2 rounded-full ${lampClass}`} title={status} aria-label={status} />;
 };
 
@@ -362,9 +362,9 @@ export const ConsultationResultCapsule = ({
       title={resultStage || '成功进班'}
       className={`relative flex min-w-0 items-center overflow-hidden rounded-[10px] text-center font-extrabold leading-none transition ${compact ? 'h-8 text-[10px]' : 'h-[42px] text-xs'} ${editable ? 'hover:-translate-y-0.5' : ''} ${
         active
-          ? 'bg-sky-500 text-white shadow-[0_0_0_3px_rgba(14,165,233,0.20),0_8px_24px_rgba(14,165,233,0.28)]'
+          ? 'bg-sky-500 text-white'
           : completed
-            ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-[0_0_0_1px_rgba(16,185,129,0.16)] dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200'
+            ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200'
             : 'bg-slate-100 text-slate-400 dark:bg-white/5 dark:text-slate-500'
       }`}
     >
@@ -538,11 +538,11 @@ export const ConsultationFlowBar = ({
   const getNodeCircleClass = (node: typeof flowNodes[number]) => {
     if (node.type === 'over') {
       return node.active
-        ? 'border-[#F45B7A] bg-[#F45B7A] text-white shadow-[0_0_0_3px_rgba(244,91,122,0.14)]'
+        ? 'border-[#F45B7A] bg-[#F45B7A] text-white'
         : 'border-[#F45B7A] bg-white text-transparent dark:bg-slate-950';
     }
     if (node.active) {
-      return 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16)]';
+      return 'border-[#0EA5E9] bg-[#0EA5E9] text-white';
     }
     if (node.completed) {
       return 'border-[#22B981] bg-[#22B981] text-white';
@@ -612,7 +612,7 @@ export const ConsultationFlowBar = ({
               </span>
             </button>
             {node.type === 'result' && (
-              <div className={`absolute right-0 top-0 z-20 flex ${compact ? 'h-5 w-5' : 'h-6 w-6'} items-center justify-center rounded-full bg-white/80 text-[#7188A6] shadow-sm dark:bg-slate-900/80`}>
+              <div className={`absolute right-0 top-0 z-20 flex ${compact ? 'h-5 w-5' : 'h-6 w-6'} items-center justify-center rounded-full bg-white/80 text-[#7188A6] dark:bg-slate-900/80`}>
                 <ChevronDown size={compact ? 10 : 11} className="pointer-events-none" />
                 <select
                   value={resultStage}
@@ -639,7 +639,7 @@ export const ConsultationFlowBar = ({
                   event.stopPropagation();
                   onStageJump?.(node.type === 'result' ? (isConsultationResultStage(currentStage) ? currentStage : '成功进班') : node.key);
                 }}
-                className="absolute left-1/2 top-0 z-20 flex h-4 w-4 -translate-x-1/2 -translate-y-1 items-center justify-center rounded-full bg-white text-[#7188A6] opacity-0 shadow-sm transition hover:text-[#0EA5E9] focus:opacity-100 group-hover:opacity-100 dark:bg-slate-900"
+                className="absolute left-1/2 top-0 z-20 flex h-4 w-4 -translate-x-1/2 -translate-y-1 items-center justify-center rounded-full bg-white text-[#7188A6] opacity-0 transition hover:text-[#0EA5E9] focus:opacity-100 group-hover:opacity-100 dark:bg-slate-900"
                 aria-label={`跳转到${node.title}编辑栏`}
                 title={`跳转到${node.title}编辑栏`}
               >

@@ -285,7 +285,7 @@ test('class management source keeps compact card single-expand shell', () => {
   assert.match(classManagementTabSource, /`\$\{workspaceSoftCardClass\} overflow-hidden p-0 transition/);
 });
 
-test('consultation workspace source uses adaptive layouts instead of horizontal scrolling hacks', () => {
+test('consultation workspace source keeps adaptive layouts without a special compact sidebar mode', () => {
   const consultationBlock = consultationPageSource;
 
   assert.match(appSource, /mobileNavOpen/);
@@ -293,7 +293,8 @@ test('consultation workspace source uses adaptive layouts instead of horizontal 
   assert.match(shellSource, /className="fixed inset-0 z-40 lg:hidden"/);
   assert.match(consultationPageSource, /className="grid gap-4 p-4 sm:p-5 md:hidden"/);
   assert.match(consultationPageSource, /className="hidden md:block xl:hidden"/);
-  assert.match(shellSource, /const compactSidebar = activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation';/);
+  assert.match(shellSource, /compact=\{false\}/);
+  assert.doesNotMatch(shellSource, /const compactSidebar = activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation';/);
   assert.match(consultationPageSource, /className=\{`grid w-full gap-2 self-start lg:w-\[22rem\] lg:self-auto xl:w-\[24rem\] \$\{canManage \? 'grid-cols-3' : 'grid-cols-2'\}`\}/);
   assert.match(consultationPageSource, /className=\{`\$\{workspaceSecondaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);
   assert.match(consultationPageSource, /className=\{`\$\{workspacePrimaryButtonClass\} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-\[11px\] sm:text-xs`\}/);

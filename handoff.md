@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-14 已继续把工作台和首页剩余文案收成更直接的中文表达，并同步收口平台工作台信息结构与共享壳层：`frontend/src/WorkspaceDashboard.tsx` 现把平台页关注列表、常用入口和机构列表改成任务导向标题与更自然的状态文案；`frontend/src/features/landing/LandingPage.tsx` 去掉首屏英文眉题并把首屏主标题收成 `老师工作里的 AI 工具`；`frontend/src/features/navigation/Sidebar.tsx`、`frontend/src/features/navigation/WorkspaceShellLayout.tsx`、`frontend/src/workspaceShared.ts` 以及 consultation / review-generation / student-center / class-feedback 相关页面也继续同步压缩说明文案和容器层级。当前轮 proof 会覆盖 dashboard/navigation/landing/class-feedback/review-generation/student-center 定向前端测试与 build。
 - 2026-06-14 已按用户澄清把学生奖惩具体制度补进 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx)：当前在 `3. 家长如何配合` 下新增了 `具体执行制度`，把每日判定口径、奖励触发、连续奖励、惩罚触发、连续惩罚和家长配合规则完整写入执行方案正文，不再只停留在 [学生情况分析.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/学生情况分析.docx) 里。当前轮 proof 会确认这 7 条新增文本都已位于 `3. 家长如何配合` 与 `4. 学生情况分析与个性化支线` 之间。
 - 2026-06-14 已按用户要求补全 [学生情况分析.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/学生情况分析.docx) 里的学生奖惩具体制度：在原“家长如何配合与奖励机制”段落下新增了可执行版 `具体执行制度`，把每日判定口径、奖励触发、连续奖励、惩罚触发、连续惩罚和家长配合规则写完整，现打开文档即可直接看到完整奖惩说明。当前轮 proof 会确认这 7 条新增文本都已落入 `家长如何配合与奖励机制` 与 `暑期反馈计划` 之间。
 - 2026-06-14 已按用户最新要求在 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的每位学生五维图前补入一段简短总结：当前结构为“学生名 + 总结 + 五维图 + 个性化支线”，6 位学生都已补齐，后面的个性化支线内容未改。当前轮 proof 会确认每位学生区块各有 `1` 段 `总结：` 文本和 `1` 个空图片段。
@@ -805,6 +806,11 @@
 - Runnable proof passed via `/tmp/xingrun_platform_dashboard_proof.sh`:
   - `npx tsx -e "import('./src/WorkspaceDashboard.tsx').then(() => console.log('WorkspaceDashboard module import OK'))"`
   - `rg -n "今天先看这些机构|需要关注的机构|平台运行状态|今日处理顺序|机构动态|attentionItems|platformStats|organizationRows" src/WorkspaceDashboard.tsx`
+
+## 2026-06-14 sidebar scroll compact branch merge prep
+- Continued tightening the shared workspace shell, sidebar, landing page, dashboard, consultation pages, and student center copy/layout so this branch is ready to merge back into `develop`.
+- Refreshed the source-based frontend tests that were still asserting old routing paths and old landing/dashboard copy after the page extraction and wording cleanup.
+- Runnable proof is prepared in `/tmp/xingrun_sidebar_scroll_compact_merge_proof_20260614.sh` and runs the targeted `tsx --test` suite plus `npm run lint`.
 
 ## 2026-06-14 organization dashboard first pass
 - Reworked the owner/admin workspace dashboard into an institution operations board focused on pending work, class progress, and daily operational status.

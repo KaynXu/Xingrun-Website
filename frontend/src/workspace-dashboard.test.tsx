@@ -31,34 +31,36 @@ function renderDashboard(role: DashboardRole): string {
 test('member workspace prioritizes quick actions and personal work context', () => {
   const markup = renderDashboard('member');
 
-  assert.match(markup, /快速开始/);
-  assert.match(markup, /复习生成/);
-  assert.match(markup, /课堂反馈/);
-  assert.match(markup, /课程日历/);
-  assert.match(markup, /智能错题/);
-  assert.match(markup, /我的教学概览/);
-  assert.match(markup, /最近工作/);
-  assert.doesNotMatch(markup, /今日待办/);
-  assert.doesNotMatch(markup, /通知中心/);
+  assert.match(markup, /工作台/);
+  assert.match(markup, /新建复习文档/);
+  assert.match(markup, /补课堂反馈/);
+  assert.match(markup, /查看课程日历/);
+  assert.match(markup, /继续错题跟进/);
+  assert.match(markup, /待处理/);
+  assert.match(markup, /最近记录/);
+  assert.doesNotMatch(markup, /快速开始/);
+  assert.doesNotMatch(markup, /我的教学概览/);
 });
 
 test('workspace dashboard shows admin operations overview', () => {
   const markup = renderDashboard('admin');
 
-  assert.match(markup, /机构运营概览/);
+  assert.match(markup, /机构工作台/);
+  assert.match(markup, /查看班级安排/);
+  assert.match(markup, /补课堂反馈/);
   assert.match(markup, /班级管理/);
-  assert.match(markup, /账号审批/);
-  assert.match(markup, /课堂反馈/);
+  assert.match(markup, /处理账号审批/);
+  assert.match(markup, /待处理事项/);
   assert.match(markup, /智能错题/);
-  assert.doesNotMatch(markup, /咨询记录/);
   assert.doesNotMatch(markup, /新建复习文档/);
 });
 
 test('workspace dashboard shows owner operations overview', () => {
   const markup = renderDashboard('owner');
 
-  assert.match(markup, /机构运营概览/);
-  assert.match(markup, /班级管理/);
+  assert.match(markup, /机构工作台/);
+  assert.match(markup, /查看班级安排/);
+  assert.match(markup, /待处理事项/);
   assert.match(markup, /账号审批/);
   assert.match(markup, /课堂反馈/);
   assert.match(markup, /智能错题/);
@@ -68,22 +70,24 @@ test('workspace dashboard shows owner operations overview', () => {
 test('workspace dashboard shows super owner platform overview', () => {
   const markup = renderDashboard('super_owner');
 
-  assert.match(markup, /平台总览/);
-  assert.doesNotMatch(markup, /查看机构工作区/);
-  assert.doesNotMatch(markup, /进入审批/);
-  assert.doesNotMatch(markup, /打开设置/);
+  assert.match(markup, /平台工作台/);
+  assert.match(markup, /待处理事项/);
+  assert.match(markup, /常用入口/);
+  assert.match(markup, /机构列表/);
+  assert.doesNotMatch(markup, /平台总览/);
   assert.doesNotMatch(markup, /机构运营概览/);
   assert.doesNotMatch(markup, /新建复习文档/);
 });
 
-test('workspace dashboard copy keeps AI labels and material-generation copy', () => {
+test('workspace dashboard copy keeps direct task-oriented labels', () => {
   const memberMarkup = renderDashboard('member');
   const ownerMarkup = renderDashboard('owner');
   const superOwnerMarkup = renderDashboard('super_owner');
 
-  assert.match(memberMarkup, /AI 复习生成/);
-  assert.match(ownerMarkup, /AI 教学入口/);
-  assert.match(superOwnerMarkup, /Platform command/);
+  assert.match(memberMarkup, /今天的记录和入口都在这里/);
+  assert.match(ownerMarkup, /机构今天的记录和入口/);
+  assert.match(superOwnerMarkup, /先看异常和积压，再进入具体页面处理/);
+  assert.match(superOwnerMarkup, /处理账号审批/);
 });
 
 test('super owner platform cards are removed from the dashboard', () => {
@@ -111,7 +115,7 @@ test('workspace dashboard uses styles passed by the shell instead of owning shar
 
   assert.match(markup, /workspace-page/);
   assert.match(markup, /workspace-card/);
-  assert.match(markup, /workspace-primary/);
+  assert.doesNotMatch(markup, /workspacePrimaryButtonClass/);
 });
 
 test('organization management entries keep owner and admin routes inside their real access bounds', () => {

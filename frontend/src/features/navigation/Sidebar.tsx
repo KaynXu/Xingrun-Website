@@ -125,7 +125,7 @@ export const SidebarAccountSheet = ({
         className="absolute inset-0 pointer-events-auto bg-transparent"
       />
       <div className="absolute bottom-4 left-4 w-[calc(100vw-2rem)] max-w-[22rem] pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-        <div className={`${workspaceCardClass} overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-white/10 dark:bg-slate-950/92 dark:shadow-[0_24px_60px_rgba(2,6,23,0.46)]`}>
+        <div className={`${workspaceCardClass} overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white p-5 dark:border-white/10 dark:bg-slate-950/92`}>
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-base font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
@@ -294,10 +294,10 @@ export function Sidebar({
       className={cn(
         'flex flex-col overflow-hidden border-r border-slate-200/70 bg-[#fbfdff] dark:border-white/10 dark:bg-[#0b1220]',
         mobile
-          ? 'h-full w-full overflow-y-auto overscroll-y-auto [-webkit-overflow-scrolling:touch] shadow-[18px_0_48px_rgba(15,23,42,0.08)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.48)]'
+          ? 'h-full w-full overflow-y-auto overscroll-y-auto [-webkit-overflow-scrolling:touch]'
           : compact
-            ? 'h-screen w-[15.5rem] shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]'
-            : 'h-screen w-[17.25rem] shadow-[18px_0_48px_rgba(15,23,42,0.05)] dark:shadow-[18px_0_48px_rgba(2,6,23,0.38)]',
+            ? 'h-screen w-[15.5rem]'
+            : 'h-screen w-[17.25rem]',
       )}
     >
       <div className={cn('flex h-[4.75rem] items-center border-b border-slate-200/70 dark:border-white/10', compact && !mobile ? 'px-4' : 'px-5')}>
@@ -335,7 +335,7 @@ export function Sidebar({
                     'group/nav-item relative flex w-full touch-manipulation items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200',
                     compact && !mobile && 'justify-center px-2',
                     activePage === item.id
-                      ? 'bg-sky-50 text-slate-900 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.18)] dark:bg-white/10 dark:text-slate-100'
+                      ? 'bg-sky-50 text-slate-900 dark:bg-white/10 dark:text-slate-100'
                       : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100',
                   )}
                 >
@@ -355,7 +355,7 @@ export function Sidebar({
                     </div>
                   </div>
                   {compact && !mobile && (
-                    <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-40 -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-200/70 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 opacity-0 shadow-[0_10px_24px_rgba(31,42,68,0.14)] transition group-hover/nav-item:opacity-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
+                    <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-40 -translate-y-1/2 whitespace-nowrap rounded-lg border border-slate-200/70 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 opacity-0 transition group-hover/nav-item:opacity-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
                       {item.label}
                     </span>
                   )}
@@ -386,7 +386,7 @@ export function Sidebar({
       <button
         type="button"
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-6 right-6 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white shadow-[0_18px_35px_rgba(15,23,42,0.25)] transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+        className="fixed bottom-6 right-6 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
         aria-label="回到顶部"
         title="回到顶部"
       >

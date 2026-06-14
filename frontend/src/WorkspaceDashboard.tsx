@@ -61,6 +61,51 @@ function getDashboardStatusBadgeClass(status: string): string {
   return 'rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300';
 }
 
+function getPlatformAttentionTitle(item: DashboardPlatformData['attentionItems'][number]): string {
+  if (item.page === 'class-feedback-generation') {
+    return `${item.organization} · 课堂反馈`;
+  }
+  if (item.page === 'consultation') {
+    return `${item.organization} · 咨询跟进`;
+  }
+  if (item.page === 'review-generation') {
+    return `${item.organization} · 复习资料`;
+  }
+  if (item.page === 'accounts') {
+    return `${item.organization} · 账号审批`;
+  }
+  if (item.page === 'credit') {
+    return `${item.organization} · 积分余额`;
+  }
+  return `${item.organization} · ${item.status}`;
+}
+
+function getPlatformAttentionDetail(issue: string): string {
+  return issue.replace(/^有\s+/, '');
+}
+
+function getPlatformPriorityTitle(item: DashboardPlatformPriorityItem): string {
+  if (item.page === 'class-feedback-generation') {
+    return '进入课堂反馈';
+  }
+  if (item.page === 'classes') {
+    return '查看机构班级';
+  }
+  if (item.page === 'accounts') {
+    return '处理账号审批';
+  }
+  if (item.page === 'consultation') {
+    return '查看咨询记录';
+  }
+  if (item.page === 'credit') {
+    return '查看积分余额';
+  }
+  if (item.page === 'settings') {
+    return '进入系统设置';
+  }
+  return item.title;
+}
+
 const memberQuickActions: DashboardQuickAction[] = [
   { page: 'review-generation', label: '新建复习文档', icon: 'plus' },
   { page: 'class-feedback-generation', label: '补课堂反馈', icon: 'file' },
@@ -119,10 +164,14 @@ function canOpenDashboardPage(currentUser: WorkspaceDashboardProps['currentUser'
 
 function DashboardFetchState({ loading, error }: { loading: boolean; error: string | null }) {
   if (loading) {
-    return <p className="text-sm text-slate-500 dark:text-slate-400">正在加载工作台数据...</p>;
+    return <p className="text-sm text-slate-500 dark:text-slate-400">正在同步工作台数据...</p>;
   }
   if (error) {
-    return <p className="text-sm text-amber-600 dark:text-amber-300">{error}</p>;
+    return (
+      <p className="text-sm text-amber-600 dark:text-amber-300">
+        {error === 'NOT FOUND' ? '工作台数据暂时不可用，请稍后刷新。' : error}
+      </p>
+    );
   }
   return null;
 }
@@ -345,22 +394,22 @@ function PlatformWorkspace({
 }: WorkspaceDashboardProps & { data: DashboardPlatformData; loading: boolean; error: string | null }) {
   const quickActions = platformQuickActions.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
   const attentionItems = data.attentionItems.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
-  const platformStats = data.stats;
+  const platformStats = data.stats.slice(0, 4);
   const organizationRows = data.organizationRows.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
   const priorityItems = data.priorityItems.filter((entry) => canOpenDashboardPage(currentUser, entry.page as WorkspacePage));
 
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">平台工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">机构、账号和资料情况。</p>
-            <div className="mt-2">
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先看异常和积压，再进入具体页面处理。</p>
+            <div className="mt-2 min-h-5">
               <DashboardFetchState loading={loading} error={error} />
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 xl:max-w-[24rem] xl:justify-end">
             {quickActions.map((action) => (
               <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
                 {action.label}
@@ -368,36 +417,47 @@ function PlatformWorkspace({
             ))}
           </div>
         </div>
+        {platformStats.length > 0 && (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {platformStats.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{item.label}</p>
+                <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <section className={`${styles.cardClass} overflow-hidden p-0`}>
-          <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">需要关注的机构</p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按真实待处理记录展示。</p>
+            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">待处理事项</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按优先级查看需要处理的反馈、咨询和资料异常。</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                  {attentionItems.length} 项
+                </span>
               </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
-                {attentionItems.length} 条
-              </span>
             </div>
-          </div>
           <div className="divide-y divide-slate-200/70 dark:divide-white/10">
             {attentionItems.length === 0 ? (
-              <DashboardEmptyState message="现在没有需要额外关注的机构。" />
+              <DashboardEmptyState message="现在没有需要优先处理的事项。" />
             ) : (
               attentionItems.map((item) => (
                 <div key={`${item.organization}-${item.issue}`} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <AlertTriangle size={16} className="shrink-0 text-amber-500 dark:text-amber-300" />
-                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{item.organization}</p>
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getPlatformAttentionTitle(item)}</p>
                       <span className={getDashboardStatusBadgeClass(item.status)}>
                         {item.status}
                       </span>
                     </div>
-                    <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{item.issue}</p>
+                    <p className="mt-1 pl-6 text-sm text-slate-500 dark:text-slate-400">{getPlatformAttentionDetail(item.issue)}</p>
                   </div>
                   <button type="button" onClick={() => setActivePage(item.page)} className={`${dashboardInlineActionClass} self-start md:self-center`}>
                     {item.action}
@@ -410,30 +470,14 @@ function PlatformWorkspace({
         </section>
 
         <div className="space-y-5">
-          <section className={`${styles.cardClass} p-5`}>
-            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">平台状态</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              {platformStats.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:bg-white/5 dark:text-slate-400">暂无统计。</div>
-              ) : (
-                platformStats.map((item) => (
-                  <div key={item.label} className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-white/5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.note}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-
           <section className={`${styles.cardClass} overflow-hidden p-0`}>
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
-              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">今日处理顺序</p>
+              <p className="text-base font-semibold text-slate-900 dark:text-slate-100">常用入口</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">直接进入当前最常看的页面。</p>
             </div>
             <div className="divide-y divide-slate-200/70 dark:divide-white/10">
               {priorityItems.length === 0 ? (
-                <DashboardEmptyState message="现在没有额外的处理顺序。" />
+                <DashboardEmptyState message="当前没有可显示的常用入口。" />
               ) : (
                 priorityItems.map((item: DashboardPlatformPriorityItem) => (
                   <button
@@ -443,7 +487,7 @@ function PlatformWorkspace({
                     className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80 dark:hover:bg-white/5"
                   >
                     <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.title}</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{getPlatformPriorityTitle(item)}</p>
                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.detail}</p>
                     </div>
                     <ArrowRight size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
@@ -457,8 +501,8 @@ function PlatformWorkspace({
 
       <section className={`${styles.cardClass} overflow-hidden p-0`}>
         <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/10">
-          <p className="text-base font-semibold text-slate-900 dark:text-slate-100">机构动态</p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按机构查看成员、资料和审批数量。</p>
+          <p className="text-base font-semibold text-slate-900 dark:text-slate-100">机构列表</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">直接看机构状态，再决定要进哪一页。</p>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
@@ -471,7 +515,7 @@ function PlatformWorkspace({
               <span className="text-right">操作</span>
             </div>
             {organizationRows.length === 0 ? (
-              <DashboardEmptyState message="现在没有机构数据。" />
+              <DashboardEmptyState message="现在还没有可展示的机构数据。" />
             ) : (
               organizationRows.map((row) => (
                 <button

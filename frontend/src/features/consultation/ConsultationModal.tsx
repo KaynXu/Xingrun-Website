@@ -310,9 +310,9 @@ function getConsultationFlowSectionStates(values: ConsultationFormValues): Recor
 }
 
 const consultationFlowSectionClass = (state: ConsultationFlowSectionState) => cn(
-  'rounded-[18px] border bg-white p-4 shadow-[0_10px_28px_rgba(31,42,68,0.05)] transition-colors dark:border-white/10 dark:bg-slate-950/72',
+  'rounded-[18px] border bg-white p-4 transition-colors dark:border-white/10 dark:bg-slate-950/72',
   state === 'active'
-    ? 'border-sky-300 bg-sky-50/70 shadow-[0_16px_36px_rgba(14,165,233,0.12)] dark:border-sky-400/40 dark:bg-sky-500/10'
+    ? 'border-sky-300 bg-sky-50/70 dark:border-sky-400/40 dark:bg-sky-500/10'
     : state === 'complete'
       ? 'border-emerald-200 bg-emerald-50/55 dark:border-emerald-400/20 dark:bg-emerald-500/8'
       : 'border-[#D9EEF7]',
@@ -878,7 +878,7 @@ const ConsultationModal = ({
           type="button"
           onClick={() => formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
           className={cn(
-            'absolute right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[#D9EEF7] bg-white text-[#0EA5E9] shadow-[0_8px_20px_rgba(14,165,233,0.16)] transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700 sm:right-6',
+            'absolute right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[#D9EEF7] bg-white text-[#0EA5E9] transition hover:bg-sky-50 dark:border-white/10 dark:bg-slate-800 dark:text-sky-300 dark:hover:bg-slate-700 sm:right-6',
             readOnly ? 'top-16 sm:top-16' : 'top-20 sm:top-24',
           )}
           title="回到顶部"
@@ -906,7 +906,7 @@ const ConsultationModal = ({
               </div>
             </div>
             {confirmRestoreOpen && (
-              <div className="rounded-2xl border border-sky-100 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950">
+              <div className="rounded-2xl border border-sky-100 bg-white p-4 dark:border-white/10 dark:bg-slate-950">
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">是否恢复这个咨询？</p>
                 <div className="mt-3 flex gap-2">
                   <button
