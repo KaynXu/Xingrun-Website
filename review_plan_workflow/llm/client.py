@@ -5,7 +5,7 @@ import os
 import re
 from typing import Any, Callable, Optional, TypeVar
 
-from config_runtime import get_runtime_config
+from config_runtime import get_runtime_config, normalize_chat_provider
 from pydantic import BaseModel
 
 
@@ -87,7 +87,7 @@ def _runtime_config() -> dict[str, Any]:
 
 
 def resolve_chat_provider(provider: str = "") -> str:
-    return str(provider or _runtime_config().get("provider") or "deepseek").strip() or "deepseek"
+    return normalize_chat_provider(provider or _runtime_config().get("provider") or "deepseek")
 
 
 def resolve_chat_model(provider: str = "", model: str = "") -> str:
@@ -97,8 +97,6 @@ def resolve_chat_model(provider: str = "", model: str = "") -> str:
         return model
     if provider_name == "deepseek":
         return str(cfg.get("deepseek_model") or "deepseek-v4-pro")
-    if provider_name == "mimo":
-        return str(cfg.get("mimo_model") or "MiMo-7B-RL")
     return str(cfg.get("openai_model") or "gpt-4o")
 
 
@@ -113,15 +111,6 @@ def get_chat_client(provider: str = ""):
         if not key:
             raise RuntimeError("未找到 DeepSeek API Key，请在设置页面配置。")
         return OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
-
-    if provider_name == "mimo":
-        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
-        base_url = str(cfg.get("mimo_base_url") or "").strip()
-        if not key:
-            raise RuntimeError("未找到 MiMo API Key，请在设置页面配置。")
-        if not base_url:
-            raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
-        return OpenAI(api_key=key, base_url=base_url)
 
     key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key:

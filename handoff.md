@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-14 已从复习计划与通用 AI 配置链路中下线旧 provider：`config_runtime.py`、`ai_processor.py`、`review_plan_workflow/llm/client.py`、`app.py`、`.env.runtime.example` 和 `README.md` 里不再保留对应 provider、模型名、API key/base URL 设置项；历史配置里若还存在未知 chat provider 会统一回退到 DeepSeek，未知 vision provider 会统一回退到 Qwen。当前轮 proof 会继续覆盖 provider 选择、配置卫生和相关回归测试。
 - 2026-06-14 已按浏览器批注移除顶部 `立即登录` 按钮的阴影光晕：`frontend/src/features/landing/LandingPage.tsx` 当前 header 登录按钮不再带 `shadow-[0_16px_40px_rgba(...)]` 阴影类，只保留实色按钮本身。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注移除 landing hero 右侧主预览区里这一层嵌套卡片：`frontend/src/features/landing/LandingPage.tsx` 当前 `Source Material + 输出卡片` 这层不再套 `rounded + border + bg-white` 的额外容器，只保留内部真实内容本身，避免出现“卡片里再套一层大卡片”的结构。当前轮 proof 会继续用 landing 页面定向脚本记录。
 - 2026-06-14 已按浏览器批注移除 landing hero 右侧主预览区外层灰底：`frontend/src/features/landing/LandingPage.tsx` 当前 `Source Material + 输出卡片` 这层包裹容器已从 `bg-slate-50/55` 改为白底，不再出现整块淡灰背景，只保留内部卡片本身的层级。当前轮 proof 会继续用 landing 页面定向脚本记录。
@@ -429,7 +430,7 @@
 - 小程序后续 Ralph 稳定性循环优先使用 `scripts/ralph/miniprogram_stability_loop_instructions.md`；如果 story 触碰 PDF、LaTeX、worker 或生产 runbook，必须额外跑 `scripts/ralph/production_upload_smoke_runbook_proof.sh`、`tests.test_wrong_question_library_pdf tests.test_ai_processor_prompt` 和前端 LaTeX/PDF renderer tests。
 - 超级管理员本周错题活跃数据总结下一步建议用真实 `super_owner` 账号在网页智能错题手工 smoke：打开 `本周数据总结`，分别查看全部机构和指定机构、空数据周次和有数据周次，确认列表数量、机构名、班级/老师/学生文案符合现场使用。
 - 每周错题跟进助手下一步建议用真实 owner/admin 账号手工 smoke：在网页智能错题选择一个有本周错题的班级，打开“每周跟进”，加载本周清单，生成/复制一条家长微信话术，打开单个学生错题本 PDF，再下载本班错题本 zip，确认浏览器下载名、失败数量提示和 zip 内 `打包说明.txt` 都符合老师实际使用。
-- 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI/MiMo 等 vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
+- 要恢复家长上传 AI 识别，先给 N1N 账号补额度/换一个有额度的 N1N key，或提供可用的 OpenAI / Qwen vision provider key 并设置 `XR_VISION_PROVIDER`；只把 `XR_PROVIDER` 切到 DeepSeek 只能修文字归类，不能修题图识别。补好 provider 后，优先用生产机最小真实调用验证 vision，再补跑失败任务。
 - 小程序上传 2.0 稳定性 Ralph 已无下一条自动 story；后续只剩手工 smoke：微信开发者工具/真机上传、真实语音 + 题图走生产 Redis/RQ worker、错题本刷新和 PDF 打开。
 - 如果只是查看已完成的网站前端稳定性 Ralph，请读 `scripts/ralph/archive/website_frontend_stability_prd_20260503.json`，不要再把它当作当前活跃 PRD。
 - 在微信开发者工具或真机打开家长上传页，用一张整页题图实际把题框缩到单道小题/窄题附近，再试一次拖动、旋转和统一提交，确认家长体感不再被最小框限制挡住。

@@ -55,6 +55,21 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertEqual(ai_processor._get_chat_model(), "deepseek-custom")
                 self.assertEqual(app._default_chat_model_name(), "deepseek-custom")
 
+    def test_unknown_chat_provider_falls_back_to_deepseek_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_config = Path(tmpdir) / "config.json"
+            with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
+                os.environ,
+                {"XR_PROVIDER": "legacy-provider"},
+                clear=True,
+            ):
+                cfg = config_runtime.get_runtime_config()
+                self.assertEqual(cfg["provider"], "deepseek")
+                self.assertEqual(ai_processor._provider_name(), "deepseek")
+                self.assertEqual(ai_processor._get_chat_model(), "deepseek-v4-pro")
+                self.assertEqual(app._default_ai_provider_name(), "deepseek")
+                self.assertEqual(app._default_chat_model_name(), "deepseek-v4-pro")
+
     def test_vision_model_can_be_overridden_by_environment(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             missing_config = Path(tmpdir) / "config.json"
@@ -67,6 +82,17 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertEqual(cfg["vision_provider"], "qwen")
                 self.assertEqual(cfg["vision_model"], "qwen-vl-plus-latest")
                 self.assertEqual(ai_processor._get_vision_model(), "qwen-vl-plus-latest")
+
+    def test_unknown_vision_provider_falls_back_to_qwen(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_config = Path(tmpdir) / "config.json"
+            with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
+                os.environ,
+                {"XR_VISION_PROVIDER": "legacy-provider"},
+                clear=True,
+            ):
+                cfg = config_runtime.get_runtime_config()
+                self.assertEqual(cfg["vision_provider"], "qwen")
 
     def test_qwen_vision_provider_uses_dashscope_compatible_endpoint(self):
         with tempfile.TemporaryDirectory() as tmpdir:

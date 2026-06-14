@@ -15,9 +15,6 @@ ENV_VAR_MAP = {
     "openai_api_key": "OPENAI_API_KEY",
     "deepseek_api_key": "DEEPSEEK_API_KEY",
     "deepseek_model": "XR_DEEPSEEK_MODEL",
-    "mimo_api_key": "MIMO_API_KEY",
-    "mimo_base_url": "XR_MIMO_BASE_URL",
-    "mimo_model": "XR_MIMO_MODEL",
     "qwen_api_key": "DASHSCOPE_API_KEY",
     "qwen_base_url": "XR_QWEN_BASE_URL",
     "vision_provider": "XR_VISION_PROVIDER",
@@ -34,7 +31,6 @@ ENV_VAR_MAP = {
 DEFAULTS = {
     "provider": "deepseek",
     "xhs_base_url": "https://ark.xiaohongshu.com",
-    "mimo_model": "MiMo-7B-RL",
     "qwen_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "vision_provider": "qwen",
     "vision_model": "qwen-vl-max-latest",
@@ -74,8 +70,24 @@ def env_var_for_key(key: str) -> Optional[str]:
     return ENV_VAR_MAP.get(key)
 
 
+def normalize_chat_provider(value: object) -> str:
+    provider = str(value or "").strip().lower()
+    if provider == "openai":
+        return "openai"
+    return "deepseek"
+
+
+def normalize_vision_provider(value: object) -> str:
+    provider = str(value or "").strip().lower()
+    if provider == "openai":
+        return "openai"
+    return "qwen"
+
+
 def get_runtime_config() -> dict:
     cfg = dict(DEFAULTS)
     cfg.update(load_file_config())
     cfg.update(get_env_overrides())
+    cfg["provider"] = normalize_chat_provider(cfg.get("provider"))
+    cfg["vision_provider"] = normalize_vision_provider(cfg.get("vision_provider"))
     return cfg
