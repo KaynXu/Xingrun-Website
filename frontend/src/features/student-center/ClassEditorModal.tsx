@@ -269,7 +269,7 @@ export function ClassEditorModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 18 }}
             transition={{ duration: 0.2 }}
-            className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
+            className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900"
           >
             <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
               <div>
@@ -858,7 +858,7 @@ export function ClassEditorModal({
                           {editing.students.map((student) => (
                             <div
                               key={student.id}
-                              className="flex h-9 min-w-0 items-center overflow-hidden rounded-full border border-sky-100 bg-white text-sm font-semibold text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/10 dark:text-slate-100"
+                              className="flex h-9 min-w-0 items-center overflow-hidden rounded-full border border-sky-100 bg-white text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-100"
                             >
                               <button
                                 type="button"

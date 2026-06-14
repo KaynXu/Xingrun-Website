@@ -1,0 +1,3 @@
+extends: review_plan_style.yaml
+style_name: default
+note: 默认样式直接继承物理母版统一视觉系统。

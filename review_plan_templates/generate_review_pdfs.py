@@ -4,6 +4,7 @@ import sys
 import re
 import importlib.util
 import platform
+from typing import Any
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -1202,7 +1203,42 @@ def build_day_heading(day, base_date, chinese_only=False):
     return f"{day_label}  |  Date: {format_iso_date(review_date)}"
 
 
-def build_styles():
+def load_unified_review_plan_style_config() -> dict[str, Any]:
+    style_path = ROOT.parent / "review_plan_workflow" / "prompts" / "styles" / "review_plan_style.yaml"
+    if not style_path.exists():
+        return {}
+    try:
+        import yaml
+
+        payload = yaml.safe_load(style_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _palette_color(style_config: dict[str, Any], key: str, fallback: str):
+    palette = style_config.get("palette") if isinstance(style_config.get("palette"), dict) else {}
+    value = str(palette.get(key) or fallback)
+    try:
+        return colors.HexColor(value)
+    except Exception:
+        return colors.HexColor(fallback)
+
+
+def _coerce_base_date(value) -> date:
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if text:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            pass
+    return date.today()
+
+
+def build_styles(style_config: dict[str, Any] | None = None):
+    style_config = style_config or load_unified_review_plan_style_config()
     styles = getSampleStyleSheet()
     base = ParagraphStyle(
         "base",
@@ -1210,12 +1246,12 @@ def build_styles():
         fontName=ACTIVE_FONT_NAME,
         fontSize=10.3,
         leading=15,
-        textColor=colors.HexColor("#222222"),
+        textColor=_palette_color(style_config, "text", "#222222"),
         wordWrap="CJK",
     )
-    accent = colors.HexColor("#8A4B08")
-    soft = colors.HexColor("#FFF3E6")
-    quote_bg = colors.HexColor("#FFF8F0")
+    accent = _palette_color(style_config, "accent", "#8A4B08")
+    soft = _palette_color(style_config, "soft", "#FFF3E6")
+    quote_bg = _palette_color(style_config, "quote_bg", "#FFF8F0")
     return {
         "accent": accent,
         "soft": soft,
@@ -1465,8 +1501,8 @@ def on_page(styles, variant_key, lesson_title=None):
     return draw
 
 
-def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_lines=None, knowledge_sections=None):
-    base_date = date.today()
+def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_lines=None, knowledge_sections=None, base_date=None):
+    base_date = _coerce_base_date(base_date)
     chinese_only = is_chinese_only(variant_key)
     labels = build_labels(chinese_only)
     lesson = lesson or LESSON
@@ -1557,9 +1593,11 @@ def render_review_plan_pdf(
     output_path: str,
     variant_key: str = "cn",
     knowledge_sections: dict | None = None,
+    style_config: dict[str, Any] | None = None,
+    base_date=None,
 ) -> str:
     register_fonts()
-    styles = build_styles()
+    styles = build_styles(style_config)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(
@@ -1580,6 +1618,7 @@ def render_review_plan_pdf(
             days=days,
             final_reminder_lines=final_reminder_lines,
             knowledge_sections=knowledge_sections or {},
+            base_date=base_date or lesson.get("base_date") or lesson.get("date"),
         ),
         onFirstPage=on_page(styles, variant_key, lesson["title"]),
         onLaterPages=on_page(styles, variant_key, lesson["title"]),

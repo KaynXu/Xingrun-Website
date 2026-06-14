@@ -1,0 +1,77 @@
+style_name: physics_master_unified
+style_version: physics-master-style.v1
+language: zh-CN
+source: desktop_physics_workflow
+principle: 物理视觉作为统一母版，数学和雅思继承同一页面结构与组件，只做学科内容 override。
+palette:
+  accent: "#2F8F83"
+  accent_secondary: "#B86B4B"
+  soft: "#F2F8F5"
+  quote_bg: "#FFF6EE"
+  text: "#222222"
+  muted: "#666666"
+page:
+  paper: A4
+  left_margin_mm: 18
+  right_margin_mm: 18
+  top_margin_mm: 24
+  bottom_margin_mm: 16
+  answer_pages_background: plain
+brand:
+  logo_path: frontend/public/logo.png
+  logo_transparent_required: true
+components:
+  - home_usage_box
+  - full_coverage_box
+  - golden_quote_box
+  - day_task_card
+  - blanks_card
+  - choices_card
+  - active_recall_card
+  - teacher_oral_card
+  - subject_beyond_card
+  - answer_key_table
+physics_master_features:
+  core_formula_card: true
+  low_opacity_background_line_art: true
+  background_formulas_from_lesson_only: true
+  answer_page_plain_background: true
+  scientist_story_card: true
+  cartoon_scene_assets_required: true
+  transparent_logo_required: true
+visual_rules:
+  - 页面可以加入浅色线稿和公式作为背景装饰，但必须低透明度、轻量化，不抢正文
+  - 背景元素应随课程主题变化；物理热学用蒸汽、温度计、能量流线，电学用电路线，光学用光束，力学用运动轨迹
+  - 背景公式必须优先使用当堂课公式；没有合适公式时减少或取消，不硬塞通用公式
+  - 首页可以加入本课核心公式卡；短公式可两列，长分式或长分子分母必须独占一行
+  - 公式中的中文说明按小下标处理，例如 W有用、Q放、F牵
+  - 首页空白区可加入学科人物小传或主题故事卡，图片必须是完整卡通小场景，不用单个符号线稿占位
+  - 人物/主题故事要与课程相关，不能挤压正文复习内容
+  - 第14天和第30天重点累积复盘，不新增视觉或内容噪声
+layout_rules:
+  - 每个复习日从新页页首开始
+  - 第2天起不重复全课覆盖清单和执行清单
+  - 大模块标题和主体必须同页开始，空间不足时整体移到下一页
+  - 首页和内容页外层框使用统一页面宽度，内层表格不能撑出外框
+  - 页眉右上角日期必须随复习节点变化，不能全部使用导出日期
+subject_overrides:
+  math:
+    beyond_subject_title: 数学里的远方
+    formula_mode: math_symbol_safe
+    story_card: optional
+  physics:
+    beyond_subject_title: 物理里的远方
+    formula_mode: formula_unit_condition
+    story_card: scientist_or_experiment
+  ielts:
+    beyond_subject_title: 语言里的远方
+    formula_mode: none
+    story_card: reading_strategy
+pdf_safety:
+  - 背景不能压正文、题目、答案或表格
+  - 大模块标题不能和主体跨页分离
+  - 答案页使用素背景
+  - Logo 不能带白底方块
+  - 缺少专属视觉资产时使用占位配置，不阻塞主链路
+  - 总提醒和自查答案页不绘制底部曲线、背景公式或主题装饰
+  - 复查 PDF 时至少看首页，确认 Logo 无白底、背景不压正文、线条不相交

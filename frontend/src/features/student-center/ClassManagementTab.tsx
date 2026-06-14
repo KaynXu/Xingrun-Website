@@ -173,7 +173,7 @@ export function ClassManagementTab({
                 }}
                 aria-label={`打开班级 ${displayName}`}
                 className={cn(
-                  `${workspaceSoftCardClass} overflow-hidden p-0 transition hover:border-sky-200 hover:bg-white hover:shadow-[0_14px_34px_rgba(14,165,233,0.10)] dark:hover:border-sky-400/30 dark:hover:bg-white/[0.07]`,
+                  `${workspaceSoftCardClass} overflow-hidden p-0 transition hover:border-sky-200 hover:bg-white dark:hover:border-sky-400/30 dark:hover:bg-white/[0.07]`,
                   classCardInteractionLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer',
                 )}
               >

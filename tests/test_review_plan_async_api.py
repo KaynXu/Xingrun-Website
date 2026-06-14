@@ -15,6 +15,7 @@ import config_runtime
 import credit_manager
 import lesson_manager
 from app import app
+from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
 class ReviewPlanAsyncApiTestCase(unittest.TestCase):
@@ -50,7 +51,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_returns_202_and_creates_pending_lesson(
         self,
         _mock_has_api_key,
@@ -101,7 +102,46 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_post_review_plan_uses_review_plan_model_override(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        config_runtime.write_file_config({
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-4.1",
+        })
+
+        response = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "初二",
+                "topic": "一次函数",
+                "weak_points": "斜率判断",
+                "summary_text": "课堂总结文本",
+                "input_type": "text",
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        lesson = lesson_manager.get_lesson(payload["id"])
+        self.assertIsNotNone(lesson)
+        self.assertEqual(lesson["review_chat_provider"], "openai")
+        self.assertEqual(lesson["review_chat_model"], "gpt-4.1")
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["chat_provider"], "openai")
+        self.assertEqual(thread_kwargs["chat_model"], "gpt-4.1")
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
     @patch("ai_processor.transcribe_audio", side_effect=AssertionError("audio transcription must run in worker"))
     def test_post_audio_review_plan_returns_202_before_transcription(
         self,
@@ -155,7 +195,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_merges_same_lesson_materials_into_summary(
         self,
         _mock_has_api_key,
@@ -189,22 +229,23 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIn("第三段：高考题条件翻译和例题1到5。", lesson["summary"])
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:processed-review-plan")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_returns_existing_lesson_for_processed_duplicate(
         self,
         _mock_has_api_key,
         _mock_request_key,
         _mock_ensure_credits,
         mock_start_thread,
-        mock_parse_and_generate_plan,
+        mock_generate_plan_json,
         _mock_generate_pdf,
     ):
-        mock_parse_and_generate_plan.return_value = (
-            {"lesson_info": {"topic": "一次函数"}, "days": []},
+        expected_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan_json.return_value = (
+            expected_plan,
             {
                 "provider": "deepseek",
                 "model": "deepseek-chat",
@@ -253,7 +294,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:duplicate-review-plan")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_rejects_duplicate_request_key_before_creating_pending_lesson(
         self,
         _mock_has_api_key,
@@ -293,7 +334,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:long-running-review-plan")
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_duplicate_stays_blocked_after_execution_ttl_window(
         self,
         _mock_has_api_key,
@@ -334,7 +375,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_returns_402_when_credits_are_insufficient(
         self,
         _mock_has_api_key,
@@ -365,7 +406,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app._current_ai_request_key", return_value="header:preflight-crash")
     @patch("app.ensure_feature_credits_available", side_effect=RuntimeError("db boom"))
-    @patch("app.has_api_key", return_value=True)
+    @patch("app.has_review_plan_api_key", return_value=True)
     def test_post_review_plan_releases_request_identity_when_preflight_crashes(
         self,
         _mock_has_api_key,
@@ -400,12 +441,12 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         mock_start_thread.assert_not_called()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("app._run_ai_feature_with_charge")
     def test_worker_uses_lesson_data_source_of_truth(
         self,
         mock_run_with_charge,
-        mock_parse_and_generate_plan,
+        mock_generate_plan_json,
         mock_generate_pdf,
     ):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -418,9 +459,12 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
             class_id=0,
         )
 
-        expected_plan = {"lesson_info": {"topic": "一次函数"}, "days": []}
+        expected_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
         mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
-        mock_parse_and_generate_plan.return_value = expected_plan
+        mock_generate_plan_json.return_value = (
+            expected_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 1, "output_tokens": 1},
+        )
 
         app_module._run_review_plan_generation_job(
             lesson_id=lesson_id,
@@ -434,22 +478,19 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["record_status"], "ready")
         self.assertEqual(saved["plan"], expected_plan)
         self.assertEqual(mock_run_with_charge.call_args.kwargs["source_record_id"], lesson_id)
-        mock_parse_and_generate_plan.assert_called_once_with(
-            summary_text="课堂总结文本",
-            subject="数学",
-            grade="初二",
-            topic="一次函数",
-            weak_points="斜率判断",
-            lesson_date="2026-04-09",
-            include_usage=True,
-        )
+        mock_generate_plan_json.assert_called_once()
+        generation_kwargs = mock_generate_plan_json.call_args.kwargs
+        self.assertEqual(generation_kwargs["provider"], "deepseek")
+        self.assertEqual(generation_kwargs["model"], "deepseek-v4-pro")
+        self.assertIn("课堂总结文本", generation_kwargs["user_message"])
+        self.assertIn("本节课主题：一次函数", generation_kwargs["user_message"])
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_worker_only_processes_pending_lessons(
         self,
-        mock_parse_and_generate_plan,
+        mock_generate_plan_json,
         mock_generate_pdf,
     ):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -479,7 +520,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["record_status"], "ready")
         self.assertEqual(saved["generation_error"], "")
         self.assertEqual(saved["pdf_path"], "/tmp/existing.pdf")
-        mock_parse_and_generate_plan.assert_not_called()
+        mock_generate_plan_json.assert_not_called()
         mock_generate_pdf.assert_not_called()
 
     @patch("app._start_review_plan_generation_thread")

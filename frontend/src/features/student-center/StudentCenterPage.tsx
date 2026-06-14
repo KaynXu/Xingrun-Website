@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { getCurrentClassDisplayName } from '../../classDisplay';
 import {
   academicGradeGroups,
   academicGradeOptions,
   academicStageOptions,
-  formatClassDisplayName,
 } from '../../domain/classNaming';
 import {
   apiFetch,
@@ -156,10 +156,6 @@ const studentCenterStageOptions = [...academicStageOptions];
 const studentCenterGradeOptions = [...academicGradeOptions];
 const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
 const emptyStudentProfileDraft: StudentProfileDraft = { name: '', source: '', parent_contact: '' };
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
-}
 
 async function copyTextToClipboard(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -1170,7 +1166,7 @@ export function StudentCenterPage({
     newClass: classEditorNewClass,
     editing: classEditorEditing,
   } = classEditorModalState;
-  const { editingClass, editingFormState } = classEditorMode;
+  const { editingClass } = classEditorMode;
   const getClassDisplayName = (item: ClassItem) => getCurrentClassDisplayName(item, showClassCohortYear);
   const resetClassFormDraft = (classId: number | 'new') => {
     if (classId === 'new') {
@@ -1410,7 +1406,7 @@ export function StudentCenterPage({
             className={cn(
               'h-10 rounded-xl text-sm font-bold transition',
               studentCenterTab === item.key
-                ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
+                ? 'bg-white text-sky-700 dark:bg-sky-400/15 dark:text-sky-100'
                 : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
             )}
           >

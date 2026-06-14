@@ -180,6 +180,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
         "subtitle": "",
         "audience": "老师发给学生使用",
         "duration": "每次 10-20 分钟",
+        "base_date": _clean_text(lesson_info.get("date")),
         "core_points": [weak_points] if weak_points else [],
         "full_review_topics": full_review_topics or [topic],
         "quotes": collect_plan_quotes(plan_data),
@@ -203,6 +204,7 @@ def generate_single_lesson_pdf(plan_data: dict, output_path: str) -> str:
         output_path=str(output),
         variant_key="cn",
         knowledge_sections=extract_knowledge_sections(plan_data),
+        base_date=lesson.get("base_date"),
     )
 
 

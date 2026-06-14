@@ -18,6 +18,7 @@ import credit_manager
 import lesson_manager
 import app as app_module
 import xhs_open_platform
+from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
 class CreditSystemServiceTestCase(unittest.TestCase):
@@ -714,12 +715,12 @@ class CreditSystemApiTestCase(unittest.TestCase):
     @patch("app.datetime")
     @patch("app._ai_fallback_request_bucket", side_effect=[12345, 54321])
     @patch("app.has_api_key", return_value=True)
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("ai_processor.transcribe_audio")
     def test_audio_upload_retry_uses_stable_identity_and_skips_second_transcription_charge(
         self,
         mock_transcribe,
-        mock_generate_plan,
+        mock_generate_plan_json,
         _mock_has_api_key,
         _mock_bucket,
         mock_datetime,
@@ -744,8 +745,8 @@ class CreditSystemApiTestCase(unittest.TestCase):
                 "output_tokens": 0,
             },
         )
-        mock_generate_plan.return_value = (
-            {"days": [], "questions": []},
+        mock_generate_plan_json.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="方程"),
             {
                 "provider": "openai",
                 "model": "gpt-4o",
@@ -812,12 +813,12 @@ class CreditSystemApiTestCase(unittest.TestCase):
     @patch("app._start_review_plan_generation_thread")
     @patch("app.datetime")
     @patch("app.has_api_key", return_value=True)
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("ai_processor.transcribe_audio")
     def test_audio_uploads_with_same_metadata_but_different_content_do_not_collide(
         self,
         mock_transcribe,
-        mock_generate_plan,
+        mock_generate_plan_json,
         _mock_has_api_key,
         mock_datetime,
         mock_start_thread,
@@ -852,8 +853,8 @@ class CreditSystemApiTestCase(unittest.TestCase):
                 },
             ),
         ]
-        mock_generate_plan.return_value = (
-            {"days": [], "questions": []},
+        mock_generate_plan_json.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="方程"),
             {
                 "provider": "openai",
                 "model": "gpt-4o",
@@ -1085,12 +1086,12 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertIn("机构", second.get_json()["error"])
         self.assertEqual(mock_parse.call_count, 1)
 
-    @patch("ai_processor.parse_and_generate_plan")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("app.has_api_key", return_value=True)
     def test_lesson_generation_blocks_when_balance_cannot_cover_max_configured_charge(
         self,
         _mock_has_api_key,
-        mock_generate_plan,
+        mock_generate_plan_json,
     ):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
@@ -1116,7 +1117,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertIsNotNone(payload)
         self.assertIn("积分不足", payload["error"])
-        mock_generate_plan.assert_not_called()
+        mock_generate_plan_json.assert_not_called()
 
     @patch("app.fetch_xhs_order_for_redemption")
     def test_credit_center_read_apis_return_overview_ledger_member_summary_and_member_detail(self, mock_fetch):

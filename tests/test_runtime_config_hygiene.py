@@ -22,8 +22,10 @@ class RuntimeConfigHygieneTestCase(unittest.TestCase):
 
     def test_runtime_config_example_uses_placeholder_secrets(self):
         example = (ROOT / ".env.runtime.example").read_text(encoding="utf-8")
+        removed_provider_token = "mi" "mo"
 
         self.assertIn("DASHSCOPE_API_KEY=your_dashscope_api_key", example)
+        self.assertNotIn(removed_provider_token, example.lower())
         self.assertNotIn("N1N_API_KEY", example)
         self.assertNotIn("XR_N1N_BASE_URL", example)
         self.assertNotRegex(example, r"sk-[A-Za-z0-9]{20,}")
@@ -39,6 +41,18 @@ class RuntimeConfigHygieneTestCase(unittest.TestCase):
 
         self.assertNotIn("n1n", combined.lower())
         self.assertNotIn("N1N", combined)
+
+    def test_runtime_code_no_longer_mentions_removed_provider(self):
+        live_files = [
+            ROOT / "ai_processor.py",
+            ROOT / "app.py",
+            ROOT / "config_runtime.py",
+            ROOT / "review_plan_workflow" / "llm" / "client.py",
+        ]
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in live_files)
+        removed_provider_token = "mi" "mo"
+
+        self.assertNotIn(removed_provider_token, combined.lower())
 
 
 if __name__ == "__main__":

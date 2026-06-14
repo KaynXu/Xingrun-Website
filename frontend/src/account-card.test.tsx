@@ -6,7 +6,18 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import * as AppModule from './App';
+import { parseConsultationQuickEntry } from './features/consultation/ConsultationModal';
 
+const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Sidebar.tsx'), 'utf8');
+const headerSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Header.tsx'), 'utf8');
+const shellSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspaceShellLayout.tsx'), 'utf8');
+const consultationPageSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationPage.tsx'), 'utf8');
+const consultationMeetingWorkbenchSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationMeetingWorkbench.tsx'), 'utf8');
+const consultationModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+const consultationBatchModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
+const consultationSharedSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/consultationShared.tsx'), 'utf8');
+const authSource = readFileSync(resolve(process.cwd(), 'src/features/auth/PublicAuthModals.tsx'), 'utf8');
 const studentCenterSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/StudentCenterPage.tsx'), 'utf8');
 const campusOverviewSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/CampusOverview.tsx'), 'utf8');
 const classManagementTabSource = readFileSync(resolve(process.cwd(), 'src/features/student-center/ClassManagementTab.tsx'), 'utf8');
@@ -97,57 +108,49 @@ test('sidebar account sheet includes dark theme surface classes', () => {
     />,
   );
 
-  assert.match(markup, /dark:bg-slate-950\/78/);
+  assert.match(markup, /dark:bg-slate-950\/80/);
   assert.match(markup, /dark:border-white\/10/);
   assert.match(markup, /dark:text-slate-100/);
-  assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(15,23,42,0\.96\)_0%,rgba\(15,23,42,0\.9\)_100%\)\]/);
+  assert.match(markup, /bg-\[#fbfdff\]/);
 });
 
-test('workspace shell source applies dark classes to sidebar header and dashboard panels', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+test('workspace shell source keeps sidebar and dashboard dark classes while removing page copy from the header', () => {
   const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
 
-  assert.match(source, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
-  assert.match(source, /:\s*'h-screen w-72 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
-  assert.match(source, /\?\s*'h-screen w-24 shadow-\[18px_0_48px_rgba\(47,128,237,0\.06\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
-  assert.match(source, /<header className="sticky top-0 z-10 flex h-20 items-center justify-between[^\"]*bg-white\/92[^\"]*sm:backdrop-blur-xl[^\"]*dark:border-white\/10[^\"]*dark:bg-\[#0f172a\]\/92[^\"]*dark:sm:bg-\[#0f172a\]\/88/);
+  assert.match(sidebarSource, /mobile\s*\?\s*'h-full w-full overflow-y-auto overscroll-y-auto \[-webkit-overflow-scrolling:touch\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.48\)\]'/);
+  assert.match(sidebarSource, /:\s*'h-screen w-\[18\.5rem\] shadow-\[18px_0_48px_rgba\(15,23,42,0\.05\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(sidebarSource, /\?\s*'h-screen w-64 shadow-\[18px_0_48px_rgba\(15,23,42,0\.05\)\][^\']*dark:shadow-\[18px_0_48px_rgba\(2,6,23,0\.38\)\]'/);
+  assert.match(headerSource, /<header className="sticky top-0 z-10 border-b border-slate-200\/70 bg-\[rgba\(251,253,255,0\.88\)\] backdrop-blur-xl dark:border-white\/10 dark:bg-\[#0f172a\]\/88">/);
+  assert.doesNotMatch(appSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.28em\] text-sky-600">Workspace<\/p>/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^\"]*dark:border-white\/10[^\"]*dark:bg-\[radial-gradient/);
-  assert.match(source, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
+  assert.match(shellSource, /<div className="fixed inset-y-0 left-0 z-30 hidden lg:block">/);
+  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-64' : 'lg:pl-\[18\.5rem\]'\)\}>/);
 });
 
 test('sidebar account trigger stays anchored to the bottom edge of the visible sidebar shell', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-
-  assert.match(source, /<div className=\{cn\('mt-auto border-t border-sky-100\/80 p-4 dark:border-white\/10', compact && !mobile && 'px-3'\)\}>/);
+  assert.match(sidebarSource, /<div className=\{cn\('mt-auto border-t border-slate-200\/70 p-4 dark:border-white\/10', compact && !mobile && 'px-4'\)\}>/);
 });
 
 test('sidebar account sheet renders above workspace content without relying on a fullscreen blur layer', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-
-  assert.match(source, /import \{ createPortal \} from 'react-dom';/);
-  assert.match(source, /<div className="fixed inset-0 z-\[70\]"/);
-  assert.doesNotMatch(source, /backdrop-blur-\[4px\]/);
+  assert.match(sidebarSource, /import \{ createPortal \} from 'react-dom';/);
+  assert.match(sidebarSource, /<div className="fixed inset-0 z-\[70\]"/);
+  assert.doesNotMatch(sidebarSource, /backdrop-blur-\[4px\]/);
 });
 
 test('desktop workspace uses page-level scrolling instead of an inner scroll container beside the sidebar', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-
-  assert.doesNotMatch(source, /<div className="flex-1 overflow-y-auto">/);
-  assert.match(source, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation' \? 'lg:pl-24' : 'lg:pl-72'\)\}>/);
-  assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\] text-slate-900 sm:min-h-screen dark:bg-\[linear-gradient\(180deg,#020617_0%,#0f172a_100%\)\] dark:text-slate-100">/);
+  assert.doesNotMatch(shellSource, /<div className="flex-1 overflow-y-auto">/);
+  assert.match(shellSource, /<main className=\{cn\('flex min-w-0 flex-1 flex-col', compactSidebar \? 'lg:pl-64' : 'lg:pl-\[18\.5rem\]'\)\}>/);
+  assert.match(shellSource, /<div className="relative min-h-\[100svh\] overflow-x-hidden bg-\[#f5f8fc\] text-slate-900 sm:min-h-screen dark:bg-\[#020617\] dark:text-slate-100">/);
 });
 
 test('consultation detail cards use darker dark-mode surfaces instead of translucent white overlays', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-
-  assert.match(source, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
-  assert.match(source, /rounded-2xl border border-sky-100 bg-white\/80 p-3 dark:border-white\/10 dark:bg-slate-950\/70/);
-  assert.match(source, /workspaceSoftCardClass\} p-5/);
+  assert.match(consultationModalSource, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(consultationBatchModalSource, /rounded-2xl border border-sky-100 bg-white\/80 p-4 dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(consultationPageSource, /rounded-\[14px\] border border-\[#D9EEF7\] bg-white p-3\.5 shadow-\[0_6px_18px_rgba\(31,42,68,0\.04\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
 });
 
 test('consultation modal source keeps the create and edit form concise', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
 
   assert.doesNotMatch(source, /placeholder="老师 ID"/);
   assert.doesNotMatch(source, />截图字段</);
@@ -158,7 +161,7 @@ test('consultation modal source keeps the create and edit form concise', () => {
 });
 
 test('consultation modal source supports quick parsing and structured source metadata confirmation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
 
   assert.match(source, /快速录入/);
   assert.match(source, /智能解析/);
@@ -168,44 +171,34 @@ test('consultation modal source supports quick parsing and structured source met
 });
 
 test('consultation page source adds ai batch entry in the existing action area', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-
-  assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /AI 批量整理/);
-  assert.match(consultationPageBlock[0], /onClick=\{openBatchModal\}/);
-  assert.match(consultationPageBlock[0], /ConsultationBatchModal/);
+  assert.match(consultationPageSource, /AI 批量整理/);
+  assert.match(consultationPageSource, /onClick=\{openBatchModal\}/);
+  assert.match(consultationPageSource, /ConsultationBatchModal/);
 });
 
 test('consultation page V2.0 exposes owner-only meeting workbench instead of refresh', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
-  assert.ok(consultationPageBlock);
   assert.ok(appBlock);
   assert.match(source, /const consultationMeetingVersion = 'V2\.0';/);
-  assert.match(consultationPageBlock[0], /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
-  assert.match(consultationPageBlock[0], /openConsultationMeetingWorkbench/);
-  assert.match(consultationPageBlock[0], /面对面模式/);
-  assert.match(consultationPageBlock[0], /!canOpenMeetingWorkbench && \(/);
+  assert.match(consultationPageSource, /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
+  assert.match(consultationPageSource, /openConsultationMeetingWorkbench/);
+  assert.match(consultationPageSource, /面对面模式/);
+  assert.match(consultationPageSource, /!canOpenMeetingWorkbench && \(/);
   assert.match(source, /consultationMeeting'\) === '1'/);
   assert.match(source, /<ConsultationMeetingWorkbench currentUser=\{currentUser\}/);
 });
 
 test('consultation page uses one unified search without mode switching', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-
-  assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /搜索姓名、微信、老师、科目、咨询内容/);
-  assert.doesNotMatch(consultationPageBlock[0], /searchMode/);
-  assert.doesNotMatch(consultationPageBlock[0], /search_mode=/);
-  assert.doesNotMatch(consultationPageBlock[0], /setSearchMode/);
+  assert.match(consultationPageSource, /搜索姓名、微信、老师、科目、咨询内容/);
+  assert.doesNotMatch(consultationPageSource, /searchMode/);
+  assert.doesNotMatch(consultationPageSource, /search_mode=/);
+  assert.doesNotMatch(consultationPageSource, /setSearchMode/);
 });
 
 test('consultation modal keeps save beside close and supports keyboard save shortcuts', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -224,8 +217,7 @@ test('consultation modal keeps save beside close and supports keyboard save shor
 });
 
 test('consultation meeting workbench keeps local drafts until final save', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const \[draftsById, setDraftsById\] = useState<Record<number, ConsultationFormValues>>\(\{\}\);/);
@@ -252,8 +244,7 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
 });
 
 test('consultation meeting workbench has lighter secondary filters and terminal age filters', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const \[pendingStatusFilter, setPendingStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
@@ -267,8 +258,7 @@ test('consultation meeting workbench has lighter secondary filters and terminal 
 });
 
 test('consultation meeting workbench uses a grouped teacher popover instead of a select', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const \[teacherFilterOpen, setTeacherFilterOpen\] = useState\(false\);/);
@@ -281,8 +271,7 @@ test('consultation meeting workbench uses a grouped teacher popover instead of a
 });
 
 test('consultation meeting workbench can directly mark a card processed with motion feedback', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const prefersReducedMotion = useReducedMotion\(\);/);
@@ -298,9 +287,9 @@ test('consultation meeting workbench can directly mark a card processed with mot
 });
 
 test('consultation meeting workbench only lets the flow over node change state on double click', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(flowBarBlock);
   assert.ok(workbenchBlock);
@@ -317,8 +306,7 @@ test('consultation meeting workbench only lets the flow over node change state o
 });
 
 test('compact sidebar shows immediate labels on icon hover', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const sidebarBlock = source.match(/const Sidebar = \([\s\S]*?\n};/);
+  const sidebarBlock = sidebarSource.match(/export function Sidebar\([\s\S]*?\n}\n/);
 
   assert.ok(sidebarBlock);
   assert.match(sidebarBlock[0], /title=\{compact && !mobile \? item\.label : undefined\}/);
@@ -328,8 +316,7 @@ test('compact sidebar shows immediate labels on icon hover', () => {
 });
 
 test('consultation meeting workbench reuses the same responsive card scheme as the home list', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /const renderMeetingDesktopCard = \(record: ConsultationRecord\) =>/);
@@ -344,8 +331,7 @@ test('consultation meeting workbench reuses the same responsive card scheme as t
 });
 
 test('consultation meeting workbench final save and close guard are explicit', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
   assert.match(workbenchBlock[0], /beforeunload/);
@@ -357,12 +343,12 @@ test('consultation meeting workbench final save and close guard are explicit', (
   assert.match(workbenchBlock[0], /xr_consultation_meeting_saved_at/);
   assert.match(workbenchBlock[0], /setDraftsById\(\{\}\);/);
   assert.match(workbenchBlock[0], /setProcessedIds\(new Set\(\)\);/);
-  assert.match(source, /const handleMeetingWorkbenchSave = \(event: StorageEvent\) => \{/);
-  assert.match(source, /event\.key === 'xr_consultation_meeting_saved_at'/);
+  assert.match(consultationPageSource, /const handleMeetingWorkbenchSave = \(event: StorageEvent\) => \{/);
+  assert.match(consultationPageSource, /event\.key === 'xr_consultation_meeting_saved_at'/);
 });
 
 test('consultation source renders approved v6 flow stage bars', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   assert.match(source, /consultationFlowStages/);
   assert.match(source, /ConsultationFlowBar/);
   assert.match(source, /ConsultationStatusLamp/);
@@ -378,7 +364,7 @@ test('consultation source renders approved v6 flow stage bars', () => {
 });
 
 test('consultation modal source includes stage-specific test and trial fields', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   assert.ok(modalBlock);
   assert.match(modalBlock[0], /是否测试/);
@@ -392,7 +378,7 @@ test('consultation modal source includes stage-specific test and trial fields', 
 });
 
 test('consultation view mode uses a read-only report layout instead of disabled edit fields', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -406,13 +392,11 @@ test('consultation view mode uses a read-only report layout instead of disabled 
 });
 
 test('consultation list and workbench cards expand long detail previews based on rendered overflow', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const expandableBlock = source.match(/const ConsultationCardExpandableText = \([\s\S]*?\n};/);
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-  const workbenchBlock = source.match(/const ConsultationMeetingWorkbench = \([\s\S]*?\n};/);
+  const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(expandableBlock);
-  assert.ok(consultationPageBlock);
   assert.ok(workbenchBlock);
   assert.match(expandableBlock[0], /textRef = useRef<HTMLParagraphElement \| null>\(null\)/);
   assert.match(expandableBlock[0], /element\.scrollHeight > element\.clientHeight \+ 1/);
@@ -421,14 +405,14 @@ test('consultation list and workbench cards expand long detail previews based on
   assert.match(expandableBlock[0], /className="relative min-w-0"/);
   assert.match(expandableBlock[0], /absolute bottom-0 right-0/);
   assert.doesNotMatch(expandableBlock[0], /content\.length > \(lines === 2 \? 64 : 96\)/);
-  assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{needDetail\} lines=\{mobile \? 2 : 1\} \/>/);
-  assert.match(consultationPageBlock[0], /<ConsultationCardExpandableText label="跟进" text=\{followUpNote\} \/>/);
+  assert.match(consultationPageSource, /<ConsultationCardExpandableText label="咨询详情" text=\{needDetail\} lines=\{mobile \? 2 : 1\} \/>/);
+  assert.match(consultationPageSource, /<ConsultationCardExpandableText label="跟进" text=\{followUpNote\} \/>/);
   assert.match(workbenchBlock[0], /<ConsultationCardExpandableText label="咨询详情" text=\{needDetail\} lines=\{mobile \? 2 : 1\} \/>/);
   assert.doesNotMatch(source, /<ConsultationExpandableText/);
 });
 
 test('consultation modal uses compact flow sections for both editing and viewing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -442,7 +426,7 @@ test('consultation modal uses compact flow sections for both editing and viewing
 });
 
 test('consultation modal sections derive active and current visual states from the shared flow status', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const readOnlyBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?const ConsultationModal = /);
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
@@ -467,7 +451,7 @@ test('consultation modal sections derive active and current visual states from t
 });
 
 test('consultation inactive flow sections stay readable without whole-card opacity', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const sectionClassBlock = source.match(/function consultationFlowSectionClass[\s\S]*?const compactFlowTitleClass/);
   const titleClassBlock = source.match(/const compactFlowTitleClass[\s\S]*?const compactReadLabelClass/);
 
@@ -490,7 +474,7 @@ test('consultation inactive flow sections stay readable without whole-card opaci
 });
 
 test('consultation view modal keeps the title header and uses a two by two report grid', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
@@ -507,7 +491,7 @@ test('consultation view modal keeps the title header and uses a two by two repor
 });
 
 test('consultation read only cards use two inner columns in narrow modal widths', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
   assert.ok(reportBlock);
@@ -519,7 +503,7 @@ test('consultation read only cards use two inner columns in narrow modal widths'
 });
 
 test('consultation edit modal uses the same two by two flow cards as the view modal', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -531,7 +515,7 @@ test('consultation edit modal uses the same two by two flow cards as the view mo
 });
 
 test('consultation edit form derives lit flow stages from edited fields', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.match(source, /function deriveConsultationFlowFromFields\(values: ConsultationFormValues\): ConsultationFormValues/);
@@ -550,7 +534,7 @@ test('consultation edit form derives lit flow stages from edited fields', () => 
 });
 
 test('consultation edit form uses assignment teacher dropdown and scoped class options', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -566,7 +550,7 @@ test('consultation edit form uses assignment teacher dropdown and scoped class o
 });
 
 test('consultation edit form keeps wechat status capsules compressed in one row without visible teacher chevron', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -580,7 +564,7 @@ test('consultation edit form keeps wechat status capsules compressed in one row 
 });
 
 test('consultation edit form highlights changed section titles and uses teacher dropdowns', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -598,7 +582,7 @@ test('consultation edit form highlights changed section titles and uses teacher 
 });
 
 test('consultation success result does not carry payment card status in the consultation form', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
 
@@ -609,7 +593,7 @@ test('consultation success result does not carry payment card status in the cons
 });
 
 test('consultation flow display labels shorten test and trial stage wording', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const labelBlock = source.match(/const consultationStageDisplayLabel = \(stage: string\) => \{[\s\S]*?\n};/);
 
   assert.ok(labelBlock);
@@ -620,7 +604,7 @@ test('consultation flow display labels shorten test and trial stage wording', ()
 });
 
 test('consultation flow bar renders a one-row B6 dot stepper with responsive labels', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -635,7 +619,7 @@ test('consultation flow bar renders a one-row B6 dot stepper with responsive lab
 });
 
 test('consultation result capsule matches stage widths and uses empty enter fail short labels', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
   const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
@@ -652,7 +636,7 @@ test('consultation result capsule matches stage widths and uses empty enter fail
 });
 
 test('consultation flow treats result as the sixth dot node instead of a separate wide capsule', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -665,7 +649,7 @@ test('consultation flow treats result as the sixth dot node instead of a separat
 });
 
 test('consultation modal jump controls are preserved on the dot stepper without widening nodes', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -679,7 +663,7 @@ test('consultation modal jump controls are preserved on the dot stepper without 
 });
 
 test('consultation full flow bar avoids fixed minimum columns that can push the result capsule outside the modal', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
   assert.ok(flowBarBlock);
@@ -691,7 +675,7 @@ test('consultation full flow bar avoids fixed minimum columns that can push the 
 });
 
 test('consultation modal places flow subtitle and status lamp beside the title', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -702,7 +686,7 @@ test('consultation modal places flow subtitle and status lamp beside the title',
 });
 
 test('consultation modal flow uses the same compact one-row style as consultation cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
   assert.ok(modalBlock);
@@ -713,7 +697,7 @@ test('consultation modal flow uses the same compact one-row style as consultatio
 });
 
 test('consultation modal flow capsules jump to matching edit sections without changing stage state', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
@@ -733,7 +717,7 @@ test('consultation modal flow capsules jump to matching edit sections without ch
 });
 
 test('consultation modal uses dot-stepper jump buttons and flashes the jumped edit section', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
   const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
 
@@ -753,7 +737,7 @@ test('consultation modal uses dot-stepper jump buttons and flashes the jumped ed
 });
 
 test('consultation result capsule keeps the colored label full width while preserving the dropdown hit area', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const resultCapsuleBlock = source.match(/const ConsultationResultCapsule = \([\s\S]*?\n};/);
 
   assert.ok(resultCapsuleBlock);
@@ -765,11 +749,9 @@ test('consultation result capsule keeps the colored label full width while prese
 });
 
 test('consultation source restores ended records only after an explicit yes no confirmation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
 
-  assert.ok(consultationPageBlock);
   assert.ok(modalBlock);
   assert.match(source, /function restoreConsultationValues\(values: ConsultationFormValues\): ConsultationFormValues/);
   assert.match(source, /restore_from_end: true/);
@@ -778,14 +760,14 @@ test('consultation source restores ended records only after an explicit yes no c
   assert.match(modalBlock[0], /是\s*<\/button>/);
   assert.match(modalBlock[0], /否\s*<\/button>/);
   assert.match(modalBlock[0], /setForm\(\(current\) => restoreConsultationValues\(current\)\)/);
-  assert.match(consultationPageBlock[0], /const \[restoreConfirmRecord, setRestoreConfirmRecord\] = useState<ConsultationRecord \| null>\(null\);/);
-  assert.match(consultationPageBlock[0], /const handleConfirmRestoreConsultation = async \(\) =>/);
-  assert.match(consultationPageBlock[0], /restoreConsultationValues\(toConsultationFormValues\(restoreConfirmRecord\)\)/);
-  assert.match(consultationPageBlock[0], /是否恢复这个咨询？/);
+  assert.match(consultationPageSource, /const \[restoreConfirmRecord, setRestoreConfirmRecord\] = useState<ConsultationRecord \| null>\(null\);/);
+  assert.match(consultationPageSource, /const handleConfirmRestoreConsultation = async \(\) =>/);
+  assert.match(consultationPageSource, /restoreConsultationValues\(toConsultationFormValues\(restoreConfirmRecord\)\)/);
+  assert.match(consultationPageSource, /是否恢复这个咨询？/);
 });
 
 test('consultation source keeps ai batch parse endpoint unchanged', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
   assert.ok(batchModalBlock);
   assert.match(batchModalBlock[0], /apiFetch<ConsultationBatchParseResponse>\('\/api\/consultations\/ai-parse'/);
@@ -793,77 +775,60 @@ test('consultation source keeps ai batch parse endpoint unchanged', () => {
 });
 
 test('consultation page source keeps consultation detail under teacher and follow-up notes in the consultation info block', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-
-  assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /const needDetail = record\.need_detail\?\.trim\(\);/);
-  assert.match(consultationPageBlock[0], /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
-  assert.match(consultationPageBlock[0], /const renderConsultationDetail = \(needDetail\?: string, followUpNote\?: string, mobile = false\) =>/);
-  assert.match(consultationPageBlock[0], /label="咨询详情" text=\{needDetail\}/);
-  assert.match(consultationPageBlock[0], /lines=\{mobile \? 2 : 1\}/);
-  assert.match(consultationPageBlock[0], /label="跟进" text=\{followUpNote\}/);
-  assert.doesNotMatch(consultationPageBlock[0], /备注：\{followUpNote\}/);
-  assert.doesNotMatch(consultationPageBlock[0], /font-semibold whitespace-nowrap">备注<\/th>/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_minmax\(2\.9rem,3\.75rem\)\]/);
+  assert.match(consultationPageSource, /const needDetail = record\.need_detail\?\.trim\(\);/);
+  assert.match(consultationPageSource, /const followUpNote = record\.follow_up_note\?\.trim\(\);/);
+  assert.match(consultationPageSource, /const renderConsultationDetail = \(needDetail\?: string, followUpNote\?: string, mobile = false\) =>/);
+  assert.match(consultationPageSource, /label="咨询详情" text=\{needDetail\}/);
+  assert.match(consultationPageSource, /lines=\{mobile \? 2 : 1\}/);
+  assert.match(consultationPageSource, /label="跟进" text=\{followUpNote\}/);
+  assert.doesNotMatch(consultationPageSource, /备注：\{followUpNote\}/);
+  assert.doesNotMatch(consultationPageSource, /font-semibold whitespace-nowrap">备注<\/th>/);
+  assert.match(consultationPageSource, /grid-cols-\[minmax\(0,1fr\)_minmax\(2\.9rem,3\.75rem\)\]/);
 });
 
 test('consultation page source renders separate desktop pad and mobile consultation card layouts', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-
-  assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /const renderDesktopConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
-  assert.match(consultationPageBlock[0], /const renderPadConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
-  assert.match(consultationPageBlock[0], /const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[96px_88px_112px_minmax\(120px,160px\)_120px_132px_72px\]/);
-  assert.match(consultationPageBlock[0], /const renderB3FlowStrip = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
-  assert.match(consultationPageBlock[0], /const renderB3MobileTimeline = \(record: ConsultationRecord, busy: boolean\) =>/);
-  assert.match(consultationPageBlock[0], /grid-cols-\[minmax\(0,1fr\)_minmax\(2\.9rem,3\.75rem\)\]/);
-  assert.doesNotMatch(consultationPageBlock[0], /min-w-\[31rem\]/);
-  assert.match(consultationPageBlock[0], /showTopResultPill/);
-  assert.match(consultationPageBlock[0], /hidden md:block xl:hidden/);
-  assert.match(consultationPageBlock[0], /hidden xl:block/);
-  assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderDesktopConsultationCard\)/);
-  assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderPadConsultationCard\)/);
-  assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderMobileConsultationCard\)/);
+  assert.match(consultationPageSource, /const renderDesktopConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
+  assert.match(consultationPageSource, /const renderPadConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
+  assert.match(consultationPageSource, /const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) =>/);
+  assert.match(consultationPageSource, /grid-cols-\[96px_88px_112px_minmax\(120px,160px\)_120px_132px_72px\]/);
+  assert.match(consultationPageSource, /const renderB3FlowStrip = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
+  assert.match(consultationPageSource, /const renderB3MobileTimeline = \(record: ConsultationRecord, busy: boolean\) =>/);
+  assert.match(consultationPageSource, /grid-cols-\[minmax\(0,1fr\)_minmax\(2\.9rem,3\.75rem\)\]/);
+  assert.doesNotMatch(consultationPageSource, /min-w-\[31rem\]/);
+  assert.match(consultationPageSource, /showTopResultPill/);
+  assert.match(consultationPageSource, /hidden md:block xl:hidden/);
+  assert.match(consultationPageSource, /hidden xl:block/);
+  assert.match(consultationPageSource, /visibleRecords\.map\(renderDesktopConsultationCard\)/);
+  assert.match(consultationPageSource, /visibleRecords\.map\(renderPadConsultationCard\)/);
+  assert.match(consultationPageSource, /visibleRecords\.map\(renderMobileConsultationCard\)/);
 });
 
 test('consultation page source keeps desktop and tablet consultations as two-row cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+  assert.match(consultationPageSource, /const handleInlineStageToggle = async \(record: ConsultationRecord, stage: string\) =>/);
+  assert.match(consultationPageSource, /const handleInlineResultChange = async \(record: ConsultationRecord, resultStage: ConsultationResultStage\) =>/);
+  assert.match(consultationPageSource, /const handleInlineEndConsultation = async \(record: ConsultationRecord\) =>/);
+  assert.match(consultationPageSource, /editable=\{canEditConsultations && !busy && !frozen\}/);
+  assert.match(consultationPageSource, /onStageClick=\{\(stage\) => handleInlineStageToggle\(record, stage\)\}/);
+  assert.match(consultationPageSource, /hidden md:block xl:hidden/);
+  assert.match(consultationPageSource, /hidden xl:block/);
+  assert.match(consultationPageSource, /md:hidden/);
+  assert.match(consultationPageSource, /onClick=\{\(\) => handleInlineEndConsultation\(record\)\}/);
+  assert.match(consultationPageSource, /const renderTimeRow = \(record: ConsultationRecord, boxed = false\) =>/);
+  assert.match(consultationPageSource, /\{record\.created_at \|\| '—'\}/);
+  assert.match(consultationPageSource, /\{record\.updated_at \|\| '—'\}/);
+  assert.doesNotMatch(consultationPageSource, /2xl:hidden/);
+  assert.doesNotMatch(consultationPageSource, /hidden 2xl:block/);
 
-  assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /const handleInlineStageToggle = async \(record: ConsultationRecord, stage: string\) =>/);
-  assert.match(consultationPageBlock[0], /const handleInlineResultChange = async \(record: ConsultationRecord, resultStage: ConsultationResultStage\) =>/);
-  assert.match(consultationPageBlock[0], /const handleInlineEndConsultation = async \(record: ConsultationRecord\) =>/);
-  assert.match(consultationPageBlock[0], /editable=\{canEditConsultations && !busy && !frozen\}/);
-  assert.match(consultationPageBlock[0], /onStageClick=\{\(stage\) => handleInlineStageToggle\(record, stage\)\}/);
-  assert.match(consultationPageBlock[0], /hidden md:block xl:hidden/);
-  assert.match(consultationPageBlock[0], /hidden xl:block/);
-  assert.match(consultationPageBlock[0], /md:hidden/);
-  assert.match(consultationPageBlock[0], /onClick=\{\(\) => handleInlineEndConsultation\(record\)\}/);
-  assert.match(source, /window\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)/);
-  assert.match(consultationPageBlock[0], /const renderTimeRow = \(record: ConsultationRecord, boxed = false\) =>/);
-  assert.match(consultationPageBlock[0], /\{record\.created_at \|\| '—'\}/);
-  assert.match(consultationPageBlock[0], /\{record\.updated_at \|\| '—'\}/);
-  assert.doesNotMatch(consultationPageBlock[0], /2xl:hidden/);
-  assert.doesNotMatch(consultationPageBlock[0], /hidden 2xl:block/);
-
-  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+  const flowBarBlock = consultationSharedSource.match(/export const ConsultationFlowBar = \([\s\S]*?\n};/);
   assert.ok(flowBarBlock);
   assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(1\.75rem,1fr\)\)\]/);
   assert.match(flowBarBlock[0], /grid-cols-\[repeat\(6,minmax\(0,1fr\)\)\]/);
   assert.match(flowBarBlock[0], /onStageDoubleClick/);
-  assert.match(source, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
+  assert.match(shellSource, /activeWorkspacePage === 'calendar' \|\| activeWorkspacePage === 'consultation'/);
 });
 
 test('consultation mobile card keeps view edit icons in the top right and removes the bottom edit capsule', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-
-  assert.ok(consultationPageBlock);
-  const mobileCard = consultationPageBlock[0].match(/const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) => \{[\s\S]*?\n  \};/);
+  const mobileCard = consultationPageSource.match(/const renderMobileConsultationCard = \(record: ConsultationRecord, index: number\) => \{[\s\S]*?\n  \};/);
   assert.ok(mobileCard);
   assert.match(mobileCard[0], /getRecordResultPill\(record\)/);
   assert.match(mobileCard[0], /renderConsultationIconActions\(record, busy, true\)/);
@@ -871,12 +836,12 @@ test('consultation mobile card keeps view edit icons in the top right and remove
   assert.match(mobileCard[0], /renderB3FlowStrip\(record, busy, true\)/);
   assert.doesNotMatch(mobileCard[0], /renderOverButton\(record, busy, 'h-9 px-3 text-xs'\)/);
   assert.match(mobileCard[0], /renderDeleteButton\(record, busy\)/);
-  assert.match(consultationPageBlock[0], /aria-label="查看咨询"/);
-  assert.match(consultationPageBlock[0], /aria-label="编辑咨询"/);
+  assert.match(consultationPageSource, /aria-label="查看咨询"/);
+  assert.match(consultationPageSource, /aria-label="编辑咨询"/);
 });
 
 test('consultation batch modal source parses text, previews drafts, and reuses consultation write endpoints', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -891,7 +856,7 @@ test('consultation batch modal source parses text, previews drafts, and reuses c
 });
 
 test('consultation batch modal source keeps refresh failure separate after successful writes', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -902,7 +867,7 @@ test('consultation batch modal source keeps refresh failure separate after succe
 });
 
 test('consultation batch modal source blocks dismissal while parsing or importing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -912,7 +877,7 @@ test('consultation batch modal source blocks dismissal while parsing or importin
 });
 
 test('consultation batch modal source previews key written fields before confirm', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -925,7 +890,7 @@ test('consultation batch modal source previews key written fields before confirm
 });
 
 test('consultation batch modal source lets users remove individual drafts before import', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -936,7 +901,7 @@ test('consultation batch modal source lets users remove individual drafts before
 });
 
 test('consultation batch modal source attributes write failures to a specific draft and always clears importing', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -947,8 +912,8 @@ test('consultation batch modal source attributes write failures to a specific dr
 });
 
 test('approval page source supports editing member display names inline', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
+  const source = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
+  const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};/);
 
   assert.ok(approvalBlock);
   assert.match(approvalBlock[0], /编辑姓名/);
@@ -956,7 +921,7 @@ test('approval page source supports editing member display names inline', () => 
 });
 
 test('consultation batch modal source keeps only remaining drafts after a partial import failure', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -969,7 +934,7 @@ test('consultation batch modal source keeps only remaining drafts after a partia
 });
 
 test('consultation batch modal source preserves the current preview when parsing fails', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -982,7 +947,7 @@ test('consultation batch modal source preserves the current preview when parsing
 });
 
 test('consultation batch modal source keeps imported drafts visible while retries only include unsaved drafts', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const batchModalBlock = source.match(/const ConsultationBatchModal = \([\s\S]*?\n};/);
 
   assert.ok(batchModalBlock);
@@ -996,13 +961,6 @@ test('consultation batch modal source keeps imported drafts visible while retrie
 });
 
 test('quick consultation parser extracts normalized teacher and source metadata', () => {
-  const parseConsultationQuickEntry = (AppModule as {
-    parseConsultationQuickEntry?: (
-      input: string,
-      teacherOptions: Array<{ teacher_id: string; display_name: string; aliases: string[] }>,
-    ) => Record<string, string>;
-  }).parseConsultationQuickEntry;
-
   assert.equal(typeof parseConsultationQuickEntry, 'function');
 
   const parsed = parseConsultationQuickEntry!(
@@ -1021,7 +979,7 @@ test('quick consultation parser extracts normalized teacher and source metadata'
 });
 
 test('workspace source applies dark classes to lesson library approval settings and calendar pages', () => {
-  const appSource = `${readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')}\n${studentCenterSource}`;
+  const appSource = `${readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8')}\n${studentCenterSource}`;
   const calendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
   const dashboardSource = readFileSync(resolve(process.cwd(), 'src/WorkspaceDashboard.tsx'), 'utf8');
   const indexCssSource = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
@@ -1054,7 +1012,7 @@ test('workspace source applies dark classes to lesson library approval settings 
 });
 
 test('workspace source splits approval and class assignment responsibilities across separate pages', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
   const classManagementBlock = [studentCenterClassSource];
 
@@ -1073,7 +1031,7 @@ test('workspace source splits approval and class assignment responsibilities acr
 });
 
 test('approval page source loads and renders member teaching binding summaries', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1089,7 +1047,7 @@ test('approval page source loads and renders member teaching binding summaries',
 });
 
 test('teacher alias mapping source links website members without guessing the external id', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1103,7 +1061,7 @@ test('teacher alias mapping source links website members without guessing the ex
 });
 
 test('approval page source removes the start binding action from member cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1112,7 +1070,7 @@ test('approval page source removes the start binding action from member cards', 
 });
 
 test('approval member cards link teacher class binding into class management', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
   const classManagementBlock = [studentCenterClassSource];
 
@@ -1128,11 +1086,10 @@ test('approval member cards link teacher class binding into class management', (
 });
 
 test('class management source shows current teacher summary and removes multi-teacher count copy', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(source, /teacher_user_id\?: number \| null;/);
+  assert.match(consultationBatchModalSource, /teacher_user_id\?: number \| null;/);
   assert.match(classManagementBlock[0], /当前负责老师：/);
   assert.match(classManagementBlock[0], /teacherSummary = currentTeacher\?\.name \|\| item\.teacher_name \|\| '未分配老师';/);
   assert.doesNotMatch(classManagementBlock[0], /已分配 \{selectedTeacherIds\.length\} 位老师/);
@@ -1140,7 +1097,6 @@ test('class management source shows current teacher summary and removes multi-te
 });
 
 test('class management source uses one 负责老师 concept instead of separate 班级老师分配 wording', () => {
-  const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1170,7 +1126,6 @@ test('class management source keeps teacher binding selection scoped per class c
 });
 
 test('class management source separates mutation success from best-effort refresh reconciliation', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1189,7 +1144,6 @@ test('class management source separates mutation success from best-effort refres
 });
 
 test('class management source disables conflicting controls while async class or assignment work is in flight', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1214,11 +1168,10 @@ test('class management source disables conflicting controls while async class or
 });
 
 test('class management source removes teacher-email UI and the standalone bottom assignment section', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.doesNotMatch(source, /interface ClassFormValues \{[\s\S]*teacher_email: string;/);
+  assert.doesNotMatch(consultationBatchModalSource, /interface ClassFormValues \{[\s\S]*teacher_email: string;/);
   assert.doesNotMatch(classManagementBlock[0], /teacher_email:\s*form\.teacher_email\.trim\(\)/);
   assert.doesNotMatch(classManagementBlock[0], /老师邮箱/);
   assert.doesNotMatch(classManagementBlock[0], /未填写邮箱/);
@@ -1228,12 +1181,11 @@ test('class management source removes teacher-email UI and the standalone bottom
 });
 
 test('class management source embeds teacher assignment inside each class card and normalizes common class names', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
-  assert.match(source, /\['6年级2班', '六年级 2 班'\]/);
-  assert.match(source, /\['七年级三班', '七年级 3 班'\]/);
+  assert.match(consultationBatchModalSource, /\['6年级2班', '六年级 2 班'\]/);
+  assert.match(consultationBatchModalSource, /\['七年级三班', '七年级 3 班'\]/);
   assert.match(classManagementBlock[0], /placeholder="搜索老师"/);
   assert.match(classManagementBlock[0], /<select[\s\S]*value=\{newClass\.teacherUserId == null \? '' : String\(newClass\.teacherUserId\)\}/);
   assert.match(classManagementBlock[0], /<select[\s\S]*value=\{editing\.currentTeacherUserId == null \? '' : String\(editing\.currentTeacherUserId\)\}/);
@@ -1247,7 +1199,6 @@ test('class management source embeds teacher assignment inside each class card a
 });
 
 test('class management source opens both existing and new class editors in a modal instead of inline cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1261,7 +1212,6 @@ test('class management source opens both existing and new class editors in a mod
 });
 
 test('class management source explains structured class naming without development examples', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1288,7 +1238,6 @@ test('class management source adds a side-by-side student editor card next to th
 });
 
 test('class management source removes click-to-edit helper copy from class cards', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1296,7 +1245,6 @@ test('class management source removes click-to-edit helper copy from class cards
 });
 
 test('class management source keeps delete and save buttons inside the teacher card footer', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1305,7 +1253,6 @@ test('class management source keeps delete and save buttons inside the teacher c
 });
 
 test('class management source preserves expanded edit cards during manual refresh failures', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const classManagementBlock = [studentCenterClassSource];
 
   assert.ok(classManagementBlock);
@@ -1316,7 +1263,7 @@ test('class management source preserves expanded edit cards during manual refres
 });
 
 test('account administration source disables refresh and teacher alias actions while mutations run', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
   const approvalBlock = source.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
 
   assert.ok(approvalBlock);
@@ -1337,13 +1284,12 @@ test('account administration source disables refresh and teacher alias actions w
 });
 
 test('login source includes password reset and first-login class claim entry points', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-  const classClaimBlock = source.match(/const ClassClaimPage = \([\s\S]*?const LoginModal = \(/);
+  const source = authSource;
+  const classClaimBlock = source.match(/export const ClassClaimPage = \([\s\S]*?export const LoginModal = \(/);
 
-  assert.match(source, /type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
   assert.match(source, /\/api\/password-reset/);
   assert.match(source, /recovery_phone/);
-  assert.match(source, /const ClassClaimPage = \(/);
+  assert.match(source, /export const ClassClaimPage = \(/);
   assert.match(source, /\/api\/me\/unbound-classes/);
   assert.match(source, /\/api\/me\/claim-classes/);
   assert.ok(classClaimBlock);

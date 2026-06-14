@@ -870,7 +870,7 @@ function buildRedoWorkArea() {
     <section class="redo-work-area">
       <div class="section-title">订正区</div>
       <div class="redo-lines">
-        ${Array.from({ length: 14 }, () => '<div class="redo-line"></div>').join('')}
+        ${Array.from({ length: 6 }, () => '<div class="redo-line"></div>').join('')}
       </div>
     </section>
   `;
@@ -984,7 +984,7 @@ export async function buildDocumentMarkup(payload) {
 
           @page {
             size: A4;
-            margin: 16mm 14mm;
+            margin: 12mm 12mm;
           }
 
           * {
@@ -999,8 +999,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .cover {
-            margin-bottom: 16px;
-            padding-bottom: 14px;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
             border-bottom: 2px solid #c7d2fe;
             text-align: center;
           }
@@ -1012,8 +1012,15 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .record-page {
-            margin-bottom: 10px;
-            padding-bottom: 8px;
+            break-after: page;
+            page-break-after: always;
+            margin-bottom: 0;
+            padding-bottom: 0;
+          }
+
+          .record-page:last-of-type {
+            break-after: auto;
+            page-break-after: auto;
           }
 
           .record-header {
@@ -1021,11 +1028,11 @@ export async function buildDocumentMarkup(payload) {
             justify-content: space-between;
             align-items: center;
             gap: 8px;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
           }
 
           .record-index {
-            font-size: 17px;
+            font-size: 15px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -1037,8 +1044,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .record-label {
-            margin-bottom: 6px;
-            font-size: 13px;
+            margin-bottom: 4px;
+            font-size: 12px;
             font-weight: 700;
             color: #334155;
           }
@@ -1061,15 +1068,15 @@ export async function buildDocumentMarkup(payload) {
             break-inside: avoid;
             page-break-inside: avoid;
             border: 1px solid #dbe2ea;
-            border-radius: 10px;
-            padding: 10px 12px;
+            border-radius: 8px;
+            padding: 6px 8px;
             background: #ffffff;
           }
 
           .question-latex-card {
             border: 1px solid #dbe2ea;
-            border-radius: 10px;
-            padding: 10px 12px;
+            border-radius: 8px;
+            padding: 6px 8px;
             background: #ffffff;
           }
 
@@ -1081,44 +1088,44 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .summary-card {
-            margin-top: 6px;
+            margin-top: 4px;
           }
 
           .summary-copy {
             color: #334155;
-            font-size: 13px;
-            line-height: 1.92;
+            font-size: 11.5px;
+            line-height: 1.55;
           }
 
           .writing-card {
-            margin-top: 6px;
+            margin-top: 4px;
             min-height: 0;
-            padding-bottom: 10px;
+            padding-bottom: 6px;
           }
 
           .section-title {
-            margin-bottom: 8px;
-            font-size: 13px;
+            margin-bottom: 4px;
+            font-size: 12px;
             font-weight: 700;
             color: #334155;
           }
 
           .method-hint-card {
-            margin-top: 6px;
+            margin-top: 4px;
           }
 
           .method-hint-line {
-            font-size: 14px;
-            line-height: 1.98;
+            font-size: 11.5px;
+            line-height: 1.55;
             color: #334155;
           }
 
           .method-hint-line + .method-hint-line {
-            margin-top: 4px;
+            margin-top: 2px;
           }
 
           .writing-prompt-block + .writing-prompt-block {
-            margin-top: 8px;
+            margin-top: 4px;
           }
 
           .writing-prompt-block {
@@ -1127,15 +1134,15 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .writing-prompt-title {
-            margin-bottom: 6px;
-            font-size: 13px;
+            margin-bottom: 3px;
+            font-size: 11.5px;
             font-weight: 700;
             color: #0f172a;
           }
 
           .writing-prompt {
-            font-size: 14px;
-            line-height: 2;
+            font-size: 11.5px;
+            line-height: 1.6;
             color: #334155;
             white-space: pre-wrap;
             word-break: break-word;
@@ -1143,8 +1150,8 @@ export async function buildDocumentMarkup(payload) {
 
           .blank-gap {
             display: inline-block;
-            min-width: 11.5em;
-            height: 1.2em;
+            min-width: 8em;
+            height: 1em;
             margin: 0 0.2em;
             vertical-align: -0.2em;
             border-bottom: 1.5px solid #334155;
@@ -1154,17 +1161,17 @@ export async function buildDocumentMarkup(payload) {
             break-inside: avoid;
             page-break-inside: avoid;
             min-height: 0;
-            margin-top: 8px;
+            margin-top: 5px;
           }
 
           .redo-lines {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 3px;
           }
 
           .redo-line {
-            min-height: 13px;
+            min-height: 10px;
             border-bottom: 1px solid #cbd5e1;
           }
 
@@ -1175,8 +1182,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .xr-latex-preview {
-            font-size: 15px;
-            line-height: 1.96;
+            font-size: 12px;
+            line-height: 1.6;
             word-break: break-word;
           }
 
@@ -1204,8 +1211,8 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .geometry-title {
-            margin-bottom: 6px;
-            font-size: 13px;
+            margin-bottom: 4px;
+            font-size: 12px;
             font-weight: 700;
             color: #0f172a;
           }
@@ -1220,7 +1227,7 @@ export async function buildDocumentMarkup(payload) {
           }
 
           .source-image {
-            max-height: 66mm;
+            max-height: 68mm;
           }
 
           .generated-diagram-image {

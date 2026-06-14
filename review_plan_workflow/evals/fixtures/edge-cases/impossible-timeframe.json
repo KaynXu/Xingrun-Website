@@ -1,0 +1,19 @@
+{
+  "name": "Unrealistic timeframe and workload",
+  "input": {
+    "subject": "math",
+    "courseSystem": "中国初中数学",
+    "target": "从基础薄弱到竞赛水平",
+    "timeframe": {"totalDays": 2},
+    "availability": {"hoursPerWeek": 1}
+  },
+  "expectedCriteria": [
+    "must flag unrealistic workload",
+    "must not guarantee target",
+    "must include scope warnings"
+  ],
+  "checks": [
+    {"name": "schema_boundary", "schemaValid": true},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]}
+  ]
+}
