@@ -47,6 +47,32 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("formula", rendered["prompt"])
         self.assertRegex(rendered["prompt_version"], r"^[0-9a-f]{12}$")
 
+    def test_rendered_generation_prompt_includes_migrated_desktop_rules(self):
+        registry = PromptRegistry()
+        common_kwargs = {
+            "system_prompt_path": "system/review-plan-agent.md",
+            "node_prompt_path": "nodes/task-generator.md",
+            "style_path": "styles/review_plan_style.yaml",
+            "rubric_path": "rubrics/review-plan-quality.yaml",
+            "variables": {"trace_id": "trace-1"},
+            "registry": registry,
+        }
+
+        math_prompt = render_prompt(subject_pack_path="subjects/math.yaml", **common_kwargs)["prompt"]
+        physics_prompt = render_prompt(subject_pack_path="subjects/physics.yaml", **common_kwargs)["prompt"]
+        ielts_prompt = render_prompt(subject_pack_path="subjects/ielts.yaml", **common_kwargs)["prompt"]
+
+        self.assertIn("不能把作业布置设置成题目本身", math_prompt)
+        self.assertIn("不把“方法、入口、边界、条件、过程、动作、提醒”等抽象词作为主要设空答案", math_prompt)
+        self.assertIn("老师追问卡片必须有完整题干或同类题背景", math_prompt)
+        self.assertIn("第14天和第30天只回收第1/2/7天内容", physics_prompt)
+        self.assertIn("公式 + 物理量含义 + 常用单位 + 适用条件", physics_prompt)
+        self.assertIn("物理里的远方", physics_prompt)
+        self.assertIn("背景公式必须优先使用当堂课公式", physics_prompt)
+        self.assertIn("雅思阅读复习不是背文章内容", ielts_prompt)
+        self.assertIn("False、Not Given", ielts_prompt)
+        self.assertIn("词汇、定位、逻辑三类归因", ielts_prompt)
+
     def test_quality_gate_flags_invalid_single_lesson_shape(self):
         review = review_single_lesson_plan({"lesson_info": {"topic": "一次函数"}, "days": []}, subject="math")
         self.assertFalse(review.passed)
