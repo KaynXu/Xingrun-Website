@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-14 已按用户要求把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 里的“学生画像与个性化支线”升级成五维图画像：为 `陈峻豪 / 陈星宇 / 谢竺珂 / 黄翊豪 / 张梓恒 / 刘雨恩` 6 位学生分别生成了 `计算能力 / 知识基础 / 题型审识 / 推理能力 / 规范习惯` 五维雷达图，并把图表嵌入各自小节下方；图表源文件落在 [student-radar-assets](/Users/xiaodi/Desktop/xingrun.web/output/pdf/student-radar-assets)。当前轮 proof 脚本为 `/tmp/proof_student_radar_charts.py`，已确认 6 张图文件存在且 docx 内嵌媒体数量增加到 `16`。
 - 2026-06-14 已继续按用户反馈把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的第二张追踪表横向拉宽：文档左右页边距已从约 `2.0cm` 收到约 `1.2cm`，追踪表 4 列宽度同步放大到更接近整页可用宽度，当前表头宽度已提升为 `1417 / 3515 / 3628 / 2041`（twips），不再像上一版那样横向发紧。当前轮 proof 使用 `/tmp/proof_student_tracking_table_layout.py` 与页边距检查脚本，已确认左右边距约为 `1.199cm`，表格列宽已整体增大。
 - 2026-06-14 已继续按用户反馈把 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的第二张追踪表调到更舒展的尺寸：保留 4 列结构，但把任务文案压成短句，并把表头改成 `名字 / 主线任务 / 支线任务 / 打卡记录`；学生行统一增大到更高的最小行高，姓名字号提升到 `12pt`，其余内容提升到 `11pt`，同时增加单元格留白。当前轮 proof 脚本为 `/tmp/proof_student_tracking_table.py` 和 `/tmp/proof_student_tracking_table_layout.py`，已确认 7 行 4 列完整、表头更新、学生行高已增大且主要字号已按 `11pt/12pt` 落盘。
 - 2026-06-14 已按用户反馈补全 [衔接暑期平行线模型全掌握与做题标准化执行方案.docx](/Users/xiaodi/Desktop/xingrun.web/output/pdf/衔接暑期平行线模型全掌握与做题标准化执行方案.docx) 的第二张“主线 / 支线跟踪表”：表头现已改成 `名字 / 主线任务 / 支线任务 / 打卡 / 积分`，并为 6 位学生逐行补上完整的主线任务、个性化支线任务和打卡占位，不再只写一段截断的“待启动｜重点”。当前轮 proof 脚本为 `/tmp/proof_student_tracking_table.py`，已确认 7 行 4 列表格完整落盘。
