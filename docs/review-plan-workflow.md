@@ -82,6 +82,15 @@ The review-plan flow has a known order and should be controlled by code. Code sh
 - `prompts/rubrics/`: quality and workload checks.
 - `evals/fixtures/`: minimum subject regression cases.
 
+## Model Configuration
+
+Review-plan generation uses its own optional chat model override:
+
+- `XR_REVIEW_PLAN_PROVIDER`: optional provider for review-plan generation only.
+- `XR_REVIEW_PLAN_MODEL`: optional model for review-plan generation only.
+
+If either value is unset, the workflow falls back to the existing general chat configuration (`XR_PROVIDER` and provider default model such as `XR_DEEPSEEK_MODEL`). The current workflow still uses one provider/model pair for the full review-plan run; `plan_generator` and `revision` do not yet have separate per-node model routing.
+
 ## Prompt Layering
 
 Final prompt composition must follow this order:

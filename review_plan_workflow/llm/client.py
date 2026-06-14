@@ -5,7 +5,13 @@ import os
 import re
 from typing import Any, Callable, Optional, TypeVar
 
-from config_runtime import get_runtime_config, normalize_chat_provider
+from config_runtime import (
+    chat_model_for_provider,
+    get_runtime_config,
+    normalize_chat_provider,
+    resolve_review_plan_model,
+    resolve_review_plan_provider,
+)
 from pydantic import BaseModel
 
 
@@ -87,17 +93,19 @@ def _runtime_config() -> dict[str, Any]:
 
 
 def resolve_chat_provider(provider: str = "") -> str:
-    return normalize_chat_provider(provider or _runtime_config().get("provider") or "deepseek")
+    if provider:
+        return normalize_chat_provider(provider)
+    return resolve_review_plan_provider(_runtime_config())
 
 
 def resolve_chat_model(provider: str = "", model: str = "") -> str:
     cfg = _runtime_config()
-    provider_name = resolve_chat_provider(provider)
     if model:
         return model
-    if provider_name == "deepseek":
-        return str(cfg.get("deepseek_model") or "deepseek-v4-pro")
-    return str(cfg.get("openai_model") or "gpt-4o")
+    provider_name = resolve_chat_provider(provider)
+    if not provider:
+        return resolve_review_plan_model(cfg, provider=provider_name)
+    return chat_model_for_provider(provider_name, cfg)
 
 
 def get_chat_client(provider: str = ""):

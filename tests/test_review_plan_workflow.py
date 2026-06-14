@@ -104,6 +104,47 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_uses_review_plan_model_override_when_provider_omitted(self, mock_generate_plan):
+        config_runtime.write_file_config({
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-4.1",
+        })
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "openai", "model": "gpt-4.1", "input_tokens": 10, "output_tokens": 20},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated, plan)
+        self.assertEqual(usage["model"], "gpt-4.1")
+        mock_generate_plan.assert_called_once()
+        self.assertEqual(mock_generate_plan.call_args.kwargs["provider"], "openai")
+        self.assertEqual(mock_generate_plan.call_args.kwargs["model"], "gpt-4.1")
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["provider"], "openai")
+        self.assertEqual(run["model"], "gpt-4.1")
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_repairs_invalid_schema_once(self, mock_generate_plan):
         valid_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
         mock_generate_plan.side_effect = [
