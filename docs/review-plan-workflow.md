@@ -88,8 +88,10 @@ Review-plan generation uses its own optional chat model override:
 
 - `XR_REVIEW_PLAN_PROVIDER`: optional provider for review-plan generation only.
 - `XR_REVIEW_PLAN_MODEL`: optional model for review-plan generation only.
+- `XR_REVIEW_PLAN_WRITER_PROVIDER`: provider for the `plan_generator` content-writing node. Defaults to `deepseek`.
+- `XR_REVIEW_PLAN_WRITER_MODEL`: model for the `plan_generator` content-writing node. Defaults to `deepseek-v4-pro` when the writer provider is DeepSeek.
 
-If either value is unset, the workflow falls back to the existing general chat configuration (`XR_PROVIDER` and provider default model such as `XR_DEEPSEEK_MODEL`). The current workflow still uses one provider/model pair for the full review-plan run; `plan_generator` and `revision` do not yet have separate per-node model routing.
+If the chain-level values are unset, the workflow falls back to the existing general chat configuration (`XR_PROVIDER` and provider default model such as `XR_DEEPSEEK_MODEL`). The `plan_generator` node is intentionally routed separately so the plan-writing step can stay on DeepSeek V4 Pro even when the rest of the review-plan workflow uses another model. Other nodes, including `revision`, still use the chain-level provider/model.
 
 ## Prompt Layering
 

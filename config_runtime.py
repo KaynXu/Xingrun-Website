@@ -14,6 +14,8 @@ ENV_VAR_MAP = {
     "provider": "XR_PROVIDER",
     "review_plan_provider": "XR_REVIEW_PLAN_PROVIDER",
     "review_plan_model": "XR_REVIEW_PLAN_MODEL",
+    "review_plan_writer_provider": "XR_REVIEW_PLAN_WRITER_PROVIDER",
+    "review_plan_writer_model": "XR_REVIEW_PLAN_WRITER_MODEL",
     "openai_api_key": "OPENAI_API_KEY",
     "deepseek_api_key": "DEEPSEEK_API_KEY",
     "deepseek_model": "XR_DEEPSEEK_MODEL",
@@ -34,6 +36,8 @@ DEFAULTS = {
     "provider": "deepseek",
     "review_plan_provider": "",
     "review_plan_model": "",
+    "review_plan_writer_provider": "deepseek",
+    "review_plan_writer_model": "",
     "xhs_base_url": "https://ark.xiaohongshu.com",
     "qwen_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "vision_provider": "qwen",
@@ -102,6 +106,8 @@ def get_runtime_config() -> dict:
     cfg["provider"] = normalize_chat_provider(cfg.get("provider"))
     cfg["review_plan_provider"] = normalize_optional_chat_provider(cfg.get("review_plan_provider"))
     cfg["review_plan_model"] = str(cfg.get("review_plan_model") or "").strip()
+    cfg["review_plan_writer_provider"] = normalize_chat_provider(cfg.get("review_plan_writer_provider") or "deepseek")
+    cfg["review_plan_writer_model"] = str(cfg.get("review_plan_writer_model") or "").strip()
     cfg["vision_provider"] = normalize_vision_provider(cfg.get("vision_provider"))
     return cfg
 
@@ -125,4 +131,20 @@ def resolve_review_plan_model(cfg: Optional[dict] = None, provider: object = "")
     if model:
         return model
     provider_name = normalize_chat_provider(provider or resolve_review_plan_provider(runtime))
+    return chat_model_for_provider(provider_name, runtime)
+
+
+def resolve_review_plan_writer_provider(cfg: Optional[dict] = None) -> str:
+    runtime = cfg or get_runtime_config()
+    return normalize_chat_provider(runtime.get("review_plan_writer_provider") or "deepseek")
+
+
+def resolve_review_plan_writer_model(cfg: Optional[dict] = None, provider: object = "") -> str:
+    runtime = cfg or get_runtime_config()
+    model = str(runtime.get("review_plan_writer_model") or "").strip()
+    if model:
+        return model
+    provider_name = normalize_chat_provider(provider or resolve_review_plan_writer_provider(runtime))
+    if provider_name == "deepseek":
+        return "deepseek-v4-pro"
     return chat_model_for_provider(provider_name, runtime)

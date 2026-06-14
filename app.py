@@ -35,6 +35,8 @@ from config_runtime import (
     normalize_chat_provider,
     resolve_review_plan_model,
     resolve_review_plan_provider,
+    resolve_review_plan_writer_model,
+    resolve_review_plan_writer_provider,
     write_file_config,
 )
 import ai_processor
@@ -292,6 +294,15 @@ def _review_plan_ai_provider_name() -> str:
 def _review_plan_chat_model_name() -> str:
     provider = _review_plan_ai_provider_name()
     return resolve_review_plan_model(get_config(), provider=provider)
+
+
+def _review_plan_writer_ai_provider_name() -> str:
+    return resolve_review_plan_writer_provider(get_config())
+
+
+def _review_plan_writer_chat_model_name() -> str:
+    provider = _review_plan_writer_ai_provider_name()
+    return resolve_review_plan_writer_model(get_config(), provider=provider)
 
 
 def _normalize_ai_usage_payload(usage: object, *, provider: str, model: str) -> dict:
@@ -1602,24 +1613,22 @@ def _start_monthly_plan_generation_thread(**job_kwargs) -> None:
     ).start()
 
 
-def has_api_key():
+def _has_api_key_for_provider(provider: str) -> bool:
     cfg = get_config()
-    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
     else:
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     return bool(key.strip())
+
+
+def has_api_key():
+    return _has_api_key_for_provider(_default_ai_provider_name())
 
 
 def has_review_plan_api_key():
-    cfg = get_config()
-    provider = _review_plan_ai_provider_name()
-    if provider == "deepseek":
-        key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
-    else:
-        key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
-    return bool(key.strip())
+    providers = {_review_plan_ai_provider_name(), _review_plan_writer_ai_provider_name()}
+    return all(_has_api_key_for_provider(provider) for provider in providers)
 
 
 def _extract_field(text, field):
@@ -7953,6 +7962,8 @@ def api_settings_get():
         "provider": cfg.get("provider", "deepseek"),
         "review_plan_provider": cfg.get("review_plan_provider", ""),
         "review_plan_model": cfg.get("review_plan_model", ""),
+        "review_plan_writer_provider": cfg.get("review_plan_writer_provider", "deepseek"),
+        "review_plan_writer_model": cfg.get("review_plan_writer_model", ""),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
         "deepseek_set": bool(cfg.get("deepseek_api_key")),
@@ -7978,6 +7989,10 @@ def api_settings_save():
         cfg["review_plan_provider"] = normalize_chat_provider(data["review_plan_provider"]) if str(data["review_plan_provider"] or "").strip() else ""
     if "review_plan_model" in data and "review_plan_model" not in controlled_keys:
         cfg["review_plan_model"] = str(data["review_plan_model"] or "").strip()
+    if "review_plan_writer_provider" in data and "review_plan_writer_provider" not in controlled_keys:
+        cfg["review_plan_writer_provider"] = normalize_chat_provider(data["review_plan_writer_provider"] or "deepseek")
+    if "review_plan_writer_model" in data and "review_plan_writer_model" not in controlled_keys:
+        cfg["review_plan_writer_model"] = str(data["review_plan_writer_model"] or "").strip()
     for key in ("openai_api_key", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
