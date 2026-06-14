@@ -27,7 +27,13 @@ from typing import Optional, Set
 from flask import Flask, abort, redirect, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from config_runtime import env_controlled_keys, get_runtime_config, load_file_config, write_file_config
+from config_runtime import (
+    env_controlled_keys,
+    get_runtime_config,
+    load_file_config,
+    normalize_chat_provider,
+    write_file_config,
+)
 import ai_processor
 import pdf_engine
 
@@ -269,7 +275,7 @@ def get_config():
 
 
 def _default_ai_provider_name() -> str:
-    return str(get_config().get("provider", "deepseek") or "deepseek")
+    return normalize_chat_provider(get_config().get("provider", "deepseek"))
 
 
 def _default_chat_model_name() -> str:
@@ -277,8 +283,6 @@ def _default_chat_model_name() -> str:
     provider = _default_ai_provider_name()
     if provider == "deepseek":
         return str(cfg.get("deepseek_model", "deepseek-v4-pro") or "deepseek-v4-pro")
-    if provider == "mimo":
-        return str(cfg.get("mimo_model", "MiMo-7B-RL") or "MiMo-7B-RL")
     return "gpt-4o"
 
 
@@ -1592,11 +1596,9 @@ def _start_monthly_plan_generation_thread(**job_kwargs) -> None:
 
 def has_api_key():
     cfg = get_config()
-    provider = cfg.get("provider", "deepseek")
+    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
-    elif provider == "mimo":
-        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
     else:
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     return bool(key.strip())
@@ -7198,9 +7200,6 @@ def api_settings_get():
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
         "deepseek_set": bool(cfg.get("deepseek_api_key")),
         "deepseek_masked": _mask(cfg.get("deepseek_api_key", "")),
-        "mimo_set": bool(cfg.get("mimo_api_key")),
-        "mimo_masked": _mask(cfg.get("mimo_api_key", "")),
-        "mimo_base_url": cfg.get("mimo_base_url", ""),
         "qwen_set": bool(cfg.get("qwen_api_key")),
         "qwen_masked": _mask(cfg.get("qwen_api_key", "")),
         "qwen_base_url": cfg.get("qwen_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -7217,8 +7216,8 @@ def api_settings_save():
     data = request.json or {}
     controlled_keys = env_controlled_keys()
     if "provider" in data and "provider" not in controlled_keys:
-        cfg["provider"] = data["provider"].strip()
-    for key in ("openai_api_key", "deepseek_api_key", "mimo_api_key", "mimo_base_url", "qwen_api_key", "qwen_base_url"):
+        cfg["provider"] = normalize_chat_provider(data["provider"])
+    for key in ("openai_api_key", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
     write_file_config(cfg)

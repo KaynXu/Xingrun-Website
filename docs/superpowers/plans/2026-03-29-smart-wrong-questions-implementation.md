@@ -299,9 +299,6 @@ ENV_VAR_MAP = {
     'provider': 'XR_PROVIDER',
     'openai_api_key': 'OPENAI_API_KEY',
     'deepseek_api_key': 'DEEPSEEK_API_KEY',
-    'mimo_api_key': 'XR_MIMO_API_KEY',
-    'mimo_base_url': 'XR_MIMO_BASE_URL',
-    'mimo_model': 'XR_MIMO_MODEL',
     'qwen_api_key': 'DASHSCOPE_API_KEY',
     'qwen_base_url': 'XR_QWEN_BASE_URL',
     'vision_model': 'XR_VISION_MODEL',
@@ -313,7 +310,6 @@ ENV_VAR_MAP = {
 
 DEFAULTS = {
     'provider': 'openai',
-    'mimo_model': 'MiMo-7B-RL',
     'qwen_base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     'vision_model': 'qwen-vl-max-latest',
     'deepseek_model': 'deepseek-chat',

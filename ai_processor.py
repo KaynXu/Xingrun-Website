@@ -18,7 +18,7 @@ import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from config_runtime import get_runtime_config
+from config_runtime import get_runtime_config, normalize_chat_provider, normalize_vision_provider
 from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
 
 # ─── 配置加载 ──────────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ def _load_config() -> dict:
 
 
 def _provider_name() -> str:
-    return str(_load_config().get("provider", "deepseek") or "deepseek")
+    return normalize_chat_provider(_load_config().get("provider", "deepseek"))
 
 
 def _usage_dict(response, *, provider: str | None = None, model_fallback: str = "") -> dict:
@@ -44,7 +44,7 @@ def _get_client():
     """返回当前配置的 AI 服务商客户端（兼容 OpenAI SDK）。"""
     from openai import OpenAI
     cfg = _load_config()
-    provider = cfg.get("provider", "deepseek")
+    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
 
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
@@ -52,45 +52,26 @@ def _get_client():
             raise RuntimeError("未找到 DeepSeek API Key，请在设置页面配置。")
         return OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
 
-    elif provider == "mimo":
-        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
-        base_url = cfg.get("mimo_base_url", "").strip()
-        if not key:
-            raise RuntimeError("未找到 MiMo API Key，请在设置页面配置。")
-        if not base_url:
-            raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
-        return OpenAI(api_key=key, base_url=base_url)
-
-    else:  # openai（默认）
-        key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
-        if not key:
-            raise RuntimeError(
-                "未找到 OpenAI API Key。\n"
-                "请在设置页面配置 openai_api_key，"
-                "或设置环境变量 OPENAI_API_KEY。"
-            )
-        return OpenAI(api_key=key)
+    key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        raise RuntimeError(
+            "未找到 OpenAI API Key。\n"
+            "请在设置页面配置 openai_api_key，"
+            "或设置环境变量 OPENAI_API_KEY。"
+        )
+    return OpenAI(api_key=key)
 
 
 def _get_vision_client():
     from openai import OpenAI
     cfg = _load_config()
-    provider = str(cfg.get("vision_provider") or "qwen").strip() or "qwen"
+    provider = normalize_vision_provider(cfg.get("vision_provider") or "qwen")
 
     if provider == "openai":
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
         if not key:
             raise RuntimeError("未找到 OpenAI API Key，请在设置页面配置。")
         return OpenAI(api_key=key)
-
-    if provider == "mimo":
-        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
-        base_url = cfg.get("mimo_base_url", "").strip()
-        if not key:
-            raise RuntimeError("未找到 MiMo API Key，请在设置页面配置。")
-        if not base_url:
-            raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
-        return OpenAI(api_key=key, base_url=base_url)
 
     if provider == "qwen":
         key = cfg.get("qwen_api_key", "") or os.environ.get("DASHSCOPE_API_KEY", "")
@@ -105,11 +86,9 @@ def _get_vision_client():
 def _get_chat_model() -> str:
     """返回当前服务商对应的对话模型名称。"""
     cfg = _load_config()
-    provider = cfg.get("provider", "deepseek")
+    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
     if provider == "deepseek":
         return cfg.get("deepseek_model", "deepseek-v4-pro")
-    elif provider == "mimo":
-        return cfg.get("mimo_model", "MiMo-7B-RL")
     return "gpt-4o"
 
 
