@@ -107,6 +107,17 @@ Final prompt composition must follow this order:
 
 Do not reassemble the teacher prompt files into one super prompt.
 
+## Desktop Prompt Migration
+
+The repo-managed prompt packs now absorb the previously external desktop workflow files from `/Users/xiaodi/Desktop/星润复习计划工作流`:
+
+- `物理.md`: migrated into `prompts/subjects/physics.yaml`, `prompts/styles/review_plan_style.yaml`, `prompts/rubrics/review-plan-quality.yaml`, and shared rules in `prompts/nodes/task-generator.md`.
+- `数学/崔老师.md` and `数学/华老师.md`: merged into `prompts/subjects/math.yaml` and shared rules in `prompts/nodes/task-generator.md`.
+- `雅思.md`: migrated into `prompts/subjects/ielts.yaml`, focused on IELTS Reading strategy, matching/fill/true-false-not-given logic, and error-type review.
+- `数学/崔老师.py`: kept as historical renderer/reference material. Reusable prompt rules were migrated, but executable renderer code is not imported into the workflow package.
+
+New teacher-specific prompt material should be decomposed into system prompt, node prompt, subject pack, style config, rubric, or tests. Do not copy a full desktop prompt into one large system prompt.
+
 ## Trace and Debugging
 
 Each generation run receives a `trace_id`. The `review_plan_runs` table stores:
