@@ -4180,7 +4180,23 @@ def save_review_plan_run(
     quality_review_json = _dump_review_plan_run_json(quality_review, {})
     node_outputs_json = _dump_review_plan_run_json(node_outputs, {})
     logs_json = _dump_review_plan_run_json(logs, [])
+    normalized_status = str(status or "running")
     with get_conn() as conn:
+        if normalized_status == "running":
+            conn.execute(
+                """
+                UPDATE review_plan_runs
+                SET status='interrupted',
+                    updated_at=datetime('now','localtime')
+                WHERE lesson_id=?
+                  AND trace_id<>?
+                  AND status='running'
+                """,
+                (
+                    int(lesson_id),
+                    str(trace_id or ""),
+                ),
+            )
         existing = conn.execute(
             "SELECT id FROM review_plan_runs WHERE trace_id=?",
             (str(trace_id or ""),),
@@ -4198,7 +4214,7 @@ def save_review_plan_run(
                 (
                     int(lesson_id),
                     int(organization_id),
-                    str(status or "running"),
+                    normalized_status,
                     str(subject or ""),
                     str(provider or ""),
                     str(model or ""),
@@ -4226,7 +4242,7 @@ def save_review_plan_run(
                 int(lesson_id),
                 int(organization_id),
                 str(trace_id or ""),
-                str(status or "running"),
+                normalized_status,
                 str(subject or ""),
                 str(provider or ""),
                 str(model or ""),
