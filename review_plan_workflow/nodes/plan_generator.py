@@ -4,6 +4,7 @@ import json
 from datetime import date
 from typing import Any
 
+from config_runtime import resolve_review_plan_writer_model, resolve_review_plan_writer_provider
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.llm.client import generate_review_plan_json, merge_usage
 from review_plan_workflow.schemas import PromptBundle, ReviewPlanInput, validate_final_review_plan
@@ -77,20 +78,42 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
     usage: dict[str, Any] = {}
     parse_error = ""
     errors: list[str] = []
+    writer_provider = resolve_review_plan_writer_provider()
+    writer_model = resolve_review_plan_writer_model(provider=writer_provider)
+    context.node_outputs["plan_generator_model_config"] = {
+        "provider": writer_provider,
+        "model": writer_model,
+    }
 
     try:
         plan, usage = generate_review_plan_json(
             system_prompt=prompt_bundle.prompt,
             user_message=user_message,
-            provider=context.provider,
-            model=context.model,
+            provider=writer_provider,
+            model=writer_model,
         )
         _apply_lesson_date(plan, review_input)
         errors = _schema_errors(plan)
-        attempts.append({"attempt": 1, "stage": "generate", "schema_errors": errors})
+        attempts.append(
+            {
+                "attempt": 1,
+                "stage": "generate",
+                "provider": writer_provider,
+                "model": writer_model,
+                "schema_errors": errors,
+            }
+        )
     except ValueError as exc:
         parse_error = str(exc)
-        attempts.append({"attempt": 1, "stage": "generate", "error": parse_error})
+        attempts.append(
+            {
+                "attempt": 1,
+                "stage": "generate",
+                "provider": writer_provider,
+                "model": writer_model,
+                "error": parse_error,
+            }
+        )
 
     if parse_error or errors:
         context.add_warning(
@@ -108,18 +131,34 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
                     errors=errors,
                     parse_error=parse_error,
                 ),
-                provider=context.provider,
-                model=context.model,
+                provider=writer_provider,
+                model=writer_model,
             )
             plan = _apply_lesson_date(repaired, review_input)
             usage = merge_usage(usage, repair_usage)
             repair_errors = _schema_errors(plan)
-            attempts.append({"attempt": 2, "stage": "schema_repair", "schema_errors": repair_errors})
+            attempts.append(
+                {
+                    "attempt": 2,
+                    "stage": "schema_repair",
+                    "provider": writer_provider,
+                    "model": writer_model,
+                    "schema_errors": repair_errors,
+                }
+            )
         except Exception as exc:
             if plan is None:
                 raise
             repair_errors = errors
-            attempts.append({"attempt": 2, "stage": "schema_repair", "error": str(exc)})
+            attempts.append(
+                {
+                    "attempt": 2,
+                    "stage": "schema_repair",
+                    "provider": writer_provider,
+                    "model": writer_model,
+                    "error": str(exc),
+                }
+            )
         if repair_errors:
             context.add_warning(
                 "plan_generator_schema_repair_failed",

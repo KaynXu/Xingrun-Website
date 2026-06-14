@@ -463,7 +463,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
         mock_generate_plan_json.return_value = (
             expected_plan,
-            {"provider": "openai", "model": "gpt-4o", "input_tokens": 1, "output_tokens": 1},
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 1, "output_tokens": 1},
         )
 
         app_module._run_review_plan_generation_job(
@@ -480,8 +480,8 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(mock_run_with_charge.call_args.kwargs["source_record_id"], lesson_id)
         mock_generate_plan_json.assert_called_once()
         generation_kwargs = mock_generate_plan_json.call_args.kwargs
-        self.assertEqual(generation_kwargs["provider"], "openai")
-        self.assertEqual(generation_kwargs["model"], "gpt-4o")
+        self.assertEqual(generation_kwargs["provider"], "deepseek")
+        self.assertEqual(generation_kwargs["model"], "deepseek-v4-pro")
         self.assertIn("课堂总结文本", generation_kwargs["user_message"])
         self.assertIn("本节课主题：一次函数", generation_kwargs["user_message"])
         mock_generate_pdf.assert_called_once()
