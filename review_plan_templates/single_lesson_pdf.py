@@ -132,9 +132,42 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         elif text:
             tasks.append(text)
 
+    for field in ("goal", "focus"):
+        text = _clean_text(day_data.get(field))
+        if text and text not in tasks:
+            tasks.append(text)
+
+    active_recall = day_data.get("active_recall")
+    if isinstance(active_recall, dict):
+        for field in ("instructions", "expected"):
+            text = _clean_text(active_recall.get(field))
+            if text and text not in tasks:
+                tasks.append(text)
+    elif isinstance(active_recall, str):
+        text = _clean_text(active_recall)
+        if text and text not in tasks:
+            tasks.append(text)
+
+    for blank in day_data.get("blanks", []) if isinstance(day_data.get("blanks"), list) else []:
+        if isinstance(blank, dict):
+            text = _clean_text(blank.get("text"))
+            answer = _clean_text(blank.get("answer"), "见课堂笔记")
+        elif isinstance(blank, (list, tuple)) and blank:
+            text = _clean_text(blank[0])
+            answer = _clean_text(blank[1] if len(blank) > 1 else "", "见课堂笔记")
+        else:
+            text = _clean_text(blank)
+            answer = "见课堂笔记"
+        if text:
+            blanks.append((text, answer))
+
     phrase = _clean_text(day_data.get("self_test_phrase"))
     if phrase:
         tasks.append(phrase)
+    elif isinstance(active_recall, dict):
+        phrase = _clean_text(active_recall.get("expected") or active_recall.get("instructions"))
+        if phrase:
+            tasks.append(phrase)
 
     task_values = tasks[:4] or [f"完整复习{topic or '本课内容'}并复述关键方法。"]
     blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
@@ -143,7 +176,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
     for choice in day_data.get("choices", []) if isinstance(day_data.get("choices"), list) else []:
         if not isinstance(choice, dict):
             continue
-        question = _clean_text(choice.get("question"))
+        question = _clean_text(choice.get("question") or choice.get("stem"))
         options = _dedupe_clean_lines(choice.get("options"))
         answer = _clean_text(choice.get("answer"), "A")
         if question and options:
@@ -158,7 +191,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
     return {
         "offset": day_number,
         "day": f"第{day_number}天",
-        "focus": _clean_text(day_data.get("theme") or day_data.get("label"), f"聚焦复习{topic or '本课内容'}"),
+        "focus": _clean_text(day_data.get("focus") or day_data.get("theme") or day_data.get("label"), f"聚焦复习{topic or '本课内容'}"),
         "goal": f"完整回顾{topic or '本课内容'}，并复述关键方法与易错点。",
         "tasks": task_values,
         "blanks": blank_values,

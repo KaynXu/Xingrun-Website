@@ -14,7 +14,7 @@ import config_runtime
 import lesson_manager
 from app import app
 from demo_plan import DEMO_PLAN
-from tests.review_plan_test_utils import valid_single_lesson_plan
+from tests.review_plan_test_utils import valid_single_lesson_plan, writer_style_single_lesson_plan
 
 
 class SingleLessonPdfUnificationTestCase(unittest.TestCase):
@@ -151,6 +151,17 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertIn("第1天", knowledge_sections)
         self.assertEqual(knowledge_sections["第1天"][0]["title"], "线面角动作链")
 
+    def test_adapt_plan_to_review_template_accepts_writer_style_plan(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        lesson, days, reminders = adapt_plan_to_review_template(writer_style_single_lesson_plan())
+
+        self.assertEqual(lesson["title"], "分式方程入门复习计划")
+        self.assertEqual(days[0]["focus"], "定义、步骤、检验。")
+        self.assertEqual(days[0]["blanks"][0], ("分式方程去分母后化为______方程。", "整式"))
+        self.assertEqual(days[0]["choices"][0]["question"], "下列哪一步最容易产生增根？")
+        self.assertTrue(reminders)
+
     def test_quote_replay_text_uses_day_quotes_instead_of_static_copy(self):
         from review_plan_templates.generate_review_pdfs import build_labels, build_quote_replay_text
 
@@ -183,7 +194,7 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
     def test_api_lessons_uses_review_template_generator(self):
         token = self.owner_token()
 
-        with patch("app.has_api_key", return_value=True), \
+        with patch("app.has_review_plan_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app._start_review_plan_generation_thread") as start_thread:
 
