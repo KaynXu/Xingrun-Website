@@ -4,8 +4,8 @@
   "date_end_exclusive": "2026-06-15",
   "generated_at": "2026-06-14T18:58:41",
   "source_db": "/tmp/xingrun-prod-20260614-he-shujian.db",
-  "output_dir": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614",
-  "zip_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614.zip",
+  "output_dir": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614",
+  "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614.zip",
   "layout": "original-image-analysis-method-reminder-guidance-redo",
   "total_question_count": 16,
   "student_counts": {
@@ -27,7 +27,7 @@
       "dates": [
         "2026-06-14"
       ],
-      "pdf_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·1v1·初2025级·七年级·张一丹-陈采薪-6月14日错题练习分析引导版-20260614-20260614.pdf"
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·1v1·初2025级·七年级·张一丹-陈采薪-6月14日错题练习分析引导版-20260614-20260614.pdf"
     },
     {
       "student_name": "张琨旎",
@@ -36,7 +36,7 @@
       "dates": [
         "2026-06-14"
       ],
-      "pdf_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·4班-张琨旎-6月14日错题练习分析引导版-20260614-20260614.pdf"
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·4班-张琨旎-6月14日错题练习分析引导版-20260614-20260614.pdf"
     },
     {
       "student_name": "彭栎玮",
@@ -45,7 +45,7 @@
       "dates": [
         "2026-06-13"
       ],
-      "pdf_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·4班-彭栎玮-6月13日错题练习分析引导版-20260613-20260613.pdf"
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·4班-彭栎玮-6月13日错题练习分析引导版-20260613-20260613.pdf"
     },
     {
       "student_name": "王睿博",
@@ -54,7 +54,7 @@
       "dates": [
         "2026-06-13"
       ],
-      "pdf_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·5班-王睿博-6月13日错题练习分析引导版-20260613-20260613.pdf"
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·5班-王睿博-6月13日错题练习分析引导版-20260613-20260613.pdf"
     },
     {
       "student_name": "邹欣彤",
@@ -63,7 +63,7 @@
       "dates": [
         "2026-06-13"
       ],
-      "pdf_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·5班-邹欣彤-6月13日错题练习分析引导版-20260613-20260613.pdf"
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/数学·初2025级·七年级·5班-邹欣彤-6月13日错题练习分析引导版-20260613-20260613.pdf"
     }
   ],
   "items": [
@@ -81,7 +81,7 @@
       "primary_error_type": "审题问题",
       "secondary_error_summary": "忽视题目条件与例题的差异，直接套用旧方法。",
       "image_url": "https://xingrun.online/files/1781334739803-ts2riv8ocl.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/01-wechat-362bfe365747971a.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/01-wechat-362bfe365747971a.jpg",
       "image_size": [
         1393,
         1022
@@ -114,7 +114,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "未动手，需检查对新定义的理解和解题思路。",
       "image_url": "https://xingrun.online/files/1781334740245-mlv1c6o76ia.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/02-wechat-cfef67ab2cf9d033.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/02-wechat-cfef67ab2cf9d033.jpg",
       "image_size": [
         951,
         667
@@ -147,7 +147,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "倒角逻辑混乱，未正确利用折叠和角度关系。",
       "image_url": "https://xingrun.online/files/1781334740763-9za90oh8n7r.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/03-wechat-c3d9666f6e7a2a2c.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/03-wechat-c3d9666f6e7a2a2c.jpg",
       "image_size": [
         1034,
         601
@@ -180,7 +180,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "角度推导不完整，未能利用旋转和翻折性质进行导角。",
       "image_url": "https://xingrun.online/files/1781353379234-ldd9zzp2ho.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/04-wechat-e5b005d3db060704.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/04-wechat-e5b005d3db060704.jpg",
       "image_size": [
         1124,
         764
@@ -213,7 +213,7 @@
       "primary_error_type": "审题问题",
       "secondary_error_summary": "可能忽略了∠ACB+∠D=90°或中点H的使用条件",
       "image_url": "https://xingrun.online/files/1781353379690-pemtbhknut9.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/05-wechat-eb185b7cfac3bd77.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/05-wechat-eb185b7cfac3bd77.jpg",
       "image_size": [
         1115,
         739
@@ -246,7 +246,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "未形成解题策略，对等边三角形全等模型不熟悉。",
       "image_url": "https://xingrun.online/files/1781354996902-1dx682l7hht.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/06-wechat-47938f30ffe08842.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/06-wechat-47938f30ffe08842.jpg",
       "image_size": [
         1382,
         1022
@@ -279,7 +279,7 @@
       "primary_error_type": "知识点问题",
       "secondary_error_summary": "新定义运算与整式系数和概念不清晰，无法应用。",
       "image_url": "https://xingrun.online/files/1781354997371-et3vtov0ebr.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/07-wechat-e42ca199a6ade87d.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/07-wechat-e42ca199a6ade87d.jpg",
       "image_size": [
         1177,
         958
@@ -312,7 +312,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "没有利用线段比与面积比的关系，可能未构造辅助线或应用梅涅劳斯定理。",
       "image_url": "https://xingrun.online/files/1781354997780-9jg8uymc52n.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/08-wechat-470351621746e0d3.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/08-wechat-470351621746e0d3.jpg",
       "image_size": [
         1138,
         720
@@ -345,7 +345,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "不能将折叠对称性与角度计算结合，不知道如何设未知数列方程。",
       "image_url": "https://xingrun.online/files/1781354998276-ekr8wufqd68.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/09-wechat-c7fa55d3a6d5cce9.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/09-wechat-c7fa55d3a6d5cce9.jpg",
       "image_size": [
         1227,
         859
@@ -378,7 +378,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "辅助线设计不当，试图用补角余角但未正确关联已知条件。",
       "image_url": "https://xingrun.online/files/1781407383238-l5gbvgycrv.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/10-wechat-e7dbc468b7e7a634.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/10-wechat-e7dbc468b7e7a634.jpg",
       "image_size": [
         1216,
         214
@@ -411,7 +411,7 @@
       "primary_error_type": "知识点问题",
       "secondary_error_summary": "缺乏配套问题建模经验，未掌握列方程的基本方法。",
       "image_url": "https://xingrun.online/files/1781423266787-hoezb78hbhc.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/11-wechat-5c7d804bfb5a55ef.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/11-wechat-5c7d804bfb5a55ef.jpg",
       "image_size": [
         606,
         188
@@ -444,7 +444,7 @@
       "primary_error_type": "知识点问题",
       "secondary_error_summary": "扇形面积公式或几何概率基本思路未掌握。",
       "image_url": "https://xingrun.online/files/1781423267110-79nv1rn5hnt.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/12-wechat-153bcdb24f77b4aa.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/12-wechat-153bcdb24f77b4aa.jpg",
       "image_size": [
         613,
         250
@@ -477,7 +477,7 @@
       "primary_error_type": "知识点问题",
       "secondary_error_summary": "缺乏对含参方程解的情况的判断方法。",
       "image_url": "https://xingrun.online/files/1781423267379-9ygwlbcfo0t.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/13-wechat-82d56823d4264b49.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/13-wechat-82d56823d4264b49.jpg",
       "image_size": [
         594,
         128
@@ -510,7 +510,7 @@
       "primary_error_type": "知识点问题",
       "secondary_error_summary": "对面积比例、角平分线性质、相似三角形等知识点不熟悉。",
       "image_url": "https://xingrun.online/files/1781423267624-d8omeziun3o.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/14-wechat-691d2d80a09e7b94.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/14-wechat-691d2d80a09e7b94.jpg",
       "image_size": [
         627,
         411
@@ -543,7 +543,7 @@
       "primary_error_type": "方法问题",
       "secondary_error_summary": "缺乏解题策略，不知如何利用垂直平分线、等腰三角形等条件。",
       "image_url": "https://xingrun.online/files/1781423267870-5mzr5qaaqfa.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/15-wechat-7e65eafabc82cd9c.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/15-wechat-7e65eafabc82cd9c.jpg",
       "image_size": [
         593,
         343
@@ -576,7 +576,7 @@
       "primary_error_type": "知识点问题",
       "secondary_error_summary": "可能缺乏几何变换、最值模型或代数化思想。",
       "image_url": "https://xingrun.online/files/1781423268167-s4956gcuthq.jpg",
-      "local_image_path": "/private/tmp/xingrun-he-shujian-0613-0614-pdf/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/16-wechat-943c464fc51d6664.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/何姝健-6月13日6月14日错题练习分析引导版PDF-20260613-20260614/images/original/16-wechat-943c464fc51d6664.jpg",
       "image_size": [
         606,
         470
