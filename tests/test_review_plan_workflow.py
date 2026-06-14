@@ -13,8 +13,9 @@ import lesson_manager
 import app as app_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
+from review_plan_workflow.schemas import validate_final_review_plan
 from review_plan_workflow.service import generate_single_lesson_review_plan
-from tests.review_plan_test_utils import valid_single_lesson_plan
+from tests.review_plan_test_utils import valid_single_lesson_plan, writer_style_single_lesson_plan
 
 
 class ReviewPlanWorkflowTestCase(unittest.TestCase):
@@ -79,6 +80,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertTrue(review.must_revise)
         self.assertTrue(any(issue.category == "schema" for issue in review.issues))
 
+    def test_validate_final_review_plan_accepts_writer_style_day_shape(self):
+        plan, errors = validate_final_review_plan(writer_style_single_lesson_plan())
+        self.assertIsNotNone(plan)
+        self.assertEqual(errors, [])
+
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
         plan = valid_single_lesson_plan(subject="物理", topic="电路")
@@ -112,7 +118,10 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, plan)
+        self.assertEqual(generated["lesson_info"]["topic"], "电路")
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(generated["weak_points_summary"], plan["weak_points_summary"])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(generated_usage, usage)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIsNotNone(run)
@@ -161,7 +170,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, plan)
+        self.assertEqual(generated["lesson_info"]["topic"], "一次函数")
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(usage["model"], "deepseek-v4-pro")
         mock_generate_plan.assert_called_once()
         self.assertEqual(mock_generate_plan.call_args.kwargs["provider"], "deepseek")
@@ -192,7 +203,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, valid_plan)
+        self.assertEqual(generated["lesson_info"]["topic"], "一次函数")
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(usage["input_tokens"], 8)
         self.assertEqual(usage["output_tokens"], 10)
         self.assertEqual(mock_generate_plan.call_count, 2)
@@ -217,10 +230,49 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, valid_plan)
+        self.assertEqual(generated["lesson_info"]["topic"], "一次函数")
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(usage["input_tokens"], 5)
         self.assertEqual(usage["output_tokens"], 6)
         self.assertEqual(mock_generate_plan.call_count, 2)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_normalizes_writer_style_output_without_schema_warning(self, mock_generate_plan):
+        mock_generate_plan.return_value = (
+            writer_style_single_lesson_plan(),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-14",
+            subject="数学",
+            grade="九年级",
+            topic="分式方程入门",
+            summary="课堂总结文本",
+            weak_points="基础计算、步骤表达",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="九年级",
+            topic="分式方程入门",
+            weak_points="基础计算、步骤表达",
+            lesson_date="2026-06-14",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], "基础计算；步骤表达")
+        self.assertEqual(generated["days"][0]["items"][0]["text"], "回顾分式方程的定义、去分母和增根检验。")
+        self.assertEqual(generated["days"][0]["choices"][0]["question"], "下列哪一步最容易产生增根？")
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["warnings"], [])
+        self.assertTrue(run["quality_review"]["passed"])
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")

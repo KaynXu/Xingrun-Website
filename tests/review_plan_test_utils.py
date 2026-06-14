@@ -21,3 +21,41 @@ def valid_single_lesson_plan(*, subject: str = "数学", topic: str = "一次函
     else:
         plan["weak_points_summary"] = "学生需要巩固题型入口、解题步骤、公式和错因复盘。"
     return plan
+
+
+def writer_style_single_lesson_plan() -> dict:
+    return {
+        "lesson_info": {
+            "date": "2026-06-14",
+            "topic": "分式方程入门",
+            "grade": "九年级",
+            "weak_points": ["基础计算", "步骤表达"],
+        },
+        "days": [
+            {
+                "day": day,
+                "date": f"2026-06-{date_part:02d}",
+                "time_minutes": 30,
+                "title": f"第{day}天复习",
+                "goal": "回顾分式方程的定义、去分母和增根检验。",
+                "focus": "定义、步骤、检验。",
+                "blanks": [
+                    {"text": "分式方程去分母后化为______方程。", "answer": "整式"},
+                    {"text": "解完后必须进行______。", "answer": "检验"},
+                ],
+                "choices": [
+                    {
+                        "stem": "下列哪一步最容易产生增根？",
+                        "options": ["A. 去分母", "B. 抄题", "C. 排版", "D. 口算"],
+                        "answer": "A",
+                    }
+                ],
+                "active_recall": {
+                    "instructions": "口述解分式方程的完整四步链条。",
+                    "expected": "去分母、解整式、检验、写最终答案。",
+                },
+                "completion_standard": "能完整复述四步解法并说明为什么要检验。",
+            }
+            for day, date_part in ((1, 15), (2, 16), (7, 21), (14, 28), (30, 14))
+        ],
+    }

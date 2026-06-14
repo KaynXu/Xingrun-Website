@@ -7,7 +7,7 @@ from typing import Any
 from config_runtime import resolve_review_plan_writer_model, resolve_review_plan_writer_provider
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.llm.client import generate_review_plan_json, merge_usage
-from review_plan_workflow.schemas import PromptBundle, ReviewPlanInput, validate_final_review_plan
+from review_plan_workflow.schemas import PromptBundle, ReviewPlanInput, normalize_final_review_plan, validate_final_review_plan
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -45,6 +45,10 @@ def _apply_lesson_date(plan: dict[str, Any], review_input: ReviewPlanInput) -> d
 def _schema_errors(plan: dict[str, Any]) -> list[str]:
     _, errors = validate_final_review_plan(plan)
     return errors
+
+
+def _normalize_plan(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
+    return _apply_lesson_date(normalize_final_review_plan(plan), review_input)
 
 
 def _repair_message(
@@ -92,7 +96,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
             provider=writer_provider,
             model=writer_model,
         )
-        _apply_lesson_date(plan, review_input)
+        plan = _normalize_plan(plan, review_input)
         errors = _schema_errors(plan)
         attempts.append(
             {
@@ -116,11 +120,6 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
         )
 
     if parse_error or errors:
-        context.add_warning(
-            "plan_generator_schema_repair_retry",
-            "计划生成结果未通过 JSON/schema 检查，已触发一次结构修复重试。",
-            "medium",
-        )
         try:
             repaired, repair_usage = generate_review_plan_json(
                 system_prompt=prompt_bundle.prompt
@@ -134,7 +133,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
                 provider=writer_provider,
                 model=writer_model,
             )
-            plan = _apply_lesson_date(repaired, review_input)
+            plan = _normalize_plan(repaired, review_input)
             usage = merge_usage(usage, repair_usage)
             repair_errors = _schema_errors(plan)
             attempts.append(
@@ -165,6 +164,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
                 "结构修复后仍未完全通过 schema，后续质量门禁将继续处理。",
                 "high",
             )
+        else:
+            context.node_outputs["plan_generator_schema_repaired"] = True
 
     context.node_outputs["plan_generator_attempts"] = attempts
     if plan is None:
