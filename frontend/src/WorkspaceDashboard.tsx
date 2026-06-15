@@ -292,8 +292,8 @@ function MemberWorkspace({
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-5">
-          <div className="flex items-center gap-4">
-            <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
               <DashboardGreeting currentUser={currentUser} label="工作台" detail="今天的记录和入口都在这里。" />
               <div className="mt-2">
                 <DashboardFetchState loading={loading} error={error} />
@@ -464,8 +464,8 @@ function PlatformWorkspace({
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-5">
-          <div className="flex items-center gap-4">
-            <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
               <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="random-platform-motto" />
               <div className="mt-2 min-h-5">
                 <DashboardFetchState loading={loading} error={error} />
@@ -669,8 +669,8 @@ function OrganizationWorkspace({
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-5">
-          <div className="flex items-center gap-4">
-            <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
               <DashboardGreeting currentUser={currentUser} label="机构工作台" detail="机构今天的记录和入口。" />
               <div className="mt-2">
                 <DashboardFetchState loading={loading} error={error} />
