@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-16 已移除学管中心标题上方的机构名：`frontend/src/features/student-center/StudentCenterPage.tsx` 不再在“学管中心”上方单独显示 `currentUser.organization_name`，页面顶部只保留主标题。当前轮 proof 已通过：临时脚本 [proof_student_center_remove_org_name_20260616.sh](/tmp/proof_student_center_remove_org_name_20260616.sh) 已确认源码中这行机构名不存在，并跑通 `frontend npm run lint`。
 - 2026-06-16 已把学管中心班级列表里的学科 badge 改成按学科区分的莫兰迪色系：`frontend/src/features/student-center/ui.ts` 新增 `getStudentCenterSubjectBadgeClass()`，当前 `数学` 使用偏灰蓝、`物理` 使用偏灰绿、`国际数学` 使用偏灰玫瑰的低饱和标签色；`frontend/src/features/student-center/ClassManagementTab.tsx` 已接入这个映射，所以班级行里的学科标签不再全部是同一灰色。当前轮 proof 已通过：临时脚本 [proof_student_center_subject_badges_20260616.sh](/tmp/proof_student_center_subject_badges_20260616.sh) 跑通 `frontend npm run lint`。
 - 2026-06-16 已移除学管中心“校区总览”标题下方的说明句：`frontend/src/features/student-center/CampusOverview.tsx` 不再显示“先确定筛选范围，再进入班级或学员列表处理具体记录。”这行描述，只保留标题、机构名、帮助提示和筛选入口。当前轮 proof 已通过：临时脚本 [proof_student_center_remove_overview_description_20260616.sh](/tmp/proof_student_center_remove_overview_description_20260616.sh) 已确认源码中这句说明不存在，并跑通 `frontend npm run lint`。
 - 2026-06-16 已移除学管中心标题下方的说明句：`frontend/src/features/student-center/StudentCenterPage.tsx` 现在只保留机构名和“学管中心”标题，不再显示“集中维护班级、学员和负责老师，先筛选范围，再处理具体记录。”这行描述。当前轮 proof 已通过：临时脚本 [proof_student_center_remove_header_description_20260616.sh](/tmp/proof_student_center_remove_header_description_20260616.sh) 已确认源码中这句说明不存在，并跑通 `frontend npm run lint`。

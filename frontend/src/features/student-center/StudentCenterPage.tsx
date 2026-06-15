@@ -1344,7 +1344,6 @@ export function StudentCenterPage({
     <div className={`${workspacePageClass} space-y-6`}>
       <section className="space-y-2">
         <div className="space-y-2">
-          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{currentUser.organization_name}</p>
           <h2 className={workspaceSectionTitleClass}>学管中心</h2>
         </div>
       </section>
