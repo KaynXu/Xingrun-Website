@@ -121,6 +121,41 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(usage["output_tokens"], 22)
         self.assertEqual(create_mock.call_args.kwargs["timeout"], llm_client_module.REVIEW_PLAN_LLM_TIMEOUT_SECONDS)
 
+    def test_generate_review_plan_json_passes_openai_reasoning_effort(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "choices": [type("Choice", (), {"message": type("Message", (), {"content": "{\"ok\": true}"})()})()],
+                "usage": type("Usage", (), {"prompt_tokens": 3, "completion_tokens": 4})(),
+                "model": "gpt-5.4",
+            },
+        )()
+        create_mock = unittest.mock.Mock(return_value=response)
+        fake_client = type(
+            "Client",
+            (),
+            {
+                "chat": type(
+                    "Chat",
+                    (),
+                    {"completions": type("Completions", (), {"create": create_mock})()},
+                )()
+            },
+        )()
+        with patch.object(llm_client_module, "get_chat_client", return_value=fake_client):
+            payload, usage = llm_client_module.generate_review_plan_json(
+                system_prompt="system",
+                user_message="user",
+                provider="openai",
+                model="gpt-5.4",
+                reasoning_effort="high",
+            )
+
+        self.assertEqual(payload, {"ok": True})
+        self.assertEqual(usage["model"], "gpt-5.4")
+        self.assertEqual(create_mock.call_args.kwargs["reasoning_effort"], "high")
+
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
         plan = valid_single_lesson_plan(subject="物理", topic="电路")

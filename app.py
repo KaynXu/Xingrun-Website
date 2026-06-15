@@ -33,8 +33,10 @@ from config_runtime import (
     get_runtime_config,
     load_file_config,
     normalize_chat_provider,
+    normalize_reasoning_effort,
     resolve_review_plan_model,
     resolve_review_plan_provider,
+    resolve_review_plan_reasoning_effort,
     resolve_review_plan_writer_model,
     resolve_review_plan_writer_provider,
     write_file_config,
@@ -294,6 +296,11 @@ def _review_plan_ai_provider_name() -> str:
 def _review_plan_chat_model_name() -> str:
     provider = _review_plan_ai_provider_name()
     return resolve_review_plan_model(get_config(), provider=provider)
+
+
+def _review_plan_reasoning_effort() -> str:
+    provider = _review_plan_ai_provider_name()
+    return resolve_review_plan_reasoning_effort(get_config(), provider=provider)
 
 
 def _review_plan_writer_ai_provider_name() -> str:
@@ -7962,10 +7969,13 @@ def api_settings_get():
         "provider": cfg.get("provider", "deepseek"),
         "review_plan_provider": cfg.get("review_plan_provider", ""),
         "review_plan_model": cfg.get("review_plan_model", ""),
+        "review_plan_reasoning_effort": cfg.get("review_plan_reasoning_effort", ""),
         "review_plan_writer_provider": cfg.get("review_plan_writer_provider", "deepseek"),
         "review_plan_writer_model": cfg.get("review_plan_writer_model", ""),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
+        "openai_model": cfg.get("openai_model", "gpt-4o"),
+        "openai_base_url": cfg.get("openai_base_url", ""),
         "deepseek_set": bool(cfg.get("deepseek_api_key")),
         "deepseek_masked": _mask(cfg.get("deepseek_api_key", "")),
         "qwen_set": bool(cfg.get("qwen_api_key")),
@@ -7989,11 +7999,13 @@ def api_settings_save():
         cfg["review_plan_provider"] = normalize_chat_provider(data["review_plan_provider"]) if str(data["review_plan_provider"] or "").strip() else ""
     if "review_plan_model" in data and "review_plan_model" not in controlled_keys:
         cfg["review_plan_model"] = str(data["review_plan_model"] or "").strip()
+    if "review_plan_reasoning_effort" in data and "review_plan_reasoning_effort" not in controlled_keys:
+        cfg["review_plan_reasoning_effort"] = normalize_reasoning_effort(data["review_plan_reasoning_effort"])
     if "review_plan_writer_provider" in data and "review_plan_writer_provider" not in controlled_keys:
         cfg["review_plan_writer_provider"] = normalize_chat_provider(data["review_plan_writer_provider"] or "deepseek")
     if "review_plan_writer_model" in data and "review_plan_writer_model" not in controlled_keys:
         cfg["review_plan_writer_model"] = str(data["review_plan_writer_model"] or "").strip()
-    for key in ("openai_api_key", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
+    for key in ("openai_api_key", "openai_model", "openai_base_url", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
     write_file_config(cfg)

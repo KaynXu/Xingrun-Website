@@ -75,6 +75,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
         ),
         provider=context.provider,
         model=context.model,
+        reasoning_effort=context.reasoning_effort,
     )
     _apply_lesson_date(revised, review_input)
     context.node_outputs.setdefault("revision_attempts", []).append(
