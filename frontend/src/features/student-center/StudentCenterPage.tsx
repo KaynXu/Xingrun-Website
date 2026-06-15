@@ -1342,19 +1342,11 @@ export function StudentCenterPage({
 
   return (
     <div className={`${workspacePageClass} space-y-6`}>
-      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <section className="space-y-2">
         <div className="space-y-2">
           <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{currentUser.organization_name}</p>
           <h2 className={workspaceSectionTitleClass}>学管中心</h2>
           <p className={`${workspaceSectionTextClass} max-w-2xl`}>集中维护班级、学员和负责老师，先筛选范围，再处理具体记录。</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
-            班级 {classes.length}
-          </span>
-          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
-            学员 {allStudents.length}
-          </span>
         </div>
       </section>
 
