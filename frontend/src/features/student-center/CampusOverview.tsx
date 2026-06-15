@@ -1,7 +1,6 @@
 import { Info } from 'lucide-react';
 import { FloatingOverviewFilter, type FloatingFilterOption } from '../../components/FloatingFilterBar';
 import {
-  workspaceSectionTextClass,
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
 import type { ClassBindingTarget, CurrentUser } from './model';
@@ -103,7 +102,6 @@ export function CampusOverview({
               )}
             </div>
           </div>
-          <p className={workspaceSectionTextClass}>先确定筛选范围，再进入班级或学员列表处理具体记录。</p>
         </div>
 
         <FloatingOverviewFilter
