@@ -233,7 +233,7 @@ function DashboardMascot() {
       <img
         src="/xiaoxing.png"
         alt="小星"
-        className="h-20 w-auto object-contain sm:h-24 xl:h-28"
+        className="h-24 w-auto object-contain sm:h-28 xl:h-32"
         loading="eager"
       />
     </div>
