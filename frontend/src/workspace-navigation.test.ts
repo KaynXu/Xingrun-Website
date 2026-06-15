@@ -89,17 +89,21 @@ test('review generation source removes continue-edit-feedback entry points from 
   assert.doesNotMatch(reviewGenerationSource, /<Pencil size=\{16\} \/>/);
 });
 
-test('review generation source renders history as a paginated list with explicit generation time', () => {
+test('review generation source renders history as a paginated list with merged date-time column', () => {
   assert.match(reviewGenerationSource, /const REVIEW_HISTORY_PAGE_SIZE = 12;/);
   assert.match(reviewGenerationSource, /const \[historyPage, setHistoryPage\] = useState\(1\);/);
   assert.match(reviewGenerationSource, /const totalHistoryPages = Math\.max\(1, Math\.ceil\(lessons\.length \/ REVIEW_HISTORY_PAGE_SIZE\)\);/);
   assert.match(reviewGenerationSource, /const paginatedLessons = lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage \* REVIEW_HISTORY_PAGE_SIZE\);/);
   assert.match(reviewGenerationSource, /if \(highlightedLessonId\) \{[\s\S]*setHistoryPage\(Math\.floor\(highlightedIndex \/ REVIEW_HISTORY_PAGE_SIZE\) \+ 1\);[\s\S]*setHistoryPage\(1\);[\s\S]*\}, \[highlightedLessonId, lessons\]\);/);
   assert.match(reviewGenerationSource, /highlightedLessonId === lesson\.id/);
-  assert.match(reviewGenerationSource, /生成时间/);
-  assert.match(reviewGenerationSource, /function getLessonCreatedTimeLabel\(lesson: ReviewLessonRecord\): string \{/);
-  assert.match(reviewGenerationSource, /return createdAt\.toLocaleTimeString\('zh-CN', \{ hour12: false \}\);/);
-  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_132px_180px_112px_132px\]/);
+  assert.match(reviewGenerationSource, /<span>时间<\/span>/);
+  assert.doesNotMatch(reviewGenerationSource, /<span>生成时间<\/span>/);
+  assert.doesNotMatch(reviewGenerationSource, /<span>日期<\/span>/);
+  assert.match(reviewGenerationSource, /function getLessonDateTimeLabel\(lesson: ReviewLessonRecord\): string \{/);
+  assert.match(reviewGenerationSource, /hour: '2-digit',/);
+  assert.match(reviewGenerationSource, /minute: '2-digit',/);
+  assert.doesNotMatch(reviewGenerationSource, /second:/);
+  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_180px_112px_132px\]/);
   assert.match(reviewGenerationSource, /<ul className="divide-y divide-slate-200\/70 dark:divide-white\/10">/);
   assert.match(reviewGenerationSource, /上一页/);
   assert.match(reviewGenerationSource, /下一页/);

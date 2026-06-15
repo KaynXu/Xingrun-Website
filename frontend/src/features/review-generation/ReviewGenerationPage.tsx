@@ -76,17 +76,24 @@ function getLessonCreatorAvatarUrl(lesson: ReviewLessonRecord): string {
   });
 }
 
-function getLessonCreatedTimeLabel(lesson: ReviewLessonRecord): string {
+function getLessonDateTimeLabel(lesson: ReviewLessonRecord): string {
+  const dateLabel = lesson.date?.trim() || '';
   if (!lesson.created_at) {
-    return '-';
+    return dateLabel || '-';
   }
 
   const createdAt = new Date(lesson.created_at);
   if (Number.isNaN(createdAt.getTime())) {
-    return lesson.created_at;
+    return [dateLabel, lesson.created_at].filter(Boolean).join(' ');
   }
 
-  return createdAt.toLocaleTimeString('zh-CN', { hour12: false });
+  const timeLabel = createdAt.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  return [dateLabel, timeLabel].filter(Boolean).join(' ');
 }
 
 function getLessonStatusMeta(lesson: ReviewLessonRecord): {
@@ -242,11 +249,10 @@ function ReviewDocumentHistory({
         </div>
       ) : (
         <div className="p-4 sm:p-5">
-          <div className="hidden border-b border-slate-200/70 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_128px_132px_180px_112px_132px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
+          <div className="hidden border-b border-slate-200/70 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_132px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
             <span>文档</span>
             <span>生成人</span>
-            <span>日期</span>
-            <span>生成时间</span>
+            <span>时间</span>
             <span>状态</span>
             <span className="text-right">操作</span>
           </div>
@@ -263,7 +269,7 @@ function ReviewDocumentHistory({
                     highlightedLessonId === lesson.id && 'bg-emerald-50/80 dark:bg-emerald-500/10',
                   )}
                 >
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_132px_180px_112px_132px] lg:items-start lg:gap-4">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_132px] lg:items-start lg:gap-4">
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center text-slate-500 dark:text-slate-300">
@@ -304,13 +310,8 @@ function ReviewDocumentHistory({
                     </div>
 
                     <div className="flex items-center justify-between gap-4 text-sm lg:block">
-                      <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400 lg:hidden dark:text-slate-500">日期</span>
-                      <span className="font-mono text-slate-700 dark:text-slate-200">{lesson.date || '-'}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-4 text-sm lg:block">
-                      <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400 lg:hidden dark:text-slate-500">生成时间</span>
-                      <span className="text-slate-700 dark:text-slate-200">{getLessonCreatedTimeLabel(lesson)}</span>
+                      <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400 lg:hidden dark:text-slate-500">时间</span>
+                      <span className="font-mono text-slate-700 dark:text-slate-200">{getLessonDateTimeLabel(lesson)}</span>
                     </div>
 
                     <div className="hidden lg:flex lg:items-center lg:gap-2 lg:text-sm lg:text-slate-600 dark:lg:text-slate-300">
