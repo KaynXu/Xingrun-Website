@@ -106,7 +106,8 @@ test('review generation source renders history as a paginated list with explicit
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
   assert.match(lessonInputSource, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
-  assert.match(lessonInputSource, /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
+  assert.match(lessonInputSource, /reviewFormFieldClass = `\$\{workspaceFieldClass\} border-slate-200 focus:border-slate-300 focus:ring-slate-100`;/);
+  assert.match(lessonInputSource, /className=\{`\$\{reviewFormFieldClass\} w-full`\}/);
   assert.doesNotMatch(lessonInputSource, /sm:w-40/);
   assert.doesNotMatch(appSource, /sm:w-32/);
 });
