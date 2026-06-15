@@ -1,6 +1,6 @@
 # Consultation Flow Redesign Spec
 
-Status: Draft for review
+Status: Node 9 completed
 Date: 2026-06-11
 
 ## Goal
@@ -97,6 +97,11 @@ Existing class:
 
 - Use filter logic 1.
 - Filtered results appear in a dropdown, not a full list.
+- Consultation subject and grade are recommendations for the enter-class filters, not hard locks.
+- If the consultation subject already exists, preselect that subject in the class filter; teachers may still change it.
+- If the consultation subject is blank and the teacher selects a subject in the enter-class filter or quick-create form, save can backfill the consultation subject.
+- Consultation grade should preselect the grade filter when useful, but must remain editable because a sixth-grade consultation may enter a seventh- or eighth-grade class.
+- If recommended filters return no usable class, provide a way to loosen filters or show all classes instead of blocking the enter-class action.
 
 Quick create class:
 
@@ -111,7 +116,7 @@ Converted pending class:
 ## Over Rules
 
 - Successful enter-class automatically creates a successful Over state.
-- On successful Over, previous applicable stages are green and Over is blue.
+- On successful Over, only previously saved process stages remain green; skipped process stages must not be auto-completed. Over is blue.
 - Manual Over first asks success or failure.
 - Manual success opens the enter-class dialog and must complete one of the three enter-class modes before Over is saved.
 - Manual failure creates red Over and records the failure path.
@@ -158,7 +163,7 @@ Existing fields may be reused when practical, but the implementation should pres
 
 ### Node 1: Rules Document
 
-Status: In progress
+Status: Completed
 
 Scope:
 
@@ -172,7 +177,7 @@ Acceptance:
 
 ### Node 2: Flow Pure Functions
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -187,7 +192,7 @@ Acceptance:
 
 ### Node 3: Basic Flow Click Wiring
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -203,7 +208,7 @@ Acceptance:
 
 ### Node 4: Ordinary Node Dialog
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -219,7 +224,7 @@ Acceptance:
 
 ### Node 5: Teacher Filtering And Recommendation
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -235,7 +240,7 @@ Acceptance:
 
 ### Node 6: Enter-Class Dialog UI
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -251,7 +256,7 @@ Acceptance:
 
 ### Node 7: Enter-Class Business Integration
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -267,7 +272,7 @@ Acceptance:
 
 ### Node 8: Over Logic
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -284,7 +289,7 @@ Acceptance:
 
 ### Node 9: Assignment And Teacher Permissions
 
-Status: Pending
+Status: Completed
 
 Scope:
 
@@ -303,3 +308,14 @@ Acceptance:
 ## Progress Log
 
 - 2026-06-11: Spec created as Node 1 draft.
+- 2026-06-11: Node 1 marked completed after rollback baseline was confirmed.
+- 2026-06-11: Node 2 added tested pure functions for flow lights, stage completion/cancel, current-stage reset, and Over rollback.
+- 2026-06-11: Node 3 wired left-click/tap and right-click/long-press to the tested pure functions without restoring complex dialogs.
+- 2026-06-12: Node 4 restored the ordinary process-node dialog for the current five flow nodes, with save-to-light and lit-node cancellation/field clearing.
+- 2026-06-12: Node 5 added tested teacher filtering and recommendation rules to the ordinary process-node dialog.
+- 2026-06-12: Node 6 restored the three-card enter-class dialog shell with existing-class, quick-create, and converted-pending modes; quick-create shows compact class fields and class-name preview without creating class/student records.
+- 2026-06-12: Node 7 connected the enter-class dialog to the tested business payloads and `/api/consultations/:id/enter-class`, including existing class selection, quick-new-class structured payloads, converted-pending success, and student-center class filtering/order for the existing-class dropdown.
+- 2026-06-12: Node 7 review fixes changed existing-class subject/grade from hard filters to editable recommended filters, added loosen-filter fallback, made create-modal enter-class first create the consultation then call `/enter-class`, and backfilled missing consultation subject/grade from the selected or newly created class.
+- 2026-06-12: Node 8 restored the Over node on consultation cards, added the success/failure Over dialog, routed success into the enter-class flow, marked failure as red Over, colored successful Over blue without auto-completing skipped process stages, and made clicking an ended Over restore the previous completed stage without deleting class/student records.
+- 2026-06-13: Node 9 added consultation assignment visibility for member accounts, including self-created consultations, stage-teacher transfers, `咨询转接` card markers, current responsibility/assignment note display, and backend restrictions that prevent transferred teachers from editing stages before the assigned stage.
+- 2026-06-15: Post-node refinement connected enter-class teaching-teacher handoff: the enter-class dialog can select a `带课教师`, payloads include the teacher handoff fields, quick-created classes bind the resolved teacher user, and consultation records save `teaching_teacher` plus `stage_teacher_ids['成功进班']`.

@@ -192,7 +192,7 @@ test('consultation create form requires only lightweight fields', () => {
   assert.doesNotMatch(modalBlock[0], /失败原因[\s\S]*required/);
 });
 
-test('consultation page keeps basic flow graph while removing complex action dialogs', () => {
+test('consultation page keeps basic flow graph and restores over result dialog', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
 
@@ -203,7 +203,8 @@ test('consultation page keeps basic flow graph while removing complex action dia
   assert.doesNotMatch(source, /flowNodeActionKey/);
   assert.doesNotMatch(source, /flowNodeActionRecommendedTeacherId/);
   assert.doesNotMatch(source, /enterClassRecord/);
-  assert.doesNotMatch(source, /overResultDialogRecord/);
+  assert.match(source, /overResultDialogRecord/);
+  assert.match(source, /ConsultationOverResultDialog/);
   assert.doesNotMatch(source, /ConsultationTeacherStatusPill/);
   assert.doesNotMatch(consultationPageBlock[0], /openConsultationFlowNode/);
   assert.doesNotMatch(consultationPageBlock[0], /handleSaveFlowNodeAction/);
@@ -460,6 +461,19 @@ test('consultation edit modal uses the same two by two flow cards as the view mo
   assert.match(modalBlock[0], /<section className=\{cn\(consultationFlowSectionClass\(sectionStates\.result\), 'min-h-\[14rem\] scroll-mt-6 space-y-3'\)\}>[\s\S]*结果与备注/);
 });
 
+test('consultation edit result section can maintain teaching teacher handoff fields', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /<span className=\{compactEditLabelClass\}>带课教师<\/span>/);
+  assert.match(modalBlock[0], /value=\{form\.teaching_teacher\}/);
+  assert.match(modalBlock[0], /updateField\('teaching_teacher', e\.target\.value\)/);
+  assert.match(modalBlock[0], /<span className=\{compactEditLabelClass\}>带课交接备注<\/span>/);
+  assert.match(modalBlock[0], /value=\{form\.teaching_teacher_note\}/);
+  assert.match(modalBlock[0], /updateField\('teaching_teacher_note', e\.target\.value\)/);
+});
+
 test('consultation edit form derives lit flow stages from edited fields', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
@@ -471,6 +485,9 @@ test('consultation edit form derives lit flow stages from edited fields', () => 
   assert.match(source, /values\.test_taken \|\| values\.test_note \|\| values\.test_images\.length > 0/);
   assert.doesNotMatch(source, /values\.test_teacher \|\| values\.test_note \|\| values\.test_images\.length > 0/);
   assert.doesNotMatch(source, /values\.test_taken \|\| values\.test_teacher \|\| values\.test_images\.length > 0/);
+  assert.match(source, /const showTestFields = form\.flow_stage === '待测试' \|\| form\.test_taken \|\| form\.test_teacher \|\| form\.test_images\.length > 0;/);
+  assert.match(source, /测试教师：\{form\.test_teacher\.trim\(\) \|\| '未选择'\}/);
+  assert.match(source, /<p className=\{compactReadLabelClass\}>测试教师<\/p>/);
   assert.match(source, /values\.trial_teacher_added \|\| values\.trial_taken \|\| values\.trial_time_slot \|\| values\.trial_class_id \|\| values\.trial_class_manual \|\| values\.trial_feedback/);
   assert.doesNotMatch(source, /values\.trial_class_manual \|\| values\.trial_teacher \|\| values\.trial_feedback/);
   assert.match(source, /values\.flow_stage === '成功进班'/);
@@ -574,7 +591,7 @@ test('consultation modal places flow subtitle and status lamp beside the title',
   assert.doesNotMatch(modalBlock[0], /<p className="mt-1 text-sm text-slate-500 dark:text-slate-400">\s*\{readOnly \? '当前咨询的完整流程位置。'/);
 });
 
-test('consultation source restores ended records only after an explicit yes no confirmation', () => {
+test('consultation source restores ended records directly from over click', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
   const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
   const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
@@ -583,15 +600,9 @@ test('consultation source restores ended records only after an explicit yes no c
   assert.ok(modalBlock);
   assert.match(source, /function restoreConsultationValues\(values: ConsultationFormValues\): ConsultationFormValues/);
   assert.match(source, /restore_from_end: true/);
-  assert.match(modalBlock[0], /confirmRestoreOpen/);
-  assert.match(modalBlock[0], /是否恢复这个咨询？/);
-  assert.match(modalBlock[0], /是\s*<\/button>/);
-  assert.match(modalBlock[0], /否\s*<\/button>/);
   assert.match(modalBlock[0], /setForm\(\(current\) => restoreConsultationValues\(current\)\)/);
-  assert.match(consultationPageBlock[0], /const \[restoreConfirmRecord, setRestoreConfirmRecord\] = useState<ConsultationRecord \| null>\(null\);/);
-  assert.match(consultationPageBlock[0], /const handleConfirmRestoreConsultation = async \(\) =>/);
-  assert.match(consultationPageBlock[0], /restoreConsultationValues\(toConsultationFormValues\(restoreConfirmRecord\)\)/);
-  assert.match(consultationPageBlock[0], /是否恢复这个咨询？/);
+  assert.match(consultationPageBlock[0], /restoreConsultationValues\(toConsultationFormValues\(record\)\)/);
+  assert.doesNotMatch(consultationPageBlock[0], /setRestoreConfirmRecord\(record\)/);
 });
 
 test('consultation source keeps ai batch parse endpoint unchanged', () => {
@@ -636,6 +647,62 @@ test('consultation page source renders separate desktop pad and mobile consultat
   assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderDesktopConsultationCard\)/);
   assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderPadConsultationCard\)/);
   assert.match(consultationPageBlock[0], /visibleRecords\.map\(renderMobileConsultationCard\)/);
+});
+
+test('consultation transferred cards show marker responsibility and note', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
+
+  assert.ok(consultationPageBlock);
+  assert.match(source, /is_transferred_consultation: boolean;/);
+  assert.match(source, /can_edit_consultation: boolean;/);
+  assert.match(source, /transfer_marker: string;/);
+  assert.match(source, /current_responsibility: string;/);
+  assert.match(source, /assignment_note: string;/);
+  assert.match(consultationPageBlock[0], /canEditConsultationRecord\(record\)/);
+  assert.match(consultationPageBlock[0], /const renderTransferBadge = \(record: ConsultationRecord, mobile = false\) =>/);
+  assert.match(consultationPageBlock[0], /record\.is_transferred_consultation/);
+  assert.match(consultationPageBlock[0], /record\.transfer_marker \|\| '咨询转接'/);
+  assert.match(consultationPageBlock[0], /record\.current_responsibility/);
+  assert.match(consultationPageBlock[0], /record\.assignment_note/);
+  assert.match(consultationPageBlock[0], /bg-\[#F2FBF8\]/);
+});
+
+test('consultation modal shows responsibility history in view and edit modes', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const readOnlyBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?const ConsultationModal = /);
+  const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+
+  assert.ok(readOnlyBlock);
+  assert.ok(modalBlock);
+  assert.match(source, /responsibility_history: ConsultationResponsibilityHistoryItem\[\];/);
+  assert.match(source, /change_kind\?: 'transfer' \| 'reassign';/);
+  assert.match(source, /const renderConsultationResponsibilityHistory = \(history: ConsultationResponsibilityHistoryItem\[\]\) =>/);
+  assert.match(source, /item\.change_kind === 'reassign' \? '管理层改派' : '老师转接'/);
+  assert.match(source, /责任变更/);
+  assert.match(source, /from_teacher_name/);
+  assert.match(source, /to_teacher_name/);
+  assert.match(readOnlyBlock[0], /renderConsultationResponsibilityHistory\(form\.responsibility_history\)/);
+  assert.match(modalBlock[0], /renderConsultationResponsibilityHistory\(form\.responsibility_history\)/);
+});
+
+test('consultation read only report marks saved trial teacher with a check', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
+
+  assert.ok(reportBlock);
+  assert.match(reportBlock[0], /const trialTeacherDone = Boolean\(form\.trial_teacher\.trim\(\)\);/);
+  assert.match(reportBlock[0], /{trialTeacherDone \? <CheckCircle2 size=\{14\} \/> : null}/);
+});
+
+test('consultation read only report marks saved teaching teacher with a check', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+  const reportBlock = source.match(/const ConsultationReadOnlyReport = \([\s\S]*?\n};/);
+
+  assert.ok(reportBlock);
+  assert.match(reportBlock[0], /const teachingTeacherDone = Boolean\(form\.teaching_teacher\.trim\(\)\);/);
+  assert.match(reportBlock[0], /<p className=\{compactReadLabelClass\}>带课教师<\/p>/);
+  assert.match(reportBlock[0], /{teachingTeacherDone \? <CheckCircle2 size=\{14\} \/> : null}/);
 });
 
 test('consultation default list shows pending records instead of all records', () => {
@@ -836,7 +903,9 @@ test('workspace source applies dark classes to lesson library approval settings 
   assert.match(appSource, /border border-rose-200 bg-rose-50 p-4 text-rose-600[^\n]*dark:border-rose-400\/20[^\n]*dark:bg-rose-500\/10[^\n]*dark:text-rose-300/);
   assert.match(appSource, /inline-flex gap-2 rounded-2xl border border-sky-100 bg-white\/85 p-1 shadow-sm[^\n]*dark:border-white\/10[^\n]*dark:bg-white\/5/);
   assert.match(appSource, /min-h-\[320px\][^\n]*border border-sky-100[^\n]*text-slate-700[^\n]*dark:border-white\/10[^\n]*dark:bg-slate-900\/70[^\n]*dark:text-slate-100/);
-  assert.match(appSource, /rounded-\[14px\] border border-\[#D9EEF7\] bg-white shadow-\[0_6px_18px_rgba\(31,42,68,0\.04\)\] dark:border-white\/10 dark:bg-slate-950\/70/);
+  assert.match(appSource, /'overflow-hidden rounded-\[14px\] border shadow-\[0_6px_18px_rgba\(31,42,68,0\.04\)\]'/);
+  assert.match(appSource, /'border-\[#D9EEF7\] bg-white dark:border-white\/10 dark:bg-slate-950\/70'/);
+  assert.match(appSource, /'border-emerald-200 bg-\[#F2FBF8\] dark:border-emerald-400\/20 dark:bg-emerald-400\/10'/);
   assert.match(appSource, /bg-\[#F9FDFF\] px-4 py-3 dark:border-white\/10 dark:bg-white\/\[0\.03\]/);
   assert.match(dashboardSource, /rounded-\[2rem\] border border-sky-100[^"]*dark:border-white\/10[^"]*dark:bg-\[radial-gradient/);
   assert.match(appSource, /当前待审核注册申请/);

@@ -72,6 +72,28 @@ import {
   serializeBridgeTarget,
 } from './domain/classNaming';
 import {
+  calculateConsultationFlowLights,
+  cancelConsultationStage as cancelConsultationFlowStage,
+  completeConsultationOver,
+  completeConsultationStage as completeConsultationFlowStage,
+  createConsultationFlowState,
+  setConsultationCurrentStage as setConsultationFlowCurrentStage,
+  type ConsultationProcessStage as DomainConsultationProcessStage,
+} from './domain/consultationFlow';
+import {
+  filterConsultationTeacherOptionsForStage,
+  getConsultationFlowNodeRecommendedTeacher,
+  searchConsultationTeacherOptions,
+} from './domain/consultationTeacherSelection';
+import {
+  buildRecommendedConsultationClassFilters,
+  buildConsultationEnterClassPayload,
+  filterConsultationEnterClassOptions,
+  type ConsultationEnterClassDraft,
+  type ConsultationEnterClassMode,
+  type ConsultationEnterClassPayload,
+} from './domain/consultationEnterClass';
+import {
   buildClassFeedbackPeriodPreview,
   buildCreateClassFeedbackTaskRequest,
   createClassStudent,
@@ -278,6 +300,14 @@ interface ConsultationRecord {
   follow_up_note: string;
   flow_stage: string;
   completed_stages: string[];
+  stage_teacher_ids: Record<string, string>;
+  responsibility_history: ConsultationResponsibilityHistoryItem[];
+  assigned_stage: string;
+  assignment_note: string;
+  is_transferred_consultation: boolean;
+  can_edit_consultation: boolean;
+  transfer_marker: string;
+  current_responsibility: string;
   customer_service_added: string;
   customer_service_teacher: string;
   customer_service_note: string;
@@ -313,6 +343,16 @@ interface ConsultationRecord {
   updated_at: string;
 }
 
+interface ConsultationResponsibilityHistoryItem {
+  stage: string;
+  from_teacher_id: string;
+  from_teacher_name: string;
+  to_teacher_id: string;
+  to_teacher_name: string;
+  note: string;
+  change_kind?: 'transfer' | 'reassign';
+}
+
 type ConsultationFormValues = Omit<ConsultationRecord, 'id' | 'created_at' | 'updated_at'>;
 type ConsultationQuickParseKey = keyof Pick<
   ConsultationFormValues,
@@ -331,6 +371,26 @@ interface ConsultationTeacherOption {
   teacher_id: string;
   display_name: string;
   aliases: string[];
+}
+
+interface ConsultationFlowNodeDraft {
+  teacherId: string;
+  teacherName: string;
+  note: string;
+}
+
+interface ConsultationFlowNodeDialogState {
+  stage: string;
+  setAsCurrent: boolean;
+}
+
+interface InlineConsultationFlowNodeDialogState extends ConsultationFlowNodeDialogState {
+  record: ConsultationRecord;
+}
+
+interface ConsultationStageTeacherMarker {
+  initial: string;
+  transferred: boolean;
 }
 
 interface ConsultationBatchDraftItem {
@@ -1221,6 +1281,187 @@ function getConsultationFlowStageIndex(stage: string): number {
   return resultIndex >= 0 ? consultationProcessStages.length + resultIndex : -1;
 }
 
+function isDomainConsultationProcessStage(stage: string): stage is DomainConsultationProcessStage {
+  return consultationProcessStages.includes(stage);
+}
+
+function createConsultationFlowStateFromValues(values: ConsultationFormValues) {
+  return createConsultationFlowState({
+    flowStage: isConsultationEnded(values.flow_stage) ? 'Over' : values.flow_stage,
+    completedStages: values.completed_stages,
+    closingResult: values.closing_result,
+  });
+}
+
+function applyConsultationFlowStateToValues(
+  values: ConsultationFormValues,
+  state: ReturnType<typeof createConsultationFlowState>,
+): ConsultationFormValues {
+  return {
+    ...values,
+    flow_stage: state.flowStage === 'Over' ? '咨询结束' : state.flowStage,
+    completed_stages: state.completedStages,
+    closing_result: state.closingResult,
+  };
+}
+
+function getConsultationFlowLightColor(values: ConsultationFormValues, stage: DomainConsultationProcessStage) {
+  const state = createConsultationFlowStateFromValues(values);
+  return calculateConsultationFlowLights(state).find((item) => item.stage === stage)?.color || 'white';
+}
+
+function getConsultationFlowNodeTitle(stage: string): string {
+  if (stage === '已加小客服微信') return '客服微信';
+  if (stage === '已加对应教师微信') return '沟通教师';
+  if (stage === '正在沟通细节') return '沟通情况';
+  if (stage === '待测试') return '测试';
+  if (stage === '待试听') return '试听';
+  return stage;
+}
+
+function getConsultationFlowNodeTeacherLabel(stage: string): string {
+  if (stage === '已加小客服微信') return '客服老师';
+  if (stage === '已加对应教师微信') return '沟通教师';
+  if (stage === '正在沟通细节') return '沟通教师';
+  if (stage === '待测试') return '测试教师';
+  if (stage === '待试听') return '试听教师';
+  return '负责教师';
+}
+
+function getConsultationFlowNodeDraft(values: ConsultationFormValues, stage: string): ConsultationFlowNodeDraft {
+  if (stage === '已加小客服微信') {
+    return { teacherId: values.stage_teacher_ids[stage] || '', teacherName: values.customer_service_teacher, note: values.customer_service_note };
+  }
+  if (stage === '已加对应教师微信') {
+    return { teacherId: values.stage_teacher_ids[stage] || '', teacherName: values.communication_teacher_added, note: values.communication_teacher_note };
+  }
+  if (stage === '正在沟通细节') {
+    return { teacherId: values.stage_teacher_ids[stage] || values.teacher_id, teacherName: values.receiving_teacher, note: values.follow_up_note };
+  }
+  if (stage === '待测试') {
+    return { teacherId: values.stage_teacher_ids[stage] || '', teacherName: values.test_teacher, note: values.test_note };
+  }
+  if (stage === '待试听') {
+    return { teacherId: values.stage_teacher_ids[stage] || '', teacherName: values.trial_teacher, note: values.trial_teacher_note };
+  }
+  return { teacherId: '', teacherName: '', note: '' };
+}
+
+function applyConsultationFlowNodeDraft(
+  values: ConsultationFormValues,
+  stage: string,
+  draft: ConsultationFlowNodeDraft,
+  setAsCurrent: boolean,
+): ConsultationFormValues {
+  if (!isDomainConsultationProcessStage(stage)) return values;
+  const existingDraft = getConsultationFlowNodeDraft(values, stage);
+  const teacherName = draft.teacherName.trim();
+  const stageTeacherChanged = Boolean(
+    existingDraft.teacherId
+    && draft.teacherId
+    && existingDraft.teacherId !== draft.teacherId
+  );
+  const nextValues: ConsultationFormValues = {
+    ...values,
+    stage_teacher_ids: {
+      ...values.stage_teacher_ids,
+      [stage]: draft.teacherId,
+    },
+  };
+  if (stage === '已加小客服微信') {
+    nextValues.customer_service_added = '已添加';
+    nextValues.customer_service_teacher = teacherName;
+    nextValues.customer_service_note = draft.note;
+  } else if (stage === '已加对应教师微信') {
+    nextValues.communication_teacher_added = teacherName;
+    nextValues.communication_teacher_note = draft.note;
+  } else if (stage === '正在沟通细节') {
+    nextValues.teacher_id = draft.teacherId;
+    nextValues.receiving_teacher = teacherName || values.receiving_teacher;
+    nextValues.follow_up_status = '跟进中';
+    nextValues.follow_up_note = draft.note;
+  } else if (stage === '待测试') {
+    nextValues.test_taken = '是';
+    nextValues.test_teacher = teacherName;
+    nextValues.test_note = draft.note;
+  } else if (stage === '待试听') {
+    nextValues.trial_teacher_added = teacherName ? '已添加' : nextValues.trial_teacher_added;
+    nextValues.trial_teacher = teacherName;
+    nextValues.trial_teacher_note = draft.note;
+    nextValues.trial_taken = nextValues.trial_taken || '是';
+  }
+  if (stageTeacherChanged) {
+    nextValues.assignment_note = draft.note.trim() || `${existingDraft.teacherName || existingDraft.teacherId} 转交给 ${teacherName || draft.teacherId}`;
+  }
+  const cleanedValues = setAsCurrent ? clearConsultationFlowNodeContentAfterStage(nextValues, stage) : nextValues;
+  const state = createConsultationFlowStateFromValues(cleanedValues);
+  const nextState = setAsCurrent
+    ? setConsultationFlowCurrentStage(state, stage)
+    : completeConsultationFlowStage(state, stage);
+  return applyConsultationFlowStateToValues(cleanedValues, nextState);
+}
+
+function clearConsultationFlowNodeMappedFields(values: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (!isDomainConsultationProcessStage(stage)) return values;
+  const nextValues: ConsultationFormValues = { ...values };
+  if (stage === '已加小客服微信') {
+    nextValues.customer_service_added = '';
+    nextValues.customer_service_teacher = '';
+    nextValues.customer_service_note = '';
+  } else if (stage === '已加对应教师微信') {
+    nextValues.communication_teacher_added = '';
+    nextValues.communication_teacher_note = '';
+  } else if (stage === '正在沟通细节') {
+    nextValues.follow_up_status = consultationFormDefaults.follow_up_status;
+    nextValues.follow_up_note = '';
+  } else if (stage === '待测试') {
+    nextValues.test_taken = '';
+    nextValues.test_teacher = '';
+    nextValues.test_note = '';
+  } else if (stage === '待试听') {
+    nextValues.trial_teacher_added = '';
+    nextValues.trial_teacher = '';
+    nextValues.trial_teacher_note = '';
+    nextValues.trial_taken = '';
+  }
+  const { [stage]: _removedTeacherId, ...remainingStageTeacherIds } = nextValues.stage_teacher_ids;
+  nextValues.stage_teacher_ids = remainingStageTeacherIds;
+  return nextValues;
+}
+
+function clearConsultationFlowNodeContentAfterStage(values: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (!isDomainConsultationProcessStage(stage)) return values;
+  const targetIndex = consultationProcessStages.indexOf(stage);
+  if (targetIndex < 0) return values;
+  return consultationProcessStages.slice(targetIndex + 1).reduce(
+    (nextValues, nextStage) => clearConsultationFlowNodeMappedFields(nextValues, nextStage),
+    values,
+  );
+}
+
+function clearConsultationFlowNodeContent(values: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (!isDomainConsultationProcessStage(stage)) return values;
+  const nextValues = clearConsultationFlowNodeMappedFields(values, stage);
+  const state = createConsultationFlowStateFromValues(nextValues);
+  return applyConsultationFlowStateToValues(nextValues, cancelConsultationFlowStage(state, stage));
+}
+
+function toggleConsultationFlowStageWithRules(values: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (isConsultationEnded(values.flow_stage) || !isDomainConsultationProcessStage(stage)) return values;
+  const state = createConsultationFlowStateFromValues(values);
+  const lightColor = getConsultationFlowLightColor(values, stage);
+  const nextState = lightColor === 'green' || lightColor === 'blue'
+    ? cancelConsultationFlowStage(state, stage)
+    : completeConsultationFlowStage(state, stage);
+  return applyConsultationFlowStateToValues(values, nextState);
+}
+
+function setConsultationFlowCurrentStageWithRules(values: ConsultationFormValues, stage: string): ConsultationFormValues {
+  if (isConsultationEnded(values.flow_stage) || !isDomainConsultationProcessStage(stage)) return values;
+  const state = createConsultationFlowStateFromValues(values);
+  return applyConsultationFlowStateToValues(values, setConsultationFlowCurrentStage(state, stage));
+}
+
 function toggleConsultationStage(form: ConsultationFormValues, stage: string): ConsultationFormValues {
   if (isConsultationEnded(form.flow_stage)) return form;
   const currentStages = Array.isArray(form.completed_stages) ? form.completed_stages : [];
@@ -1278,14 +1519,27 @@ function endConsultationValues(values: ConsultationFormValues): ConsultationForm
   };
 }
 
+function applyConsultationOverFailureValues(values: ConsultationFormValues): ConsultationFormValues {
+  const state = completeConsultationOver(createConsultationFlowStateFromValues(values), 'failed');
+  const nextValues = applyConsultationFlowStateToValues(values, state);
+  return {
+    ...nextValues,
+    completed_stages: nextValues.completed_stages.includes('咨询结束')
+      ? nextValues.completed_stages
+      : [...nextValues.completed_stages, '咨询结束'],
+    closing_result: 'failed',
+  };
+}
+
 function restoreConsultationValues(values: ConsultationFormValues): ConsultationFormValues {
   const completed_stages = (Array.isArray(values.completed_stages) ? values.completed_stages : [])
     .filter((item) => item !== '咨询结束');
-  const flow_stage = completed_stages[completed_stages.length - 1] || consultationFlowStages[0];
+  const flow_stage = [...completed_stages].reverse().find(isDomainConsultationProcessStage) || consultationFlowStages[0];
   return {
     ...values,
     flow_stage,
     completed_stages,
+    closing_result: '',
     restore_from_end: true,
   } as ConsultationFormValues;
 }
@@ -1370,6 +1624,14 @@ const consultationFormDefaults: ConsultationFormValues = {
   follow_up_note: '',
   flow_stage: '已加小客服微信',
   completed_stages: ['已加小客服微信'],
+  stage_teacher_ids: {},
+  responsibility_history: [],
+  assigned_stage: '',
+  assignment_note: '',
+  is_transferred_consultation: false,
+  can_edit_consultation: true,
+  transfer_marker: '',
+  current_responsibility: '',
   customer_service_added: '',
   customer_service_teacher: '',
   customer_service_note: '',
@@ -1433,6 +1695,14 @@ function toConsultationFormValues(record?: ConsultationRecord | null): Consultat
     follow_up_note: record.follow_up_note ?? '',
     flow_stage: record.flow_stage || consultationFormDefaults.flow_stage,
     completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages : consultationFormDefaults.completed_stages,
+    stage_teacher_ids: record.stage_teacher_ids && typeof record.stage_teacher_ids === 'object' ? record.stage_teacher_ids : {},
+    responsibility_history: Array.isArray(record.responsibility_history) ? record.responsibility_history : [],
+    assigned_stage: record.assigned_stage ?? '',
+    assignment_note: record.assignment_note ?? '',
+    is_transferred_consultation: Boolean(record.is_transferred_consultation),
+    can_edit_consultation: record.can_edit_consultation !== false,
+    transfer_marker: record.transfer_marker ?? '',
+    current_responsibility: record.current_responsibility ?? '',
     customer_service_added: record.customer_service_added ?? '',
     customer_service_teacher: record.customer_service_teacher ?? '',
     customer_service_note: record.customer_service_note ?? '',
@@ -1485,6 +1755,9 @@ function normalizeConsultationRecord(record: ConsultationRecord): ConsultationRe
     follow_up_note: record.follow_up_note ?? '',
     flow_stage: record.flow_stage || consultationFormDefaults.flow_stage,
     completed_stages: Array.isArray(record.completed_stages) ? record.completed_stages : consultationFormDefaults.completed_stages,
+    stage_teacher_ids: record.stage_teacher_ids && typeof record.stage_teacher_ids === 'object' ? record.stage_teacher_ids : {},
+    responsibility_history: Array.isArray(record.responsibility_history) ? record.responsibility_history : [],
+    can_edit_consultation: record.can_edit_consultation !== false,
     customer_service_added: record.customer_service_added ?? '',
     customer_service_teacher: record.customer_service_teacher ?? '',
     customer_service_note: record.customer_service_note ?? '',
@@ -1543,8 +1816,22 @@ function isTeacherDisplayName(value: string): boolean {
   return !/^[a-z0-9_.-]{4,}$/i.test(normalized);
 }
 
-function buildConsultationTeacherDirectory(records: ConsultationRecord[]): Record<string, string> {
+function buildConsultationTeacherDirectory(
+  records: ConsultationRecord[],
+  teacherOptions: ConsultationTeacherOption[] = [],
+): Record<string, string> {
   const directory: Record<string, string> = {};
+
+  for (const option of teacherOptions) {
+    const displayName = option.display_name?.trim() || option.teacher_id?.trim() || '';
+    if (!displayName) continue;
+    for (const key of [option.teacher_id, option.display_name, ...(option.aliases || [])]) {
+      const normalizedKey = normalizeTeacherLookupKey(key);
+      if (normalizedKey) {
+        directory[normalizedKey] = displayName;
+      }
+    }
+  }
 
   for (const record of records) {
     const receivingTeacher = record.receiving_teacher?.trim() || '';
@@ -1570,6 +1857,15 @@ function buildConsultationTeacherDirectory(records: ConsultationRecord[]): Recor
   return directory;
 }
 
+function getConsultationStageTeacherName(record: ConsultationRecord, stage: string): string {
+  if (stage === '已加小客服微信') return record.customer_service_teacher?.trim() || '';
+  if (stage === '已加对应教师微信') return record.communication_teacher_added?.trim() || '';
+  if (stage === '正在沟通细节') return record.receiving_teacher?.trim() || '';
+  if (stage === '待测试') return record.test_teacher?.trim() || '';
+  if (stage === '待试听') return record.trial_teacher?.trim() || '';
+  return '';
+}
+
 function getConsultationTeacherName(record: ConsultationRecord, teacherDirectory: Record<string, string>): string {
   const teacherDisplayName = record.teacher_display_name?.trim() || '';
   const receivingTeacher = record.receiving_teacher?.trim() || '';
@@ -1593,6 +1889,56 @@ function getConsultationTeacherName(record: ConsultationRecord, teacherDirectory
   }
 
   return receivingTeacher || teacherId || '待分配老师';
+}
+
+function getConsultationTeacherInitial(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const chinese = trimmed.match(/[\u4e00-\u9fff]/);
+  if (chinese) return chinese[0];
+  return trimmed[0]?.toUpperCase() || '';
+}
+
+function getDefaultConsultationCustomerServiceTeacherName(teacherDirectory: Record<string, string>): string {
+  return teacherDirectory[normalizeTeacherLookupKey('雷老师')]
+    || teacherDirectory[normalizeTeacherLookupKey('雷文浩')]
+    || '雷老师';
+}
+
+function buildConsultationStageTeacherMarkers(
+  record: ConsultationRecord,
+  teacherDirectory: Record<string, string>,
+): Record<string, ConsultationStageTeacherMarker> {
+  const markers: Record<string, ConsultationStageTeacherMarker> = {};
+  const assignedStage = record.assigned_stage?.trim() || '';
+  for (const stage of consultationProcessStages) {
+    const normalizedTeacherId = (record.stage_teacher_ids?.[stage] || '').trim();
+    const stageTeacherName = getConsultationStageTeacherName(record, stage)
+      || (stage === '已加小客服微信' ? getDefaultConsultationCustomerServiceTeacherName(teacherDirectory) : '');
+    const teacherName = teacherDirectory[normalizeTeacherLookupKey(normalizedTeacherId)]
+      || teacherDirectory[normalizeTeacherLookupKey(stageTeacherName)]
+      || stageTeacherName
+      || normalizedTeacherId;
+    const initial = getConsultationTeacherInitial(teacherName);
+    if (!initial) continue;
+    markers[stage] = {
+      initial,
+      transferred: Boolean(record.is_transferred_consultation && stage === assignedStage),
+    };
+  }
+  return markers;
+}
+
+function buildConsultationStageTeacherMarkersFromValues(
+  values: ConsultationFormValues,
+  teacherDirectory: Record<string, string>,
+): Record<string, ConsultationStageTeacherMarker> {
+  return buildConsultationStageTeacherMarkers({
+    ...values,
+    id: 0,
+    created_at: '',
+    updated_at: '',
+  }, teacherDirectory);
 }
 
 function getConsultationStudentMeta(record: ConsultationRecord): string {
@@ -3604,36 +3950,42 @@ const ConsultationStatusLamp = ({ stage }: { stage: string }) => {
 const ConsultationFlowBar = ({
   stage,
   completedStages,
+  stageTeacherMarkers = {},
+  closingResult = '',
   mode = 'full',
   editable = false,
+  editableFromStage = '',
   showJumpActions = false,
   showOver = false,
   overDisabled = false,
   onStageClick,
-  onStageDoubleClick,
+  onStageContextMenu,
+  onStageLongPress,
   onResultChange,
   onResultClick,
-  onResultDoubleClick,
   onStageJump,
   onOverClick,
-  onOverDoubleClick,
 }: {
   stage: string;
   completedStages: string[];
+  stageTeacherMarkers?: Record<string, ConsultationStageTeacherMarker>;
+  closingResult?: string;
   mode?: 'list' | 'full';
   editable?: boolean;
+  editableFromStage?: string;
   showJumpActions?: boolean;
   showOver?: boolean;
   overDisabled?: boolean;
   onStageClick?: (stage: string) => void;
-  onStageDoubleClick?: (stage: string) => void;
+  onStageContextMenu?: (stage: string) => void;
+  onStageLongPress?: (stage: string) => void;
   onResultChange?: (stage: ConsultationResultStage) => void;
   onResultClick?: () => void;
-  onResultDoubleClick?: () => void;
   onStageJump?: (stage: string) => void;
   onOverClick?: () => void;
-  onOverDoubleClick?: () => void;
 }) => {
+  const longPressTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const longPressTriggeredRef = useRef(false);
   const currentStage = stage || consultationFlowStages[0];
   const ended = isConsultationEnded(currentStage);
   const compact = mode === 'list';
@@ -3641,6 +3993,13 @@ const ConsultationFlowBar = ({
   if (!ended && consultationProcessStages.includes(currentStage)) {
     completedSet.add(currentStage);
   }
+  const flowLightByStage = new Map(
+    calculateConsultationFlowLights(createConsultationFlowState({
+      flowStage: ended ? 'Over' : currentStage,
+      completedStages,
+      closingResult: closingResult === 'failed' ? 'failed' : ended ? 'success' : '',
+    })).map((item) => [item.stage, item.color]),
+  );
   const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
   const completedResultStage = (completedStages || []).find(isConsultationResultStage) || '';
   const resultStage = isConsultationResultStage(currentStage) ? currentStage : completedResultStage;
@@ -3648,10 +4007,12 @@ const ConsultationFlowBar = ({
   const resultCompleted = Boolean(completedResultStage) && currentProcessIndex < 0;
   const resultLabel = resultStage === '试听失败' ? '咨询失败' : '进班';
   const resultShortLabel = consultationResultShortLabel(resultStage) || '进';
+  const editableFromStageIndex = editableFromStage ? consultationProcessStages.indexOf(editableFromStage) : -1;
   const flowNodes = [
     ...consultationProcessStages.map((item) => {
       const stageIndex = consultationProcessStages.indexOf(item);
-      const isCurrent = item === currentStage;
+      const lightColor = flowLightByStage.get(item);
+      const isCurrent = lightColor === 'blue';
       const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
       return {
         key: item,
@@ -3660,8 +4021,10 @@ const ConsultationFlowBar = ({
         shortLabel: consultationStageShortLabel(item),
         title: item,
         active: isCurrent,
-        completed: completedSet.has(item) && !isAfterCurrentProcess,
-        disabled: !editable || ended,
+        completed: lightColor === 'green' || (completedSet.has(item) && !isAfterCurrentProcess),
+        teacherInitial: stageTeacherMarkers[item]?.initial || '',
+        transferred: Boolean(stageTeacherMarkers[item]?.transferred),
+        disabled: !editable || ended || (editableFromStageIndex >= 0 && stageIndex < editableFromStageIndex),
       };
     }),
     {
@@ -3670,8 +4033,8 @@ const ConsultationFlowBar = ({
       label: resultLabel,
       shortLabel: resultShortLabel,
       title: resultStage || '成功进班',
-      active: resultActive,
-      completed: resultCompleted,
+        active: resultActive,
+        completed: resultCompleted,
       disabled: !editable || ended,
     },
     ...(showOver ? [{
@@ -3682,6 +4045,7 @@ const ConsultationFlowBar = ({
       title: '咨询结束',
       active: ended,
       completed: ended,
+      closingResult: closingResult === 'failed' ? 'failed' : ended ? 'success' : '',
       disabled: overDisabled,
     }] : []),
   ];
@@ -3694,38 +4058,43 @@ const ConsultationFlowBar = ({
       : 'grid-cols-[repeat(6,minmax(0,1fr))]';
   const getNodeCircleClass = (node: typeof flowNodes[number]) => {
     if (node.type === 'over') {
+      if (node.active && closingResult === 'failed') {
+        return 'border-[#F45B7A] bg-[#F45B7A] text-white shadow-[0_0_0_3px_rgba(244,91,122,0.14)]';
+      }
       return node.active
-        ? 'border-[#F45B7A] bg-[#F45B7A] text-white shadow-[0_0_0_3px_rgba(244,91,122,0.14)]'
-        : 'border-[#F45B7A] bg-white text-transparent dark:bg-slate-950';
+        ? 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16)]'
+        : 'border-[#C7DDEA] bg-white text-transparent dark:bg-slate-950';
     }
-    if (node.active) return 'border-[#0EA5E9] bg-[#0EA5E9] text-white shadow-[0_0_0_3px_rgba(14,165,233,0.16)]';
-    if (node.completed) return 'border-[#22B981] bg-[#22B981] text-white';
+    if (node.type === 'process' && node.transferred) return 'border-dashed border-teal-300 bg-white text-teal-700 shadow-[0_0_0_3px_rgba(20,184,166,0.10)]';
+    if (node.active) return 'border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]';
+    if (node.completed) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    if (node.type === 'process' && node.teacherInitial) return 'border-slate-200 bg-white text-slate-500 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300';
     return 'border-[#C7DDEA] bg-white text-transparent dark:bg-slate-950';
   };
   const getNodeTextClass = (node: typeof flowNodes[number]) => {
-    if (node.type === 'over') return node.active ? 'text-[#F45B7A]' : 'text-[#7188A6]';
+    if (node.type === 'over' && closingResult === 'failed') return node.active ? 'text-[#F45B7A]' : 'text-[#7188A6]';
+    if (node.type === 'over') return node.active ? 'text-[#0EA5E9]' : 'text-[#7188A6]';
     if (node.active) return 'text-[#0EA5E9]';
     if (node.completed) return 'text-[#0A8F65]';
     return 'text-[#7188A6]';
   };
   const getConnectorClass = (node: typeof flowNodes[number], next?: typeof flowNodes[number]) => {
     if (!next) return '';
-    if (node.type === 'over' || next.type === 'over') return ended ? 'bg-[#F45B7A]/55' : 'bg-[#D9EEF7]';
+    if (node.type === 'over' || next.type === 'over') return ended ? (closingResult === 'failed' ? 'bg-[#F45B7A]/55' : 'bg-[#0EA5E9]/55') : 'bg-[#D9EEF7]';
     if (node.completed && next.completed) return 'bg-[#22B981]';
     if (node.active || next.active) return 'bg-[#0EA5E9]';
     return 'bg-[#D9EEF7]';
+  };
+  const clearLongPressTimer = () => {
+    if (!longPressTimerRef.current) return;
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
   };
   return (
     <div className={`grid w-full min-w-0 ${gridClass} ${compact ? 'gap-0.5' : 'gap-1'}`}>
       {flowNodes.map((node, index) => {
         const nextNode = flowNodes[index + 1];
-        const circleText = node.type === 'over'
-          ? ''
-          : node.active
-            ? node.shortLabel
-            : node.completed
-              ? '✓'
-              : '';
+        const circleText = node.type === 'process' ? node.teacherInitial : node.type === 'over' ? '' : node.completed ? '✓' : '';
         return (
           <div key={node.key} className="group relative min-w-0">
             {nextNode && (
@@ -3738,15 +4107,32 @@ const ConsultationFlowBar = ({
               type="button"
               disabled={node.disabled}
               onClick={() => {
+                if (longPressTriggeredRef.current) {
+                  longPressTriggeredRef.current = false;
+                  return;
+                }
                 if (node.type === 'process') onStageClick?.(node.key);
                 if (node.type === 'result') onResultClick?.();
                 if (node.type === 'over') onOverClick?.();
               }}
-              onDoubleClick={() => {
-                if (node.type === 'process') onStageDoubleClick?.(node.key);
-                if (node.type === 'result') onResultDoubleClick?.();
-                if (node.type === 'over') onOverDoubleClick?.();
+              onContextMenu={(event) => {
+                if (node.disabled || node.type !== 'process') return;
+                event.preventDefault();
+                onStageContextMenu?.(node.key);
               }}
+              onTouchStart={() => {
+                if (node.disabled || node.type !== 'process') return;
+                clearLongPressTimer();
+                longPressTriggeredRef.current = false;
+                longPressTimerRef.current = window.setTimeout(() => {
+                  longPressTriggeredRef.current = true;
+                  onStageLongPress?.(node.key);
+                  longPressTimerRef.current = null;
+                }, 520);
+              }}
+              onTouchEnd={clearLongPressTimer}
+              onTouchCancel={clearLongPressTimer}
+              onMouseLeave={clearLongPressTimer}
               title={node.title}
               className={`relative z-10 flex w-full min-w-0 flex-col items-center gap-0.5 rounded-lg ${compact ? 'min-h-9 py-0.5' : 'min-h-11 py-1'} text-center transition ${node.disabled ? 'cursor-default' : 'hover:bg-sky-50/70 dark:hover:bg-white/5'}`}
             >
@@ -3797,6 +4183,608 @@ const ConsultationFlowBar = ({
         );
       })}
     </div>
+  );
+};
+
+const ConsultationOverResultDialog = ({
+  open,
+  submitting = false,
+  onClose,
+  onSuccess,
+  onFailure,
+}: {
+  open: boolean;
+  submitting?: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  onFailure: () => void;
+}) => {
+  if (!open) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/35 px-4"
+      onClick={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 16 }}
+        className="w-full max-w-md overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-950"
+      >
+        <div className="border-b border-sky-50 px-5 py-4 dark:border-white/10">
+          <p className="text-base font-extrabold text-[#1F2A44] dark:text-white">这个咨询怎么结束？</p>
+          <p className="mt-1 text-sm font-semibold text-[#7188A6] dark:text-slate-400">成功会继续选择进班方式；失败会标记红色 Over。</p>
+        </div>
+        <div className="grid gap-3 p-5 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onSuccess}
+            disabled={submitting}
+            className="min-h-24 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100"
+          >
+            <span className="block text-sm font-extrabold">咨询成功</span>
+            <span className="mt-2 block text-xs font-semibold leading-5 text-emerald-700/80 dark:text-emerald-100/75">进入进班与学员档案确认。</span>
+          </button>
+          <button
+            type="button"
+            onClick={onFailure}
+            disabled={submitting}
+            className="min-h-24 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100"
+          >
+            <span className="block text-sm font-extrabold">咨询失败</span>
+            <span className="mt-2 block text-xs font-semibold leading-5 text-rose-700/80 dark:text-rose-100/75">结束咨询并显示红色 Over。</span>
+          </button>
+        </div>
+        <div className="border-t border-sky-50 px-5 py-3 dark:border-white/10">
+          <button type="button" onClick={onClose} className={workspaceSecondaryButtonClass} disabled={submitting}>
+            取消
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+const ConsultationFlowNodeDialog = ({
+  open,
+  stage,
+  values,
+  teacherOptions,
+  setAsCurrent,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  stage: string;
+  values: ConsultationFormValues;
+  teacherOptions: ConsultationTeacherOption[];
+  setAsCurrent: boolean;
+  onClose: () => void;
+  onSave: (draft: ConsultationFlowNodeDraft) => void;
+}) => {
+  const stageTeacherOptions = useMemo(
+    () => filterConsultationTeacherOptionsForStage(stage, teacherOptions),
+    [stage, teacherOptions],
+  );
+  const recommendedTeacher = useMemo(
+    () => getConsultationFlowNodeRecommendedTeacher(stage, values, stageTeacherOptions),
+    [stage, values, stageTeacherOptions],
+  );
+  const initialDraft = useMemo(() => {
+    const savedDraft = getConsultationFlowNodeDraft(values, stage);
+    if (savedDraft.teacherId || savedDraft.teacherName.trim()) return savedDraft;
+    return {
+      ...savedDraft,
+      teacherId: recommendedTeacher.teacherId,
+      teacherName: recommendedTeacher.teacherName,
+    };
+  }, [values, stage, recommendedTeacher]);
+  const [selectedTeacherId, setSelectedTeacherId] = useState(initialDraft.teacherId);
+  const [teacherName, setTeacherName] = useState(initialDraft.teacherName);
+  const [teacherSearch, setTeacherSearch] = useState('');
+  const [note, setNote] = useState(initialDraft.note);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedTeacherId(initialDraft.teacherId);
+    setTeacherName(initialDraft.teacherName);
+    setTeacherSearch('');
+    setNote(initialDraft.note);
+  }, [open, initialDraft]);
+
+  if (!open) {
+    return null;
+  }
+
+  const stageTitle = getConsultationFlowNodeTitle(stage);
+  const teacherLabel = getConsultationFlowNodeTeacherLabel(stage);
+  const selectedTeacher = stageTeacherOptions.find((option) => option.teacher_id === selectedTeacherId);
+  const displayTeacherName = teacherName || selectedTeacher?.display_name || '';
+  const teacherSelected = Boolean(displayTeacherName.trim());
+  const filteredTeacherOptions = searchConsultationTeacherOptions(stageTeacherOptions, teacherSearch);
+  const visibleTeacherOptions = selectedTeacher && !filteredTeacherOptions.some((option) => option.teacher_id === selectedTeacher.teacher_id)
+    ? [selectedTeacher, ...filteredTeacherOptions]
+    : filteredTeacherOptions;
+  const studentSummary = [
+    values.child_name || '未填写学生',
+    values.consultation_subject || '未填写科目',
+    values.grade || '未填写年级',
+  ].join(' · ');
+
+  const handleTeacherChange = (teacherId: string) => {
+    const option = stageTeacherOptions.find((item) => item.teacher_id === teacherId);
+    setSelectedTeacherId(teacherId);
+    setTeacherName(option?.display_name || '');
+  };
+
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/35 px-4"
+      onClick={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 12 }}
+        className="w-full max-w-md rounded-[18px] border border-sky-100 bg-white p-5 shadow-[0_26px_80px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-slate-900"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#0EA5E9]">{setAsCurrent ? '设为当前阶段' : '编辑阶段状态'}</p>
+            <h4 className="mt-1 text-lg font-extrabold text-[#1F2A44] dark:text-white">{stageTitle}</h4>
+            <p className="mt-1 truncate text-sm font-semibold text-[#7188A6] dark:text-slate-400">{studentSummary}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-[#7188A6] transition hover:bg-sky-100 hover:text-[#1F2A44] dark:bg-white/5 dark:text-slate-400"
+            aria-label="关闭阶段编辑"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        {setAsCurrent ? (
+          <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+            保存后会把后续阶段恢复为空白，只保留当前阶段及之前已完成的内容。
+          </div>
+        ) : null}
+
+        <div className="mt-5 space-y-3">
+          <label className={cn(
+            'block rounded-xl border px-3 py-3 transition',
+            teacherSelected
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
+              : 'border-sky-100 bg-sky-50/70 text-[#4F6178] dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+          )}>
+            <span className="flex items-center justify-between gap-3 text-sm font-extrabold">
+              <span className="min-w-0 truncate">{teacherLabel}：{displayTeacherName || '未选择'}</span>
+              {teacherSelected ? <CheckCircle2 size={17} className="shrink-0" /> : null}
+            </span>
+            <input
+              type="search"
+              value={teacherSearch}
+              onChange={(event) => setTeacherSearch(event.target.value)}
+              className="mt-3 h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-sm font-semibold text-[#1F2A44] outline-none transition placeholder:text-[#9AABBF] focus:border-[#0EA5E9] dark:border-white/10 dark:bg-slate-950 dark:text-white"
+              placeholder="筛选老师"
+            />
+            <select
+              value={selectedTeacherId}
+              onChange={(event) => handleTeacherChange(event.target.value)}
+              className="mt-3 h-10 w-full rounded-lg border border-sky-100 bg-white px-3 text-sm font-semibold text-[#1F2A44] outline-none transition focus:border-[#0EA5E9] dark:border-white/10 dark:bg-slate-950 dark:text-white"
+            >
+              <option value="">请选择老师</option>
+              {visibleTeacherOptions.map((option) => (
+                <option key={option.teacher_id} value={option.teacher_id}>{option.display_name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block space-y-2 text-sm">
+            <span className="font-bold text-[#4F6178] dark:text-slate-300">{stageTitle}阶段备注</span>
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              rows={4}
+              className={`${consultationInputClass} resize-none`}
+              placeholder="补充这个阶段的沟通情况、安排或提醒"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => onSave({
+              teacherId: selectedTeacherId,
+              teacherName: displayTeacherName,
+              note,
+            })}
+            className={workspacePrimaryButtonClass}
+          >
+            保存
+          </button>
+          <button type="button" onClick={onClose} className={workspaceSecondaryButtonClass}>
+            取消
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
+  );
+};
+
+const createConsultationEnterClassDraft = (values: ConsultationFormValues): ConsultationEnterClassDraft => {
+  const normalizedGrade = normalizeAcademicGradeLabel(values.grade || '一年级');
+  const inferredStage = getAcademicStageFromGrade(normalizedGrade) || '小奥';
+  return {
+    class_type: 'group',
+    subject: values.consultation_subject || '',
+    stage: inferredStage,
+    current_grade: normalizedGrade,
+    class_number: '1',
+    cohort_year: '',
+    show_cohort_year: false,
+    is_bridge: false,
+    bridge_target: serializeBridgeTarget(inferredStage === '小奥' ? '小学' : inferredStage, inferredStage === '高中' ? '高中' : inferredStage === '初中' ? '高中' : '初中'),
+  };
+};
+
+function resolveConsultationTeachingTeacherId(values: ConsultationFormValues, teacherOptions: ConsultationTeacherOption[]): string {
+  const savedStageTeacherId = values.stage_teacher_ids?.['成功进班']?.trim() || '';
+  if (savedStageTeacherId) return savedStageTeacherId;
+  const savedTeacherName = values.teaching_teacher.trim();
+  if (!savedTeacherName) return '';
+  const matchedTeacher = teacherOptions.find((option) => {
+    const candidates = [option.teacher_id, option.display_name, ...(option.aliases || [])]
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    return candidates.includes(savedTeacherName.toLowerCase());
+  });
+  return matchedTeacher?.teacher_id || '';
+}
+
+const ConsultationEnterClassDialog = ({
+  open,
+  values,
+  classes,
+  teacherOptions,
+  onClose,
+  onSubmit,
+  submitting = false,
+}: {
+  open: boolean;
+  values: ConsultationFormValues;
+  classes: ClassItem[];
+  teacherOptions: ConsultationTeacherOption[];
+  onClose: () => void;
+  onSubmit: (payload: ConsultationEnterClassPayload) => Promise<void> | void;
+  submitting?: boolean;
+}) => {
+  const [enterClassMode, setEnterClassMode] = useState<ConsultationEnterClassMode>('existing');
+  const [existingClassId, setExistingClassId] = useState('');
+  const [teachingTeacherId, setTeachingTeacherId] = useState(() => resolveConsultationTeachingTeacherId(values, teacherOptions));
+  const [formError, setFormError] = useState('');
+  const [quickClassDraft, setQuickClassDraft] = useState<ConsultationEnterClassDraft>(() => createConsultationEnterClassDraft(values));
+  const [existingClassFilters, setExistingClassFilters] = useState(() => buildRecommendedConsultationClassFilters({
+    consultationSubject: values.consultation_subject,
+    consultationGrade: values.grade,
+    subjectOptions: academicSubjectOptions,
+  }));
+  const filteredExistingClasses = filterConsultationEnterClassOptions({
+    classes,
+    subjectOptions: academicSubjectOptions,
+    filters: existingClassFilters,
+  });
+  const quickBridge = parseBridgeTarget(quickClassDraft.bridge_target, quickClassDraft.stage);
+  const quickGradeOptions = academicGradeGroups[quickClassDraft.stage as keyof typeof academicGradeGroups] || academicGradeOptions;
+  const quickClassNamePreview = buildClassDisplayName({
+    subject: quickClassDraft.subject,
+    class_type: quickClassDraft.class_type,
+    stage: quickClassDraft.stage,
+    current_grade: quickClassDraft.current_grade,
+    grade: quickClassDraft.current_grade,
+    class_number: quickClassDraft.class_number,
+    cohort_year: quickClassDraft.cohort_year,
+    show_cohort_year: quickClassDraft.show_cohort_year,
+    is_bridge: quickClassDraft.is_bridge,
+    bridge_target: quickClassDraft.bridge_target,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setEnterClassMode('existing');
+    setExistingClassId(values.success_class_id ? String(values.success_class_id) : '');
+    setTeachingTeacherId(resolveConsultationTeachingTeacherId(values, teacherOptions));
+    setFormError('');
+    setQuickClassDraft(createConsultationEnterClassDraft(values));
+    setExistingClassFilters(buildRecommendedConsultationClassFilters({
+      consultationSubject: values.consultation_subject,
+      consultationGrade: values.grade,
+      subjectOptions: academicSubjectOptions,
+    }));
+  }, [open, values, teacherOptions]);
+
+  if (!open) return null;
+
+  const updateQuickClassDraft = <K extends keyof ConsultationEnterClassDraft>(key: K, value: ConsultationEnterClassDraft[K]) => {
+    setQuickClassDraft((current) => {
+      const next = { ...current, [key]: value };
+      if (key === 'stage') {
+        const stage = String(value);
+        const gradeOptions = academicGradeGroups[stage as keyof typeof academicGradeGroups] || academicGradeOptions;
+        next.current_grade = gradeOptions.includes(next.current_grade) ? next.current_grade : gradeOptions[0] || next.current_grade;
+        next.bridge_target = serializeBridgeTarget(stage === '小奥' ? '小学' : stage, stage === '高中' ? '高中' : stage === '初中' ? '高中' : '初中');
+      }
+      return next;
+    });
+  };
+  const updateQuickBridgeTarget = (fromStage: string, toStage: string) => {
+    updateQuickClassDraft('bridge_target', serializeBridgeTarget(fromStage, toStage));
+  };
+  const updateExistingClassFilter = <K extends keyof typeof existingClassFilters>(key: K, value: (typeof existingClassFilters)[K]) => {
+    setExistingClassId('');
+    setExistingClassFilters((current) => {
+      const next = { ...current, [key]: value };
+      if (key === 'stageFilter') {
+        const gradeOptions = academicGradeGroups[String(value) as keyof typeof academicGradeGroups] || academicGradeOptions;
+        next.gradeFilter = gradeOptions.includes(String(next.gradeFilter)) ? next.gradeFilter : '全部';
+      }
+      return next;
+    });
+  };
+  const loosenExistingClassFilters = () => {
+    setExistingClassId('');
+    setExistingClassFilters({
+      subjectFilter: '全部学科',
+      teacherFilter: 'all',
+      stageFilter: '全部学段',
+      gradeFilter: '全部',
+    });
+  };
+  const selectedTeachingTeacher = teacherOptions.find((option) => option.teacher_id === teachingTeacherId);
+  const selectedTeachingTeacherUserId = Number(teachingTeacherId);
+  const teachingTeacherHandoff = {
+    teachingTeacherId: selectedTeachingTeacher?.teacher_id || teachingTeacherId,
+    teachingTeacherName: selectedTeachingTeacher?.display_name || values.teaching_teacher || '',
+    teachingTeacherUserId: Number.isInteger(selectedTeachingTeacherUserId) && selectedTeachingTeacherUserId > 0 ? selectedTeachingTeacherUserId : undefined,
+  };
+  const handleSubmitEnterClass = async () => {
+    setFormError('');
+    if (enterClassMode === 'existing' && !existingClassId) {
+      setFormError('请选择已有班级');
+      return;
+    }
+    if (enterClassMode === 'quick-create' && !quickClassNamePreview) {
+      setFormError('请先补充班级信息');
+      return;
+    }
+    const selectedExistingClass = classes.find((item) => String(item.id) === existingClassId);
+    await onSubmit(buildConsultationEnterClassPayload(
+      enterClassMode === 'existing'
+        ? {
+            mode: 'existing',
+            existingClassId,
+            consultationSubject: values.consultation_subject || selectedExistingClass?.subject || (existingClassFilters.subjectFilter !== '全部学科' ? existingClassFilters.subjectFilter : ''),
+            grade: values.grade || selectedExistingClass?.current_grade || selectedExistingClass?.grade || (existingClassFilters.gradeFilter !== '全部' ? existingClassFilters.gradeFilter : ''),
+            ...teachingTeacherHandoff,
+          }
+        : enterClassMode === 'quick-create'
+          ? { mode: 'quick-create', quickClassDraft, ...teachingTeacherHandoff }
+          : { mode: 'pending', ...teachingTeacherHandoff },
+    ));
+  };
+  const modeCards: Array<{ id: ConsultationEnterClassMode; title: string; body: string; icon: React.ReactNode; tone: string }> = [
+    { id: 'existing', title: '已有班级', body: '从现有班级中选择，后续建立学员档案。', icon: <Library size={18} />, tone: 'border-sky-200 bg-sky-50 text-sky-700' },
+    { id: 'quick-create', title: '快速建班', body: '沿用班级管理规则生成班名，再完成进班。', icon: <PlusCircle size={18} />, tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+    { id: 'pending', title: '转化待进班', body: '先记为成功，班级和档案稍后补齐。', icon: <Info size={18} />, tone: 'border-amber-200 bg-amber-50 text-amber-700' },
+  ];
+  const studentSummary = [
+    values.child_name || '未填写学生',
+    values.consultation_subject || '未填写科目',
+    values.grade || '未填写年级',
+  ].join(' · ');
+
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-950/35 px-4"
+      onClick={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 12 }}
+        className="w-full max-w-[46rem] overflow-hidden rounded-[18px] border border-sky-100 bg-white shadow-[0_28px_88px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-slate-900"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-sky-100 px-5 py-4 dark:border-white/10">
+          <div className="min-w-0">
+            <h4 className="text-lg font-extrabold text-[#1F2A44] dark:text-white">进班与学员档案</h4>
+            <p className="mt-1 truncate text-sm font-semibold text-[#7188A6] dark:text-slate-400">{studentSummary}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-[#7188A6] transition hover:bg-sky-100 hover:text-[#1F2A44] dark:bg-white/5 dark:text-slate-400"
+            aria-label="关闭进班弹窗"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(100dvh-10rem)] overflow-y-auto px-5 py-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            {modeCards.map((card) => (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => {
+                  setEnterClassMode(card.id);
+                  setFormError('');
+                }}
+                className={cn(
+                  'rounded-[14px] border p-4 text-left transition',
+                  enterClassMode === card.id
+                    ? card.tone
+                    : 'border-sky-100 bg-white text-[#4F6178] hover:bg-sky-50 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-white/5',
+                )}
+              >
+                <span className="flex items-center gap-2 text-sm font-extrabold">
+                  {card.icon}
+                  {card.title}
+                </span>
+                <span className="mt-2 block text-xs font-semibold leading-5 opacity-80">{card.body}</span>
+              </button>
+            ))}
+          </div>
+
+          <section className="mt-4 rounded-[14px] border border-emerald-100 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
+            <label className="block space-y-2 text-sm">
+              <span className="font-bold text-[#4F6178] dark:text-slate-300">带课教师</span>
+              <select value={teachingTeacherId} onChange={(event) => setTeachingTeacherId(event.target.value)} className={consultationInputClass}>
+                <option value="">请选择带课教师</option>
+                {teacherOptions.map((option) => (
+                  <option key={option.teacher_id} value={option.teacher_id}>{option.display_name}</option>
+                ))}
+              </select>
+              <span className="block text-xs font-semibold text-[#7188A6] dark:text-slate-400">
+                选择后会写入咨询交接；快速建班时也会同步为新班级老师。
+              </span>
+            </label>
+          </section>
+
+          {enterClassMode === 'existing' && (
+            <section className="mt-4 rounded-[14px] border border-sky-100 bg-sky-50/60 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="grid gap-3 md:grid-cols-4">
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">学科</span>
+                  <select value={existingClassFilters.subjectFilter} onChange={(event) => updateExistingClassFilter('subjectFilter', event.target.value)} className={consultationInputClass}>
+                    <option value="全部学科">全部学科</option>
+                    {academicSubjectOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">学段</span>
+                  <select value={existingClassFilters.stageFilter} onChange={(event) => updateExistingClassFilter('stageFilter', event.target.value)} className={consultationInputClass}>
+                    <option value="全部学段">全部学段</option>
+                    {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">年级</span>
+                  <select value={existingClassFilters.gradeFilter} onChange={(event) => updateExistingClassFilter('gradeFilter', event.target.value)} className={consultationInputClass}>
+                    <option value="全部">全部</option>
+                    {academicGradeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <button type="button" onClick={loosenExistingClassFilters} className={`${workspaceSecondaryButtonClass} self-end`}>
+                  放宽筛选
+                </button>
+              </div>
+              <label className="mt-3 block space-y-2 text-sm">
+                <span className="font-bold text-[#4F6178] dark:text-slate-300">已有班级</span>
+                <select value={existingClassId} onChange={(event) => setExistingClassId(event.target.value)} className={consultationInputClass}>
+                  <option value="">{filteredExistingClasses.length ? '请选择班级' : '暂无匹配班级，请放宽筛选'}</option>
+                  {filteredExistingClasses.map((item) => (
+                    <option key={item.id} value={item.id}>{getCurrentClassDisplayName(item)}</option>
+                  ))}
+                </select>
+                <span className="block text-xs font-semibold text-[#7188A6] dark:text-slate-400">
+                  已按推荐条件预选，可随时改学科、学段或年级；结果按小课、班课、年级顺序排列。
+                </span>
+              </label>
+            </section>
+          )}
+
+          {enterClassMode === 'quick-create' && (
+            <section className="mt-4 rounded-[14px] border border-emerald-100 bg-emerald-50/55 p-4 dark:border-emerald-400/20 dark:bg-emerald-500/10">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">班型</span>
+                  <select value={quickClassDraft.class_type} onChange={(event) => updateQuickClassDraft('class_type', event.target.value)} className={consultationInputClass}>
+                    <option value="group">多人班课</option>
+                    <option value="1v1">1v1</option>
+                    <option value="1v2">1v2</option>
+                    <option value="1v3">1v3</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">学科</span>
+                  <select value={academicSubjectOptions.includes(quickClassDraft.subject) ? quickClassDraft.subject : ''} onChange={(event) => updateQuickClassDraft('subject', event.target.value)} className={consultationInputClass}>
+                    <option value="">请选择学科</option>
+                    {academicSubjectOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">学段</span>
+                  <select value={quickClassDraft.stage} onChange={(event) => updateQuickClassDraft('stage', event.target.value)} className={consultationInputClass}>
+                    {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">年级</span>
+                  <select value={quickClassDraft.current_grade} onChange={(event) => updateQuickClassDraft('current_grade', event.target.value)} className={consultationInputClass}>
+                    {quickGradeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="font-bold text-[#4F6178] dark:text-slate-300">班号</span>
+                  <input type="number" min="1" value={quickClassDraft.class_number} onChange={(event) => updateQuickClassDraft('class_number', event.target.value)} className={consultationInputClass} />
+                </label>
+                <label className="flex items-center gap-2 self-end rounded-xl border border-emerald-100 bg-white/75 px-3 py-2.5 text-sm font-bold text-[#4F6178] dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-300">
+                  <input type="checkbox" checked={quickClassDraft.is_bridge} onChange={(event) => updateQuickClassDraft('is_bridge', event.target.checked)} />
+                  衔接班
+                </label>
+                {quickClassDraft.is_bridge && (
+                  <div className="grid gap-3 rounded-xl border border-emerald-100 bg-white/75 p-3 text-sm md:col-span-2 md:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center dark:border-white/10 dark:bg-slate-950/60">
+                    <span className="font-extrabold text-[#4F6178] dark:text-slate-300">衔接方向</span>
+                    <select value={quickBridge.fromStage} onChange={(event) => updateQuickBridgeTarget(event.target.value, quickBridge.toStage)} className={consultationInputClass}>
+                      {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                    <span className="text-center font-extrabold text-[#4F6178] dark:text-slate-300">衔</span>
+                    <select value={quickBridge.toStage} onChange={(event) => updateQuickBridgeTarget(quickBridge.fromStage, event.target.value)} className={consultationInputClass}>
+                      {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="rounded-xl border border-emerald-100 bg-white/80 px-4 py-3 text-sm font-extrabold text-emerald-700 md:col-span-2 dark:border-emerald-400/20 dark:bg-slate-950/60 dark:text-emerald-300">
+                  修改之后的班名预览：{quickClassNamePreview || '请先补充班级信息'}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {enterClassMode === 'pending' && (
+            <section className="mt-4 rounded-[14px] border border-amber-100 bg-amber-50/70 p-4 text-sm font-semibold leading-6 text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+              先标记为转化待进班，班级、学员档案和后续交接信息在下一步补齐。
+            </section>
+          )}
+          {formError && (
+            <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+              {formError}
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-3 border-t border-sky-100 px-5 py-4 sm:grid-cols-2 dark:border-white/10">
+          <button type="button" onClick={() => void handleSubmitEnterClass()} disabled={submitting} className={workspacePrimaryButtonClass}>
+            {submitting ? '保存中...' : '确认进班'}
+          </button>
+          <button type="button" onClick={onClose} disabled={submitting} className={workspaceSecondaryButtonClass}>
+            取消
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
   );
 };
 
@@ -3897,6 +4885,46 @@ const ConsultationCardExpandableText = ({
   );
 };
 
+const renderConsultationResponsibilityHistory = (history: ConsultationResponsibilityHistoryItem[]) => {
+  const items = Array.isArray(history) ? history.filter((item) => item && item.stage) : [];
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <section className={`${consultationPanelClass} space-y-3 p-3.5 sm:p-4`}>
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-sm font-extrabold text-[#1F2A44] dark:text-white">责任变更</h4>
+        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200">
+          {items.length} 次
+        </span>
+      </div>
+      <div className="grid gap-2">
+        {items.map((item, index) => (
+          <div
+            key={`${item.stage}-${item.from_teacher_id}-${item.to_teacher_id}-${index}`}
+            className="rounded-xl border border-emerald-100 bg-white/80 px-3 py-2 text-sm dark:border-emerald-400/20 dark:bg-slate-950/70"
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-2 font-semibold text-slate-700 dark:text-slate-100">
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-extrabold text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200">
+                {item.stage || '阶段'}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-extrabold text-slate-500 dark:bg-white/10 dark:text-slate-300">
+                {item.change_kind === 'reassign' ? '管理层改派' : '老师转接'}
+              </span>
+              <span className="min-w-0 truncate">{item.from_teacher_name || item.from_teacher_id || '原老师'}</span>
+              <ArrowRight size={14} className="shrink-0 text-emerald-500" />
+              <span className="min-w-0 truncate">{item.to_teacher_name || item.to_teacher_id || '新老师'}</span>
+            </div>
+            {item.note ? (
+              <p className="mt-1.5 line-clamp-2 text-xs font-medium text-slate-500 dark:text-slate-400">{item.note}</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+};
+
 const ConsultationReadOnlyReport = ({
   form,
   record,
@@ -3918,8 +4946,12 @@ const ConsultationReadOnlyReport = ({
       : '尚未定论';
   const value = (text?: string | null) => text?.trim() || '—';
   const readOnlyTwoColumnGridClass = 'grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]';
+  const testTeacherDone = Boolean(form.test_teacher.trim());
+  const trialTeacherDone = Boolean(form.trial_teacher.trim());
+  const teachingTeacherDone = Boolean(form.teaching_teacher.trim());
 
   return (
+    <div className="space-y-3">
     <section className="grid gap-3 md:grid-cols-2">
       <div className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem]')}>
         <p className={compactFlowTitleClass(sectionStates.base)}>基础信息</p>
@@ -3946,6 +4978,13 @@ const ConsultationReadOnlyReport = ({
           <div>
             <div className="grid grid-cols-2 gap-2">
               <div><p className={compactReadLabelClass}>是否测试</p><p className={compactReadValueClass}>{value(form.test_taken)}</p></div>
+              <div>
+                <p className={compactReadLabelClass}>测试教师</p>
+                <p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">
+                  {value(form.test_teacher)}
+                  {testTeacherDone ? <CheckCircle2 size={14} /> : null}
+                </p>
+              </div>
               <div><p className={compactReadLabelClass}>图片数量</p><p className={compactReadValueClass}>{form.test_images.length ? `${form.test_images.length} 张` : '暂无'}</p></div>
             </div>
             {form.test_images.length > 0 ? (
@@ -3971,7 +5010,13 @@ const ConsultationReadOnlyReport = ({
         <p className={compactFlowTitleClass(sectionStates.trial)}>试听</p>
         <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
-          <div><p className={compactReadLabelClass}>试听教师</p><p className={compactReadValueClass}>{value(form.trial_teacher)}</p></div>
+          <div>
+            <p className={compactReadLabelClass}>试听教师</p>
+            <p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">
+              {value(form.trial_teacher)}
+              {trialTeacherDone ? <CheckCircle2 size={14} /> : null}
+            </p>
+          </div>
           <div><p className={compactReadLabelClass}>对应班课</p><p className={compactReadValueClass}>{value(trialClassName || form.trial_class_manual)}</p></div>
           <div><p className={compactReadLabelClass}>试听时间段</p><p className={compactReadValueClass}>{value(form.trial_time_slot)}</p></div>
         </div>
@@ -4001,6 +5046,13 @@ const ConsultationReadOnlyReport = ({
             <p className={compactReadLabelClass}>班级</p>
             <p className={compactReadValueClass}>{value(successClassName || form.success_class_manual)}</p>
           </div>
+          <div>
+            <p className={compactReadLabelClass}>带课教师</p>
+            <p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">
+              {value(form.teaching_teacher)}
+              {teachingTeacherDone ? <CheckCircle2 size={14} /> : null}
+            </p>
+          </div>
           {record && (
             <>
               <div><p className={compactReadLabelClass}>录入时间</p><p className={compactReadValueClass}>{record.created_at || '—'}</p></div>
@@ -4016,6 +5068,8 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
     </section>
+    {renderConsultationResponsibilityHistory(form.responsibility_history)}
+    </div>
   );
 };
 
@@ -4030,6 +5084,7 @@ const ConsultationModal = ({
   currentUser,
   onClose,
   onSubmit,
+  onEnteredClass,
   onDelete,
   onRequestEdit,
 }: {
@@ -4042,17 +5097,20 @@ const ConsultationModal = ({
   error: string;
   currentUser: CurrentUser;
   onClose: () => void;
-  onSubmit: (values: ConsultationFormValues) => Promise<void>;
+  onSubmit: (values: ConsultationFormValues) => Promise<ConsultationRecord | void>;
+  onEnteredClass?: (record: ConsultationRecord) => Promise<void> | void;
   onDelete?: () => Promise<void>;
   onRequestEdit?: () => void;
 }) => {
   const [form, setForm] = useState<ConsultationFormValues>(toConsultationFormValues(record));
   const [quickEntry, setQuickEntry] = useState('');
   const [parseFeedback, setParseFeedback] = useState('');
-  const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   const [trialManualClassActive, setTrialManualClassActive] = useState(false);
   const [successManualClassActive, setSuccessManualClassActive] = useState(false);
   const [highlightedJumpStage, setHighlightedJumpStage] = useState<string>('');
+  const [flowNodeDialog, setFlowNodeDialog] = useState<ConsultationFlowNodeDialogState | null>(null);
+  const [enterClassDialogOpen, setEnterClassDialogOpen] = useState(false);
+  const [overResultDialogOpen, setOverResultDialogOpen] = useState(false);
   const formScrollRef = useRef<HTMLFormElement | null>(null);
   const baseInfoRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -4081,8 +5139,10 @@ const ConsultationModal = ({
       setForm(initialConsultationForm);
       setQuickEntry('');
       setParseFeedback('');
-      setConfirmRestoreOpen(false);
       setHighlightedJumpStage('');
+      setFlowNodeDialog(null);
+      setEnterClassDialogOpen(false);
+      setOverResultDialogOpen(false);
       setTrialManualClassActive(Boolean(initialConsultationForm.trial_class_manual && !initialConsultationForm.trial_class_id));
       setSuccessManualClassActive(Boolean(initialConsultationForm.success_class_manual && !initialConsultationForm.success_class_id));
     }
@@ -4222,6 +5282,54 @@ const ConsultationModal = ({
     jumpHighlightTimerRef.current = window.setTimeout(() => setHighlightedJumpStage(''), 900);
   };
 
+  const openFlowNodeDialog = (stage: string, setAsCurrent: boolean) => {
+    if (!isDomainConsultationProcessStage(stage)) return;
+    if (!setAsCurrent) {
+      const lightColor = getConsultationFlowLightColor(form, stage);
+      if (lightColor === 'green' || lightColor === 'blue') {
+        setForm((current) => clearConsultationFlowNodeContent(current, stage));
+        return;
+      }
+    }
+    setFlowNodeDialog({ stage, setAsCurrent });
+  };
+
+  const handleSaveFlowNodeDialog = (draft: ConsultationFlowNodeDraft) => {
+    if (!flowNodeDialog) return;
+    setForm((current) => applyConsultationFlowNodeDraft(current, flowNodeDialog.stage, draft, flowNodeDialog.setAsCurrent));
+    setFlowNodeDialog(null);
+  };
+
+  const handleSubmitEnterClassDialog = async (payload: ConsultationEnterClassPayload) => {
+    setParseFeedback('');
+    try {
+      const createdRecord = record || await apiFetch<ConsultationRecord>('/api/consultations', {
+        method: 'POST',
+        body: JSON.stringify(form),
+      });
+      const result = await apiFetch<{ item: ConsultationRecord; class_id: number | null; student?: unknown }>(`/api/consultations/${createdRecord.id}/enter-class`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const normalized = normalizeConsultationRecord(result.item);
+      setForm(deriveConsultationFlowFromFields(toConsultationFormValues(normalized)));
+      setEnterClassDialogOpen(false);
+      await onEnteredClass?.(normalized);
+    } catch (err) {
+      setParseFeedback(err instanceof Error ? err.message : '确认进班失败');
+    }
+  };
+
+  const handleChooseOverSuccess = () => {
+    setOverResultDialogOpen(false);
+    setEnterClassDialogOpen(true);
+  };
+
+  const handleChooseOverFailure = () => {
+    setForm((current) => applyConsultationOverFailureValues(current));
+    setOverResultDialogOpen(false);
+  };
+
   const handleSuccessClassChange = (value: string) => {
     const classId = value ? Number(value) : null;
     setForm((current) => {
@@ -4260,12 +5368,13 @@ const ConsultationModal = ({
   );
   const customerWechatDone = form.completed_stages.includes('已加小客服微信') || form.flow_stage === '已加小客服微信';
   const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
-  const showTestFields = form.flow_stage === '待测试' || form.test_taken || form.test_images.length > 0;
+  const showTestFields = form.flow_stage === '待测试' || form.test_taken || form.test_teacher || form.test_images.length > 0;
   const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
   const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
   const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
   const sectionStates = getConsultationFlowSectionStates(form);
   const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
+  const transferredEditableFromStage = record?.is_transferred_consultation && currentUser.role === 'member' ? record.assigned_stage : '';
 
   return (
     <motion.div
@@ -4345,54 +5454,39 @@ const ConsultationModal = ({
                 </span>
               </div>
             </div>
-            {confirmRestoreOpen && (
-              <div className="rounded-2xl border border-sky-100 bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-950">
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">是否恢复这个咨询？</p>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForm((current) => restoreConsultationValues(current));
-                      setConfirmRestoreOpen(false);
-                    }}
-                    className={workspacePrimaryButtonClass}
-                  >
-                    是
-                  </button>
-                  <button type="button" onClick={() => setConfirmRestoreOpen(false)} className={workspaceSecondaryButtonClass}>
-                    否
-                  </button>
-                </div>
-              </div>
-            )}
             <div className="min-w-0">
               <ConsultationFlowBar
                 mode="list"
                 stage={form.flow_stage}
                 completedStages={form.completed_stages}
+                stageTeacherMarkers={buildConsultationStageTeacherMarkersFromValues(form, teacherDirectory)}
+                closingResult={form.closing_result}
                 editable={!readOnly && !stageFrozen}
+                editableFromStage={transferredEditableFromStage}
                 showJumpActions={!readOnly}
                 showOver
                 overDisabled={readOnly}
-                onStageClick={(nextStage) => setForm((current) => toggleConsultationStage(current, nextStage))}
-                onStageDoubleClick={(nextStage) => setForm((current) => moveConsultationStage(current, nextStage))}
-                onResultChange={(nextStage) => setForm((current) => setConsultationResultStage(current, nextStage))}
-                onResultClick={() => {
-                  setForm((current) => (
-                    isConsultationResultStage(current.flow_stage)
-                      ? clearConsultationResultStage(current)
-                      : setConsultationResultStage(current, '成功进班')
-                  ));
+                onStageClick={(nextStage) => openFlowNodeDialog(nextStage, false)}
+                onStageContextMenu={(nextStage) => openFlowNodeDialog(nextStage, true)}
+                onStageLongPress={(nextStage) => openFlowNodeDialog(nextStage, true)}
+                onResultChange={(nextStage) => {
+                  if (nextStage === '成功进班') {
+                    setEnterClassDialogOpen(true);
+                    return;
+                  }
+                  setForm((current) => setConsultationResultStage(current, nextStage));
                 }}
-                onResultDoubleClick={() => setForm((current) => setConsultationResultStage(current, '成功进班'))}
+                onResultClick={() => {
+                  setEnterClassDialogOpen(true);
+                }}
                 onStageJump={handleStageJump}
                 onOverClick={() => {
                   if (readOnly) return;
                   if (stageFrozen) {
-                    setConfirmRestoreOpen(true);
+                    setForm((current) => restoreConsultationValues(current));
                     return;
                   }
-                  setForm((current) => endConsultationValues(current));
+                  setOverResultDialogOpen(true);
                 }}
               />
             </div>
@@ -4540,10 +5634,14 @@ const ConsultationModal = ({
             {(showTestFields || !readOnly) && (
               <div ref={testSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', testHighlighted && consultationJumpHighlightClass)}>
                 <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">测试</h5>
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <label className="space-y-2 text-sm">
-                    <span className={compactEditLabelClass}>是否测试</span>
-                    <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
+	                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+	                  <div className={compactStatusClass(Boolean(form.test_teacher.trim()))}>
+	                    <span className="min-w-0 truncate">测试教师：{form.test_teacher.trim() || '未选择'}</span>
+	                    {form.test_teacher.trim() ? <CheckCircle2 size={16} className="shrink-0" /> : null}
+	                  </div>
+	                  <label className="space-y-2 text-sm">
+	                    <span className={compactEditLabelClass}>是否测试</span>
+	                    <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
                       <option value="">未记录</option>
                       <option value="是">是</option>
                       <option value="否">否</option>
@@ -4685,15 +5783,28 @@ const ConsultationModal = ({
                       <option value="__other__">其他：手动输入</option>
                     </select>
                   </label>
-                  {successUsesManualClass && (
-                    <label className="space-y-2 text-sm">
-                      <span className={compactEditLabelClass}>其他班级</span>
-                      <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
-                    </label>
-                  )}
-                </div>
-              </div>
-            )}
+                      {successUsesManualClass && (
+                        <label className="space-y-2 text-sm">
+                          <span className={compactEditLabelClass}>其他班级</span>
+                          <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
+                        </label>
+                      )}
+                      <label className="space-y-2 text-sm">
+                        <span className={compactEditLabelClass}>带课教师</span>
+                        <select value={form.teaching_teacher} onChange={(e) => updateField('teaching_teacher', e.target.value)} disabled={readOnly} className={fieldClass}>
+                          <option value="">请选择带课教师</option>
+                          {teacherOptions.map((option) => (
+                            <option key={option.teacher_id} value={option.display_name}>{option.display_name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-2 text-sm lg:col-span-2">
+                        <span className={compactEditLabelClass}>带课交接备注</span>
+                        <textarea value={form.teaching_teacher_note} onChange={(e) => updateField('teaching_teacher_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} placeholder="记录进班后的交接信息、班级注意事项或需要带课老师补充的内容" />
+                      </label>
+                    </div>
+                  </div>
+                )}
 
             {(showEndFields || !readOnly) && (
               <label ref={endSectionRef} className={cn('scroll-mt-6 space-y-2 rounded-xl p-2 text-sm transition', endHighlighted && consultationJumpHighlightClass)}>
@@ -4721,6 +5832,7 @@ const ConsultationModal = ({
             )}
             </section>
           </div>
+          {renderConsultationResponsibilityHistory(form.responsibility_history)}
             </>
           )}
 
@@ -4771,6 +5883,37 @@ const ConsultationModal = ({
             </div>
           </div>
         </form>
+        {flowNodeDialog && (
+          <ConsultationFlowNodeDialog
+            open={Boolean(flowNodeDialog)}
+            stage={flowNodeDialog.stage}
+            values={form}
+            teacherOptions={teacherOptions}
+            setAsCurrent={flowNodeDialog.setAsCurrent}
+            onClose={() => setFlowNodeDialog(null)}
+            onSave={handleSaveFlowNodeDialog}
+          />
+        )}
+        {enterClassDialogOpen && (
+          <ConsultationEnterClassDialog
+            open={enterClassDialogOpen}
+            values={form}
+            classes={assignableClassOptions}
+            teacherOptions={consultationTeachers}
+            onClose={() => setEnterClassDialogOpen(false)}
+            onSubmit={handleSubmitEnterClassDialog}
+            submitting={submitting}
+          />
+        )}
+        {overResultDialogOpen && (
+          <ConsultationOverResultDialog
+            open={overResultDialogOpen}
+            submitting={submitting}
+            onClose={() => setOverResultDialogOpen(false)}
+            onSuccess={handleChooseOverSuccess}
+            onFailure={handleChooseOverFailure}
+          />
+        )}
       </motion.div>
     </motion.div>
   );
@@ -5184,6 +6327,7 @@ const ConsultationBatchModal = ({
 const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const canManage = hasStaffAccess(currentUser.role);
   const canEditConsultations = canManage || currentUser.role === 'member';
+  const canEditConsultationRecord = (record: ConsultationRecord) => canManage || (canEditConsultations && record.can_edit_consultation !== false);
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -5197,9 +6341,11 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [activeFilter, setActiveFilter] = useState<ConsultationFilterKey>('pending');
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [restoreConfirmRecord, setRestoreConfirmRecord] = useState<ConsultationRecord | null>(null);
+  const [flowNodeDialog, setFlowNodeDialog] = useState<InlineConsultationFlowNodeDialogState | null>(null);
+  const [enterClassDialogRecord, setEnterClassDialogRecord] = useState<ConsultationRecord | null>(null);
+  const [overResultDialogRecord, setOverResultDialogRecord] = useState<ConsultationRecord | null>(null);
   const loadRequestId = useRef(0);
-  const teacherDirectory = buildConsultationTeacherDirectory(records);
+  const teacherDirectory = buildConsultationTeacherDirectory(records, consultationTeachers);
 
   const load = useCallback(async (keyword: string) => {
     const requestId = ++loadRequestId.current;
@@ -5292,6 +6438,10 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const openEditModal = (record: ConsultationRecord) => {
+    if (!canEditConsultationRecord(record)) {
+      openViewModal(record);
+      return;
+    }
     setSelectedRecord(record);
     setModalMode('edit');
     setModalOpen(true);
@@ -5312,24 +6462,42 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     setSubmitting(true);
     setError('');
     try {
+      let savedRecord: ConsultationRecord;
       if (modalMode === 'edit' && selectedRecord) {
-        await apiFetch(`/api/consultations/${selectedRecord.id}`, {
+        if (!canEditConsultationRecord(selectedRecord)) {
+          setError('当前只能查看这条转接咨询');
+          return undefined;
+        }
+        savedRecord = await apiFetch<ConsultationRecord>(`/api/consultations/${selectedRecord.id}`, {
           method: 'PUT',
           body: JSON.stringify(values),
         });
       } else {
-        await apiFetch('/api/consultations', {
+        savedRecord = await apiFetch<ConsultationRecord>('/api/consultations', {
           method: 'POST',
           body: JSON.stringify(values),
         });
       }
       closeModal();
       await load(search);
+      return normalizeConsultationRecord(savedRecord);
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存咨询记录失败');
+      return undefined;
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleModalEnteredClass = async (record: ConsultationRecord) => {
+    setRecords((current) => {
+      const exists = current.some((item) => item.id === record.id);
+      return exists
+        ? current.map((item) => (item.id === record.id ? normalizeConsultationRecord(record) : item))
+        : [normalizeConsultationRecord(record), ...current];
+    });
+    closeModal();
+    await load(search);
   };
 
   const handleDelete = async () => {
@@ -5380,11 +6548,12 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const handleInlineResultChange = async (record: ConsultationRecord, resultStage: ConsultationResultStage) => {
-    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
       return;
     }
-    if (resultStage === '成功进班' && !record.success_class_id && !record.success_class_manual.trim()) {
-      setError('成功进班必须先选择或填写班级。');
+    if (resultStage === '成功进班') {
+      setError('');
+      setEnterClassDialogRecord(record);
       return;
     }
     setError('');
@@ -5393,43 +6562,98 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   };
 
   const handleInlineResultClick = async (record: ConsultationRecord) => {
-    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
-      return;
-    }
-    if (!isConsultationResultStage(record.flow_stage) && !record.success_class_id && !record.success_class_manual.trim()) {
-      setError('成功进班必须先选择或填写班级。');
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
       return;
     }
     setError('');
-    const formValues = toConsultationFormValues(record);
-    const values = isConsultationResultStage(record.flow_stage)
-      ? clearConsultationResultStage(formValues)
-      : setConsultationResultStage(formValues, '成功进班');
-    await saveInlineConsultationUpdate(record, values, '更新咨询结果失败');
+    setEnterClassDialogRecord(record);
+  };
+
+  const handleSubmitInlineEnterClass = async (payload: ConsultationEnterClassPayload) => {
+    if (!enterClassDialogRecord || !canEditConsultationRecord(enterClassDialogRecord) || isBusy) {
+      return;
+    }
+    const record = enterClassDialogRecord;
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await apiFetch<{ item: ConsultationRecord; class_id: number | null; student?: unknown }>(`/api/consultations/${record.id}/enter-class`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setRecords((current) => current.map((item) => (item.id === record.id ? normalizeConsultationRecord(result.item) : item)));
+      setEnterClassDialogRecord(null);
+      await load(search);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '确认进班失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleInlineStageClick = async (record: ConsultationRecord, stage: string) => {
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    setError('');
+    if (!isDomainConsultationProcessStage(stage)) return;
+    const lightColor = getConsultationFlowLightColor(toConsultationFormValues(record), stage);
+    if (lightColor === 'green' || lightColor === 'blue') {
+      const values = clearConsultationFlowNodeContent(toConsultationFormValues(record), stage);
+      await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
+      return;
+    }
+    openInlineFlowNodeDialog(record, stage, false);
+  };
+
+  const handleInlineStageCurrent = async (record: ConsultationRecord, stage: string) => {
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    setError('');
+    openInlineFlowNodeDialog(record, stage, true);
+  };
+
+  const openInlineFlowNodeDialog = (record: ConsultationRecord, stage: string, setAsCurrent: boolean) => {
+    if (!isDomainConsultationProcessStage(stage)) return;
+    setFlowNodeDialog({ record, stage, setAsCurrent });
+  };
+
+  const handleSaveInlineFlowNodeDialog = async (draft: ConsultationFlowNodeDraft) => {
+    if (!flowNodeDialog) return;
+    const { record, stage, setAsCurrent } = flowNodeDialog;
+    const values = applyConsultationFlowNodeDraft(toConsultationFormValues(record), stage, draft, setAsCurrent);
+    setFlowNodeDialog(null);
+    await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
   };
 
   const handleInlineEndConsultation = async (record: ConsultationRecord) => {
-    if (!canEditConsultations || isBusy) {
+    if (!canEditConsultationRecord(record) || isBusy) {
       return;
     }
     if (isConsultationEnded(record.flow_stage)) {
-      setRestoreConfirmRecord(record);
+      setError('');
+      const values = restoreConsultationValues(toConsultationFormValues(record));
+      await saveInlineConsultationUpdate(record, values, '恢复咨询失败');
       return;
     }
     setError('');
-    const values = endConsultationValues(toConsultationFormValues(record));
-    await saveInlineConsultationUpdate(record, values, '结束咨询失败');
+    setOverResultDialogRecord(record);
   };
 
-  const handleConfirmRestoreConsultation = async () => {
-    if (!restoreConfirmRecord) {
-      return;
-    }
-    const record = restoreConfirmRecord;
-    setRestoreConfirmRecord(null);
+  const handleInlineOverSuccess = () => {
+    if (!overResultDialogRecord) return;
+    setEnterClassDialogRecord(overResultDialogRecord);
+    setOverResultDialogRecord(null);
+  };
+
+  const handleInlineOverFailure = async () => {
+    if (!overResultDialogRecord) return;
+    const record = overResultDialogRecord;
+    setOverResultDialogRecord(null);
     setError('');
-    const values = restoreConsultationValues(toConsultationFormValues(restoreConfirmRecord));
-    await saveInlineConsultationUpdate(record, values, '恢复咨询失败');
+    const values = applyConsultationOverFailureValues(toConsultationFormValues(record));
+    await saveInlineConsultationUpdate(record, values, '结束咨询失败');
   };
 
   const saveInlineConsultationUpdate = async (record: ConsultationRecord, values: ConsultationFormValues, fallbackError: string) => {
@@ -5462,7 +6686,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         >
           <Eye size={iconSize} />
         </button>
-        {canEditConsultations && (
+        {canEditConsultationRecord(record) && (
           <button
             type="button"
             onClick={() => openEditModal(record)}
@@ -5515,6 +6739,32 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     );
   };
 
+  const renderTransferBadge = (record: ConsultationRecord, mobile = false) => {
+    if (!record.is_transferred_consultation) {
+      return null;
+    }
+    return (
+      <div className={cn(
+        'border-b border-emerald-100 bg-[#F2FBF8] text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100',
+        mobile ? 'space-y-1 px-3.5 py-2' : 'flex min-w-0 items-center justify-between gap-3 px-4 py-2',
+      )}>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 rounded-full bg-emerald-500 px-2 py-0.5 text-[11px] font-extrabold text-white">
+            {record.transfer_marker || '咨询转接'}
+          </span>
+          {record.current_responsibility && (
+            <span className="min-w-0 truncate text-xs font-extrabold">{record.current_responsibility}</span>
+          )}
+        </div>
+        {record.assignment_note && (
+          <p className={cn('min-w-0 truncate text-[11px] font-semibold text-emerald-700 dark:text-emerald-100/80', mobile ? '' : 'text-right')}>
+            {record.assignment_note}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const getRecordResultPill = (record: ConsultationRecord) => {
     const endedAsSuccess = record.closing_result === 'success' || consultationHasResult(record, '成功进班');
     const endedAsFailed = record.closing_result === 'failed';
@@ -5543,13 +6793,18 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
         mode="list"
         stage={record.flow_stage}
         completedStages={record.completed_stages}
-        editable={canEditConsultations && !busy && !frozen}
-        showOver={false}
-        onStageClick={(stage) => saveInlineConsultationUpdate(record, toggleConsultationStage(toConsultationFormValues(record), stage), '更新咨询流程失败')}
-        onStageDoubleClick={(stage) => saveInlineConsultationUpdate(record, moveConsultationStage(toConsultationFormValues(record), stage), '更新咨询流程失败')}
+        stageTeacherMarkers={buildConsultationStageTeacherMarkers(record, teacherDirectory)}
+        closingResult={record.closing_result}
+        editable={canEditConsultationRecord(record) && !busy && !frozen}
+        editableFromStage={record.is_transferred_consultation ? record.assigned_stage : ''}
+        showOver
+        overDisabled={!canEditConsultationRecord(record) || busy}
+        onStageClick={(stage) => handleInlineStageClick(record, stage)}
+        onStageContextMenu={(stage) => handleInlineStageCurrent(record, stage)}
+        onStageLongPress={(stage) => handleInlineStageCurrent(record, stage)}
         onResultChange={(stage) => handleInlineResultChange(record, stage)}
         onResultClick={() => handleInlineResultClick(record)}
-        onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
+        onOverClick={() => handleInlineEndConsultation(record)}
       />
     );
   };
@@ -5588,7 +6843,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+        <article className={cn(
+          'overflow-hidden rounded-[14px] border shadow-[0_6px_18px_rgba(31,42,68,0.04)]',
+          record.is_transferred_consultation
+            ? 'border-emerald-200 bg-[#F2FBF8] dark:border-emerald-400/20 dark:bg-emerald-400/10'
+            : 'border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70',
+        )}>
+          {renderTransferBadge(record)}
           <div className="grid grid-cols-[96px_88px_112px_minmax(120px,160px)_120px_132px_72px] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
@@ -5620,7 +6881,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+        <article className={cn(
+          'overflow-hidden rounded-[14px] border shadow-[0_6px_18px_rgba(31,42,68,0.04)]',
+          record.is_transferred_consultation
+            ? 'border-emerald-200 bg-[#F2FBF8] dark:border-emerald-400/20 dark:bg-emerald-400/10'
+            : 'border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70',
+        )}>
+          {renderTransferBadge(record)}
           <div className="grid grid-cols-[0.82fr_1fr_1fr_3.6rem] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
@@ -5658,7 +6925,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 shadow-[0_6px_18px_rgba(31,42,68,0.04)] dark:border-white/10 dark:bg-slate-950/70">
+        <article className={cn(
+          'relative space-y-3 rounded-[14px] border p-3.5 shadow-[0_6px_18px_rgba(31,42,68,0.04)]',
+          record.is_transferred_consultation
+            ? 'border-emerald-200 bg-[#F2FBF8] dark:border-emerald-400/20 dark:bg-emerald-400/10'
+            : 'border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70',
+        )}>
+          {renderTransferBadge(record, true)}
           <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
             <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
             <div className="flex min-w-0 items-center gap-2">
@@ -5669,7 +6942,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
                     <ChevronDown size={12} className="pointer-events-none" />
                     <select
                       value={mobileResultStage}
-                      disabled={!canEditConsultations || busy || isConsultationEnded(record.flow_stage)}
+                      disabled={!canEditConsultationRecord(record) || busy || isConsultationEnded(record.flow_stage)}
                       onClick={(event) => event.stopPropagation()}
                       onChange={(event) => {
                         const value = event.target.value as ConsultationResultStage | '';
@@ -5703,7 +6976,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
               <ConsultationStatusLamp stage={record.flow_stage} />
               <div className="min-w-0 overflow-visible">{renderInlineFlow(record, busy)}</div>
             </div>
-            {canEditConsultations && (
+            {canEditConsultationRecord(record) && (
               <div className={canManage ? 'grid grid-cols-1 gap-2.5' : 'hidden'}>
                 {renderDeleteButton(record, busy)}
               </div>
@@ -5877,30 +7150,41 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             currentUser={currentUser}
             onClose={closeModal}
             onSubmit={handleSubmit}
+            onEnteredClass={handleModalEnteredClass}
             onDelete={canManage ? handleDelete : undefined}
             onRequestEdit={selectedRecord ? () => openEditModal(selectedRecord) : undefined}
           />
         )}
-        {restoreConfirmRecord && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
-            onClick={(event) => event.target === event.currentTarget && setRestoreConfirmRecord(null)}
-          >
-            <div className="w-full max-w-sm rounded-3xl border border-sky-100 bg-white p-5 shadow-[0_28px_80px_rgba(15,23,42,0.2)] dark:border-white/10 dark:bg-slate-900">
-              <p className="text-base font-bold text-slate-900 dark:text-white">是否恢复这个咨询？</p>
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <button type="button" onClick={handleConfirmRestoreConsultation} className={workspacePrimaryButtonClass}>
-                  是
-                </button>
-                <button type="button" onClick={() => setRestoreConfirmRecord(null)} className={workspaceSecondaryButtonClass}>
-                  否
-                </button>
-              </div>
-            </div>
-          </motion.div>
+        {flowNodeDialog && (
+          <ConsultationFlowNodeDialog
+            open={Boolean(flowNodeDialog)}
+            stage={flowNodeDialog.stage}
+            values={toConsultationFormValues(flowNodeDialog.record)}
+            teacherOptions={consultationTeachers}
+            setAsCurrent={flowNodeDialog.setAsCurrent}
+            onClose={() => setFlowNodeDialog(null)}
+            onSave={handleSaveInlineFlowNodeDialog}
+          />
+        )}
+        {enterClassDialogRecord && (
+          <ConsultationEnterClassDialog
+            open={Boolean(enterClassDialogRecord)}
+            values={toConsultationFormValues(enterClassDialogRecord)}
+            classes={classes}
+            teacherOptions={consultationTeachers}
+            onClose={() => setEnterClassDialogRecord(null)}
+            onSubmit={handleSubmitInlineEnterClass}
+            submitting={submitting}
+          />
+        )}
+        {overResultDialogRecord && (
+          <ConsultationOverResultDialog
+            open={Boolean(overResultDialogRecord)}
+            submitting={submitting}
+            onClose={() => setOverResultDialogRecord(null)}
+            onSuccess={handleInlineOverSuccess}
+            onFailure={handleInlineOverFailure}
+          />
         )}
       </AnimatePresence>
     </div>

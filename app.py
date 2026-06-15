@@ -108,6 +108,7 @@ from lesson_manager import (
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
+    get_consultation_for_actor,
     get_course_calendar_custom_item,
     get_course_calendar_custom_schedule,
     get_course_calendar_schedule,
@@ -208,6 +209,7 @@ from lesson_manager import (
     update_user_visible_pages_for_actor,
     update_class,
     update_consultation,
+    update_consultation_for_actor,
     update_student_profile,
     update_user_profile,
     resolve_teacher_username_to_user_id,
@@ -5340,10 +5342,7 @@ def api_consultation_get(consultation_id):
     user, error = _require_auth()
     if error:
         return error
-    item = get_consultation(
-        consultation_id,
-        None if user.get("role") == "super_owner" else user.get("organization_id"),
-    )
+    item = get_consultation_for_actor(user, consultation_id)
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
@@ -5360,7 +5359,12 @@ def api_consultation_create():
         if assigned_user_id is None and request.json.get("teacher_id"):
             assigned_user_id = resolve_teacher_username_to_user_id(request.json["teacher_id"])
     try:
-        item = create_consultation(request.json or {}, user["organization_id"], assigned_user_id=assigned_user_id)
+        item = create_consultation(
+            request.json or {},
+            user["organization_id"],
+            assigned_user_id=assigned_user_id,
+            created_by_user_id=user["id"],
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(item), 201
@@ -5379,14 +5383,11 @@ def api_consultation_update(consultation_id):
         elif not data["teacher_id"]:
             data["assigned_user_id"] = None
     try:
-        item = update_consultation(
-            consultation_id,
-            data,
-            None if user.get("role") == "super_owner" else user.get("organization_id"),
-            user["id"] if user.get("role") == "member" else None,
-        )
+        item = update_consultation_for_actor(user, consultation_id, data)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
