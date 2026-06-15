@@ -422,7 +422,7 @@ export function LessonInput({
                       </span>
                     </div>
                   </div>
-                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} w-full bg-slate-950 py-3 text-base font-semibold text-white shadow-none hover:bg-slate-800`}>
+                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} self-start bg-slate-950 px-4 py-3 text-base font-semibold text-white shadow-none hover:bg-slate-800`}>
                     生成复习文档
                     <ArrowRight size={20} />
                   </button>
