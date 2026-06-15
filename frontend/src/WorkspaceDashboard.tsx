@@ -435,7 +435,7 @@ function PlatformWorkspace({
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="先看异常和积压，再进入具体页面处理。" />
+            <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="愿今天少些打扰，多些顺利。" />
             <div className="mt-2 min-h-5">
               <DashboardFetchState loading={loading} error={error} />
             </div>

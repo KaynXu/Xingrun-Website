@@ -82,14 +82,15 @@ test('workspace dashboard shows super owner platform overview', () => {
   assert.doesNotMatch(markup, /新建复习文档/);
 });
 
-test('workspace dashboard copy keeps direct task-oriented labels', () => {
+test('workspace dashboard copy keeps role-specific opening lines', () => {
   const memberMarkup = renderDashboard('member');
   const ownerMarkup = renderDashboard('owner');
   const superOwnerMarkup = renderDashboard('super_owner');
 
   assert.match(memberMarkup, /今天的记录和入口都在这里/);
   assert.match(ownerMarkup, /机构今天的记录和入口/);
-  assert.match(superOwnerMarkup, /先看异常和积压，再进入具体页面处理/);
+  assert.match(superOwnerMarkup, /愿今天少些打扰，多些顺利/);
+  assert.doesNotMatch(superOwnerMarkup, /先看异常和积压，再进入具体页面处理/);
   assert.match(superOwnerMarkup, /处理账号审批/);
 });
 
