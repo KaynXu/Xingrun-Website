@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-06-15
+最后更新：2026-06-16
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-16 已按用户要求把 `codex/review-plan-pdf-brand-refresh` 合回本地 `develop` 并推送到 `origin/develop`，合并后远端 `develop` 提交为 `1ed0ccaf`；随后已直接把生产机 `/home/ubuntu/Xingrun-Website` 切到 `origin/develop@1ed0ccaf`，执行了 `git fetch origin -> git checkout develop -> git pull --ff-only origin develop -> npm --prefix frontend run build -> pm2 restart xingrun`，当前 `pm2 status` 显示 `xingrun` 为 `online`，健康检查在北京时间 2026-06-16 返回 `HTTP/1.1 302 FOUND`，说明这次复习计划 PDF 品牌化样式已上线到当前线上 `develop` 部署口径。当前轮 proof 脚本 `/tmp/proof_develop_deploy_20260616.sh` 已通过，并确认服务器运行提交与本地 `develop` 一致。
 - 2026-06-15 已把复习计划 PDF 统一样式升级到品牌版 `physics-master-style.v2`：`review_plan_workflow/prompts/styles/review_plan_style.yaml` 改为沿用机构 logo 的暖棕/米白/陶土色系，并新增 `paper/card/header_bg/line/support` token；`review_plan_templates/generate_review_pdfs.py` 现会真实读取 `frontend/public/logo.png`，在首页和页眉绘制透明 logo，卡片/表格边框改为暖色细线和浅色标题带，去掉旧版绿色标题、绿色横线和绿色线框，同时继续保持答案页素背景；`review_plan_workflow/state.py` 与 `tests/test_review_plan_workflow.py` 已同步切到 `style_version=physics-master-style.v2`。当前轮 proof 脚本 `/tmp/proof_review_plan_brand_refresh_20260615.sh` 已通过：`py_compile` 通过，`tests.test_review_plan_workflow + tests.test_single_lesson_pdf_unification + tests.test_review_plan_pdf_layout` 共 28 条通过，成功生成样本 PDF `/tmp/review_plan_brand_refresh_sample_20260615.pdf` 与首页截图 [review_plan_brand_refresh_sample_20260615_page1.png](/tmp/review_plan_brand_refresh_sample_20260615_page1.png)，`git diff --check` 通过。当前这轮仍只在本地分支，尚未合并回 `develop` 或部署生产。
 - 2026-06-15 已在 `develop` 分支补上复习计划链路级 OpenAI 兼容配置能力：`config_runtime.py` 新增 `XR_OPENAI_MODEL`、`XR_OPENAI_BASE_URL`、`XR_REVIEW_PLAN_REASONING_EFFORT`；`ai_processor.py` 与 `review_plan_workflow/llm/client.py` 现在都会对 OpenAI 兼容 provider 透传 `base_url`，其中复习计划 workflow 还会把链路级 `reasoning_effort=low|medium|high` 传给 revision 节点；`app.py` 的 settings API、`.env.runtime.example`、`README.md` 已同步暴露这些字段。按用户给的兼容接口实测，`https://api.iiiiitoken.com/v1/models` 可列出 `gpt-5.4`，因此本轮把“gpt-5.4 high”收口成“`model=gpt-5.4` + `reasoning_effort=high`”的配置形态。当前轮 proof 脚本 `/tmp/review_plan_openai_chain_model_proof_20260615.sh` 已通过：`py_compile` 通过，`tests.test_ai_provider_defaults + tests.test_review_plan_workflow + tests.test_review_plan_async_api` 共 43 条通过，`git diff --check` 通过。当前这些改动尚未发到 `master`，生产还未切换到该新 provider。
 - 2026-06-15 已完成 automation“每日缺陷扫描”复核：按 `2026-06-14T01:01:13.979Z` 之后的 `develop` 提交检查了 `b05ee8a / c271caa / d6bb9bf` 及其前后 review-plan 相关变更，并直接运行 `python3 -m unittest tests.test_review_plan_workflow tests.test_single_lesson_pdf_unification tests.test_review_plan_pdf_layout -v`。当前 27 条定向测试全部通过，未发现新的失败测试、可复现回退或足够证据支持的新增 bug；本轮因此不追加业务代码修复，只继续观察线上真实流量是否再出现 review plan warning 或 PDF 空白页。
