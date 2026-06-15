@@ -317,8 +317,8 @@ test('class management source keeps compact card single-expand shell', () => {
 
   assert.match(classManagementBlock, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
   assert.match(classManagementTabSource, /const isExpanded = expandedClassId === item\.id/);
-  assert.match(classManagementTabSource, /grid gap-4 px-4 py-4 lg:grid-cols-\[minmax\(14rem,1\.25fr\)_minmax\(18rem,1fr\)_auto\]/);
-  assert.match(classManagementTabSource, /`\$\{workspaceSoftCardClass\} overflow-hidden p-0 transition/);
+  assert.match(classManagementTabSource, /grid gap-4 px-5 py-4 lg:grid-cols-\[minmax\(14rem,1\.3fr\)_minmax\(18rem,1fr\)_auto\]/);
+  assert.match(classManagementTabSource, /`\$\{studentCenterMutedSurfaceClass\} overflow-hidden p-0`/);
 });
 
 test('consultation workspace source keeps adaptive layouts without a special compact sidebar mode', () => {

@@ -115,8 +115,6 @@ const memberQuickActions: DashboardQuickAction[] = [
 
 const platformQuickActions: DashboardQuickAction[] = [
   { page: 'accounts', label: '处理账号审批' },
-  { page: 'classes', label: '查看机构班级' },
-  { page: 'settings', label: '进入系统设置' },
 ];
 
 const organizationQuickActions = {
@@ -229,6 +227,19 @@ function DashboardGreeting({
   );
 }
 
+function DashboardMascot() {
+  return (
+    <div className="pointer-events-none flex shrink-0 justify-center">
+      <img
+        src="/xiaoxing.png"
+        alt="小星"
+        className="h-24 w-auto object-contain sm:h-28 xl:h-32"
+        loading="eager"
+      />
+    </div>
+  );
+}
+
 function useDashboardData(currentUser: WorkspaceDashboardProps['currentUser']): WorkspaceDataState {
   const [state, setState] = useState<WorkspaceDataState>({
     loading: true,
@@ -280,12 +291,15 @@ function MemberWorkspace({
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <DashboardGreeting currentUser={currentUser} label="工作台" detail="今天的记录和入口都在这里。" />
-            <div className="mt-2">
-              <DashboardFetchState loading={loading} error={error} />
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
+              <DashboardGreeting currentUser={currentUser} label="工作台" detail="今天的记录和入口都在这里。" />
+              <div className="mt-2">
+                <DashboardFetchState loading={loading} error={error} />
+              </div>
             </div>
+            <DashboardMascot />
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => {
@@ -449,14 +463,17 @@ function PlatformWorkspace({
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="random-platform-motto" />
-            <div className="mt-2 min-h-5">
-              <DashboardFetchState loading={loading} error={error} />
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
+              <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="random-platform-motto" />
+              <div className="mt-2 min-h-5">
+                <DashboardFetchState loading={loading} error={error} />
+              </div>
             </div>
+            <DashboardMascot />
           </div>
-          <div className="flex flex-wrap gap-2 xl:max-w-[24rem] xl:justify-end">
+          <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
               <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
                 {action.label}
@@ -651,12 +668,15 @@ function OrganizationWorkspace({
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <DashboardGreeting currentUser={currentUser} label="机构工作台" detail="机构今天的记录和入口。" />
-            <div className="mt-2">
-              <DashboardFetchState loading={loading} error={error} />
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
+              <DashboardGreeting currentUser={currentUser} label="机构工作台" detail="机构今天的记录和入口。" />
+              <div className="mt-2">
+                <DashboardFetchState loading={loading} error={error} />
+              </div>
             </div>
+            <DashboardMascot />
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
