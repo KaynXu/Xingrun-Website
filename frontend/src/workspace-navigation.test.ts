@@ -35,6 +35,8 @@ test('workspace navigation wires consultation and calendar pages into the shell'
   const sidebarBlock = sidebarSource;
 
   assert.match(appSource, /type Page = WorkspacePage;/);
+  assert.doesNotMatch(headerSource, /placeholder="搜索班级、学生、课程\.\.\."/);
+  assert.doesNotMatch(headerSource, /<Search /);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '课堂反馈'/);
   assert.match(appSource, /'class-feedback-generation': '课堂反馈'/);
   assert.doesNotMatch(sidebarBlock, /id: 'student-tasks'/);
