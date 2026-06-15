@@ -1346,7 +1346,6 @@ export function StudentCenterPage({
         <div className="space-y-2">
           <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{currentUser.organization_name}</p>
           <h2 className={workspaceSectionTitleClass}>学管中心</h2>
-          <p className={`${workspaceSectionTextClass} max-w-2xl`}>集中维护班级、学员和负责老师，先筛选范围，再处理具体记录。</p>
         </div>
       </section>
 
