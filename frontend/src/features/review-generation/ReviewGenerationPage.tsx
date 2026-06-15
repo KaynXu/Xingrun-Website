@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CheckCircle2, Download, Eye, FileText, PlusCircle, Trash2 } from 'lucide-react';
+import { CheckCircle2, Download, Eye, FileText, PlusCircle, Trash2, X } from 'lucide-react';
 
 import {
   getReviewLessonTaskMessage,
@@ -18,9 +18,7 @@ import {
   workspacePageClass,
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
-  workspaceSectionTextClass,
   workspaceSectionTitleClass,
-  workspaceSoftCardClass,
 } from '../../workspaceShared';
 
 type ReviewPlanCreateResult = {
@@ -39,9 +37,34 @@ type ReviewDocumentHistoryProps = {
 };
 
 const REVIEW_HISTORY_PAGE_SIZE = 12;
+const reviewHistoryPanelClass = `${workspaceCardClass} overflow-hidden`;
+
+function ReviewHistorySkeleton() {
+  return (
+    <div className="p-5">
+      <div className="space-y-3">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="h-4 w-40 rounded-full bg-slate-200/80 dark:bg-white/10" />
+            <div className="mt-3 h-3 w-64 rounded-full bg-slate-100 dark:bg-white/5" />
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <div className="h-3 rounded-full bg-slate-100 dark:bg-white/5" />
+              <div className="h-3 rounded-full bg-slate-100 dark:bg-white/5" />
+              <div className="h-3 rounded-full bg-slate-100 dark:bg-white/5" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function getLessonTitle(lesson: ReviewLessonRecord): string {
   return lesson.topic || `${lesson.subject} 课程`;
+}
+
+function getLessonCreator(lesson: ReviewLessonRecord): string {
+  return lesson.creator_display_name || lesson.creator_username || '-';
 }
 
 function getLessonStatusMeta(lesson: ReviewLessonRecord): {
@@ -181,22 +204,32 @@ function ReviewDocumentHistory({
   };
 
   return (
-    <div className={`${workspaceCardClass} overflow-hidden`}>
+    <div className={reviewHistoryPanelClass}>
+      <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 sm:px-6">
+        <h3 className={workspaceSectionTitleClass}>历史文档</h3>
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">共 {lessons.length} 份</span>
+      </div>
       {loading ? (
-        <div className="p-8 text-center text-slate-500 dark:text-slate-400">加载中...</div>
+        <ReviewHistorySkeleton />
       ) : lessons.length === 0 ? (
-        <div className="p-8 text-center text-slate-500 dark:text-slate-400">还没有复习文档，点击「新建复习文档」开始生成</div>
+        <div className="px-5 py-12 text-center sm:px-6">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200/80 text-slate-500 dark:border-white/10 dark:text-slate-300">
+            <FileText size={20} />
+          </div>
+          <p className="mt-4 text-base font-medium text-slate-900 dark:text-white">还没有复习文档</p>
+        </div>
       ) : (
         <div className="p-4 sm:p-5">
-          <div className="hidden border-b border-sky-100/80 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_132px_180px_112px_132px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
+          <div className="hidden border-b border-slate-200/70 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_128px_132px_180px_112px_132px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
             <span>文档</span>
+            <span>生成人</span>
             <span>日期</span>
             <span>生成时间</span>
             <span>状态</span>
             <span className="text-right">操作</span>
           </div>
 
-          <ul className="divide-y divide-sky-100/80 dark:divide-white/10">
+          <ul className="divide-y divide-slate-200/70 dark:divide-white/10">
             {paginatedLessons.map((lesson) => {
               const status = getLessonStatusMeta(lesson);
 
@@ -204,26 +237,26 @@ function ReviewDocumentHistory({
                 <li
                   key={lesson.id}
                   className={cn(
-                    'px-2 py-4 transition-colors',
-                    highlightedLessonId === lesson.id && 'rounded-2xl bg-emerald-50/80 dark:bg-emerald-500/10',
+                    'rounded-2xl px-2 py-4 transition-colors hover:bg-slate-50/90 dark:hover:bg-white/5',
+                    highlightedLessonId === lesson.id && 'bg-emerald-50/80 dark:bg-emerald-500/10',
                   )}
                 >
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_132px_180px_112px_132px] lg:items-start lg:gap-4">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_132px_180px_112px_132px] lg:items-start lg:gap-4">
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-white/5 dark:text-sky-300">
+                        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center text-slate-500 dark:text-slate-300">
                           <FileText size={16} />
                         </div>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{getLessonTitle(lesson)}</p>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             {lesson.subject && (
-                              <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-600 dark:bg-white/10 dark:text-slate-300">
                                 {lesson.subject}
                               </span>
                             )}
                             {lesson.grade && (
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-500 dark:bg-white/5 dark:text-slate-400">
                                 {lesson.grade}
                               </span>
                             )}
@@ -234,6 +267,11 @@ function ReviewDocumentHistory({
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 text-sm lg:block">
+                      <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400 lg:hidden dark:text-slate-500">生成人</span>
+                      <span className="text-slate-700 dark:text-slate-200">{getLessonCreator(lesson)}</span>
                     </div>
 
                     <div className="flex items-center justify-between gap-4 text-sm lg:block">
@@ -258,14 +296,14 @@ function ReviewDocumentHistory({
                             href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
                             title="查看"
                           >
                             <Eye size={16} />
                           </a>
                           <a
                             href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-sky-300"
+                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
                             title="下载"
                           >
                             <Download size={16} />
@@ -275,7 +313,7 @@ function ReviewDocumentHistory({
                       <button
                         type="button"
                         onClick={() => void handleDelete(lesson.id)}
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                        className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-rose-200 hover:text-rose-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
                         title="删除"
                       >
                         <Trash2 size={16} />
@@ -307,7 +345,7 @@ function ReviewDocumentHistory({
             })}
           </ul>
 
-          <div className="mt-4 flex items-center justify-between border-t border-sky-100/80 pt-4 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+          <div className="mt-4 flex items-center justify-between border-t border-slate-200/70 pt-4 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
             <span>
               第 {currentHistoryPage} / {totalHistoryPages} 页
             </span>
@@ -342,6 +380,27 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
   const [reviewNotice, setReviewNotice] = useState('');
   const [highlightedLessonId, setHighlightedLessonId] = useState<number | null>(null);
 
+  useEffect(() => {
+    if (!composerOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setComposerOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [composerOpen]);
+
   const handleFormSuccess = (result: ReviewPlanCreateResult) => {
     setComposerOpen(false);
     setHighlightedLessonId(result.id);
@@ -364,26 +423,13 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
 
   return (
     <div className={`${workspacePageClass} space-y-6`}>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="max-w-2xl">
-          <h3 className={workspaceSectionTitleClass}>历史文档</h3>
-          <p className={`${workspaceSectionTextClass} mt-2`}>查看已生成的复习文档，支持下载、预览与删除。</p>
-        </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">复习生成</h2>
         <button type="button" onClick={handleToggleComposer} className={workspacePrimaryButtonClass}>
           <PlusCircle size={20} />
           新建复习文档
         </button>
       </div>
-
-      {composerOpen && (
-        <div className={`${workspaceSoftCardClass} p-4 sm:p-6`}>
-          <div className="mb-4">
-            <h4 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h4>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">上传课堂内容并生成新的复习文档。</p>
-          </div>
-          {renderLessonInput(handleFormSuccess)}
-        </div>
-      )}
 
       {reviewNotice && (
         <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200">
@@ -393,6 +439,27 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
       )}
 
       <ReviewDocumentHistory refreshToken={historyRefreshToken} highlightedLessonId={highlightedLessonId} />
+
+      {composerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm sm:p-6">
+          <div className={`${workspaceCardClass} flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden`}>
+            <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 sm:px-6">
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h3>
+              <button
+                type="button"
+                onClick={() => setComposerOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label="关闭"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
+              {renderLessonInput(handleFormSuccess)}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -96,8 +96,8 @@ test('review generation source renders history as a paginated list with explicit
   assert.match(reviewGenerationSource, /highlightedLessonId === lesson\.id/);
   assert.match(reviewGenerationSource, /生成时间/);
   assert.match(reviewGenerationSource, /new Date\(lesson\.created_at\)\.toLocaleString\('zh-CN'\)/);
-  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_132px_180px_112px_132px\]/);
-  assert.match(reviewGenerationSource, /<ul className="divide-y divide-sky-100\/80 dark:divide-white\/10">/);
+  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_132px_180px_112px_132px\]/);
+  assert.match(reviewGenerationSource, /<ul className="divide-y divide-slate-200\/70 dark:divide-white\/10">/);
   assert.match(reviewGenerationSource, /上一页/);
   assert.match(reviewGenerationSource, /下一页/);
   assert.doesNotMatch(reviewGenerationSource, /grid gap-4 lg:grid-cols-2 xl:grid-cols-3/);

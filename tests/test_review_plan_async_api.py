@@ -49,6 +49,29 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload["token"]
 
+    def test_get_review_plans_includes_creator_display_name(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            created_by_user_id=1,
+        )
+
+        response = self.client.get(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        lesson = next(item for item in payload if item["id"] == lesson_id)
+        self.assertEqual(lesson["creator_display_name"], lesson_manager.get_user_by_id(1)["display_name"])
+        self.assertEqual(lesson["creator_username"], lesson_manager.get_user_by_id(1)["username"])
+
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app.has_review_plan_api_key", return_value=True)
