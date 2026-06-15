@@ -32,6 +32,7 @@ test('member workspace prioritizes quick actions and personal work context', () 
   const markup = renderDashboard('member');
 
   assert.match(markup, /工作台/);
+  assert.match(markup, /(早上好|下午好|晚上好)，测试用户/);
   assert.match(markup, /新建复习文档/);
   assert.match(markup, /补课堂反馈/);
   assert.match(markup, /查看课程日历/);
@@ -46,6 +47,7 @@ test('workspace dashboard shows admin operations overview', () => {
   const markup = renderDashboard('admin');
 
   assert.match(markup, /机构工作台/);
+  assert.match(markup, /(早上好|下午好|晚上好)，测试用户/);
   assert.match(markup, /查看班级安排/);
   assert.match(markup, /补课堂反馈/);
   assert.match(markup, /班级管理/);
@@ -71,6 +73,7 @@ test('workspace dashboard shows super owner platform overview', () => {
   const markup = renderDashboard('super_owner');
 
   assert.match(markup, /平台工作台/);
+  assert.match(markup, /(早上好|下午好|晚上好)，测试用户/);
   assert.match(markup, /待处理事项/);
   assert.match(markup, /常用入口/);
   assert.match(markup, /机构列表/);

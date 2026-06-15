@@ -180,6 +180,39 @@ function DashboardEmptyState({ message }: { message: string }) {
   return <div className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">{message}</div>;
 }
 
+function getDashboardGreetingLabel(now = new Date()): string {
+  const hour = now.getHours();
+  if (hour < 12) {
+    return '早上好';
+  }
+  if (hour < 18) {
+    return '下午好';
+  }
+  return '晚上好';
+}
+
+function DashboardGreeting({
+  currentUser,
+  label,
+  detail,
+}: {
+  currentUser: WorkspaceDashboardProps['currentUser'];
+  label: string;
+  detail: string;
+}) {
+  const displayName = currentUser.display_name?.trim() || '老师';
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-slate-100">
+        {getDashboardGreetingLabel()}，{displayName}
+      </p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{detail}</p>
+    </div>
+  );
+}
+
 function useDashboardData(currentUser: WorkspaceDashboardProps['currentUser']): WorkspaceDataState {
   const [state, setState] = useState<WorkspaceDataState>({
     loading: true,
@@ -233,8 +266,7 @@ function MemberWorkspace({
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天的记录和入口都在这里。</p>
+            <DashboardGreeting currentUser={currentUser} label="工作台" detail="今天的记录和入口都在这里。" />
             <div className="mt-2">
               <DashboardFetchState loading={loading} error={error} />
             </div>
@@ -403,8 +435,7 @@ function PlatformWorkspace({
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">平台工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先看异常和积压，再进入具体页面处理。</p>
+            <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="先看异常和积压，再进入具体页面处理。" />
             <div className="mt-2 min-h-5">
               <DashboardFetchState loading={loading} error={error} />
             </div>
@@ -606,8 +637,7 @@ function OrganizationWorkspace({
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">机构今天的记录和入口。</p>
+            <DashboardGreeting currentUser={currentUser} label="机构工作台" detail="机构今天的记录和入口。" />
             <div className="mt-2">
               <DashboardFetchState loading={loading} error={error} />
             </div>
