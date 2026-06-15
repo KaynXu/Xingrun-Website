@@ -44,6 +44,9 @@ export interface CurrentUser {
   created_at: string;
   visible_pages?: WorkspacePage[];
   requires_class_claim?: boolean;
+  avatar_source?: 'dicebear' | 'upload';
+  avatar_seed?: string;
+  avatar_upload_url?: string;
 }
 
 export interface UserItem {
@@ -54,6 +57,9 @@ export interface UserItem {
   username?: string;
   last_login?: string | null;
   visible_pages?: WorkspacePage[];
+  avatar_source?: 'dicebear' | 'upload';
+  avatar_seed?: string;
+  avatar_upload_url?: string;
 }
 
 export type ClassBindingTarget = {
