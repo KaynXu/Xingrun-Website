@@ -442,19 +442,19 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
 
       {composerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm sm:p-6">
-          <div className={`${workspaceCardClass} flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden border-slate-200/90 bg-white shadow-none backdrop-blur-0 dark:border-white/10 dark:bg-slate-950 [&_button]:shadow-none`}>
-            <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 sm:px-6">
-              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h3>
+          <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-[#ffffff] shadow-none">
+            <div className="flex items-center justify-between border-b border-slate-200/70 bg-[#ffffff] px-5 py-4 sm:px-6">
+              <h3 className="text-xl font-semibold text-slate-900">生成复习文档</h3>
               <button
                 type="button"
                 onClick={() => setComposerOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
                 aria-label="关闭"
               >
                 <X size={18} />
               </button>
             </div>
-            <div className="overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
+            <div className="overflow-y-auto bg-[#ffffff] px-5 py-5 sm:px-6 sm:py-6">
               {renderLessonInput(handleFormSuccess)}
             </div>
           </div>
