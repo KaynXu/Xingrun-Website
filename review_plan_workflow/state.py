@@ -7,7 +7,7 @@ from uuid import uuid4
 
 PROMPT_VERSION = "review-plan-workflow.v1"
 SCHEMA_VERSION = "review-plan-schema.v1"
-STYLE_VERSION = "physics-master-style.v1"
+STYLE_VERSION = "physics-master-style.v2"
 
 
 @dataclass

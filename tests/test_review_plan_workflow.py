@@ -197,7 +197,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIsNotNone(run)
         self.assertEqual(run["status"], "succeeded")
-        self.assertEqual(run["style_version"], "physics-master-style.v1")
+        self.assertEqual(run["style_version"], "physics-master-style.v2")
         self.assertIn("quality_reviewer", run["node_outputs"])
         self.assertIn("plan_generator", run["node_outputs"])
         self.assertIn("scope_planner", run["node_outputs"])
@@ -441,7 +441,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             provider="deepseek",
             model="deepseek-v4-pro",
             prompt_version="prompt.v1",
-            style_version="physics-master-style.v1",
+            style_version="physics-master-style.v2",
             schema_version="schema.v1",
             warnings=[{"code": "demo", "message": "warning", "severity": "low"}],
             quality_review={"score": 88, "passed": True},
@@ -454,7 +454,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(serialized["trace_id"], "trace-serialization")
         self.assertEqual(serialized["workflow_warnings"][0]["code"], "demo")
         self.assertEqual(serialized["quality_review"]["score"], 88)
-        self.assertEqual(serialized["style_version"], "physics-master-style.v1")
+        self.assertEqual(serialized["style_version"], "physics-master-style.v2")
 
     def test_new_running_review_plan_run_interrupts_previous_running_run(self):
         lesson_id = lesson_manager.create_pending_lesson(
