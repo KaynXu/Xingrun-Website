@@ -10,6 +10,7 @@ const contentSource = readFileSync(new URL('./features/navigation/WorkspacePageC
 const accessSource = readFileSync(new URL('./features/navigation/workspaceAccess.ts', import.meta.url), 'utf8');
 const appDisplaySource = readFileSync(new URL('./appDisplay.ts', import.meta.url), 'utf8');
 const appTypesSource = readFileSync(new URL('./appTypes.ts', import.meta.url), 'utf8');
+const workspaceRoutesSource = readFileSync(new URL('./features/navigation/workspaceRoutes.ts', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
@@ -232,7 +233,7 @@ test('workspace navigation source exposes classes management through configurabl
 test('workspace navigation falls back when the selected page is not allowed for the current role', () => {
   assert.match(accessSource, /export function getWorkspacePageFallback\(user: VisiblePageUser, page: WorkspacePage\): WorkspacePage \{/);
   assert.match(accessSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
-  assert.match(appSource, /const activeWorkspacePage = getWorkspacePageFallback\(currentUser, activePage\);/);
+  assert.match(appSource, /const activeWorkspacePage = currentUser \? getWorkspacePageFallback\(currentUser, activePage\) : activePage;/);
   assert.match(authHookSource, /setCurrentUser\(user\);/);
   assert.match(appSource, /const navigateWorkspacePage = useCallback\(\(page: Page\) => \{/);
   assert.match(appSource, /setActivePage\(getWorkspacePageFallback\(currentUser, page\)\);/);
@@ -243,6 +244,18 @@ test('workspace navigation falls back when the selected page is not allowed for 
   assert.match(contentSource, /activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage\(currentUser, 'class-feedback-generation'\)/);
   assert.match(contentSource, /activeWorkspacePage === 'consultation' && canOpenWorkspacePage\(currentUser, 'consultation'\)/);
   assert.match(contentSource, /activeWorkspacePage === 'calendar' && canOpenWorkspacePage\(currentUser, 'calendar'\)/);
+});
+
+test('workspace navigation source syncs authenticated tabs to pathname-based routes', () => {
+  assert.match(workspaceRoutesSource, /dashboard: '\/workspace'/);
+  assert.match(workspaceRoutesSource, /'review-generation': '\/workspace\/review-generation'/);
+  assert.match(workspaceRoutesSource, /smartWrongQuestions: '\/workspace\/smart-wrong-questions'/);
+  assert.match(workspaceRoutesSource, /export function getWorkspacePageFromPathname\(pathname: string\): WorkspacePage \| null \{/);
+  assert.match(workspaceRoutesSource, /export function getWorkspacePath\(page: WorkspacePage\): string \{/);
+  assert.match(appSource, /getWorkspacePageFromPathname/);
+  assert.match(appSource, /window\.history\.pushState\(\{\}, '', nextPath\);/);
+  assert.match(appSource, /window\.history\.replaceState\(\{\}, '', nextPath\);/);
+  assert.match(appSource, /window\.addEventListener\('popstate', syncWorkspacePageFromHistory\);/);
 });
 
 test('workspace navigation keeps role and unauthenticated permission paths explicit', () => {
