@@ -13,6 +13,7 @@ import {
 import {
   apiFetch,
   buildAuthedPath,
+  buildDiceBearAvatarUrl,
   cn,
   workspaceCardClass,
   workspacePageClass,
@@ -65,6 +66,14 @@ function getLessonTitle(lesson: ReviewLessonRecord): string {
 
 function getLessonCreator(lesson: ReviewLessonRecord): string {
   return lesson.creator_display_name || lesson.creator_username || '-';
+}
+
+function getLessonCreatorAvatarUrl(lesson: ReviewLessonRecord): string {
+  return buildDiceBearAvatarUrl({
+    id: lesson.created_by_user_id ?? lesson.id,
+    username: lesson.creator_username,
+    display_name: lesson.creator_display_name,
+  });
 }
 
 function getLessonStatusMeta(lesson: ReviewLessonRecord): {
@@ -271,7 +280,14 @@ function ReviewDocumentHistory({
 
                     <div className="flex items-center justify-between gap-4 text-sm lg:block">
                       <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400 lg:hidden dark:text-slate-500">生成人</span>
-                      <span className="text-slate-700 dark:text-slate-200">{getLessonCreator(lesson)}</span>
+                      <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                        <img
+                          src={getLessonCreatorAvatarUrl(lesson)}
+                          alt={`${getLessonCreator(lesson)} 头像`}
+                          className="h-6 w-6 shrink-0 rounded-full bg-slate-100 object-cover dark:bg-white/10"
+                        />
+                        <span className="truncate">{getLessonCreator(lesson)}</span>
+                      </span>
                     </div>
 
                     <div className="flex items-center justify-between gap-4 text-sm lg:block">

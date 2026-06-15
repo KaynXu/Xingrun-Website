@@ -39,11 +39,15 @@ test('workspace user avatars use stable DiceBear Dylan URLs', () => {
 test('workspace account surfaces share DiceBear avatars instead of initial badges', () => {
   const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Sidebar.tsx'), 'utf8');
   const approvalSource = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
+  const reviewGenerationSource = readFileSync(resolve(process.cwd(), 'src/features/review-generation/ReviewGenerationPage.tsx'), 'utf8');
   const sharedSource = readFileSync(resolve(process.cwd(), 'src/workspaceShared.ts'), 'utf8');
 
   assert.match(sharedSource, /https:\/\/api\.dicebear\.com\/10\.x\/dylan\/svg\?seed=/);
   assert.equal((sidebarSource.match(/buildDiceBearAvatarUrl\(currentUser\)/g) || []).length, 2);
   assert.match(approvalSource, /buildDiceBearAvatarUrl\(currentUser\)/);
   assert.match(approvalSource, /buildDiceBearAvatarUrl\(user\)/);
+  assert.match(reviewGenerationSource, /buildDiceBearAvatarUrl\(\{/);
+  assert.match(reviewGenerationSource, /alt=\{`\$\{getLessonCreator\(lesson\)\} 头像`\}/);
+  assert.doesNotMatch(reviewGenerationSource, /name:\s*getLessonCreator\(lesson\)/);
   assert.doesNotMatch(sidebarSource, /display_name\.slice\(0, 1\)/);
 });
