@@ -35,6 +35,16 @@ export function buildAuthedPath(path: string): string {
   return `${path}${separator}token=${encodeURIComponent(token)}`;
 }
 
+export function buildDiceBearAvatarUrl(user: { id?: number | string; username?: string; display_name?: string; name?: string }): string {
+  const seed = [
+    user.id,
+    user.username,
+    user.display_name,
+    user.name,
+  ].filter((item) => item !== undefined && item !== null && String(item).trim()).join('-') || 'xingrun-user';
+  return `https://api.dicebear.com/10.x/dylan/svg?seed=${encodeURIComponent(seed)}`;
+}
+
 export interface ApiFetchOptions extends RequestInit {
   reloadOnUnauthorized?: boolean;
 }
