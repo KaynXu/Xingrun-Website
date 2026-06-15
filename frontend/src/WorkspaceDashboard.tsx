@@ -191,6 +191,18 @@ function getDashboardGreetingLabel(now = new Date()): string {
   return '晚上好';
 }
 
+const platformDashboardMottos = [
+  'Small steps, steady progress.',
+  'Make today a little lighter.',
+  'Keep going. The work will meet you halfway.',
+  'One calm move at a time.',
+  'Good things compound quietly.',
+];
+
+function getRandomPlatformDashboardMotto(): string {
+  return platformDashboardMottos[Math.floor(Math.random() * platformDashboardMottos.length)] ?? platformDashboardMottos[0];
+}
+
 function DashboardGreeting({
   currentUser,
   label,
@@ -201,6 +213,10 @@ function DashboardGreeting({
   detail: string;
 }) {
   const displayName = currentUser.display_name?.trim() || '老师';
+  const greetingDetail = useMemo(
+    () => (detail === 'random-platform-motto' ? getRandomPlatformDashboardMotto() : detail),
+    [detail],
+  );
 
   return (
     <div>
@@ -208,7 +224,7 @@ function DashboardGreeting({
       <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-slate-100">
         {getDashboardGreetingLabel()}，{displayName}
       </p>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{detail}</p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{greetingDetail}</p>
     </div>
   );
 }
@@ -435,7 +451,7 @@ function PlatformWorkspace({
       <section className={`${styles.cardClass} p-5 md:p-6`}>
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="愿今天少些打扰，多些顺利。" />
+            <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="random-platform-motto" />
             <div className="mt-2 min-h-5">
               <DashboardFetchState loading={loading} error={error} />
             </div>
