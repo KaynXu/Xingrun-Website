@@ -14,12 +14,13 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.pdfmetrics import registerFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus import CondPageBreak, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 ROOT = Path(__file__).resolve().parent
@@ -1225,6 +1226,26 @@ def _palette_color(style_config: dict[str, Any], key: str, fallback: str):
         return colors.HexColor(fallback)
 
 
+def _resolve_brand_logo(style_config: dict[str, Any]) -> Path | None:
+    brand = style_config.get("brand") if isinstance(style_config.get("brand"), dict) else {}
+    raw_path = str(brand.get("logo_path") or "").strip()
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = ROOT.parent / path
+    return path if path.exists() else None
+
+
+def _page_metric(style_config: dict[str, Any], key: str, fallback_mm: float) -> float:
+    page = style_config.get("page") if isinstance(style_config.get("page"), dict) else {}
+    value = page.get(key, fallback_mm)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(fallback_mm)
+
+
 def _coerce_base_date(value) -> date:
     if isinstance(value, date):
         return value
@@ -1249,20 +1270,33 @@ def build_styles(style_config: dict[str, Any] | None = None):
         textColor=_palette_color(style_config, "text", "#222222"),
         wordWrap="CJK",
     )
-    accent = _palette_color(style_config, "accent", "#8A4B08")
-    soft = _palette_color(style_config, "soft", "#FFF3E6")
-    quote_bg = _palette_color(style_config, "quote_bg", "#FFF8F0")
+    accent = _palette_color(style_config, "accent", "#B86B4B")
+    accent_secondary = _palette_color(style_config, "accent_secondary", "#E6C9B5")
+    soft = _palette_color(style_config, "soft", "#F6EFE8")
+    quote_bg = _palette_color(style_config, "quote_bg", "#FAF3EC")
+    paper = _palette_color(style_config, "paper", "#FFFDF9")
+    card = _palette_color(style_config, "card", "#FFF9F3")
+    header_bg = _palette_color(style_config, "header_bg", "#F1E1D3")
+    line = _palette_color(style_config, "line", "#D8B7A1")
+    muted = _palette_color(style_config, "muted", "#7A6559")
     return {
         "accent": accent,
+        "accent_secondary": accent_secondary,
         "soft": soft,
         "quote_bg": quote_bg,
-        "title": ParagraphStyle("title", parent=base, fontSize=20, leading=26, alignment=TA_CENTER, textColor=accent),
-        "subtitle": ParagraphStyle("subtitle", parent=base, fontSize=11, leading=16, alignment=TA_CENTER, textColor=colors.HexColor("#666666")),
-        "h1": ParagraphStyle("h1", parent=base, fontSize=14.5, leading=20, textColor=accent, spaceBefore=6, spaceAfter=4),
-        "h2": ParagraphStyle("h2", parent=base, fontSize=12, leading=17, textColor=accent, spaceBefore=3, spaceAfter=3),
+        "paper": paper,
+        "card": card,
+        "header_bg": header_bg,
+        "line": line,
+        "muted": muted,
+        "title": ParagraphStyle("title", parent=base, fontSize=20, leading=26, alignment=TA_CENTER, textColor=base.textColor),
+        "subtitle": ParagraphStyle("subtitle", parent=base, fontSize=11, leading=16, alignment=TA_CENTER, textColor=muted),
+        "brand": ParagraphStyle("brand", parent=base, fontSize=9.5, leading=14, alignment=TA_CENTER, textColor=accent),
+        "h1": ParagraphStyle("h1", parent=base, fontSize=14.5, leading=20, textColor=base.textColor, spaceBefore=6, spaceAfter=4),
+        "h2": ParagraphStyle("h2", parent=base, fontSize=12, leading=17, textColor=base.textColor, spaceBefore=3, spaceAfter=3),
         "body": base,
-        "small": ParagraphStyle("small", parent=base, fontSize=8.6, leading=12),
-        "tiny": ParagraphStyle("tiny", parent=base, fontSize=6.7, leading=8.0),
+        "small": ParagraphStyle("small", parent=base, fontSize=8.6, leading=12, textColor=muted),
+        "tiny": ParagraphStyle("tiny", parent=base, fontSize=6.7, leading=8.0, textColor=muted),
         "quote": ParagraphStyle("quote", parent=base, fontSize=10, leading=15, leftIndent=6, rightIndent=6),
     }
 
@@ -1276,13 +1310,17 @@ def make_box(title, body, styles, background):
     box.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), background),
-                ("BOX", (0, 0), (-1, -1), 0.8, styles["accent"]),
+                ("BACKGROUND", (0, 0), (-1, 0), styles["header_bg"]),
+                ("BACKGROUND", (0, 1), (-1, -1), background),
+                ("BOX", (0, 0), (-1, -1), 0.7, styles["line"]),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.6, styles["line"]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, 0), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+                ("TOPPADDING", (0, 1), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
             ]
         )
     )
@@ -1302,8 +1340,9 @@ def make_choice_table(choices, styles, chinese_only=False):
     table.setStyle(
         TableStyle(
             [
-                ("BOX", (0, 0), (-1, -1), 0.6, styles["accent"]),
-                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D2D8DE")),
+                ("BACKGROUND", (0, 0), (-1, -1), styles["card"]),
+                ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, styles["line"]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
@@ -1325,9 +1364,10 @@ def make_answer_table(day, styles, labels):
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8EFE7")),
-                ("BOX", (0, 0), (-1, -1), 0.6, styles["accent"]),
-                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D2D8DE")),
+                ("BACKGROUND", (0, 0), (-1, 0), styles["header_bg"]),
+                ("BACKGROUND", (0, 1), (-1, -1), styles["paper"]),
+                ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, styles["line"]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
@@ -1352,8 +1392,9 @@ def make_knowledge_mixed_table(knowledge_items, styles, chinese_only=False):
     table.setStyle(
         TableStyle(
             [
-                ("BOX", (0, 0), (-1, -1), 0.6, styles["accent"]),
-                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D2D8DE")),
+                ("BACKGROUND", (0, 0), (-1, -1), styles["card"]),
+                ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, styles["line"]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 5),
@@ -1375,8 +1416,9 @@ def make_knowledge_oral_table(knowledge_items, styles, chinese_only=False):
     table.setStyle(
         TableStyle(
             [
-                ("BOX", (0, 0), (-1, -1), 0.6, styles["accent"]),
-                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D2D8DE")),
+                ("BACKGROUND", (0, 0), (-1, -1), styles["card"]),
+                ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, styles["line"]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 5),
@@ -1403,9 +1445,10 @@ def make_knowledge_answer_table(knowledge_items, styles, knowledge_mode, labels,
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8EFE7")),
-                ("BOX", (0, 0), (-1, -1), 0.6, styles["accent"]),
-                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D2D8DE")),
+                ("BACKGROUND", (0, 0), (-1, 0), styles["header_bg"]),
+                ("BACKGROUND", (0, 1), (-1, -1), styles["paper"]),
+                ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, styles["line"]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
@@ -1468,9 +1511,10 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8EFE7")),
-                ("BOX", (0, 0), (-1, -1), 0.6, styles["accent"]),
-                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D2D8DE")),
+                ("BACKGROUND", (0, 0), (-1, 0), styles["header_bg"]),
+                ("BACKGROUND", (0, 1), (-1, -1), styles["paper"]),
+                ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, styles["line"]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 1.5),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
@@ -1482,18 +1526,36 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
     return table
 
 
-def on_page(styles, variant_key, lesson_title=None):
+def on_page(styles, variant_key, style_config=None, lesson_title=None):
     chinese_only = is_chinese_only(variant_key)
     labels = build_labels(chinese_only)
     footer_title = lesson_title or LESSON["title"]
+    style_config = style_config or {}
+    logo_path = _resolve_brand_logo(style_config)
 
     def draw(canvas, doc):
         canvas.saveState()
-        canvas.setStrokeColor(styles["accent"])
-        canvas.setLineWidth(1)
-        canvas.line(doc.leftMargin, A4[1] - 18 * mm, A4[0] - doc.rightMargin, A4[1] - 18 * mm)
+        top_rule_y = A4[1] - 16 * mm
+        canvas.setStrokeColor(styles["line"])
+        canvas.setLineWidth(0.8)
+        canvas.line(doc.leftMargin, top_rule_y, A4[0] - doc.rightMargin, top_rule_y)
+        if logo_path is not None:
+            try:
+                logo_reader = ImageReader(str(logo_path))
+                canvas.drawImage(
+                    logo_reader,
+                    doc.leftMargin,
+                    A4[1] - 15 * mm,
+                    width=10 * mm,
+                    height=10 * mm,
+                    mask="auto",
+                    preserveAspectRatio=True,
+                    anchor="nw",
+                )
+            except Exception:
+                pass
         canvas.setFont(ACTIVE_FONT_NAME, 8.5)
-        canvas.setFillColor(colors.HexColor("#666666"))
+        canvas.setFillColor(styles["muted"])
         canvas.drawString(doc.leftMargin, 10 * mm, footer_title)
         canvas.drawRightString(A4[0] - doc.rightMargin, 10 * mm, labels["footer_right"].format(page=canvas.getPageNumber()))
         canvas.restoreState()
@@ -1501,7 +1563,7 @@ def on_page(styles, variant_key, lesson_title=None):
     return draw
 
 
-def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_lines=None, knowledge_sections=None, base_date=None):
+def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_lines=None, knowledge_sections=None, base_date=None, style_config=None):
     base_date = _coerce_base_date(base_date)
     chinese_only = is_chinese_only(variant_key)
     labels = build_labels(chinese_only)
@@ -1509,8 +1571,15 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
     days = days or DAYS
     final_reminder_lines = final_reminder_lines or FINAL_REMINDER_LINES
     knowledge_sections = knowledge_sections if knowledge_sections is not None else KNOWLEDGE_SECTIONS
+    style_config = style_config or {}
     story = []
-    story.append(Spacer(1, 8 * mm))
+    logo_path = _resolve_brand_logo(style_config)
+    story.append(Spacer(1, 6 * mm))
+    if logo_path is not None:
+        story.append(Image(str(logo_path), width=24 * mm, height=24 * mm, kind="proportional", mask="auto", hAlign="CENTER"))
+        story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph("星润课后复习计划", styles["brand"]))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph(lesson["title"], styles["title"]))
     subtitle = "" if chinese_only else lesson.get("subtitle", "")
     if subtitle:
@@ -1518,7 +1587,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
     story.append(Spacer(1, 5 * mm))
     story.append(make_box(labels["usage_title"], Paragraph(labels["usage_text"], styles["body"]), styles, styles["soft"]))
     story.append(Spacer(1, 3 * mm))
-    story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, colors.white))
+    story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, styles["card"]))
     story.append(Spacer(1, 3 * mm))
     golden_quotes = build_quote_summary_text(lesson.get("quotes", []), chinese_only)
     story.append(make_box(labels["quotes_title"], Paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
@@ -1534,13 +1603,13 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
             story.append(Spacer(1, 2 * mm))
             story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, styles["soft"]))
             story.append(Spacer(1, 2 * mm))
-            story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, colors.white))
+            story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, styles["card"]))
             story.append(Spacer(1, 2 * mm))
         blank_body = Paragraph("<br/>".join([f"{index}. {localize_text(item[0], chinese_only)}" for index, item in enumerate(day["blanks"], start=1)]), styles["body"])
-        story.append(make_box(labels["blanks_title"], blank_body, styles, colors.white))
+        story.append(make_box(labels["blanks_title"], blank_body, styles, styles["card"]))
         story.append(Spacer(1, 2 * mm))
         story.append(CondPageBreak(60 * mm))
-        story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, colors.white))
+        story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, styles["paper"]))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         has_teacher_quote = index == 0 and day["quotes"]
@@ -1556,7 +1625,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
                 knowledge_body = make_knowledge_oral_table(knowledge_items, styles, chinese_only)
                 knowledge_title = labels["knowledge_oral_title"]
             story.append(CondPageBreak(70 * mm))
-            story.append(make_box(knowledge_title, knowledge_body, styles, colors.white))
+            story.append(make_box(knowledge_title, knowledge_body, styles, styles["paper"]))
             if has_teacher_quote or has_replay_block:
                 story.append(Spacer(1, 2 * mm))
 
@@ -1600,16 +1669,17 @@ def render_review_plan_pdf(
     base_date=None,
 ) -> str:
     register_fonts()
+    style_config = style_config or load_unified_review_plan_style_config()
     styles = build_styles(style_config)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(
         str(output),
         pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=24 * mm,
-        bottomMargin=16 * mm,
+        leftMargin=_page_metric(style_config, "left_margin_mm", 18) * mm,
+        rightMargin=_page_metric(style_config, "right_margin_mm", 18) * mm,
+        topMargin=_page_metric(style_config, "top_margin_mm", 24) * mm,
+        bottomMargin=_page_metric(style_config, "bottom_margin_mm", 16) * mm,
         title=lesson["title"],
     )
     canvas_maker = lambda *args, **kwargs: TrackingCanvas(*args, char_space=LETTER_SPACING, **kwargs)
@@ -1622,9 +1692,10 @@ def render_review_plan_pdf(
             final_reminder_lines=final_reminder_lines,
             knowledge_sections=knowledge_sections or {},
             base_date=base_date or lesson.get("base_date") or lesson.get("date"),
+            style_config=style_config,
         ),
-        onFirstPage=on_page(styles, variant_key, lesson["title"]),
-        onLaterPages=on_page(styles, variant_key, lesson["title"]),
+        onFirstPage=on_page(styles, variant_key, style_config, lesson["title"]),
+        onLaterPages=on_page(styles, variant_key, style_config, lesson["title"]),
         canvasmaker=canvas_maker,
     )
     return str(output.resolve())
