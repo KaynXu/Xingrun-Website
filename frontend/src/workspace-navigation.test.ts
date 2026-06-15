@@ -167,16 +167,19 @@ test('workspace navigation exposes a dedicated owner-only credit center page', (
   assert.match(contentSource, /activeWorkspacePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
 });
 
-test('settings page source keeps only account and about sections after credit center extraction', () => {
+test('settings page source keeps account, avatar, and password sections without the old about block', () => {
   const settingsBlock = requireMatch(settingsSource, /export function SettingsPage\([\s\S]*?\n\}/);
 
   assert.match(settingsBlock, /<h3 className=\{workspaceSectionTitleClass\}>系统设置<\/h3>/);
-  assert.match(settingsBlock, /当前账号/);
-  assert.match(settingsBlock, /关于/);
+  assert.match(settingsBlock, /更换头像/);
+  assert.match(settingsBlock, /修改账号密码/);
+  assert.match(settingsBlock, /onCurrentUserUpdated/);
+  assert.match(settingsBlock, /\/api\/profile\/avatar/);
+  assert.match(settingsBlock, /\/api\/profile\/avatar-upload/);
+  assert.match(settingsBlock, /\/api\/profile\/password/);
+  assert.match(settingsBlock, /上传头像/);
   assert.doesNotMatch(settingsBlock, /积分中心/);
-  assert.doesNotMatch(settingsBlock, /小红书订单兑换/);
-  assert.doesNotMatch(settingsBlock, /成员用量/);
-  assert.doesNotMatch(settingsBlock, /最近流水/);
+  assert.doesNotMatch(settingsBlock, /关于/);
 });
 
 test('credit center page source supports member drilldown and ledger filtering', () => {

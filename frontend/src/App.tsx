@@ -427,6 +427,7 @@ export default function App() {
         handleClearClassBindingTarget={() => setClassBindingTarget(null)}
         handleOpenClassBinding={handleOpenClassBinding}
         handleLogout={handleLogout}
+        onCurrentUserUpdated={(user) => setCurrentUser(user)}
       />
     </WorkspaceShellLayout>
   );

@@ -2340,6 +2340,9 @@ def init_db():
             status          TEXT NOT NULL DEFAULT 'active',
             organization_id INTEGER NOT NULL REFERENCES organizations(id),
             visible_pages_json TEXT DEFAULT NULL,
+            avatar_source   TEXT NOT NULL DEFAULT 'dicebear',
+            avatar_seed     TEXT NOT NULL DEFAULT '',
+            avatar_upload_path TEXT NOT NULL DEFAULT '',
             recovery_phone  TEXT NOT NULL DEFAULT '',
             security_question TEXT NOT NULL DEFAULT '',
             security_answer_hash TEXT NOT NULL DEFAULT '',
@@ -3156,6 +3159,12 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
         if "visible_pages_json" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN visible_pages_json TEXT DEFAULT NULL")
+        if "avatar_source" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_source TEXT NOT NULL DEFAULT 'dicebear'")
+        if "avatar_seed" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_seed TEXT NOT NULL DEFAULT ''")
+        if "avatar_upload_path" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_upload_path TEXT NOT NULL DEFAULT ''")
         if "recovery_phone" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN recovery_phone TEXT NOT NULL DEFAULT ''")
         if "security_question" not in user_cols:
@@ -3555,6 +3564,13 @@ def _public_user_dict(row):
         "created_at": row["created_at"],
         "last_login": row["last_login"] if "last_login" in keys else None,
         "visible_pages": _load_visible_pages_for_user(row),
+        "avatar_source": row["avatar_source"] if "avatar_source" in keys else "dicebear",
+        "avatar_seed": row["avatar_seed"] if "avatar_seed" in keys else "",
+        "avatar_upload_url": (
+            f"/api/profile-avatar-files/{row['avatar_upload_path']}"
+            if "avatar_upload_path" in keys and str(row["avatar_upload_path"] or "").strip()
+            else ""
+        ),
         "requires_class_claim": _requires_initial_class_claim(row),
     }
 
@@ -7325,6 +7341,34 @@ def update_user_profile(user_id: int, new_username: str, new_display_name: str):
         _sync_class_teacher_metadata(conn, [row["class_id"] for row in class_rows])
 
 
+def update_user_avatar_preferences(
+    user_id: int,
+    *,
+    avatar_source: str,
+    avatar_seed: str = "",
+    avatar_upload_path: str = "",
+):
+    normalized_source = str(avatar_source or "").strip() or "dicebear"
+    if normalized_source not in {"dicebear", "upload"}:
+        raise ValueError("avatar_source is invalid")
+    normalized_seed = str(avatar_seed or "").strip()
+    normalized_upload_path = str(avatar_upload_path or "").strip()
+    if normalized_source == "dicebear":
+        normalized_upload_path = ""
+    elif not normalized_upload_path:
+        raise ValueError("avatar_upload_path is required")
+    with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        conn.execute(
+            "UPDATE users SET avatar_source=?, avatar_seed=?, avatar_upload_path=? WHERE id=?",
+            (normalized_source, normalized_seed, normalized_upload_path, user_id),
+        )
+        updated = _fetch_user_row_by_id(conn, user_id)
+    return _public_user_dict(updated)
+
+
 def update_user_display_name_for_actor(actor_user: dict, target_user_id: int, display_name: str):
     normalized_display_name = (display_name or "").strip()
     if not normalized_display_name:
@@ -7523,6 +7567,23 @@ def reset_user_password_by_recovery(
         conn.execute(
             "UPDATE users SET password_hash=? WHERE id=?",
             (hash_password(new_password), row["id"]),
+        )
+
+
+def change_user_password(user_id: int, current_password: str, new_password: str) -> None:
+    if not current_password or not new_password:
+        raise ValueError("请填写当前密码和新密码")
+    if len(new_password) < 6:
+        raise ValueError("新密码至少需要 6 位")
+    with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if user_row["password_hash"] != hash_password(current_password):
+            raise ValueError("当前密码不正确")
+        conn.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (hash_password(new_password), user_id),
         )
 
 

@@ -12,6 +12,10 @@ test('workspace user avatars use stable DiceBear Dylan URLs', () => {
   const avatarUrl = buildDiceBearAvatarUrl({ id: 7, username: 'teacher-a', display_name: 'Teacher A' });
 
   assert.equal(avatarUrl, 'https://api.dicebear.com/10.x/dylan/svg?seed=7-teacher-a-Teacher%20A');
+  assert.equal(
+    buildDiceBearAvatarUrl({ avatar_source: 'upload', avatar_upload_url: '/api/profile-avatar-files/profile-avatars/user-7.png' }),
+    '/api/profile-avatar-files/profile-avatars/user-7.png',
+  );
 
   const markup = renderToStaticMarkup(
     <SidebarAccountSheet
@@ -43,6 +47,8 @@ test('workspace account surfaces share DiceBear avatars instead of initial badge
   const sharedSource = readFileSync(resolve(process.cwd(), 'src/workspaceShared.ts'), 'utf8');
 
   assert.match(sharedSource, /https:\/\/api\.dicebear\.com\/10\.x\/dylan\/svg\?seed=/);
+  assert.match(sharedSource, /user\.avatar_source === 'upload'/);
+  assert.match(sharedSource, /user\.avatar_upload_url\?\.trim\(\)/);
   assert.equal((sidebarSource.match(/buildDiceBearAvatarUrl\(currentUser\)/g) || []).length, 2);
   assert.match(approvalSource, /buildDiceBearAvatarUrl\(currentUser\)/);
   assert.match(approvalSource, /buildDiceBearAvatarUrl\(user\)/);

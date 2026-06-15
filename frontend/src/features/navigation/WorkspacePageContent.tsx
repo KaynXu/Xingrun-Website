@@ -45,6 +45,7 @@ export function WorkspacePageContent({
   handleClearClassBindingTarget,
   handleOpenClassBinding,
   handleLogout,
+  onCurrentUserUpdated,
 }: {
   activeWorkspacePage: WorkspaceShellPage;
   currentUser: CurrentUser;
@@ -59,6 +60,7 @@ export function WorkspacePageContent({
   handleClearClassBindingTarget: () => void;
   handleOpenClassBinding: (target: ClassBindingTarget) => void;
   handleLogout: () => void;
+  onCurrentUserUpdated: (user: CurrentUser) => void;
 }) {
   return (
     <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
@@ -101,7 +103,9 @@ export function WorkspacePageContent({
         )}
         {activeWorkspacePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
         {activeWorkspacePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
-        {activeWorkspacePage === 'settings' && <SettingsPage currentUser={currentUser} onLogout={handleLogout} />}
+        {activeWorkspacePage === 'settings' && (
+          <SettingsPage currentUser={currentUser} onLogout={handleLogout} onCurrentUserUpdated={onCurrentUserUpdated} />
+        )}
       </motion.div>
     </AnimatePresence>
   );
