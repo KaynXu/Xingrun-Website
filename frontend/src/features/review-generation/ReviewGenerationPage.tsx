@@ -441,9 +441,13 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
     <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">复习生成</h2>
-        <button type="button" onClick={handleToggleComposer} className={`${workspacePrimaryButtonClass} shadow-none`}>
+        <button
+          type="button"
+          onClick={handleToggleComposer}
+          className="inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white shadow-none transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
           <PlusCircle size={20} />
-          新建复习文档
+          新建
         </button>
       </div>
 

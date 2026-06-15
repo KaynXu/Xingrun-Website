@@ -69,7 +69,8 @@ test('review generation source replaces separate lesson input and library pages 
 test('review generation source defaults to history documents and expands the shared composer from the primary CTA', () => {
   assert.match(reviewGenerationSource, /const \[composerOpen, setComposerOpen\] = useState\(false\);/);
   assert.match(reviewGenerationSource, /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
-  assert.match(reviewGenerationSource, /新建复习文档/);
+  assert.match(reviewGenerationSource, /inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white shadow-none transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60/);
+  assert.match(reviewGenerationSource, /新建/);
   assert.match(reviewGenerationSource, /生成复习文档/);
   assert.match(reviewGenerationSource, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} highlightedLessonId=\{highlightedLessonId\} \/>/);
 });
