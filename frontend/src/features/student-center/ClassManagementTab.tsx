@@ -158,11 +158,15 @@ export function ClassManagementTab({
                   const gradeLabel = normalizeAcademicGradeLabel(item.current_grade || item.grade || '') || item.grade || '未填写年级';
                   const stageLabel = item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '') || '未填写学段';
                   const classStudents = studentsByClassId[item.id] || [];
+                  const studentCount = Math.max(classStudents.length, Number(item.student_count || 0));
                   const visibleStudentNames = classStudents.slice(0, 4).map((student) => student.name);
                   const missingSubject = !item.subject || !subjectOptions.includes(item.subject);
                   const effectiveSubject = getClassEffectiveSubject(item);
                   const displayName = getClassDisplayName(item);
                   const classInfoIssues = getClassInfoIssues(item);
+                  const secondaryInfoIssues = missingSubject
+                    ? classInfoIssues.filter((issue) => issue !== '缺科目')
+                    : classInfoIssues;
 
                   return (
                     <div
@@ -188,15 +192,15 @@ export function ClassManagementTab({
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-base font-bold text-slate-900 dark:text-white">{displayName}</span>
                       {missingSubject ? (
-                        <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
+                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
                           需填写科目{effectiveSubject ? ` · 按${effectiveSubject}筛选` : ''}
                         </span>
                       ) : (
                         <span className={studentCenterBadgeClass}>{item.subject}</span>
                       )}
-                      {classInfoIssues.length ? (
-                        <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300">
-                          信息待补全：{classInfoIssues.join(' / ')}
+                      {secondaryInfoIssues.length ? (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+                          待补全：{secondaryInfoIssues.join(' / ')}
                         </span>
                       ) : null}
                       {item.is_bridge ? (
@@ -208,7 +212,7 @@ export function ClassManagementTab({
                       <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
                       <span>{gradeLabel}</span>
                       <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-                      <span>{classStudents.length ? `${classStudents.length}名学员` : '学员未加载'}</span>
+                      <span>{studentCount ? `${studentCount}名学员` : '暂无学员'}</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-3 text-sm">
@@ -222,7 +226,9 @@ export function ClassManagementTab({
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">学员</p>
-                      <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{visibleStudentNames.length ? visibleStudentNames.join('、') : '点击查看'}</p>
+                      <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">
+                        {visibleStudentNames.length ? visibleStudentNames.join('、') : (studentCount ? `${studentCount}名学员` : '暂无学员')}
+                      </p>
                     </div>
                   </div>
                     <div className="flex items-center justify-end gap-2">
