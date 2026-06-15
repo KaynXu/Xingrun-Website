@@ -35,6 +35,15 @@ function getAvatarPresetSeeds(user: CurrentUser): string[] {
   return avatarPresetNames.map((name) => `${base}-${name}`);
 }
 
+function normalizeSettingsApiError(err: unknown, fallbackMessage: string): string {
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  const normalized = message.trim();
+  if (normalized === 'Not Found' || normalized === 'NOT FOUND') {
+    return '本地后端还没更新到最新代码，请重启 5001 后端后再试。';
+  }
+  return normalized || fallbackMessage;
+}
+
 export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: SettingsPageProps) {
   const avatarPresetSeeds = useMemo(
     () => getAvatarPresetSeeds(currentUser),
@@ -75,7 +84,7 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
       setAvatarSuccess('头像已更新');
       onCurrentUserUpdated(payload.user);
     } catch (err) {
-      setAvatarError(err instanceof Error ? err.message : '头像更新失败');
+      setAvatarError(normalizeSettingsApiError(err, '头像更新失败'));
     } finally {
       setAvatarSaving(false);
     }
@@ -100,7 +109,7 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
       setAvatarSuccess('头像已上传');
       onCurrentUserUpdated(payload.user);
     } catch (err) {
-      setAvatarError(err instanceof Error ? err.message : '头像上传失败');
+      setAvatarError(normalizeSettingsApiError(err, '头像上传失败'));
     } finally {
       setAvatarUploading(false);
     }
@@ -128,7 +137,7 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
       setConfirmPassword('');
       setPasswordSuccess('密码已更新');
     } catch (err) {
-      setPasswordError(err instanceof Error ? err.message : '密码修改失败');
+      setPasswordError(normalizeSettingsApiError(err, '密码修改失败'));
     } finally {
       setPasswordSaving(false);
     }
