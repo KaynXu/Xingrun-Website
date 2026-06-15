@@ -10,6 +10,8 @@ import {
   apiFetch,
   cn,
   workspacePageClass,
+  workspaceSectionTextClass,
+  workspaceSectionTitleClass,
 } from '../../workspaceShared';
 import {
   createClassStudent,
@@ -142,6 +144,7 @@ import {
   resolveTeacherSearchAfterChange,
 } from './classEditorStateRules';
 import { buildClassEditorModalState } from './classEditorModalState';
+import { studentCenterMutedSurfaceClass } from './ui';
 import {
   cancelFilterCloseTimer,
   resolveOverviewFilterItemClick,
@@ -1338,7 +1341,23 @@ export function StudentCenterPage({
   });
 
   return (
-    <div className={`${workspacePageClass} space-y-8`}>
+    <div className={`${workspacePageClass} space-y-6`}>
+      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{currentUser.organization_name}</p>
+          <h2 className={workspaceSectionTitleClass}>学管中心</h2>
+          <p className={`${workspaceSectionTextClass} max-w-2xl`}>集中维护班级、学员和负责老师，先筛选范围，再处理具体记录。</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+            班级 {classes.length}
+          </span>
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+            学员 {allStudents.length}
+          </span>
+        </div>
+      </section>
+
       <CampusOverview
         currentUser={currentUser}
         classBindingTarget={classBindingTarget}
@@ -1394,7 +1413,7 @@ export function StudentCenterPage({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-sky-50 p-1 dark:bg-white/5">
+      <div className={`${studentCenterMutedSurfaceClass} grid grid-cols-2 gap-1.5 p-1.5`}>
         {[
           { key: 'classes' as const, label: '班级管理' },
           { key: 'students' as const, label: '学员管理' },
@@ -1404,10 +1423,10 @@ export function StudentCenterPage({
             type="button"
             onClick={() => setStudentCenterTab(item.key)}
             className={cn(
-              'h-10 rounded-xl text-sm font-bold transition',
+              'flex h-11 items-center justify-center rounded-[1rem] text-sm font-semibold transition',
               studentCenterTab === item.key
-                ? 'bg-white text-sky-700 dark:bg-sky-400/15 dark:text-sky-100'
-                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
+                ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950'
+                : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white',
             )}
           >
             {item.label}

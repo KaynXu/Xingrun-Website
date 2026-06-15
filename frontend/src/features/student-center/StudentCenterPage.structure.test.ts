@@ -53,7 +53,7 @@ test('class management tab display is extracted from the student center page', (
 
   assert.match(classManagementTabSource, /export function ClassManagementTab/);
   assert.match(classManagementTabSource, /<FloatingFilterBar/);
-  assert.match(classManagementTabSource, /班级卡片/);
+  assert.match(classManagementTabSource, /班级列表/);
 });
 
 test('student management tab display is extracted from the student center page', () => {
@@ -77,7 +77,7 @@ test('student management tab display is extracted from the student center page',
   assert.match(studentManagementTabSource, /<FloatingFilterBar/);
   assert.match(studentManagementTabSource, /学员姓名查询/);
   assert.match(studentManagementTabSource, /新建学员/);
-  assert.match(studentManagementTabSource, /divide-y divide-sky-100/);
+  assert.match(studentManagementTabSource, /divide-y divide-slate-200/);
   assert.doesNotMatch(studentManagementTabSource, /grid gap-3 md:grid-cols-2 xl:grid-cols-3/);
   assert.match(studentProfileModalSource, /export function StudentProfileModal/);
   assert.match(studentProfileModalSource, /学员档案/);
