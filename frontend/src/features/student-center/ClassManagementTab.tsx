@@ -5,7 +5,7 @@ import { getAcademicStageFromGrade, normalizeAcademicGradeLabel } from '../../do
 import { cn } from '../../workspaceShared';
 import type { ClassItem, UserItem } from './model';
 import {
-  studentCenterBadgeClass,
+  getStudentCenterSubjectBadgeClass,
   studentCenterMutedSurfaceClass,
   studentCenterPrimaryButtonClass,
   studentCenterSecondaryButtonClass,
@@ -196,7 +196,7 @@ export function ClassManagementTab({
                           需填写科目{effectiveSubject ? ` · 按${effectiveSubject}筛选` : ''}
                         </span>
                       ) : (
-                        <span className={studentCenterBadgeClass}>{item.subject}</span>
+                        <span className={getStudentCenterSubjectBadgeClass(item.subject)}>{item.subject}</span>
                       )}
                       {secondaryInfoIssues.length ? (
                         <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">

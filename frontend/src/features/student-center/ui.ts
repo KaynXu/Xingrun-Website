@@ -17,3 +17,16 @@ export const studentCenterFieldClass =
 
 export const studentCenterBadgeClass =
   'inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-white/[0.08] dark:text-slate-300';
+
+export function getStudentCenterSubjectBadgeClass(subject: string | null | undefined): string {
+  if (subject === '数学') {
+    return 'inline-flex items-center rounded-full bg-[#d7dee5] px-2.5 py-1 text-xs font-semibold text-[#5a6773] dark:bg-[#4b5966]/35 dark:text-[#d7dee5]';
+  }
+  if (subject === '物理') {
+    return 'inline-flex items-center rounded-full bg-[#d9dfd3] px-2.5 py-1 text-xs font-semibold text-[#66705e] dark:bg-[#55614f]/35 dark:text-[#dde4d7]';
+  }
+  if (subject === '国际数学') {
+    return 'inline-flex items-center rounded-full bg-[#dfd6d9] px-2.5 py-1 text-xs font-semibold text-[#74656a] dark:bg-[#67575d]/35 dark:text-[#e6dde0]';
+  }
+  return studentCenterBadgeClass;
+}
