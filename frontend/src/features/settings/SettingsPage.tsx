@@ -1,62 +1,273 @@
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+
 import type { CurrentUser } from '../../appTypes';
 import { getRoleLabel } from '../../appDisplay';
 import {
-  workspaceCardClass,
+  apiFetch,
+  buildDiceBearAvatarUrl,
   workspacePageClass,
-  workspaceSecondaryButtonClass,
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
 
 type SettingsPageProps = {
   currentUser: CurrentUser;
-  onLogout: () => void;
+  onCurrentUserUpdated: (user: CurrentUser) => void;
 };
 
-export function SettingsPage({ currentUser, onLogout }: SettingsPageProps) {
+type ProfileUpdateResponse = {
+  ok: boolean;
+  user: CurrentUser;
+};
+
+const avatarPresetNames = [
+  'ink',
+  'moss',
+  'pebble',
+  'ember',
+  'mist',
+  'wave',
+  'cedar',
+  'linen',
+  'graphite',
+  'maple',
+  'chalk',
+  'fern',
+  'cocoa',
+  'fog',
+  'dune',
+  'pine',
+  'stone',
+  'clay',
+] as const;
+
+const settingsCardClass = 'rounded-[1.75rem] border border-slate-200 bg-white/88 backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78';
+const settingsFieldClass =
+  'w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:focus:border-slate-500 dark:focus:ring-white/10 dark:placeholder:text-slate-500';
+const settingsSecondaryButtonClass =
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10';
+const settingsPrimaryButtonClass =
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-slate-950 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10';
+
+function getAvatarSeedBase(user: CurrentUser): string {
+  return [user.id, user.username, user.display_name].filter((item) => String(item || '').trim()).join('-') || 'xingrun-user';
+}
+
+function getAvatarPresetSeeds(user: CurrentUser): string[] {
+  const base = getAvatarSeedBase(user);
+  return avatarPresetNames.map((name) => `${base}-${name}`);
+}
+
+function normalizeSettingsApiError(err: unknown, fallbackMessage: string): string {
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  const normalized = message.trim();
+  if (normalized === 'Not Found' || normalized === 'NOT FOUND') {
+    return '本地后端还没更新到最新代码，请重启 5001 后端后再试。';
+  }
+  return normalized || fallbackMessage;
+}
+
+export function SettingsPage({ currentUser, onCurrentUserUpdated }: SettingsPageProps) {
+  const avatarPresetSeeds = useMemo(
+    () => getAvatarPresetSeeds(currentUser),
+    [currentUser.id, currentUser.username, currentUser.display_name],
+  );
+  const [selectedAvatarSeed, setSelectedAvatarSeed] = useState(
+    currentUser.avatar_seed?.trim() || avatarPresetSeeds[0] || getAvatarSeedBase(currentUser),
+  );
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const [avatarSuccess, setAvatarSuccess] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+
+  useEffect(() => {
+    setSelectedAvatarSeed(currentUser.avatar_seed?.trim() || avatarPresetSeeds[0] || getAvatarSeedBase(currentUser));
+  }, [avatarPresetSeeds, currentUser.avatar_seed, currentUser.id, currentUser.username, currentUser.display_name]);
+
+  const previewAvatarUrl = currentUser.avatar_source === 'upload'
+    ? buildDiceBearAvatarUrl(currentUser)
+    : buildDiceBearAvatarUrl({ ...currentUser, avatar_source: 'dicebear', avatar_seed: selectedAvatarSeed });
+
+  const saveDiceBearAvatar = async (seed: string) => {
+    setAvatarSaving(true);
+    setAvatarError('');
+    setAvatarSuccess('');
+    try {
+      const payload = await apiFetch<ProfileUpdateResponse>('/api/profile/avatar', {
+        method: 'PUT',
+        body: JSON.stringify({ avatar_source: 'dicebear', avatar_seed: seed }),
+      });
+      setSelectedAvatarSeed(payload.user.avatar_seed?.trim() || seed);
+      setAvatarSuccess('头像已更新');
+      onCurrentUserUpdated(payload.user);
+    } catch (err) {
+      setAvatarError(normalizeSettingsApiError(err, '头像更新失败'));
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+    setAvatarUploading(true);
+    setAvatarError('');
+    setAvatarSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const payload = await apiFetch<ProfileUpdateResponse>('/api/profile/avatar-upload', {
+        method: 'POST',
+        body: formData,
+      });
+      setAvatarSuccess('头像已上传');
+      onCurrentUserUpdated(payload.user);
+    } catch (err) {
+      setAvatarError(normalizeSettingsApiError(err, '头像上传失败'));
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const savePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError('请填写完整');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('两次输入的新密码不一致');
+      return;
+    }
+    setPasswordSaving(true);
+    setPasswordError('');
+    setPasswordSuccess('');
+    try {
+      await apiFetch('/api/profile/password', {
+        method: 'PUT',
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordSuccess('密码已更新');
+    } catch (err) {
+      setPasswordError(normalizeSettingsApiError(err, '密码修改失败'));
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
   return (
     <div className={`${workspacePageClass} space-y-8`}>
       <h3 className={workspaceSectionTitleClass}>系统设置</h3>
 
-      <section className="space-y-4">
-        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">账号</h4>
-        <div className={`${workspaceCardClass} flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between`}>
-          <div>
-            <p className="font-medium text-slate-900 dark:text-white">当前账号</p>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">登出后需重新输入账号和密码。</p>
-            <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sky-700 dark:border-sky-500/30 dark:bg-sky-900/40 dark:text-sky-300">
-                {currentUser.display_name}
-              </span>
+      <section className={`${settingsCardClass} p-6`}>
+        <div className="flex items-center gap-4">
+          <img src={previewAvatarUrl} alt={`${currentUser.display_name} 头像`} className="h-16 w-16 rounded-2xl bg-slate-100 object-cover" />
+          <div className="space-y-2">
+            <p className="text-lg font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
+            <div className="flex flex-wrap gap-2 text-xs">
               <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                 {getRoleLabel(currentUser.role)}
               </span>
               <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                 {currentUser.organization_name}
               </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                {currentUser.username}
+              </span>
             </div>
           </div>
-          <button onClick={onLogout} className={workspaceSecondaryButtonClass}>
-            退出登录
-          </button>
         </div>
       </section>
 
-      <section className="space-y-4">
-        <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">关于</h4>
-        <div className={`${workspaceCardClass} space-y-3 p-6`}>
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-500 dark:text-slate-400">产品</span>
-            <span className="text-slate-700 dark:text-slate-200">星润课后复习系统</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-500 dark:text-slate-400">版本</span>
-            <span className="font-mono text-slate-700 dark:text-slate-200">v1.0.0</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-500 dark:text-slate-400">AI 引擎</span>
-            <span className="text-slate-700 dark:text-slate-200">由星润提供</span>
-          </div>
+      <section className={`${settingsCardClass} space-y-5 p-6`}>
+        <div className="space-y-1">
+          <h4 className="text-base font-semibold text-slate-900 dark:text-white">更换头像</h4>
+          <p className="text-sm text-slate-500 dark:text-slate-400">选择一个 DiceBear seed，或上传自己的头像。</p>
         </div>
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6 xl:grid-cols-9">
+          {avatarPresetSeeds.map((seed) => {
+            const active = currentUser.avatar_source !== 'upload' && selectedAvatarSeed === seed;
+            return (
+              <button
+                key={seed}
+                type="button"
+                onClick={() => {
+                  setSelectedAvatarSeed(seed);
+                  void saveDiceBearAvatar(seed);
+                }}
+                disabled={avatarSaving || avatarUploading}
+                className={`rounded-2xl border p-2 transition ${
+                  active
+                    ? 'border-slate-500 bg-slate-50'
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <img
+                  src={buildDiceBearAvatarUrl({ ...currentUser, avatar_source: 'dicebear', avatar_seed: seed })}
+                  alt="头像候选"
+                  className="h-16 w-full rounded-xl bg-slate-100 object-cover"
+                />
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className={`${settingsSecondaryButtonClass} cursor-pointer`}>
+            <input type="file" accept="image/*" className="hidden" onChange={(event) => void handleAvatarUpload(event)} />
+            {avatarUploading ? '上传中...' : '上传头像'}
+          </label>
+          <span className="text-sm text-slate-500 dark:text-slate-400">
+            支持 `png / jpg / webp / gif`，不超过 4MB
+          </span>
+        </div>
+        {avatarError && <p className="text-sm text-rose-500 dark:text-rose-400">{avatarError}</p>}
+        {avatarSuccess && <p className="text-sm text-emerald-600 dark:text-emerald-400">{avatarSuccess}</p>}
+      </section>
+
+      <section className={`${settingsCardClass} space-y-5 p-6`}>
+        <div className="space-y-1">
+          <h4 className="text-base font-semibold text-slate-900 dark:text-white">修改账号密码</h4>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            className={settingsFieldClass}
+            placeholder="当前密码"
+          />
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            className={settingsFieldClass}
+            placeholder="新密码"
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            className={settingsFieldClass}
+            placeholder="确认新密码"
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => void savePassword()} disabled={passwordSaving} className={settingsPrimaryButtonClass}>
+            {passwordSaving ? '保存中...' : '更新密码'}
+          </button>
+        </div>
+        {passwordError && <p className="text-sm text-rose-500 dark:text-rose-400">{passwordError}</p>}
+        {passwordSuccess && <p className="text-sm text-emerald-600 dark:text-emerald-400">{passwordSuccess}</p>}
       </section>
     </div>
   );

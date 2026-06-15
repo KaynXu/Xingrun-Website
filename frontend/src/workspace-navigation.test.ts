@@ -10,6 +10,7 @@ const contentSource = readFileSync(new URL('./features/navigation/WorkspacePageC
 const accessSource = readFileSync(new URL('./features/navigation/workspaceAccess.ts', import.meta.url), 'utf8');
 const appDisplaySource = readFileSync(new URL('./appDisplay.ts', import.meta.url), 'utf8');
 const appTypesSource = readFileSync(new URL('./appTypes.ts', import.meta.url), 'utf8');
+const workspaceRoutesSource = readFileSync(new URL('./features/navigation/workspaceRoutes.ts', import.meta.url), 'utf8');
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
 const creditCenterSource = readFileSync(new URL('./features/credits/CreditCenterPage.tsx', import.meta.url), 'utf8');
@@ -34,6 +35,8 @@ test('workspace navigation wires consultation and calendar pages into the shell'
   const sidebarBlock = sidebarSource;
 
   assert.match(appSource, /type Page = WorkspacePage;/);
+  assert.doesNotMatch(headerSource, /placeholder="搜索班级、学生、课程\.\.\."/);
+  assert.doesNotMatch(headerSource, /<Search /);
   assert.match(sidebarBlock, /id: 'class-feedback-generation'[\s\S]*label: '课堂反馈'/);
   assert.match(appSource, /'class-feedback-generation': '课堂反馈'/);
   assert.doesNotMatch(sidebarBlock, /id: 'student-tasks'/);
@@ -68,7 +71,8 @@ test('review generation source replaces separate lesson input and library pages 
 test('review generation source defaults to history documents and expands the shared composer from the primary CTA', () => {
   assert.match(reviewGenerationSource, /const \[composerOpen, setComposerOpen\] = useState\(false\);/);
   assert.match(reviewGenerationSource, /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
-  assert.match(reviewGenerationSource, /新建复习文档/);
+  assert.match(reviewGenerationSource, /inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white shadow-none transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60/);
+  assert.match(reviewGenerationSource, /新建/);
   assert.match(reviewGenerationSource, /生成复习文档/);
   assert.match(reviewGenerationSource, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} highlightedLessonId=\{highlightedLessonId\} \/>/);
 });
@@ -87,17 +91,22 @@ test('review generation source removes continue-edit-feedback entry points from 
   assert.doesNotMatch(reviewGenerationSource, /<Pencil size=\{16\} \/>/);
 });
 
-test('review generation source renders history as a paginated list with explicit generation time', () => {
+test('review generation source renders history as a paginated list with merged date-time column', () => {
   assert.match(reviewGenerationSource, /const REVIEW_HISTORY_PAGE_SIZE = 12;/);
   assert.match(reviewGenerationSource, /const \[historyPage, setHistoryPage\] = useState\(1\);/);
   assert.match(reviewGenerationSource, /const totalHistoryPages = Math\.max\(1, Math\.ceil\(lessons\.length \/ REVIEW_HISTORY_PAGE_SIZE\)\);/);
   assert.match(reviewGenerationSource, /const paginatedLessons = lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage \* REVIEW_HISTORY_PAGE_SIZE\);/);
   assert.match(reviewGenerationSource, /if \(highlightedLessonId\) \{[\s\S]*setHistoryPage\(Math\.floor\(highlightedIndex \/ REVIEW_HISTORY_PAGE_SIZE\) \+ 1\);[\s\S]*setHistoryPage\(1\);[\s\S]*\}, \[highlightedLessonId, lessons\]\);/);
   assert.match(reviewGenerationSource, /highlightedLessonId === lesson\.id/);
-  assert.match(reviewGenerationSource, /生成时间/);
-  assert.match(reviewGenerationSource, /new Date\(lesson\.created_at\)\.toLocaleString\('zh-CN'\)/);
-  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_132px_180px_112px_132px\]/);
-  assert.match(reviewGenerationSource, /<ul className="divide-y divide-sky-100\/80 dark:divide-white\/10">/);
+  assert.match(reviewGenerationSource, /<span>时间<\/span>/);
+  assert.doesNotMatch(reviewGenerationSource, /<span>生成时间<\/span>/);
+  assert.doesNotMatch(reviewGenerationSource, /<span>日期<\/span>/);
+  assert.match(reviewGenerationSource, /function getLessonDateTimeLabel\(lesson: ReviewLessonRecord\): string \{/);
+  assert.match(reviewGenerationSource, /hour: '2-digit',/);
+  assert.match(reviewGenerationSource, /minute: '2-digit',/);
+  assert.doesNotMatch(reviewGenerationSource, /second:/);
+  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_180px_112px_132px\]/);
+  assert.match(reviewGenerationSource, /<ul className="divide-y divide-slate-200\/70 dark:divide-white\/10">/);
   assert.match(reviewGenerationSource, /上一页/);
   assert.match(reviewGenerationSource, /下一页/);
   assert.doesNotMatch(reviewGenerationSource, /grid gap-4 lg:grid-cols-2 xl:grid-cols-3/);
@@ -106,7 +115,8 @@ test('review generation source renders history as a paginated list with explicit
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
   assert.match(lessonInputSource, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
-  assert.match(lessonInputSource, /className=\{`\$\{workspaceFieldClass\} w-full`\}/);
+  assert.match(lessonInputSource, /reviewFormFieldClass = `\$\{workspaceFieldClass\} border-slate-200 focus:border-slate-300 focus:ring-slate-100`;/);
+  assert.match(lessonInputSource, /className=\{`\$\{reviewFormFieldClass\} w-full`\}/);
   assert.doesNotMatch(lessonInputSource, /sm:w-40/);
   assert.doesNotMatch(appSource, /sm:w-32/);
 });
@@ -164,16 +174,30 @@ test('workspace navigation exposes a dedicated owner-only credit center page', (
   assert.match(contentSource, /activeWorkspacePage === 'credit' && hasOwnerAccess\(currentUser\.role\) && <CreditCenterPage currentUser=\{currentUser\} \/>/);
 });
 
-test('settings page source keeps only account and about sections after credit center extraction', () => {
+test('settings page source keeps account, avatar, and password sections without the old about block', () => {
   const settingsBlock = requireMatch(settingsSource, /export function SettingsPage\([\s\S]*?\n\}/);
 
   assert.match(settingsBlock, /<h3 className=\{workspaceSectionTitleClass\}>系统设置<\/h3>/);
-  assert.match(settingsBlock, /当前账号/);
-  assert.match(settingsBlock, /关于/);
+  assert.match(settingsBlock, /更换头像/);
+  assert.match(settingsBlock, /修改账号密码/);
+  assert.match(settingsSource, /const avatarPresetNames = \[/);
+  assert.match(settingsSource, /'stone'/);
+  assert.match(settingsSource, /'clay'/);
+  assert.match(settingsBlock, /xl:grid-cols-9/);
+  assert.match(settingsBlock, /border-slate-300/);
+  assert.match(settingsBlock, /settingsSecondaryButtonClass/);
+  assert.match(settingsBlock, /settingsFieldClass/);
+  assert.match(settingsBlock, /settingsPrimaryButtonClass/);
+  assert.match(settingsBlock, /onCurrentUserUpdated/);
+  assert.match(settingsBlock, /\/api\/profile\/avatar/);
+  assert.match(settingsBlock, /\/api\/profile\/avatar-upload/);
+  assert.match(settingsBlock, /\/api\/profile\/password/);
+  assert.match(settingsBlock, /normalizeSettingsApiError/);
+  assert.match(settingsSource, /本地后端还没更新到最新代码，请重启 5001 后端后再试/);
+  assert.match(settingsBlock, /上传头像/);
+  assert.doesNotMatch(settingsBlock, /退出登录/);
   assert.doesNotMatch(settingsBlock, /积分中心/);
-  assert.doesNotMatch(settingsBlock, /小红书订单兑换/);
-  assert.doesNotMatch(settingsBlock, /成员用量/);
-  assert.doesNotMatch(settingsBlock, /最近流水/);
+  assert.doesNotMatch(settingsBlock, /关于/);
 });
 
 test('credit center page source supports member drilldown and ledger filtering', () => {
@@ -231,7 +255,7 @@ test('workspace navigation source exposes classes management through configurabl
 test('workspace navigation falls back when the selected page is not allowed for the current role', () => {
   assert.match(accessSource, /export function getWorkspacePageFallback\(user: VisiblePageUser, page: WorkspacePage\): WorkspacePage \{/);
   assert.match(accessSource, /return canOpenWorkspacePage\(user, page\) \? page : 'dashboard';/);
-  assert.match(appSource, /const activeWorkspacePage = getWorkspacePageFallback\(currentUser, activePage\);/);
+  assert.match(appSource, /const activeWorkspacePage = currentUser \? getWorkspacePageFallback\(currentUser, activePage\) : activePage;/);
   assert.match(authHookSource, /setCurrentUser\(user\);/);
   assert.match(appSource, /const navigateWorkspacePage = useCallback\(\(page: Page\) => \{/);
   assert.match(appSource, /setActivePage\(getWorkspacePageFallback\(currentUser, page\)\);/);
@@ -242,6 +266,18 @@ test('workspace navigation falls back when the selected page is not allowed for 
   assert.match(contentSource, /activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage\(currentUser, 'class-feedback-generation'\)/);
   assert.match(contentSource, /activeWorkspacePage === 'consultation' && canOpenWorkspacePage\(currentUser, 'consultation'\)/);
   assert.match(contentSource, /activeWorkspacePage === 'calendar' && canOpenWorkspacePage\(currentUser, 'calendar'\)/);
+});
+
+test('workspace navigation source syncs authenticated tabs to pathname-based routes', () => {
+  assert.match(workspaceRoutesSource, /dashboard: '\/workspace'/);
+  assert.match(workspaceRoutesSource, /'review-generation': '\/workspace\/review-generation'/);
+  assert.match(workspaceRoutesSource, /smartWrongQuestions: '\/workspace\/smart-wrong-questions'/);
+  assert.match(workspaceRoutesSource, /export function getWorkspacePageFromPathname\(pathname: string\): WorkspacePage \| null \{/);
+  assert.match(workspaceRoutesSource, /export function getWorkspacePath\(page: WorkspacePage\): string \{/);
+  assert.match(appSource, /getWorkspacePageFromPathname/);
+  assert.match(appSource, /window\.history\.pushState\(\{\}, '', nextPath\);/);
+  assert.match(appSource, /window\.history\.replaceState\(\{\}, '', nextPath\);/);
+  assert.match(appSource, /window\.addEventListener\('popstate', syncWorkspacePageFromHistory\);/);
 });
 
 test('workspace navigation keeps role and unauthenticated permission paths explicit', () => {
@@ -281,8 +317,8 @@ test('class management source keeps compact card single-expand shell', () => {
 
   assert.match(classManagementBlock, /const \[expandedClassId, setExpandedClassId\] = useState<number \| 'new' \| null>/);
   assert.match(classManagementTabSource, /const isExpanded = expandedClassId === item\.id/);
-  assert.match(classManagementTabSource, /grid gap-4 px-4 py-4 lg:grid-cols-\[minmax\(14rem,1\.25fr\)_minmax\(18rem,1fr\)_auto\]/);
-  assert.match(classManagementTabSource, /`\$\{workspaceSoftCardClass\} overflow-hidden p-0 transition/);
+  assert.match(classManagementTabSource, /grid gap-4 px-5 py-4 lg:grid-cols-\[minmax\(14rem,1\.3fr\)_minmax\(18rem,1fr\)_auto\]/);
+  assert.match(classManagementTabSource, /`\$\{studentCenterMutedSurfaceClass\} overflow-hidden p-0`/);
 });
 
 test('consultation workspace source keeps adaptive layouts without a special compact sidebar mode', () => {

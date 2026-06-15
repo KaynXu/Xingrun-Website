@@ -279,7 +279,7 @@ export function LandingPage({
               className="max-w-2xl"
             >
               <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.05] tracking-tight text-slate-950 dark:text-white sm:text-5xl md:text-6xl">
-                老师工作里的 AI 工具
+                教师日常教学的 AI 助手
               </h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-600 dark:text-slate-300 md:text-lg">
                 帮老师整理复习资料、记录错题、准备讲义。

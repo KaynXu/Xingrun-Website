@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Optional, Tuple, Union
 
-from config_runtime import resolve_review_plan_model, resolve_review_plan_provider
+from config_runtime import (
+    resolve_review_plan_model,
+    resolve_review_plan_provider,
+    resolve_review_plan_reasoning_effort,
+)
 
 from .executor import run_workflow_node
 from .nodes import (
@@ -18,7 +22,7 @@ from .nodes import (
 )
 from .quality_gate import review_single_lesson_plan
 from .llm.client import merge_usage
-from .schemas import QualityReview, ReviewPlanInput
+from .schemas import QualityReview, ReviewPlanInput, normalize_final_review_plan
 from .state import WorkflowContext
 
 
@@ -61,6 +65,13 @@ def _score_quality(plan: dict[str, Any], *, subject: str, context: WorkflowConte
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
+
+
+def _normalize_output_plan(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
+    normalized = normalize_final_review_plan(plan)
+    if review_input.lesson_date:
+        normalized.setdefault("lesson_info", {})["date"] = review_input.lesson_date
+    return normalized
 
 
 def _maybe_revise_plan(
@@ -142,7 +153,11 @@ def generate_single_lesson_review_plan(
 ) -> Union[dict[str, Any], Tuple[dict[str, Any], dict[str, Any]]]:
     resolved_provider = provider or resolve_review_plan_provider()
     resolved_model = model or resolve_review_plan_model(provider=resolved_provider)
-    context = WorkflowContext(provider=resolved_provider, model=resolved_model)
+    context = WorkflowContext(
+        provider=resolved_provider,
+        model=resolved_model,
+        reasoning_effort=resolve_review_plan_reasoning_effort(provider=resolved_provider),
+    )
     review_input = ReviewPlanInput(
         summary_text=summary_text,
         subject=subject,
@@ -203,6 +218,7 @@ def generate_single_lesson_review_plan(
             },
             context,
         )
+        plan = _normalize_output_plan(plan, review_input)
         quality = _score_quality(plan, subject=route.selected_subject, context=context, node_key="quality_reviewer_initial")
         plan, quality, usage = _maybe_revise_plan(
             plan=plan,
@@ -213,6 +229,7 @@ def generate_single_lesson_review_plan(
             subject=route.selected_subject,
             context=context,
         )
+        plan = _normalize_output_plan(plan, review_input)
 
         _record_run(
             lesson_id=lesson_id,

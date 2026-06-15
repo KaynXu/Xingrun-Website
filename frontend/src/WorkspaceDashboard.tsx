@@ -115,8 +115,6 @@ const memberQuickActions: DashboardQuickAction[] = [
 
 const platformQuickActions: DashboardQuickAction[] = [
   { page: 'accounts', label: '处理账号审批' },
-  { page: 'classes', label: '查看机构班级' },
-  { page: 'settings', label: '进入系统设置' },
 ];
 
 const organizationQuickActions = {
@@ -180,6 +178,68 @@ function DashboardEmptyState({ message }: { message: string }) {
   return <div className="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">{message}</div>;
 }
 
+function getDashboardGreetingLabel(now = new Date()): string {
+  const hour = now.getHours();
+  if (hour < 12) {
+    return '早上好';
+  }
+  if (hour < 18) {
+    return '下午好';
+  }
+  return '晚上好';
+}
+
+const platformDashboardMottos = [
+  'Small steps, steady progress.',
+  'Make today a little lighter.',
+  'Keep going. The work will meet you halfway.',
+  'One calm move at a time.',
+  'Good things compound quietly.',
+];
+
+function getRandomPlatformDashboardMotto(): string {
+  return platformDashboardMottos[Math.floor(Math.random() * platformDashboardMottos.length)] ?? platformDashboardMottos[0];
+}
+
+function DashboardGreeting({
+  currentUser,
+  label,
+  detail,
+}: {
+  currentUser: WorkspaceDashboardProps['currentUser'];
+  label: string;
+  detail: string;
+}) {
+  const displayName = currentUser.display_name?.trim() || '老师';
+  const greetingDetail = useMemo(
+    () => (detail === 'random-platform-motto' ? getRandomPlatformDashboardMotto() : detail),
+    [detail],
+  );
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-slate-100">
+        {getDashboardGreetingLabel()}，{displayName}
+      </p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{greetingDetail}</p>
+    </div>
+  );
+}
+
+function DashboardMascot() {
+  return (
+    <div className="pointer-events-none flex shrink-0 justify-center">
+      <img
+        src="/xiaoxing.png"
+        alt="小星"
+        className="h-24 w-auto object-contain sm:h-28 xl:h-32"
+        loading="eager"
+      />
+    </div>
+  );
+}
+
 function useDashboardData(currentUser: WorkspaceDashboardProps['currentUser']): WorkspaceDataState {
   const [state, setState] = useState<WorkspaceDataState>({
     loading: true,
@@ -231,13 +291,15 @@ function MemberWorkspace({
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">今天的记录和入口都在这里。</p>
-            <div className="mt-2">
-              <DashboardFetchState loading={loading} error={error} />
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
+              <DashboardGreeting currentUser={currentUser} label="工作台" detail="今天的记录和入口都在这里。" />
+              <div className="mt-2">
+                <DashboardFetchState loading={loading} error={error} />
+              </div>
             </div>
+            <DashboardMascot />
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => {
@@ -401,15 +463,17 @@ function PlatformWorkspace({
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">平台工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">先看异常和积压，再进入具体页面处理。</p>
-            <div className="mt-2 min-h-5">
-              <DashboardFetchState loading={loading} error={error} />
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
+              <DashboardGreeting currentUser={currentUser} label="平台工作台" detail="random-platform-motto" />
+              <div className="mt-2 min-h-5">
+                <DashboardFetchState loading={loading} error={error} />
+              </div>
             </div>
+            <DashboardMascot />
           </div>
-          <div className="flex flex-wrap gap-2 xl:max-w-[24rem] xl:justify-end">
+          <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (
               <button key={action.page} type="button" onClick={() => setActivePage(action.page)} className={dashboardQuickActionClass}>
                 {action.label}
@@ -604,13 +668,15 @@ function OrganizationWorkspace({
   return (
     <div className={`${styles.pageClass} space-y-5`}>
       <section className={`${styles.cardClass} p-5 md:p-6`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">机构工作台</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">机构今天的记录和入口。</p>
-            <div className="mt-2">
-              <DashboardFetchState loading={loading} error={error} />
+        <div className="flex flex-col gap-5">
+          <div className="flex items-center gap-10">
+            <div className="min-w-0">
+              <DashboardGreeting currentUser={currentUser} label="机构工作台" detail="机构今天的记录和入口。" />
+              <div className="mt-2">
+                <DashboardFetchState loading={loading} error={error} />
+              </div>
             </div>
+            <DashboardMascot />
           </div>
           <div className="flex flex-wrap gap-2">
             {quickActions.map((action) => (

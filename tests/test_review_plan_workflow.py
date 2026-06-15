@@ -11,11 +11,16 @@ if str(ROOT) not in sys.path:
 import config_runtime
 import lesson_manager
 import app as app_module
+from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import validate_final_review_plan
 from review_plan_workflow.service import generate_single_lesson_review_plan
-from tests.review_plan_test_utils import valid_single_lesson_plan, writer_style_single_lesson_plan
+from tests.review_plan_test_utils import (
+    desktop_writer_single_lesson_plan,
+    valid_single_lesson_plan,
+    writer_style_single_lesson_plan,
+)
 
 
 class ReviewPlanWorkflowTestCase(unittest.TestCase):
@@ -85,6 +90,89 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIsNotNone(plan)
         self.assertEqual(errors, [])
 
+    def test_validate_final_review_plan_accepts_desktop_writer_shape(self):
+        plan, errors = validate_final_review_plan(desktop_writer_single_lesson_plan())
+        self.assertIsNotNone(plan)
+        self.assertEqual(errors, [])
+        self.assertEqual(plan.lesson_info.topic, "二次函数最值与将军饮马综合复习")
+        self.assertEqual(plan.lesson_info.grade, "9")
+        self.assertEqual([day.day for day in plan.days], [1, 2, 7, 14, 30])
+
+    def test_quality_gate_uses_normalized_day_numbers(self):
+        review = review_single_lesson_plan(desktop_writer_single_lesson_plan(), subject="math")
+        self.assertTrue(review.passed)
+        self.assertFalse(any(issue.category in {"schema", "completeness"} for issue in review.issues))
+
+    def test_generate_review_plan_json_sets_timeout(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "choices": [type("Choice", (), {"message": type("Message", (), {"content": "{\"ok\": true}"})()})()],
+                "usage": type("Usage", (), {"prompt_tokens": 11, "completion_tokens": 22})(),
+                "model": "deepseek-v4-pro",
+            },
+        )()
+        create_mock = unittest.mock.Mock(return_value=response)
+        fake_client = type(
+            "Client",
+            (),
+            {
+                "chat": type(
+                    "Chat",
+                    (),
+                    {"completions": type("Completions", (), {"create": create_mock})()},
+                )()
+            },
+        )()
+        with patch.object(llm_client_module, "get_chat_client", return_value=fake_client):
+            payload, usage = llm_client_module.generate_review_plan_json(
+                system_prompt="system",
+                user_message="user",
+                provider="deepseek",
+                model="deepseek-v4-pro",
+            )
+
+        self.assertEqual(payload, {"ok": True})
+        self.assertEqual(usage["input_tokens"], 11)
+        self.assertEqual(usage["output_tokens"], 22)
+        self.assertEqual(create_mock.call_args.kwargs["timeout"], llm_client_module.REVIEW_PLAN_LLM_TIMEOUT_SECONDS)
+
+    def test_generate_review_plan_json_passes_openai_reasoning_effort(self):
+        response = type(
+            "Response",
+            (),
+            {
+                "choices": [type("Choice", (), {"message": type("Message", (), {"content": "{\"ok\": true}"})()})()],
+                "usage": type("Usage", (), {"prompt_tokens": 3, "completion_tokens": 4})(),
+                "model": "gpt-5.4",
+            },
+        )()
+        create_mock = unittest.mock.Mock(return_value=response)
+        fake_client = type(
+            "Client",
+            (),
+            {
+                "chat": type(
+                    "Chat",
+                    (),
+                    {"completions": type("Completions", (), {"create": create_mock})()},
+                )()
+            },
+        )()
+        with patch.object(llm_client_module, "get_chat_client", return_value=fake_client):
+            payload, usage = llm_client_module.generate_review_plan_json(
+                system_prompt="system",
+                user_message="user",
+                provider="openai",
+                model="gpt-5.4",
+                reasoning_effort="high",
+            )
+
+        self.assertEqual(payload, {"ok": True})
+        self.assertEqual(usage["model"], "gpt-5.4")
+        self.assertEqual(create_mock.call_args.kwargs["reasoning_effort"], "high")
+
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
         plan = valid_single_lesson_plan(subject="物理", topic="电路")
@@ -126,7 +214,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIsNotNone(run)
         self.assertEqual(run["status"], "succeeded")
-        self.assertEqual(run["style_version"], "physics-master-style.v1")
+        self.assertEqual(run["style_version"], "physics-master-style.v2")
         self.assertIn("quality_reviewer", run["node_outputs"])
         self.assertIn("plan_generator", run["node_outputs"])
         self.assertIn("scope_planner", run["node_outputs"])
@@ -274,6 +362,44 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(run["warnings"], [])
         self.assertTrue(run["quality_review"]["passed"])
 
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_normalizes_desktop_writer_output_without_schema_warning(self, mock_generate_plan):
+        mock_generate_plan.return_value = (
+            desktop_writer_single_lesson_plan(),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-15",
+            subject="数学",
+            grade="九年级",
+            topic="二次函数最值与将军饮马综合复习",
+            summary="课堂总结文本",
+            weak_points="表示线段、将军饮马入口",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="九年级",
+            topic="二次函数最值与将军饮马综合复习",
+            weak_points="表示线段、将军饮马入口",
+            lesson_date="2026-06-15",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "二次函数最值与将军饮马综合复习")
+        self.assertEqual(generated["lesson_info"]["grade"], "9")
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(generated["full_review_topics"], ["二次函数最值", "将军饮马最短路径"])
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["warnings"], [])
+        self.assertTrue(run["quality_review"]["passed"])
+
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_revises_low_quality_plan_until_quality_passes(self, mock_generate_plan, mock_revise_plan):
@@ -301,7 +427,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, fixed_plan)
+        self.assertEqual(generated["lesson_info"]["topic"], fixed_plan["lesson_info"]["topic"])
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(generated["weak_points_summary"], fixed_plan["weak_points_summary"])
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(usage["input_tokens"], 40)
         self.assertEqual(usage["output_tokens"], 60)
         mock_revise_plan.assert_called_once()
@@ -344,7 +474,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, still_low_quality_plan)
+        self.assertEqual(generated["lesson_info"]["topic"], still_low_quality_plan["lesson_info"]["topic"])
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(generated["weak_points_summary"], still_low_quality_plan["weak_points_summary"])
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(usage["input_tokens"], 12)
         self.assertEqual(usage["output_tokens"], 24)
         self.assertEqual(mock_revise_plan.call_count, 2)
@@ -370,7 +504,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             provider="deepseek",
             model="deepseek-v4-pro",
             prompt_version="prompt.v1",
-            style_version="physics-master-style.v1",
+            style_version="physics-master-style.v2",
             schema_version="schema.v1",
             warnings=[{"code": "demo", "message": "warning", "severity": "low"}],
             quality_review={"score": 88, "passed": True},
@@ -383,7 +517,45 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(serialized["trace_id"], "trace-serialization")
         self.assertEqual(serialized["workflow_warnings"][0]["code"], "demo")
         self.assertEqual(serialized["quality_review"]["score"], 88)
-        self.assertEqual(serialized["style_version"], "physics-master-style.v1")
+        self.assertEqual(serialized["style_version"], "physics-master-style.v2")
+
+    def test_new_running_review_plan_run_interrupts_previous_running_run(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初三",
+            topic="二次函数",
+            summary="课堂总结文本",
+            weak_points="最值",
+        )
+        lesson_manager.save_review_plan_run(
+            lesson_id=lesson_id,
+            organization_id=1,
+            trace_id="trace-old",
+            status="running",
+        )
+        lesson_manager.save_review_plan_run(
+            lesson_id=lesson_id,
+            organization_id=1,
+            trace_id="trace-new",
+            status="running",
+        )
+
+        with lesson_manager.get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT trace_id, status
+                FROM review_plan_runs
+                WHERE lesson_id=?
+                ORDER BY id
+                """,
+                (lesson_id,),
+            ).fetchall()
+
+        self.assertEqual(
+            [(row["trace_id"], row["status"]) for row in rows],
+            [("trace-old", "interrupted"), ("trace-new", "running")],
+        )
 
 
 if __name__ == "__main__":

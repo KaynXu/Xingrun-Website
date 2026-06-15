@@ -11,6 +11,11 @@ export {
 } from './features/student-center/teacherBindingRules';
 import { WorkspacePageContent } from './features/navigation/WorkspacePageContent';
 import { WorkspaceShellLayout } from './features/navigation/WorkspaceShellLayout';
+import {
+  getWorkspacePageFromPathname,
+  getWorkspacePath,
+  normalizeWorkspacePathname,
+} from './features/navigation/workspaceRoutes';
 import { ConsultationMeetingWorkbench } from './features/consultation/ConsultationMeetingWorkbench';
 import { ConsultationPage } from './features/consultation/ConsultationPage';
 
@@ -138,7 +143,9 @@ export default function App() {
   const [isDark, setIsDark] = useState<boolean>(getInitialDarkModePreference);
   const [isMobileViewport, setIsMobileViewport] = useState(getInitialMobileViewport);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [activePage, setActivePage] = useState<Page>(() =>
+    typeof window === 'undefined' ? 'dashboard' : getWorkspacePageFromPathname(window.location.pathname) ?? 'dashboard',
+  );
   const [classBindingTarget, setClassBindingTarget] = useState<ClassBindingTarget | null>(null);
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
@@ -197,11 +204,33 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) {
-      setActivePage('dashboard');
+      setActivePage(typeof window === 'undefined' ? 'dashboard' : getWorkspacePageFromPathname(window.location.pathname) ?? 'dashboard');
       return;
     }
-    setActivePage((page) => getWorkspacePageFallback(currentUser, page));
+    setActivePage((page) => {
+      const routePage = typeof window === 'undefined' ? null : getWorkspacePageFromPathname(window.location.pathname);
+      return getWorkspacePageFallback(currentUser, routePage ?? page);
+    });
   }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const syncWorkspacePageFromHistory = () => {
+      const routePage = getWorkspacePageFromPathname(window.location.pathname);
+      if (routePage) {
+        setActivePage(routePage);
+        setShowLanding(false);
+        return;
+      }
+      setShowLanding(true);
+    };
+
+    window.addEventListener('popstate', syncWorkspacePageFromHistory);
+    return () => window.removeEventListener('popstate', syncWorkspacePageFromHistory);
+  }, []);
 
   const handleLogin = (t: string) => {
     persistLogin(t);
@@ -213,14 +242,25 @@ export default function App() {
     setShowLanding(false);
     setActivePage('dashboard');
     setMobileNavOpen(false);
+    if (typeof window !== 'undefined' && normalizeWorkspacePathname(window.location.pathname) !== '/') {
+      window.history.pushState({}, '', '/');
+    }
   };
 
   const navigateWorkspacePage = useCallback((page: Page) => {
+    const nextPage = currentUser ? getWorkspacePageFallback(currentUser, page) : 'dashboard';
     if (!currentUser) {
       setActivePage('dashboard');
-      return;
+    } else {
+      setActivePage(getWorkspacePageFallback(currentUser, page));
     }
-    setActivePage(getWorkspacePageFallback(currentUser, page));
+    setShowLanding(false);
+    if (typeof window !== 'undefined') {
+      const nextPath = getWorkspacePath(nextPage);
+      if (normalizeWorkspacePathname(window.location.pathname) !== nextPath) {
+        window.history.pushState({}, '', nextPath);
+      }
+    }
   }, [currentUser]);
 
   const handleReviewGenerationSuccess = () => {
@@ -232,6 +272,16 @@ export default function App() {
     navigateWorkspacePage('classes');
     setMobileNavOpen(false);
   };
+
+  const handleOpenWorkspaceHome = useCallback(() => {
+    setShowLanding(false);
+    if (typeof window !== 'undefined') {
+      const nextPath = getWorkspacePath(currentUser ? getWorkspacePageFallback(currentUser, activePage) : activePage);
+      if (normalizeWorkspacePathname(window.location.pathname) !== nextPath) {
+        window.history.pushState({}, '', nextPath);
+      }
+    }
+  }, [activePage, currentUser]);
 
   const pageTitle: Record<Page, string> = {
     dashboard: '工作台',
@@ -246,6 +296,19 @@ export default function App() {
     settings: '系统设置',
   };
 
+  const activeWorkspacePage = currentUser ? getWorkspacePageFallback(currentUser, activePage) : activePage;
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !token || !currentUser || showLanding || landingLegalPage) {
+      return;
+    }
+
+    const nextPath = getWorkspacePath(activeWorkspacePage);
+    if (normalizeWorkspacePathname(window.location.pathname) !== nextPath) {
+      window.history.replaceState({}, '', nextPath);
+    }
+  }, [activeWorkspacePage, currentUser, landingLegalPage, showLanding, token]);
+
   if (token && !authReady) {
     return (
       <div className="flex min-h-[100svh] items-center justify-center bg-[linear-gradient(180deg,#f8fbff_0%,#eef6ff_100%)] sm:min-h-screen dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_100%)]">
@@ -258,17 +321,17 @@ export default function App() {
     return (
       <>
         <LandingPage
-          onLogin={token ? () => setShowLanding(false) : backToLogin}
+          onLogin={token ? handleOpenWorkspaceHome : backToLogin}
           onApplyOrganization={() => {
             if (token) {
-              setShowLanding(false);
+              handleOpenWorkspaceHome();
               return;
             }
             openApplyOrganization();
           }}
           onJoinOrganization={() => {
             if (token) {
-              setShowLanding(false);
+              handleOpenWorkspaceHome();
               return;
             }
             openJoinOrganization();
@@ -325,8 +388,6 @@ export default function App() {
     );
   }
 
-  const activeWorkspacePage = getWorkspacePageFallback(currentUser, activePage);
-
   return (
     <WorkspaceShellLayout
       activeWorkspacePage={activeWorkspacePage}
@@ -334,7 +395,12 @@ export default function App() {
       title={pageTitle[activeWorkspacePage]}
       isDark={isDark}
       mobileNavOpen={mobileNavOpen}
-      onGoHome={() => setShowLanding(true)}
+      onGoHome={() => {
+        setShowLanding(true);
+        if (typeof window !== 'undefined' && normalizeWorkspacePathname(window.location.pathname) !== '/') {
+          window.history.pushState({}, '', '/');
+        }
+      }}
       onToggleDarkMode={() => setIsDark((current) => !current)}
       onOpenSidebar={() => setMobileNavOpen(true)}
       onCloseSidebar={() => setMobileNavOpen(false)}
@@ -361,6 +427,7 @@ export default function App() {
         handleClearClassBindingTarget={() => setClassBindingTarget(null)}
         handleOpenClassBinding={handleOpenClassBinding}
         handleLogout={handleLogout}
+        onCurrentUserUpdated={(user) => setCurrentUser(user)}
       />
     </WorkspaceShellLayout>
   );

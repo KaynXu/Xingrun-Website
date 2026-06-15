@@ -116,7 +116,7 @@ def _extract_day_numbers(plan: dict[str, Any]) -> list[int]:
     for day in days:
         if isinstance(day, dict):
             try:
-                numbers.append(int(day.get("day")))
+                numbers.append(int(day.get("day") or day.get("day_number")))
             except (TypeError, ValueError):
                 continue
     return sorted(numbers)

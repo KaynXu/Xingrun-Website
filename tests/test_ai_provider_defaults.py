@@ -1,5 +1,7 @@
 import os
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -73,6 +75,8 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 {
                     "XR_REVIEW_PLAN_PROVIDER": "openai",
                     "XR_REVIEW_PLAN_MODEL": "gpt-4.1",
+                    "XR_REVIEW_PLAN_REASONING_EFFORT": "high",
+                    "XR_OPENAI_BASE_URL": "https://api.iiiiitoken.com/v1",
                     "OPENAI_API_KEY": "sk-openai-test",
                 },
                 clear=True,
@@ -81,12 +85,15 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertEqual(cfg["provider"], "deepseek")
                 self.assertEqual(cfg["review_plan_provider"], "openai")
                 self.assertEqual(cfg["review_plan_model"], "gpt-4.1")
+                self.assertEqual(cfg["review_plan_reasoning_effort"], "high")
                 self.assertEqual(cfg["review_plan_writer_provider"], "deepseek")
                 self.assertEqual(cfg["review_plan_writer_model"], "")
+                self.assertEqual(cfg["openai_base_url"], "https://api.iiiiitoken.com/v1")
                 self.assertEqual(app._default_ai_provider_name(), "deepseek")
                 self.assertEqual(app._default_chat_model_name(), "deepseek-v4-pro")
                 self.assertEqual(app._review_plan_ai_provider_name(), "openai")
                 self.assertEqual(app._review_plan_chat_model_name(), "gpt-4.1")
+                self.assertEqual(app._review_plan_reasoning_effort(), "high")
                 self.assertEqual(app._review_plan_writer_ai_provider_name(), "deepseek")
                 self.assertEqual(app._review_plan_writer_chat_model_name(), "deepseek-v4-pro")
                 self.assertEqual(review_plan_llm_client.resolve_chat_provider(), "openai")
@@ -172,6 +179,8 @@ class AiProviderDefaultsTest(unittest.TestCase):
     def test_qwen_vision_provider_uses_dashscope_compatible_endpoint(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             missing_config = Path(tmpdir) / "config.json"
+            openai_mock = unittest.mock.Mock()
+            fake_openai_module = types.SimpleNamespace(OpenAI=openai_mock)
             with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
                 os.environ,
                 {
@@ -181,7 +190,7 @@ class AiProviderDefaultsTest(unittest.TestCase):
                     "XR_QWEN_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
                 },
                 clear=True,
-            ), patch("openai.OpenAI") as openai_mock:
+            ), patch.dict(sys.modules, {"openai": fake_openai_module}):
                 cfg = config_runtime.get_runtime_config()
                 client = ai_processor._get_vision_client()
 
@@ -193,6 +202,29 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 openai_mock.assert_called_once_with(
                     api_key="sk-dashscope-test",
                     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                )
+
+    def test_openai_chat_provider_uses_configured_compatible_base_url(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_config = Path(tmpdir) / "config.json"
+            openai_mock = unittest.mock.Mock()
+            fake_openai_module = types.SimpleNamespace(OpenAI=openai_mock)
+            with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
+                os.environ,
+                {
+                    "XR_PROVIDER": "openai",
+                    "XR_OPENAI_MODEL": "gpt-5.4",
+                    "XR_OPENAI_BASE_URL": "https://api.iiiiitoken.com/v1",
+                    "OPENAI_API_KEY": "sk-openai-test",
+                },
+                clear=True,
+            ), patch.dict(sys.modules, {"openai": fake_openai_module}):
+                client = ai_processor._get_client()
+
+                self.assertEqual(client, openai_mock.return_value)
+                openai_mock.assert_called_once_with(
+                    api_key="sk-openai-test",
+                    base_url="https://api.iiiiitoken.com/v1",
                 )
 
 

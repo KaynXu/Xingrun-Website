@@ -1,15 +1,20 @@
 style_name: physics_master_unified
-style_version: physics-master-style.v1
+style_version: physics-master-style.v2
 language: zh-CN
 source: desktop_physics_workflow
 principle: 物理视觉作为统一母版，数学和雅思继承同一页面结构与组件，只做学科内容 override。
 palette:
-  accent: "#2F8F83"
-  accent_secondary: "#B86B4B"
-  soft: "#F2F8F5"
-  quote_bg: "#FFF6EE"
-  text: "#222222"
-  muted: "#666666"
+  accent: "#B86B4B"
+  accent_secondary: "#E6C9B5"
+  soft: "#F6EFE8"
+  quote_bg: "#FAF3EC"
+  paper: "#FFFDF9"
+  card: "#FFF9F3"
+  header_bg: "#F1E1D3"
+  line: "#D8B7A1"
+  text: "#5A4034"
+  muted: "#7A6559"
+  support: "#5F8F8B"
 page:
   paper: A4
   left_margin_mm: 18

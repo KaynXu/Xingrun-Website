@@ -1,6 +1,4 @@
-import { Bell, Home, Menu, Moon, Search, Sun } from 'lucide-react';
-
-import { workspaceFieldClass } from '../../workspaceShared';
+import { Bell, Home, Menu, Moon, Sun } from 'lucide-react';
 
 const headerButtonClass =
   'flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/70 bg-white/90 text-slate-500 transition-colors hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white';
@@ -54,14 +52,6 @@ export function Header({
               <Home size={20} />
             </button>
           )}
-          <div className="relative hidden xl:block">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
-            <input
-              type="text"
-              placeholder="搜索班级、学生、课程..."
-              className={`${workspaceFieldClass} w-72 rounded-full border-slate-200/70 bg-white/90 py-2 pl-10 pr-4 dark:border-white/10 dark:bg-white/5`}
-            />
-          </div>
           <button className={`${headerButtonClass} relative hidden md:flex`}>
             <Bell size={20} />
             <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-400 dark:border-slate-900" />

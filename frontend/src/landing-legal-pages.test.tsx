@@ -21,7 +21,7 @@ test('landing page renders Starain hero branding and a theme-aware grainient her
 
   assert.match(markup, /Starain/);
   assert.match(markup, /教学工作平台/);
-  assert.match(markup, /老师工作里的 AI 工具/);
+  assert.match(markup, /教师日常教学的 AI 助手/);
   assert.match(markup, /帮老师整理复习资料、记录错题、准备讲义。/);
   assert.match(markup, /申请试用/);
   assert.match(markup, /href="#privacy-policy"/);

@@ -7,7 +7,7 @@ from uuid import uuid4
 
 PROMPT_VERSION = "review-plan-workflow.v1"
 SCHEMA_VERSION = "review-plan-schema.v1"
-STYLE_VERSION = "physics-master-style.v1"
+STYLE_VERSION = "physics-master-style.v2"
 
 
 @dataclass
@@ -44,6 +44,7 @@ class WorkflowContext:
     subject: str = ""
     provider: str = ""
     model: str = ""
+    reasoning_effort: str = ""
     prompt_version: str = PROMPT_VERSION
     schema_version: str = SCHEMA_VERSION
     style_version: str = STYLE_VERSION

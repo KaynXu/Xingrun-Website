@@ -110,7 +110,7 @@ def _question_pool(plan_data: dict) -> list[dict]:
 
 
 def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
-    day_number = int(day_data.get("day") or 0) or 1
+    day_number = int(day_data.get("day") or day_data.get("day_number") or 0) or 1
     tasks: list[str] = []
     blanks: list[tuple[str, str]] = []
 
@@ -202,7 +202,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 
 def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], list[str]]:
     lesson_info = plan_data.get("lesson_info", {})
-    topic = _clean_text(lesson_info.get("topic"), "课后")
+    topic = _clean_text(lesson_info.get("topic") or plan_data.get("topic"), "课后")
     weak_points = _clean_text(plan_data.get("weak_points_summary"))
     full_review_topics = _dedupe_clean_lines(lesson_info.get("key_categories"))
     for text in _dedupe_clean_lines(plan_data.get("full_review_topics")):
@@ -213,7 +213,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
         "subtitle": "",
         "audience": "老师发给学生使用",
         "duration": "每次 10-20 分钟",
-        "base_date": _clean_text(lesson_info.get("date")),
+        "base_date": _clean_text(lesson_info.get("date") or plan_data.get("lesson_date")),
         "core_points": [weak_points] if weak_points else [],
         "full_review_topics": full_review_topics or [topic],
         "quotes": collect_plan_quotes(plan_data),

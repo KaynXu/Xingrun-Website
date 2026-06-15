@@ -33,8 +33,10 @@ from config_runtime import (
     get_runtime_config,
     load_file_config,
     normalize_chat_provider,
+    normalize_reasoning_effort,
     resolve_review_plan_model,
     resolve_review_plan_provider,
+    resolve_review_plan_reasoning_effort,
     resolve_review_plan_writer_model,
     resolve_review_plan_writer_provider,
     write_file_config,
@@ -58,6 +60,8 @@ app.secret_key = "review_plan_local_2026"
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 REVIEW_PLAN_AUDIO_MAX_BYTES = 100 * 1024 * 1024
 REVIEW_PLAN_AUDIO_MAX_LABEL = "100MB"
+PROFILE_AVATAR_MAX_BYTES = 4 * 1024 * 1024
+PROFILE_AVATAR_MAX_LABEL = "4MB"
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:8080", "http://127.0.0.1:8080",
     "http://localhost:5173", "http://127.0.0.1:5173",
@@ -236,8 +240,10 @@ from lesson_manager import (
     get_teacher_alias_entries,
     upsert_teacher_alias,
     delete_teacher_alias,
+    change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_user_avatar_preferences,
 )
 from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
@@ -294,6 +300,11 @@ def _review_plan_ai_provider_name() -> str:
 def _review_plan_chat_model_name() -> str:
     provider = _review_plan_ai_provider_name()
     return resolve_review_plan_model(get_config(), provider=provider)
+
+
+def _review_plan_reasoning_effort() -> str:
+    provider = _review_plan_ai_provider_name()
+    return resolve_review_plan_reasoning_effort(get_config(), provider=provider)
 
 
 def _review_plan_writer_ai_provider_name() -> str:
@@ -501,6 +512,14 @@ def _uploaded_file_content_fingerprint(file_storage) -> str:
         return digest.hexdigest()
     except (OSError, ValueError):
         return ""
+
+
+def _profile_avatar_upload_relative_path(user_id: int, original_filename: str) -> str:
+    safe_filename = secure_filename(original_filename or "")
+    suffix = Path(safe_filename).suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        suffix = ".png"
+    return f"profile-avatars/user-{int(user_id)}-{int(time() * 1000)}{suffix}"
 
 
 def _request_payload_fingerprint(*, include_file_content: bool = False) -> str:
@@ -2360,6 +2379,17 @@ def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
         serialized["quality_review"] = latest_run.get("quality_review", {})
         serialized["prompt_version"] = latest_run.get("prompt_version", "")
         serialized["style_version"] = latest_run.get("style_version", "")
+    creator_user_id = int(serialized.get("created_by_user_id") or 0)
+    creator = get_user_by_id(creator_user_id) if creator_user_id else None
+    serialized["creator_display_name"] = str(
+        (creator or {}).get("display_name")
+        or (creator or {}).get("username")
+        or ""
+    ).strip()
+    serialized["creator_username"] = str(
+        (creator or {}).get("username")
+        or ""
+    ).strip()
     return serialized
 
 
@@ -4029,6 +4059,81 @@ def api_profile_update():
         update_user_profile(user["id"], new_username, new_display_name)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True, "user": get_user_by_id(user["id"])})
+
+
+@app.route("/api/profile/avatar", methods=["PUT"])
+def api_profile_avatar_update():
+    user, error = _require_auth()
+    if error:
+        return error
+    data = request.json or {}
+    avatar_source = str(data.get("avatar_source") or "").strip() or "dicebear"
+    avatar_seed = str(data.get("avatar_seed") or "").strip()
+    try:
+        updated_user = update_user_avatar_preferences(
+            user["id"],
+            avatar_source=avatar_source,
+            avatar_seed=avatar_seed,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True, "user": updated_user})
+
+
+@app.route("/api/profile/avatar-upload", methods=["POST"])
+def api_profile_avatar_upload():
+    user, error = _require_auth()
+    if error:
+        return error
+    avatar_file = request.files.get("avatar")
+    if not avatar_file or not avatar_file.filename:
+        return jsonify({"error": "请先选择头像图片"}), 400
+    mime_type = str(getattr(avatar_file, "mimetype", "") or "").lower()
+    if not mime_type.startswith("image/"):
+        return jsonify({"error": "仅支持上传图片文件"}), 400
+    file_size = _uploaded_file_size(avatar_file)
+    if file_size > PROFILE_AVATAR_MAX_BYTES:
+        return jsonify({"error": f"头像图片不能超过 {PROFILE_AVATAR_MAX_LABEL}"}), 400
+
+    profile_avatar_dir = UPLOAD_DIR / "profile-avatars"
+    profile_avatar_dir.mkdir(parents=True, exist_ok=True)
+    for existing in profile_avatar_dir.glob(f"user-{int(user['id'])}-*"):
+        existing.unlink(missing_ok=True)
+
+    relative_path = _profile_avatar_upload_relative_path(user["id"], avatar_file.filename)
+    save_path = UPLOAD_DIR / relative_path
+    avatar_file.save(save_path)
+
+    try:
+        updated_user = update_user_avatar_preferences(
+            user["id"],
+            avatar_source="upload",
+            avatar_upload_path=relative_path,
+        )
+    except (LookupError, ValueError) as exc:
+        save_path.unlink(missing_ok=True)
+        status_code = 404 if isinstance(exc, LookupError) else 400
+        return jsonify({"error": str(exc)}), status_code
+    return jsonify({"ok": True, "user": updated_user})
+
+
+@app.route("/api/profile/password", methods=["PUT"])
+def api_profile_password_update():
+    user, error = _require_auth()
+    if error:
+        return error
+    data = request.json or {}
+    current_password = str(data.get("current_password") or "")
+    new_password = str(data.get("new_password") or "")
+    try:
+        change_user_password(user["id"], current_password, new_password)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
 
 
@@ -4171,6 +4276,9 @@ def api_admin_users():
             "org": u["organization_name"],
             "role": u["role"],
             "visible_pages": u.get("visible_pages", []),
+            "avatar_source": u.get("avatar_source", "dicebear"),
+            "avatar_seed": u.get("avatar_seed", ""),
+            "avatar_upload_url": u.get("avatar_upload_url", ""),
         }
         if is_super:
             row["last_login"] = u.get("last_login")
@@ -5764,6 +5872,11 @@ def api_wrong_question_chat_detail(session_id: str):
 
 @app.route("/api/wrong-question-ingestion-assets/<path:filename>", methods=["GET"])
 def api_wrong_question_ingestion_asset_file(filename: str):
+    return send_from_directory(UPLOAD_DIR, filename)
+
+
+@app.route("/api/profile-avatar-files/<path:filename>", methods=["GET"])
+def api_profile_avatar_file(filename: str):
     return send_from_directory(UPLOAD_DIR, filename)
 
 
@@ -7962,10 +8075,13 @@ def api_settings_get():
         "provider": cfg.get("provider", "deepseek"),
         "review_plan_provider": cfg.get("review_plan_provider", ""),
         "review_plan_model": cfg.get("review_plan_model", ""),
+        "review_plan_reasoning_effort": cfg.get("review_plan_reasoning_effort", ""),
         "review_plan_writer_provider": cfg.get("review_plan_writer_provider", "deepseek"),
         "review_plan_writer_model": cfg.get("review_plan_writer_model", ""),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
+        "openai_model": cfg.get("openai_model", "gpt-4o"),
+        "openai_base_url": cfg.get("openai_base_url", ""),
         "deepseek_set": bool(cfg.get("deepseek_api_key")),
         "deepseek_masked": _mask(cfg.get("deepseek_api_key", "")),
         "qwen_set": bool(cfg.get("qwen_api_key")),
@@ -7989,11 +8105,13 @@ def api_settings_save():
         cfg["review_plan_provider"] = normalize_chat_provider(data["review_plan_provider"]) if str(data["review_plan_provider"] or "").strip() else ""
     if "review_plan_model" in data and "review_plan_model" not in controlled_keys:
         cfg["review_plan_model"] = str(data["review_plan_model"] or "").strip()
+    if "review_plan_reasoning_effort" in data and "review_plan_reasoning_effort" not in controlled_keys:
+        cfg["review_plan_reasoning_effort"] = normalize_reasoning_effort(data["review_plan_reasoning_effort"])
     if "review_plan_writer_provider" in data and "review_plan_writer_provider" not in controlled_keys:
         cfg["review_plan_writer_provider"] = normalize_chat_provider(data["review_plan_writer_provider"] or "deepseek")
     if "review_plan_writer_model" in data and "review_plan_writer_model" not in controlled_keys:
         cfg["review_plan_writer_model"] = str(data["review_plan_writer_model"] or "").strip()
-    for key in ("openai_api_key", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
+    for key in ("openai_api_key", "openai_model", "openai_base_url", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
     write_file_config(cfg)

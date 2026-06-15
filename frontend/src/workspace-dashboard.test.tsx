@@ -32,6 +32,7 @@ test('member workspace prioritizes quick actions and personal work context', () 
   const markup = renderDashboard('member');
 
   assert.match(markup, /工作台/);
+  assert.match(markup, /(早上好|下午好|晚上好)，测试用户/);
   assert.match(markup, /新建复习文档/);
   assert.match(markup, /补课堂反馈/);
   assert.match(markup, /查看课程日历/);
@@ -46,6 +47,7 @@ test('workspace dashboard shows admin operations overview', () => {
   const markup = renderDashboard('admin');
 
   assert.match(markup, /机构工作台/);
+  assert.match(markup, /(早上好|下午好|晚上好)，测试用户/);
   assert.match(markup, /查看班级安排/);
   assert.match(markup, /补课堂反馈/);
   assert.match(markup, /班级管理/);
@@ -71,6 +73,7 @@ test('workspace dashboard shows super owner platform overview', () => {
   const markup = renderDashboard('super_owner');
 
   assert.match(markup, /平台工作台/);
+  assert.match(markup, /(早上好|下午好|晚上好)，测试用户/);
   assert.match(markup, /待处理事项/);
   assert.match(markup, /常用入口/);
   assert.match(markup, /机构列表/);
@@ -79,14 +82,16 @@ test('workspace dashboard shows super owner platform overview', () => {
   assert.doesNotMatch(markup, /新建复习文档/);
 });
 
-test('workspace dashboard copy keeps direct task-oriented labels', () => {
+test('workspace dashboard copy keeps role-specific opening lines', () => {
   const memberMarkup = renderDashboard('member');
   const ownerMarkup = renderDashboard('owner');
   const superOwnerMarkup = renderDashboard('super_owner');
 
   assert.match(memberMarkup, /今天的记录和入口都在这里/);
   assert.match(ownerMarkup, /机构今天的记录和入口/);
-  assert.match(superOwnerMarkup, /先看异常和积压，再进入具体页面处理/);
+  assert.match(superOwnerMarkup, /Small steps, steady progress|Make today a little lighter|Keep going\. The work will meet you halfway|One calm move at a time|Good things compound quietly/);
+  assert.doesNotMatch(superOwnerMarkup, /愿今天少些打扰，多些顺利/);
+  assert.doesNotMatch(superOwnerMarkup, /先看异常和积压，再进入具体页面处理/);
   assert.match(superOwnerMarkup, /处理账号审批/);
 });
 

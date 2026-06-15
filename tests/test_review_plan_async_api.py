@@ -49,6 +49,29 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         return payload["token"]
 
+    def test_get_review_plans_includes_creator_display_name(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            created_by_user_id=1,
+        )
+
+        response = self.client.get(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        lesson = next(item for item in payload if item["id"] == lesson_id)
+        self.assertEqual(lesson["creator_display_name"], lesson_manager.get_user_by_id(1)["display_name"])
+        self.assertEqual(lesson["creator_username"], lesson_manager.get_user_by_id(1)["username"])
+
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app.has_review_plan_api_key", return_value=True)
@@ -112,6 +135,9 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         config_runtime.write_file_config({
             "review_plan_provider": "openai",
             "review_plan_model": "gpt-4.1",
+            "review_plan_reasoning_effort": "high",
+            "openai_model": "gpt-5.4",
+            "openai_base_url": "https://api.iiiiitoken.com/v1",
         })
 
         response = self.client.post(
@@ -138,6 +164,30 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["chat_provider"], "openai")
         self.assertEqual(thread_kwargs["chat_model"], "gpt-4.1")
+
+    def test_settings_api_exposes_openai_base_url_and_review_plan_reasoning_effort(self):
+        config_runtime.write_file_config(
+            {
+                "review_plan_provider": "openai",
+                "review_plan_model": "gpt-5.4",
+                "review_plan_reasoning_effort": "high",
+                "openai_model": "gpt-5.4",
+                "openai_base_url": "https://api.iiiiitoken.com/v1",
+            }
+        )
+
+        response = self.client.get(
+            "/api/settings",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["review_plan_provider"], "openai")
+        self.assertEqual(payload["review_plan_model"], "gpt-5.4")
+        self.assertEqual(payload["review_plan_reasoning_effort"], "high")
+        self.assertEqual(payload["openai_model"], "gpt-5.4")
+        self.assertEqual(payload["openai_base_url"], "https://api.iiiiitoken.com/v1")
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
@@ -476,7 +526,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
         saved = lesson_manager.get_lesson(lesson_id)
         self.assertEqual(saved["record_status"], "ready")
-        self.assertEqual(saved["plan"], expected_plan)
+        self.assertEqual(saved["plan"]["lesson_info"]["topic"], expected_plan["lesson_info"]["topic"])
+        self.assertEqual(saved["plan"]["lesson_info"]["grade"], expected_plan["lesson_info"]["grade"])
+        self.assertEqual(saved["plan"]["lesson_info"]["date"], "2026-04-09")
+        self.assertEqual(len(saved["plan"]["days"]), len(expected_plan["days"]))
         self.assertEqual(mock_run_with_charge.call_args.kwargs["source_record_id"], lesson_id)
         mock_generate_plan_json.assert_called_once()
         generation_kwargs = mock_generate_plan_json.call_args.kwargs

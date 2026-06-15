@@ -2,12 +2,13 @@ import { AlertCircle, Save, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import {
-  workspaceCardClass,
-  workspaceFieldClass,
-  workspacePrimaryButtonClass,
-  workspaceSecondaryButtonClass,
-  workspaceSoftCardClass,
-} from '../../workspaceShared';
+  studentCenterBadgeClass,
+  studentCenterFieldClass,
+  studentCenterMutedSurfaceClass,
+  studentCenterPrimaryButtonClass,
+  studentCenterSecondaryButtonClass,
+  studentCenterSurfaceClass,
+} from './ui';
 import {
   resolveStudentProfileDraftDirty,
   type ClassStudent,
@@ -93,11 +94,11 @@ export function StudentProfileModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 18 }}
             transition={{ duration: 0.2 }}
-            className="relative z-10 my-auto flex w-full max-w-4xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900"
+            className={`relative z-10 my-auto flex w-full max-w-4xl flex-col overflow-hidden ${studentCenterSurfaceClass} max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem]`}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Student Profile</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Student Profile</p>
                 <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
                   {title}
                 </h3>
@@ -108,7 +109,7 @@ export function StudentProfileModal({
                     type="button"
                     onClick={onSave}
                     disabled={saveDisabled}
-                    className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm`}
+                    className={`${studentCenterPrimaryButtonClass} h-10 px-4 py-2 text-sm`}
                     title="Command+S / Ctrl+S"
                   >
                     <Save size={16} />
@@ -119,7 +120,7 @@ export function StudentProfileModal({
                   type="button"
                   onClick={onClose}
                   disabled={saving || deleting}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
                   aria-label="关闭学员档案窗口"
                 >
                   <X size={18} />
@@ -147,7 +148,7 @@ export function StudentProfileModal({
                 </div>
               ) : null}
 
-              <div className={`${workspaceCardClass} grid gap-4 p-5 md:grid-cols-3`}>
+              <div className={`${studentCenterSurfaceClass} grid gap-4 p-5 md:grid-cols-3`}>
                 <label className="space-y-2">
                   <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">学员姓名</span>
                   <input
@@ -158,7 +159,7 @@ export function StudentProfileModal({
                     }}
                     onBlur={() => setNameBlurred(true)}
                     disabled={!canManageStudents || loading || saving}
-                    className={workspaceFieldClass}
+                    className={studentCenterFieldClass}
                     placeholder="请输入学员姓名"
                   />
                 </label>
@@ -168,7 +169,7 @@ export function StudentProfileModal({
                     value={draft.source}
                     onChange={(event) => onDraftChange('source', event.target.value)}
                     disabled={!canManageStudents || loading || saving}
-                    className={workspaceFieldClass}
+                    className={studentCenterFieldClass}
                     placeholder="转介绍 / 咨询转化"
                   />
                 </label>
@@ -178,7 +179,7 @@ export function StudentProfileModal({
                     value={draft.parent_contact}
                     onChange={(event) => onDraftChange('parent_contact', event.target.value)}
                     disabled={!canManageStudents || loading || saving}
-                    className={workspaceFieldClass}
+                    className={studentCenterFieldClass}
                     placeholder="手机号 / 微信备注"
                   />
                 </label>
@@ -190,14 +191,14 @@ export function StudentProfileModal({
                   ['就读时长', detail?.study_duration_label || '暂未上课'],
                   ['在读状态', detail?.study_status || (mode === 'create' ? '保存后生成' : '待确认')],
                 ].map(([label, value]) => (
-                  <div key={label} className={`${workspaceSoftCardClass} p-4`}>
+                  <div key={label} className={`${studentCenterMutedSurfaceClass} p-4`}>
                     <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">{label}</p>
                     <p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className={`${workspaceCardClass} space-y-3 p-5`}>
+              <div className={`${studentCenterSurfaceClass} space-y-3 p-5`}>
                 <div className="flex items-center justify-between gap-3">
                   <h4 className="text-base font-bold text-slate-900 dark:text-white">在读情况与历史情况</h4>
                   {loading ? <span className="text-sm text-slate-400">加载中...</span> : null}
@@ -206,9 +207,9 @@ export function StudentProfileModal({
                 {studyRecords.length ? (
                   <div className="grid gap-3">
                     {studyRecords.map((record) => (
-                      <div key={`${record.class_id}-${record.first_lesson_date || ''}`} className={`${workspaceSoftCardClass} p-4`}>
+                      <div key={`${record.class_id}-${record.first_lesson_date || ''}`} className={`${studentCenterMutedSurfaceClass} p-4`}>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-400/15 dark:text-sky-100">
+                          <span className={studentCenterBadgeClass}>
                             {record.subject || '未填学科'}
                           </span>
                           <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-500 dark:bg-white/10 dark:text-slate-200">
@@ -228,13 +229,13 @@ export function StudentProfileModal({
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-sky-200 p-6 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+                  <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
                     暂无课程记录。
                   </div>
                 )}
 
                 {historyItems.length ? (
-                  <div className="space-y-2 border-t border-sky-100 pt-4 dark:border-white/10">
+                  <div className="space-y-2 border-t border-slate-200 pt-4 dark:border-white/10">
                     {historyItems.map((item, index) => (
                       <p key={`${item.id || index}-${item.created_at || ''}`} className="text-sm text-slate-500 dark:text-slate-400">
                         {formatDate(item.created_at)} · {item.action || '记录'} · {item.class_name || (item.class_id ? `课程 ${item.class_id}` : '未关联课程')}{item.note ? ` · ${item.note}` : ''}
@@ -261,7 +262,7 @@ export function StudentProfileModal({
                     type="button"
                     onClick={onSave}
                     disabled={saveDisabled}
-                    className={`${workspaceSecondaryButtonClass} h-10 px-4 py-2 text-sm`}
+                    className={`${studentCenterSecondaryButtonClass} h-10 px-4 py-2 text-sm`}
                     title="Command+S / Ctrl+S"
                   >
                     <Save size={16} />

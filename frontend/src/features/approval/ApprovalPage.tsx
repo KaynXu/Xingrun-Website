@@ -13,6 +13,7 @@ import {
 } from '../navigation/workspaceAccess';
 import {
   apiFetch,
+  buildDiceBearAvatarUrl,
   cn,
   workspaceCardClass,
   workspaceFieldClass,
@@ -871,7 +872,10 @@ export function ApprovalPage({ currentUser, onOpenClassBinding }: ApprovalPagePr
             </div>
             <div className={`${workspaceSoftCardClass} p-5`}>
               <p className="text-xs uppercase tracking-[0.25em] text-sky-600">当前账号</p>
-              <p className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
+              <div className="mt-3 flex items-center gap-3">
+                <img src={buildDiceBearAvatarUrl(currentUser)} alt={`${currentUser.display_name || currentUser.username} 头像`} className="h-12 w-12 shrink-0 rounded-2xl bg-slate-100 object-cover dark:bg-white/10" />
+                <p className="min-w-0 truncate text-xl font-semibold text-slate-900 dark:text-white">{currentUser.display_name}</p>
+              </div>
               <div className="mt-4 space-y-2 text-sm">
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-slate-500 dark:text-slate-400">账号</span>
@@ -1057,22 +1061,25 @@ export function ApprovalPage({ currentUser, onOpenClassBinding }: ApprovalPagePr
                       onClick={toggleCollapse}
                       className="flex w-full items-center justify-between gap-3 p-4 text-left"
                     >
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate text-base font-semibold text-slate-900 dark:text-white">{user.name}</span>
-                          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
-                            {getRoleLabel(user.role)}
-                          </span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <img src={buildDiceBearAvatarUrl(user)} alt={`${user.name} 头像`} className="h-10 w-10 shrink-0 rounded-full bg-slate-100 object-cover dark:bg-white/10" />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate text-base font-semibold text-slate-900 dark:text-white">{user.name}</span>
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${getRoleBadgeClass(user.role)}`}>
+                              {getRoleLabel(user.role)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{user.org}</p>
+                          {currentUser.role === 'super_owner' && (
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
+                              <span className="font-mono">{user.username}</span>
+                              {user.last_login
+                                ? <span className="ml-2 text-slate-400">上次登录 {user.last_login}</span>
+                                : <span className="ml-2 text-slate-300 dark:text-slate-600">未登录过</span>}
+                            </p>
+                          )}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.org}</p>
-                        {currentUser.role === 'super_owner' && (
-                          <p className="text-xs text-slate-400 dark:text-slate-500">
-                            <span className="font-mono">{user.username}</span>
-                            {user.last_login
-                              ? <span className="ml-2 text-slate-400">上次登录 {user.last_login}</span>
-                              : <span className="ml-2 text-slate-300 dark:text-slate-600">未登录过</span>}
-                          </p>
-                        )}
                       </div>
                       <ChevronDown
                         size={16}

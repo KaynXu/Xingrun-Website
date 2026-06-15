@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .schemas import QualityIssue, QualityReview, validate_final_review_plan
+from .schemas import QualityIssue, QualityReview, normalize_final_review_plan, validate_final_review_plan
 
 
 def _contains_any(text: str, candidates: tuple[str, ...]) -> bool:
@@ -10,8 +10,9 @@ def _contains_any(text: str, candidates: tuple[str, ...]) -> bool:
 
 
 def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> QualityReview:
+    normalized_plan = normalize_final_review_plan(plan)
     issues: list[QualityIssue] = []
-    _, schema_errors = validate_final_review_plan(plan)
+    _, schema_errors = validate_final_review_plan(normalized_plan)
     if schema_errors:
         issues.append(
             QualityIssue(
@@ -22,7 +23,7 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
             )
         )
 
-    days = plan.get("days") if isinstance(plan.get("days"), list) else []
+    days = normalized_plan.get("days") if isinstance(normalized_plan.get("days"), list) else []
     day_numbers = {int(day.get("day") or 0) for day in days if isinstance(day, dict)}
     if {1, 2, 7, 14, 30} - day_numbers:
         issues.append(
@@ -34,7 +35,7 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
             )
         )
 
-    text_blob = str(plan)
+    text_blob = str(normalized_plan)
     if _contains_any(text_blob, ("（具体题目）", "按实际填写", "板块X", "正确答案")):
         issues.append(
             QualityIssue(

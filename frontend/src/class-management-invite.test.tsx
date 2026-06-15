@@ -26,6 +26,7 @@ test('class management fetches and resets class invite codes', () => {
   assert.match(classEditorModalSource, /邀请码：/);
   assert.match(classEditorModalSource, /getClassInviteCopyButtonLabel/);
   assert.match(classEditorModalSource, /actions\.onResetClassInvite/);
+  assert.match(classEditorModalSource, /重置/);
 });
 
 test('class management uses scoped floating filters and compact clickable cards', () => {
@@ -41,7 +42,7 @@ test('class management uses scoped floating filters and compact clickable cards'
   assert.match(classPageBlock[0], /!studentCenterPermissions\.isTeacherScoped/);
   assert.match(classPageBlock[0], /handleClassCardClick/);
   assert.match(classManagementTabSource, /ChevronRight,/);
-  assert.match(classPageBlock[0], /grid-cols-\[minmax\(14rem,1\.25fr\)_minmax\(18rem,1fr\)_auto\]/);
+  assert.match(classPageBlock[0], /grid-cols-\[minmax\(14rem,1\.3fr\)_minmax\(18rem,1fr\)_auto\]/);
   assert.match(classPageBlock[0], /Command\+S \/ Ctrl\+S/);
 });
 
@@ -118,10 +119,10 @@ test('class management summary uses campus overview filters and compact help wit
   assert.match(classPageBlock[0], /label: '教师人数'[\s\S]*label: '学员人数'[\s\S]*label: '班级数量'[\s\S]*label: '小课数量'/);
   assert.match(classPageBlock[0], /label: '主讲教师', value: currentUser\.display_name \|\| currentUser\.username/);
   assert.match(classPageBlock[0], /const classSummaryItems = resolveOverviewSummaryItems\(\{/);
-  assert.match(classPageBlock[0], /grid grid-cols-2 gap-4 xl:grid-cols-4/);
+  assert.match(classPageBlock[0], /grid grid-cols-2 divide-x divide-y divide-slate-200 xl:grid-cols-4 xl:divide-y-0/);
   assert.match(classPageBlock[0], /activeClassHelpKey/);
   assert.match(classPageBlock[0], /校区总览说明/);
-  assert.match(classPageBlock[0], /inline-flex h-8 w-8 items-center justify-center text-sky-600/);
+  assert.match(classPageBlock[0], /inline-flex h-8 w-8 items-center justify-center text-slate-400/);
   assert.match(classPageBlock[0], /const filteredClasses = resolveFilteredClasses\(\{/);
   assert.match(classFilterRulesSource, /isClassInfoIncomplete/);
   assert.match(classFilterRulesSource, /Number\(isClassInfoIncomplete\(right, args\.teacherBindingByClassId, args\.subjectOptions\)\) - Number\(isClassInfoIncomplete\(left, args\.teacherBindingByClassId, args\.subjectOptions\)\)/);
