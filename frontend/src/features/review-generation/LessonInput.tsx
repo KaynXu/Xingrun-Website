@@ -22,6 +22,7 @@ const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const reviewFormSectionClass = 'space-y-4 border-b border-slate-200/80 pb-6 dark:border-white/10';
 const reviewFormSectionTitleClass = 'text-sm font-semibold text-slate-900 dark:text-white';
 const reviewFormSectionTextClass = 'mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400';
+const reviewFormFieldClass = `${workspaceFieldClass} border-slate-200 focus:border-slate-300 focus:ring-slate-100`;
 
 function syncMemberScopedClassSelection(
   role: CurrentUser['role'],
@@ -64,7 +65,7 @@ function SubjectSelect({
       aria-label="科目"
       value={academicSubjectOptions.includes(value) ? value : ''}
       onChange={(event) => onChange(event.target.value)}
-      className={cn(workspaceFieldClass, 'w-full', className)}
+      className={cn(reviewFormFieldClass, 'w-full', className)}
     >
       <option value="">选择科目</option>
       {academicSubjectOptions.map((option) => (
@@ -267,7 +268,7 @@ export function LessonInput({
               <select
                 value={classId ?? ''}
                 onChange={(e) => handleClassChange(Number(e.target.value))}
-                className={`${workspaceFieldClass} w-full`}
+                className={`${reviewFormFieldClass} w-full`}
               >
                 <option value="">选择班级</option>
                 {classes.map((c) => (
@@ -278,7 +279,7 @@ export function LessonInput({
                 type="date"
                 value={lessonDate}
                 onChange={(e) => setLessonDate(e.target.value)}
-                className={`${workspaceFieldClass} w-full`}
+                className={`${reviewFormFieldClass} w-full`}
               />
             </div>
 
@@ -373,21 +374,21 @@ export function LessonInput({
                       placeholder="课程主题（选填）"
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
-                      className={workspaceFieldClass}
+                      className={reviewFormFieldClass}
                     />
                     <textarea
                       placeholder="薄弱点（选填）"
                       value={weakPoints}
                       onChange={(e) => setWeakPoints(e.target.value)}
                       rows={4}
-                      className={`${workspaceFieldClass} resize-none`}
+                      className={`${reviewFormFieldClass} resize-none`}
                     />
                     <textarea
                       placeholder="同一节课补充材料（选填）：第二段录音纪要、飞书智能纪要或老师补充说明"
                       value={sameLessonMaterials}
                       onChange={(e) => setSameLessonMaterials(e.target.value)}
                       rows={6}
-                      className={`${workspaceFieldClass} resize-none`}
+                      className={`${reviewFormFieldClass} resize-none`}
                     />
                   </div>
                 </section>
@@ -421,7 +422,7 @@ export function LessonInput({
                       </span>
                     </div>
                   </div>
-                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} w-full py-4 text-lg font-bold`}>
+                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} w-full bg-slate-950 py-3 text-base font-semibold text-white shadow-none hover:bg-slate-800`}>
                     生成复习文档
                     <ArrowRight size={20} />
                   </button>
