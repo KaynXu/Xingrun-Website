@@ -2367,6 +2367,17 @@ def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
         serialized["quality_review"] = latest_run.get("quality_review", {})
         serialized["prompt_version"] = latest_run.get("prompt_version", "")
         serialized["style_version"] = latest_run.get("style_version", "")
+    creator_user_id = int(serialized.get("created_by_user_id") or 0)
+    creator = get_user_by_id(creator_user_id) if creator_user_id else None
+    serialized["creator_display_name"] = str(
+        (creator or {}).get("display_name")
+        or (creator or {}).get("username")
+        or ""
+    ).strip()
+    serialized["creator_username"] = str(
+        (creator or {}).get("username")
+        or ""
+    ).strip()
     return serialized
 
 

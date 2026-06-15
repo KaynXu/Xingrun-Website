@@ -9,6 +9,9 @@ export interface ReviewLessonRecord {
   pdf_path: string;
   class_id: number | null;
   created_at: string;
+  created_by_user_id?: number | null;
+  creator_display_name?: string;
+  creator_username?: string;
   record_status?: string;
   generation_error?: string;
 }
@@ -48,6 +51,9 @@ export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRe
       pdf_path: pickString(item.pdf_path),
       class_id: pickNullableNumber(item.class_id),
       created_at: pickString(item.created_at),
+      created_by_user_id: pickNullableNumber(item.created_by_user_id),
+      creator_display_name: pickString(item.creator_display_name),
+      creator_username: pickString(item.creator_username),
       record_status: pickString(item.record_status),
       generation_error: pickString(item.generation_error),
     }];
