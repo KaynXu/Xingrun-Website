@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Optional, Tuple, Union
 
-from config_runtime import resolve_review_plan_model, resolve_review_plan_provider
+from config_runtime import (
+    resolve_review_plan_model,
+    resolve_review_plan_provider,
+    resolve_review_plan_reasoning_effort,
+)
 
 from .executor import run_workflow_node
 from .nodes import (
@@ -142,7 +146,11 @@ def generate_single_lesson_review_plan(
 ) -> Union[dict[str, Any], Tuple[dict[str, Any], dict[str, Any]]]:
     resolved_provider = provider or resolve_review_plan_provider()
     resolved_model = model or resolve_review_plan_model(provider=resolved_provider)
-    context = WorkflowContext(provider=resolved_provider, model=resolved_model)
+    context = WorkflowContext(
+        provider=resolved_provider,
+        model=resolved_model,
+        reasoning_effort=resolve_review_plan_reasoning_effort(provider=resolved_provider),
+    )
     review_input = ReviewPlanInput(
         summary_text=summary_text,
         subject=subject,

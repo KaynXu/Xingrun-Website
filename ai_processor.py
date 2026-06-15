@@ -59,6 +59,9 @@ def _get_client():
             "请在设置页面配置 openai_api_key，"
             "或设置环境变量 OPENAI_API_KEY。"
         )
+    base_url = str(cfg.get("openai_base_url") or "").strip()
+    if base_url:
+        return OpenAI(api_key=key, base_url=base_url)
     return OpenAI(api_key=key)
 
 

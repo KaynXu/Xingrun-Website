@@ -44,6 +44,7 @@ class WorkflowContext:
     subject: str = ""
     provider: str = ""
     model: str = ""
+    reasoning_effort: str = ""
     prompt_version: str = PROMPT_VERSION
     schema_version: str = SCHEMA_VERSION
     style_version: str = STYLE_VERSION

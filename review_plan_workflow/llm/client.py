@@ -9,6 +9,7 @@ from config_runtime import (
     chat_model_for_provider,
     get_runtime_config,
     normalize_chat_provider,
+    normalize_reasoning_effort,
     resolve_review_plan_model,
     resolve_review_plan_provider,
 )
@@ -124,6 +125,9 @@ def get_chat_client(provider: str = ""):
     key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key:
         raise RuntimeError("未找到 OpenAI API Key，请在设置页面配置 openai_api_key，或设置环境变量 OPENAI_API_KEY。")
+    base_url = str(cfg.get("openai_base_url") or "").strip()
+    if base_url:
+        return OpenAI(api_key=key, base_url=base_url)
     return OpenAI(api_key=key)
 
 
@@ -162,20 +166,25 @@ def generate_review_plan_json(
     user_message: str,
     provider: str = "",
     model: str = "",
+    reasoning_effort: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     provider_name = resolve_chat_provider(provider)
     model_name = resolve_chat_model(provider_name, model)
     client = get_chat_client(provider_name)
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
+    request_kwargs: dict[str, Any] = {
+        "model": model_name,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        temperature=0.3,
-        response_format={"type": "json_object"},
-        timeout=REVIEW_PLAN_LLM_TIMEOUT_SECONDS,
-    )
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"},
+        "timeout": REVIEW_PLAN_LLM_TIMEOUT_SECONDS,
+    }
+    normalized_effort = normalize_reasoning_effort(reasoning_effort)
+    if provider_name == "openai" and normalized_effort:
+        request_kwargs["reasoning_effort"] = normalized_effort
+    response = client.chat.completions.create(**request_kwargs)
     raw = response.choices[0].message.content
     return loads_model_json(raw), usage_dict(response, provider=provider_name, model_fallback=model_name)
 
