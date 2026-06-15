@@ -16,7 +16,11 @@ from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import validate_final_review_plan
 from review_plan_workflow.service import generate_single_lesson_review_plan
-from tests.review_plan_test_utils import valid_single_lesson_plan, writer_style_single_lesson_plan
+from tests.review_plan_test_utils import (
+    desktop_writer_single_lesson_plan,
+    valid_single_lesson_plan,
+    writer_style_single_lesson_plan,
+)
 
 
 class ReviewPlanWorkflowTestCase(unittest.TestCase):
@@ -85,6 +89,19 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         plan, errors = validate_final_review_plan(writer_style_single_lesson_plan())
         self.assertIsNotNone(plan)
         self.assertEqual(errors, [])
+
+    def test_validate_final_review_plan_accepts_desktop_writer_shape(self):
+        plan, errors = validate_final_review_plan(desktop_writer_single_lesson_plan())
+        self.assertIsNotNone(plan)
+        self.assertEqual(errors, [])
+        self.assertEqual(plan.lesson_info.topic, "二次函数最值与将军饮马综合复习")
+        self.assertEqual(plan.lesson_info.grade, "9")
+        self.assertEqual([day.day for day in plan.days], [1, 2, 7, 14, 30])
+
+    def test_quality_gate_uses_normalized_day_numbers(self):
+        review = review_single_lesson_plan(desktop_writer_single_lesson_plan(), subject="math")
+        self.assertTrue(review.passed)
+        self.assertFalse(any(issue.category in {"schema", "completeness"} for issue in review.issues))
 
     def test_generate_review_plan_json_sets_timeout(self):
         response = type(
@@ -345,6 +362,44 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(run["warnings"], [])
         self.assertTrue(run["quality_review"]["passed"])
 
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_normalizes_desktop_writer_output_without_schema_warning(self, mock_generate_plan):
+        mock_generate_plan.return_value = (
+            desktop_writer_single_lesson_plan(),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-15",
+            subject="数学",
+            grade="九年级",
+            topic="二次函数最值与将军饮马综合复习",
+            summary="课堂总结文本",
+            weak_points="表示线段、将军饮马入口",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="九年级",
+            topic="二次函数最值与将军饮马综合复习",
+            weak_points="表示线段、将军饮马入口",
+            lesson_date="2026-06-15",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "二次函数最值与将军饮马综合复习")
+        self.assertEqual(generated["lesson_info"]["grade"], "9")
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(generated["full_review_topics"], ["二次函数最值", "将军饮马最短路径"])
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["warnings"], [])
+        self.assertTrue(run["quality_review"]["passed"])
+
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_revises_low_quality_plan_until_quality_passes(self, mock_generate_plan, mock_revise_plan):
@@ -372,7 +427,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, fixed_plan)
+        self.assertEqual(generated["lesson_info"]["topic"], fixed_plan["lesson_info"]["topic"])
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(generated["weak_points_summary"], fixed_plan["weak_points_summary"])
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(usage["input_tokens"], 40)
         self.assertEqual(usage["output_tokens"], 60)
         mock_revise_plan.assert_called_once()
@@ -415,7 +474,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated, still_low_quality_plan)
+        self.assertEqual(generated["lesson_info"]["topic"], still_low_quality_plan["lesson_info"]["topic"])
+        self.assertEqual(generated["lesson_info"]["date"], "2026-06-01")
+        self.assertEqual(generated["weak_points_summary"], still_low_quality_plan["weak_points_summary"])
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
         self.assertEqual(usage["input_tokens"], 12)
         self.assertEqual(usage["output_tokens"], 24)
         self.assertEqual(mock_revise_plan.call_count, 2)

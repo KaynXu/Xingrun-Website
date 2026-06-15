@@ -22,7 +22,7 @@ from .nodes import (
 )
 from .quality_gate import review_single_lesson_plan
 from .llm.client import merge_usage
-from .schemas import QualityReview, ReviewPlanInput
+from .schemas import QualityReview, ReviewPlanInput, normalize_final_review_plan
 from .state import WorkflowContext
 
 
@@ -65,6 +65,13 @@ def _score_quality(plan: dict[str, Any], *, subject: str, context: WorkflowConte
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
+
+
+def _normalize_output_plan(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
+    normalized = normalize_final_review_plan(plan)
+    if review_input.lesson_date:
+        normalized.setdefault("lesson_info", {})["date"] = review_input.lesson_date
+    return normalized
 
 
 def _maybe_revise_plan(
@@ -211,6 +218,7 @@ def generate_single_lesson_review_plan(
             },
             context,
         )
+        plan = _normalize_output_plan(plan, review_input)
         quality = _score_quality(plan, subject=route.selected_subject, context=context, node_key="quality_reviewer_initial")
         plan, quality, usage = _maybe_revise_plan(
             plan=plan,
@@ -221,6 +229,7 @@ def generate_single_lesson_review_plan(
             subject=route.selected_subject,
             context=context,
         )
+        plan = _normalize_output_plan(plan, review_input)
 
         _record_run(
             lesson_id=lesson_id,

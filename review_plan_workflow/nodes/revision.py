@@ -7,7 +7,7 @@ from typing import Any
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.llm.client import generate_review_plan_json
 from review_plan_workflow.llm.prompt_renderer import render_prompt
-from review_plan_workflow.schemas import PromptBundle, QualityReview, ReviewPlanInput
+from review_plan_workflow.schemas import PromptBundle, QualityReview, ReviewPlanInput, normalize_final_review_plan
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -77,7 +77,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
         model=context.model,
         reasoning_effort=context.reasoning_effort,
     )
-    _apply_lesson_date(revised, review_input)
+    revised = _apply_lesson_date(normalize_final_review_plan(revised), review_input)
     context.node_outputs.setdefault("revision_attempts", []).append(
         {
             "attempt": attempt,

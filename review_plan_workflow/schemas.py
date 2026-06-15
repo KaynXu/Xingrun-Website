@@ -250,7 +250,11 @@ def _append_unique_body(items: list[dict[str, Any]], text: str) -> None:
 
 def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(day)
-    day_number = int(normalized.get("day") or 0) or 1
+    try:
+        day_number = int(normalized.get("day") or normalized.get("day_number") or 0) or 1
+    except (TypeError, ValueError):
+        day_number = 1
+    normalized["day"] = day_number
 
     if not _clean_text(normalized.get("label")):
         normalized["label"] = (
@@ -259,8 +263,11 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
             or f"第{day_number}天复习"
         )
     if not _clean_text(normalized.get("time")):
+        estimate_text = _clean_text(normalized.get("time_estimate"))
+        if estimate_text:
+            normalized["time"] = estimate_text
         time_minutes = normalized.get("time_minutes")
-        if isinstance(time_minutes, int) and time_minutes > 0:
+        if not normalized.get("time") and isinstance(time_minutes, int) and time_minutes > 0:
             normalized["time"] = f"{time_minutes}分钟"
 
     items = [copy.deepcopy(item) for item in normalized.get("items", []) if isinstance(item, dict)]
@@ -320,6 +327,33 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
         lesson_info = {}
         normalized["lesson_info"] = lesson_info
 
+    for field in ("subject", "topic"):
+        if not _clean_text(lesson_info.get(field)):
+            lesson_info[field] = _clean_text(normalized.get(field))
+
+    grade_value = lesson_info.get("grade")
+    if grade_value in (None, ""):
+        grade_value = normalized.get("grade")
+    lesson_info["grade"] = _clean_text(grade_value)
+
+    date_value = lesson_info.get("date")
+    if not _clean_text(date_value):
+        date_value = normalized.get("lesson_date") or normalized.get("generate_date")
+    lesson_info["date"] = _clean_text(date_value)
+
+    key_categories = lesson_info.get("key_categories")
+    if not isinstance(key_categories, list):
+        key_categories = []
+    homepage = normalized.get("homepage")
+    if isinstance(homepage, dict):
+        coverage_box = homepage.get("full_coverage_box")
+        if isinstance(coverage_box, dict):
+            for category in coverage_box.get("topics", []):
+                text = _clean_text(category)
+                if text and text not in key_categories:
+                    key_categories.append(text)
+    lesson_info["key_categories"] = key_categories
+
     if not _clean_text(normalized.get("weak_points_summary")):
         weak_points = lesson_info.get("weak_points")
         if isinstance(weak_points, list):
@@ -332,13 +366,30 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
     full_review_topics = normalized.get("full_review_topics")
     if not isinstance(full_review_topics, list):
         full_review_topics = []
-    key_categories = lesson_info.get("key_categories")
-    if isinstance(key_categories, list):
-        for category in key_categories:
-            text = _clean_text(category)
-            if text and text not in full_review_topics:
-                full_review_topics.append(text)
+    for category in lesson_info.get("key_categories", []):
+        text = _clean_text(category)
+        if text and text not in full_review_topics:
+            full_review_topics.append(text)
     normalized["full_review_topics"] = full_review_topics
+
+    quotes = normalized.get("quotes")
+    if not isinstance(quotes, list):
+        quotes = []
+    if isinstance(homepage, dict):
+        golden_quote = _clean_text(homepage.get("golden_quote_box"))
+        if golden_quote and golden_quote not in quotes:
+            quotes.append(golden_quote)
+        home_usage = _clean_text(homepage.get("home_usage_box"))
+        if home_usage and not _dedupe_clean_list(normalized.get("final_reminder_lines")):
+            normalized["final_reminder_lines"] = [home_usage]
+    normalized["quotes"] = quotes
+
+    knowledge_sections = normalized.get("knowledge_sections")
+    if not isinstance(knowledge_sections, dict):
+        knowledge_sections = {}
+    if isinstance(homepage, dict) and isinstance(homepage.get("core_formula_card"), dict):
+        knowledge_sections.setdefault("formula_card", homepage["core_formula_card"])
+    normalized["knowledge_sections"] = knowledge_sections
 
     days = normalized.get("days")
     if not isinstance(days, list):
@@ -347,3 +398,14 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
 
     normalized["days"] = [_normalize_day(day) for day in days if isinstance(day, dict)]
     return normalized
+
+
+def _dedupe_clean_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    lines: list[str] = []
+    for value in values:
+        text = _clean_text(value)
+        if text and text not in lines:
+            lines.append(text)
+    return lines
