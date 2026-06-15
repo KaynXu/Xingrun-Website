@@ -104,7 +104,7 @@ export function WorkspacePageContent({
         {activeWorkspacePage === 'credit' && hasOwnerAccess(currentUser.role) && <CreditCenterPage currentUser={currentUser} />}
         {activeWorkspacePage === 'accounts' && hasStaffAccess(currentUser.role) && <ApprovalPage currentUser={currentUser} onOpenClassBinding={handleOpenClassBinding} />}
         {activeWorkspacePage === 'settings' && (
-          <SettingsPage currentUser={currentUser} onLogout={handleLogout} onCurrentUserUpdated={onCurrentUserUpdated} />
+          <SettingsPage currentUser={currentUser} onCurrentUserUpdated={onCurrentUserUpdated} />
         )}
       </motion.div>
     </AnimatePresence>

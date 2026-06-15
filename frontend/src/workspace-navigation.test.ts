@@ -173,6 +173,14 @@ test('settings page source keeps account, avatar, and password sections without 
   assert.match(settingsBlock, /<h3 className=\{workspaceSectionTitleClass\}>系统设置<\/h3>/);
   assert.match(settingsBlock, /更换头像/);
   assert.match(settingsBlock, /修改账号密码/);
+  assert.match(settingsSource, /const avatarPresetNames = \[/);
+  assert.match(settingsSource, /'stone'/);
+  assert.match(settingsSource, /'clay'/);
+  assert.match(settingsBlock, /xl:grid-cols-9/);
+  assert.match(settingsBlock, /border-slate-300/);
+  assert.match(settingsBlock, /settingsSecondaryButtonClass/);
+  assert.match(settingsBlock, /settingsFieldClass/);
+  assert.match(settingsBlock, /settingsPrimaryButtonClass/);
   assert.match(settingsBlock, /onCurrentUserUpdated/);
   assert.match(settingsBlock, /\/api\/profile\/avatar/);
   assert.match(settingsBlock, /\/api\/profile\/avatar-upload/);
@@ -180,6 +188,7 @@ test('settings page source keeps account, avatar, and password sections without 
   assert.match(settingsBlock, /normalizeSettingsApiError/);
   assert.match(settingsSource, /本地后端还没更新到最新代码，请重启 5001 后端后再试/);
   assert.match(settingsBlock, /上传头像/);
+  assert.doesNotMatch(settingsBlock, /退出登录/);
   assert.doesNotMatch(settingsBlock, /积分中心/);
   assert.doesNotMatch(settingsBlock, /关于/);
 });

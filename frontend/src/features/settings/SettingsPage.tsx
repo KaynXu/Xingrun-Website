@@ -5,17 +5,12 @@ import { getRoleLabel } from '../../appDisplay';
 import {
   apiFetch,
   buildDiceBearAvatarUrl,
-  workspaceCardClass,
-  workspaceFieldClass,
   workspacePageClass,
-  workspacePrimaryButtonClass,
-  workspaceSecondaryButtonClass,
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
 
 type SettingsPageProps = {
   currentUser: CurrentUser;
-  onLogout: () => void;
   onCurrentUserUpdated: (user: CurrentUser) => void;
 };
 
@@ -24,7 +19,34 @@ type ProfileUpdateResponse = {
   user: CurrentUser;
 };
 
-const avatarPresetNames = ['ink', 'moss', 'pebble', 'ember', 'mist', 'wave'] as const;
+const avatarPresetNames = [
+  'ink',
+  'moss',
+  'pebble',
+  'ember',
+  'mist',
+  'wave',
+  'cedar',
+  'linen',
+  'graphite',
+  'maple',
+  'chalk',
+  'fern',
+  'cocoa',
+  'fog',
+  'dune',
+  'pine',
+  'stone',
+  'clay',
+] as const;
+
+const settingsCardClass = 'rounded-[1.75rem] border border-slate-200 bg-white/88 backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/78';
+const settingsFieldClass =
+  'w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-100 placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100 dark:focus:border-slate-500 dark:focus:ring-white/10 dark:placeholder:text-slate-500';
+const settingsSecondaryButtonClass =
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10';
+const settingsPrimaryButtonClass =
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-slate-950 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10';
 
 function getAvatarSeedBase(user: CurrentUser): string {
   return [user.id, user.username, user.display_name].filter((item) => String(item || '').trim()).join('-') || 'xingrun-user';
@@ -44,7 +66,7 @@ function normalizeSettingsApiError(err: unknown, fallbackMessage: string): strin
   return normalized || fallbackMessage;
 }
 
-export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: SettingsPageProps) {
+export function SettingsPage({ currentUser, onCurrentUserUpdated }: SettingsPageProps) {
   const avatarPresetSeeds = useMemo(
     () => getAvatarPresetSeeds(currentUser),
     [currentUser.id, currentUser.username, currentUser.display_name],
@@ -147,7 +169,7 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
     <div className={`${workspacePageClass} space-y-8`}>
       <h3 className={workspaceSectionTitleClass}>系统设置</h3>
 
-      <section className={`${workspaceCardClass} flex flex-col gap-5 p-6 md:flex-row md:items-center md:justify-between`}>
+      <section className={`${settingsCardClass} p-6`}>
         <div className="flex items-center gap-4">
           <img src={previewAvatarUrl} alt={`${currentUser.display_name} 头像`} className="h-16 w-16 rounded-2xl bg-slate-100 object-cover" />
           <div className="space-y-2">
@@ -165,17 +187,14 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
             </div>
           </div>
         </div>
-        <button onClick={onLogout} className={workspaceSecondaryButtonClass}>
-          退出登录
-        </button>
       </section>
 
-      <section className={`${workspaceCardClass} space-y-5 p-6`}>
+      <section className={`${settingsCardClass} space-y-5 p-6`}>
         <div className="space-y-1">
           <h4 className="text-base font-semibold text-slate-900 dark:text-white">更换头像</h4>
           <p className="text-sm text-slate-500 dark:text-slate-400">选择一个 DiceBear seed，或上传自己的头像。</p>
         </div>
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6 xl:grid-cols-9">
           {avatarPresetSeeds.map((seed) => {
             const active = currentUser.avatar_source !== 'upload' && selectedAvatarSeed === seed;
             return (
@@ -189,7 +208,7 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
                 disabled={avatarSaving || avatarUploading}
                 className={`rounded-2xl border p-2 transition ${
                   active
-                    ? 'border-slate-900 bg-slate-50'
+                    ? 'border-slate-500 bg-slate-50'
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
@@ -203,7 +222,7 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
           })}
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <label className={`${workspaceSecondaryButtonClass} cursor-pointer`}>
+          <label className={`${settingsSecondaryButtonClass} cursor-pointer`}>
             <input type="file" accept="image/*" className="hidden" onChange={(event) => void handleAvatarUpload(event)} />
             {avatarUploading ? '上传中...' : '上传头像'}
           </label>
@@ -215,7 +234,7 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
         {avatarSuccess && <p className="text-sm text-emerald-600 dark:text-emerald-400">{avatarSuccess}</p>}
       </section>
 
-      <section className={`${workspaceCardClass} space-y-5 p-6`}>
+      <section className={`${settingsCardClass} space-y-5 p-6`}>
         <div className="space-y-1">
           <h4 className="text-base font-semibold text-slate-900 dark:text-white">修改账号密码</h4>
         </div>
@@ -224,26 +243,26 @@ export function SettingsPage({ currentUser, onLogout, onCurrentUserUpdated }: Se
             type="password"
             value={currentPassword}
             onChange={(event) => setCurrentPassword(event.target.value)}
-            className={workspaceFieldClass}
+            className={settingsFieldClass}
             placeholder="当前密码"
           />
           <input
             type="password"
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
-            className={workspaceFieldClass}
+            className={settingsFieldClass}
             placeholder="新密码"
           />
           <input
             type="password"
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
-            className={workspaceFieldClass}
+            className={settingsFieldClass}
             placeholder="确认新密码"
           />
         </div>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => void savePassword()} disabled={passwordSaving} className={workspacePrimaryButtonClass}>
+          <button type="button" onClick={() => void savePassword()} disabled={passwordSaving} className={settingsPrimaryButtonClass}>
             {passwordSaving ? '保存中...' : '更新密码'}
           </button>
         </div>
