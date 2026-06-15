@@ -76,6 +76,19 @@ function getLessonCreatorAvatarUrl(lesson: ReviewLessonRecord): string {
   });
 }
 
+function getLessonCreatedTimeLabel(lesson: ReviewLessonRecord): string {
+  if (!lesson.created_at) {
+    return '-';
+  }
+
+  const createdAt = new Date(lesson.created_at);
+  if (Number.isNaN(createdAt.getTime())) {
+    return lesson.created_at;
+  }
+
+  return createdAt.toLocaleTimeString('zh-CN', { hour12: false });
+}
+
 function getLessonStatusMeta(lesson: ReviewLessonRecord): {
   label: string;
   dotClassName: string;
@@ -297,7 +310,7 @@ function ReviewDocumentHistory({
 
                     <div className="flex items-center justify-between gap-4 text-sm lg:block">
                       <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400 lg:hidden dark:text-slate-500">生成时间</span>
-                      <span className="text-slate-700 dark:text-slate-200">{new Date(lesson.created_at).toLocaleString('zh-CN')}</span>
+                      <span className="text-slate-700 dark:text-slate-200">{getLessonCreatedTimeLabel(lesson)}</span>
                     </div>
 
                     <div className="hidden lg:flex lg:items-center lg:gap-2 lg:text-sm lg:text-slate-600 dark:lg:text-slate-300">
