@@ -68,12 +68,48 @@ test('ordinary consultation flow node save and cancel use the pure flow rules', 
   assert.match(source, /clearConsultationFlowNodeContent\(toConsultationFormValues\(record\), stage\)/);
 });
 
+test('default follow up status does not infer the communication stage as completed', () => {
+  assert.match(source, /follow_up_status: '待邀约',/);
+  assert.match(source, /function deriveConsultationFlowFromFields\(values: ConsultationFormValues\): ConsultationFormValues/);
+  assert.match(source, /const hasSavedCommunicationStage = values\.completed_stages\.includes\('正在沟通细节'\) \|\| values\.flow_stage === '正在沟通细节';/);
+  assert.match(source, /if \(hasSavedCommunicationStage \|\| values\.follow_up_note\.trim\(\)\) inferred\.add\('正在沟通细节'\);/);
+  assert.doesNotMatch(source, /if \(values\.follow_up_status \|\| values\.follow_up_note\.trim\(\)\) inferred\.add\('正在沟通细节'\);/);
+});
+
+test('consultation read-only report shows receiving teacher as checked status text', () => {
+  assert.match(source, /const ConsultationReadOnlyReport = \(/);
+  assert.match(source, /接待教师：\{value\(form\.receiving_teacher\)\}/);
+  assert.match(source, /receivingTeacherDone \? <CheckCircle2 size=\{14\}/);
+  assert.doesNotMatch(source, /<p className=\{compactReadLabelClass\}>咨询老师<\/p><p className=\{compactReadValueClass\}>\{value\(form\.receiving_teacher\)\}<\/p>/);
+});
+
+test('consultation edit modal shows trial and teaching teacher status cards', () => {
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /试听教师：\{form\.trial_teacher\.trim\(\) \|\| '未选择'\}/);
+  assert.match(modalBlock[0], /form\.trial_teacher\.trim\(\) \? <CheckCircle2 size=\{16\}/);
+  assert.match(modalBlock[0], /带课教师：\{form\.teaching_teacher\.trim\(\) \|\| '未选择'\}/);
+  assert.match(modalBlock[0], /form\.teaching_teacher\.trim\(\) \? <CheckCircle2 size=\{16\}/);
+});
+
+test('consultation edit modal builds its own teacher directory for flow markers', () => {
+  assert.ok(modalBlock);
+  assert.match(modalBlock[0], /const teacherDirectory = buildConsultationTeacherDirectory\(record \? \[record\] : \[], consultationTeachers\);/);
+  assert.match(modalBlock[0], /stageTeacherMarkers=\{buildConsultationStageTeacherMarkersFromValues\(form, teacherDirectory\)\}/);
+});
+
 test('setting an earlier current node clears later node form fields', () => {
   assert.match(source, /function clearConsultationFlowNodeMappedFields\(values: ConsultationFormValues, stage: string\): ConsultationFormValues/);
   assert.match(source, /function clearConsultationFlowNodeContentAfterStage\(values: ConsultationFormValues, stage: string\): ConsultationFormValues/);
   assert.match(source, /consultationProcessStages\.slice\(targetIndex \+ 1\)/);
   assert.match(source, /clearConsultationFlowNodeMappedFields\(nextValues, nextStage\)/);
   assert.match(source, /clearConsultationFlowNodeContentAfterStage\(nextValues, stage\)/);
+});
+
+test('setting an earlier current node clears stale later assignment metadata', () => {
+  assert.match(source, /const assignedStageIndex = consultationProcessStages\.indexOf\(values\.assigned_stage as DomainConsultationProcessStage\);/);
+  assert.match(source, /if \(assignedStageIndex > targetIndex\) \{/);
+  assert.match(source, /clearedValues\.assigned_stage = '';/);
+  assert.match(source, /clearedValues\.assignment_note = '';/);
 });
 
 test('consultation edit modal opens ordinary node dialog and restores over result dialog', () => {

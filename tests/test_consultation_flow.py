@@ -1170,6 +1170,51 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(stage_update.status_code, 200)
         self.assertEqual(stage_update.get_json()["trial_teacher_note"], "试听老师已沟通时间")
 
+    def test_member_transferred_to_test_can_edit_test_and_later_stages_only(self):
+        teacher_token = self.create_member_token(username="test_teacher", display_name="测试老师")
+        self.user_for_token(teacher_token)
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "测试转接家长",
+                "孩子姓名": "测试转接学生",
+                "年级": "六年级",
+                "接待老师": "前台老师",
+                "咨询科目": "数学",
+                "具体需求": "先测试再试听",
+                "flow_stage": "待测试",
+                "completed_stages": ["已加小客服微信", "已加对应教师微信", "待测试"],
+                "stage_teacher_ids": {"待测试": "test_teacher"},
+                "communication_teacher_note": "前面老师已经沟通过",
+            },
+        )
+        consultation_id = created.get_json()["id"]
+
+        prior_stage_update = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(teacher_token),
+            json={"communication_teacher_note": "测试老师不该改前面的沟通内容"},
+        )
+        self.assertEqual(prior_stage_update.status_code, 403)
+
+        allowed_update = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(teacher_token),
+            json={
+                "test_taken": "是",
+                "test_note": "测试完成，建议试听七年级班",
+                "trial_teacher_note": "已和家长约试听",
+                "teaching_teacher_note": "如果进班，提醒带课老师关注计算细节",
+            },
+        )
+        self.assertEqual(allowed_update.status_code, 200)
+        payload = allowed_update.get_json()
+        self.assertEqual(payload["test_note"], "测试完成，建议试听七年级班")
+        self.assertEqual(payload["trial_teacher_note"], "已和家长约试听")
+        self.assertEqual(payload["teaching_teacher_note"], "如果进班，提醒带课老师关注计算细节")
+
     def test_previous_stage_teacher_can_view_after_same_stage_transfer_but_cannot_edit(self):
         first_token = self.create_member_token(username="trial_teacher_a", display_name="试听甲")
         self.user_for_token(first_token)

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 import {
   buildRecommendedConsultationClassFilters,
@@ -6,6 +8,8 @@ import {
   filterConsultationEnterClassOptions,
   type ConsultationEnterClassDraft,
 } from './consultationEnterClass';
+
+const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
 const quickDraft: ConsultationEnterClassDraft = {
   class_type: 'group',
@@ -117,4 +121,11 @@ test('filterConsultationEnterClassOptions can loosen recommended subject and gra
   });
 
   assert.deepEqual(filtered.map((item) => item.id), [2]);
+});
+
+test('existing class submit treats consultation subject and grade as recommendations, not locks', () => {
+  assert.match(appSource, /consultationSubject: selectedExistingClass\?\.subject \|\| \(existingClassFilters\.subjectFilter !== '全部学科' \? existingClassFilters\.subjectFilter : ''\) \|\| values\.consultation_subject/);
+  assert.match(appSource, /grade: selectedExistingClass\?\.current_grade \|\| selectedExistingClass\?\.grade \|\| \(existingClassFilters\.gradeFilter !== '全部' \? existingClassFilters\.gradeFilter : ''\) \|\| values\.grade/);
+  assert.doesNotMatch(appSource, /consultationSubject: values\.consultation_subject \|\| selectedExistingClass\?\.subject/);
+  assert.doesNotMatch(appSource, /grade: values\.grade \|\| selectedExistingClass\?\.current_grade/);
 });

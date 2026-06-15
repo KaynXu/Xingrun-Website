@@ -1123,6 +1123,7 @@ type ConsultationFilterKey =
   | 'ended'
   | 'success'
   | 'failed';
+type ConsultationSourceFilterKey = 'self' | 'transferred';
 
 const consultationFilterGroups: Array<{
   title: string;
@@ -1147,6 +1148,10 @@ const consultationFilterGroups: Array<{
   },
 ];
 const consultationPrimaryFilterKeys: ConsultationFilterKey[] = ['pending', 'ended'];
+const consultationSourceFilterOptions: Array<{ key: ConsultationSourceFilterKey; label: string }> = [
+  { key: 'self', label: '自建咨询' },
+  { key: 'transferred', label: '转接咨询' },
+];
 
 const consultationFilterLabels = consultationFilterGroups
   .flatMap((group) => group.items)
@@ -1257,6 +1262,13 @@ function consultationMatchesFilter(record: ConsultationRecord, filterKey: Consul
   if (filterKey === 'ended-week') return ageDays <= 7;
   if (filterKey === 'ended-month') return ageDays > 7 && ageDays <= 30;
   return ageDays > 30;
+}
+
+function consultationMatchesSourceFilter(record: ConsultationRecord, sourceFilter: ConsultationSourceFilterKey | ''): boolean {
+  if (!sourceFilter) return true;
+  if (sourceFilter === 'self') return !record.is_transferred_consultation;
+  if (sourceFilter === 'transferred') return record.is_transferred_consultation;
+  return true;
 }
 
 function getConsultationOver30SectionLabel(record: ConsultationRecord, todayIso: string): string {
@@ -1433,10 +1445,19 @@ function clearConsultationFlowNodeContentAfterStage(values: ConsultationFormValu
   if (!isDomainConsultationProcessStage(stage)) return values;
   const targetIndex = consultationProcessStages.indexOf(stage);
   if (targetIndex < 0) return values;
-  return consultationProcessStages.slice(targetIndex + 1).reduce(
+  const clearedValues = consultationProcessStages.slice(targetIndex + 1).reduce(
     (nextValues, nextStage) => clearConsultationFlowNodeMappedFields(nextValues, nextStage),
     values,
   );
+  const assignedStageIndex = consultationProcessStages.indexOf(values.assigned_stage as DomainConsultationProcessStage);
+  if (assignedStageIndex > targetIndex) {
+    clearedValues.assigned_stage = '';
+    clearedValues.assignment_note = '';
+    clearedValues.transfer_marker = '';
+    clearedValues.current_responsibility = '';
+    clearedValues.is_transferred_consultation = false;
+  }
+  return clearedValues;
 }
 
 function clearConsultationFlowNodeContent(values: ConsultationFormValues, stage: string): ConsultationFormValues {
@@ -1549,7 +1570,8 @@ function deriveConsultationFlowFromFields(values: ConsultationFormValues): Consu
   const inferred = new Set(Array.isArray(values.completed_stages) ? values.completed_stages : []);
   if (values.customer_service_added || values.customer_service_teacher || values.customer_service_note) inferred.add('已加小客服微信');
   if (values.communication_teacher_added || values.communication_teacher_note) inferred.add('已加对应教师微信');
-  if (values.follow_up_status || values.follow_up_note.trim()) inferred.add('正在沟通细节');
+  const hasSavedCommunicationStage = values.completed_stages.includes('正在沟通细节') || values.flow_stage === '正在沟通细节';
+  if (hasSavedCommunicationStage || values.follow_up_note.trim()) inferred.add('正在沟通细节');
   if (values.test_taken || values.test_note || values.test_images.length > 0) inferred.add('待测试');
   if (values.trial_teacher_added || values.trial_taken || values.trial_time_slot || values.trial_class_id || values.trial_class_manual || values.trial_feedback) {
     inferred.add('待试听');
@@ -1944,6 +1966,27 @@ function buildConsultationStageTeacherMarkersFromValues(
 function getConsultationStudentMeta(record: ConsultationRecord): string {
   const childName = record.child_name?.trim();
   return childName ? `学生姓名：${childName}` : '学生姓名待补充';
+}
+
+function getConsultationCardStageStatusItems(record: ConsultationRecord) {
+  const completed = new Set(record.completed_stages || []);
+  const items: string[] = [];
+  if (completed.has('已加小客服微信') || record.customer_service_added || record.customer_service_teacher) {
+    items.push('客服微信：已添加');
+  }
+  if ((completed.has('已加对应教师微信') || record.communication_teacher_added) && record.communication_teacher_added) {
+    items.push(`沟通教师：${record.communication_teacher_added}`);
+  }
+  if ((completed.has('待测试') || record.test_teacher) && record.test_teacher) {
+    items.push(`测试教师：${record.test_teacher}`);
+  }
+  if ((completed.has('待试听') || record.trial_teacher) && record.trial_teacher) {
+    items.push(`试听教师：${record.trial_teacher}`);
+  }
+  if ((completed.has('成功进班') || record.teaching_teacher) && record.teaching_teacher) {
+    items.push(`带课教师：${record.teaching_teacher}`);
+  }
+  return items;
 }
 
 function getConsultationSourceLabel(record: ConsultationRecord): string {
@@ -4007,7 +4050,11 @@ const ConsultationFlowBar = ({
   const resultCompleted = Boolean(completedResultStage) && currentProcessIndex < 0;
   const resultLabel = resultStage === '试听失败' ? '咨询失败' : '进班';
   const resultShortLabel = consultationResultShortLabel(resultStage) || '进';
-  const editableFromStageIndex = editableFromStage ? consultationProcessStages.indexOf(editableFromStage) : -1;
+  const editableFromStageIndex = editableFromStage
+    ? isConsultationResultStage(editableFromStage)
+      ? consultationProcessStages.length
+      : consultationProcessStages.indexOf(editableFromStage)
+    : -1;
   const flowNodes = [
     ...consultationProcessStages.map((item) => {
       const stageIndex = consultationProcessStages.indexOf(item);
@@ -4022,7 +4069,7 @@ const ConsultationFlowBar = ({
         title: item,
         active: isCurrent,
         completed: lightColor === 'green' || (completedSet.has(item) && !isAfterCurrentProcess),
-        teacherInitial: stageTeacherMarkers[item]?.initial || '',
+        teacherInitial: (lightColor === 'green' || lightColor === 'blue') ? stageTeacherMarkers[item]?.initial || '' : '',
         transferred: Boolean(stageTeacherMarkers[item]?.transferred),
         disabled: !editable || ended || (editableFromStageIndex >= 0 && stageIndex < editableFromStageIndex),
       };
@@ -4068,7 +4115,6 @@ const ConsultationFlowBar = ({
     if (node.type === 'process' && node.transferred) return 'border-dashed border-teal-300 bg-white text-teal-700 shadow-[0_0_0_3px_rgba(20,184,166,0.10)]';
     if (node.active) return 'border-sky-300 bg-sky-50 text-sky-700 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]';
     if (node.completed) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-    if (node.type === 'process' && node.teacherInitial) return 'border-slate-200 bg-white text-slate-500 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300';
     return 'border-[#C7DDEA] bg-white text-transparent dark:bg-slate-950';
   };
   const getNodeTextClass = (node: typeof flowNodes[number]) => {
@@ -4571,8 +4617,8 @@ const ConsultationEnterClassDialog = ({
         ? {
             mode: 'existing',
             existingClassId,
-            consultationSubject: values.consultation_subject || selectedExistingClass?.subject || (existingClassFilters.subjectFilter !== '全部学科' ? existingClassFilters.subjectFilter : ''),
-            grade: values.grade || selectedExistingClass?.current_grade || selectedExistingClass?.grade || (existingClassFilters.gradeFilter !== '全部' ? existingClassFilters.gradeFilter : ''),
+            consultationSubject: selectedExistingClass?.subject || (existingClassFilters.subjectFilter !== '全部学科' ? existingClassFilters.subjectFilter : '') || values.consultation_subject,
+            grade: selectedExistingClass?.current_grade || selectedExistingClass?.grade || (existingClassFilters.gradeFilter !== '全部' ? existingClassFilters.gradeFilter : '') || values.grade,
             ...teachingTeacherHandoff,
           }
         : enterClassMode === 'quick-create'
@@ -4946,6 +4992,7 @@ const ConsultationReadOnlyReport = ({
       : '尚未定论';
   const value = (text?: string | null) => text?.trim() || '—';
   const readOnlyTwoColumnGridClass = 'grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]';
+  const receivingTeacherDone = Boolean(form.receiving_teacher.trim());
   const testTeacherDone = Boolean(form.test_teacher.trim());
   const trialTeacherDone = Boolean(form.trial_teacher.trim());
   const teachingTeacherDone = Boolean(form.teaching_teacher.trim());
@@ -4962,7 +5009,13 @@ const ConsultationReadOnlyReport = ({
           <div><p className={compactReadLabelClass}>家长微信</p><p className={compactReadValueClass}>{value(form.parent_wechat_name)}</p></div>
           <div><p className={compactReadLabelClass}>学生</p><p className={compactReadValueClass}>{value(form.child_name)}</p></div>
           <div><p className={compactReadLabelClass}>年级</p><p className={compactReadValueClass}>{value(form.grade)}</p></div>
-          <div><p className={compactReadLabelClass}>咨询老师</p><p className={compactReadValueClass}>{value(form.receiving_teacher)}</p></div>
+          <div>
+            <p className={compactReadLabelClass}>接待教师</p>
+            <p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">
+              接待教师：{value(form.receiving_teacher)}
+              {receivingTeacherDone ? <CheckCircle2 size={14} /> : null}
+            </p>
+          </div>
           <div><p className={compactReadLabelClass}>科目</p><p className={compactReadValueClass}>{value(form.consultation_subject)}</p></div>
           <div className="sm:col-span-2"><p className={compactReadLabelClass}>来源</p><p className={compactReadValueClass}>{value([form.source_channel, form.source_channel_note].filter(Boolean).join(' · '))}</p></div>
         </div>
@@ -5200,6 +5253,7 @@ const ConsultationModal = ({
       ...consultationTeachers,
     ];
   })();
+  const teacherDirectory = buildConsultationTeacherDirectory(record ? [record] : [], consultationTeachers);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -5375,6 +5429,26 @@ const ConsultationModal = ({
   const sectionStates = getConsultationFlowSectionStates(form);
   const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
   const transferredEditableFromStage = record?.is_transferred_consultation && currentUser.role === 'member' ? record.assigned_stage : '';
+  const transferredLimitedEdit = Boolean(transferredEditableFromStage);
+  const transferredEditableFromStageIndex = transferredEditableFromStage
+    ? isConsultationResultStage(transferredEditableFromStage)
+      ? consultationProcessStages.length
+      : consultationProcessStages.indexOf(transferredEditableFromStage as DomainConsultationProcessStage)
+    : -1;
+  const isTransferredStageLockedBefore = (stageName: string) => {
+    if (transferredEditableFromStageIndex < 0) return false;
+    const stageIndex = isConsultationResultStage(stageName)
+      ? consultationProcessStages.length
+      : consultationProcessStages.indexOf(stageName as DomainConsultationProcessStage);
+    return stageIndex >= 0 && stageIndex < transferredEditableFromStageIndex;
+  };
+  const canEditConsultationStageFields = (stageName: string) => !readOnly && !stageFrozen && !isTransferredStageLockedBefore(stageName);
+  const baseFieldsDisabled = readOnly || transferredLimitedEdit;
+  const communicationFieldsDisabled = readOnly || isTransferredStageLockedBefore('正在沟通细节');
+  const testFieldsDisabled = !canEditConsultationStageFields('待测试');
+  const trialFieldsDisabled = !canEditConsultationStageFields('待试听');
+  const successFieldsDisabled = !canEditConsultationStageFields('成功进班');
+  const canUseQuickEntry = !readOnly && !transferredLimitedEdit;
 
   return (
     <motion.div
@@ -5496,7 +5570,7 @@ const ConsultationModal = ({
             <ConsultationReadOnlyReport form={form} record={record} classes={classes} />
           ) : (
             <>
-          {!readOnly && (
+          {canUseQuickEntry && (
             <section className={`${consultationPanelClass} mb-4 grid gap-3 p-3.5 lg:grid-cols-[8rem_minmax(0,1fr)_auto] lg:items-center sm:p-4`}>
               <div>
                 <h4 className="text-sm font-extrabold text-[#1F2A44] dark:text-white">快速录入</h4>
@@ -5544,20 +5618,23 @@ const ConsultationModal = ({
               <button
                 type="button"
                 onClick={() => setForm((current) => toggleConsultationStageLight(current, '已加小客服微信'))}
-                disabled={readOnly || stageFrozen}
+                disabled={!canEditConsultationStageFields('已加小客服微信')}
                 className={cn(compactStatusClass(customerWechatDone), 'min-w-0 px-3')}
               >
                 <span className="min-w-0 truncate">客服微信：{customerWechatDone ? '已添加' : '未添加'}</span>
                 {customerWechatDone ? <CheckCircle2 size={18} className="shrink-0" /> : null}
               </button>
               <label className={cn(compactStatusClass(teacherWechatDone), 'relative min-w-0 p-0')}>
-                <span className="pointer-events-none absolute inset-x-3 top-1/2 z-10 min-w-0 -translate-y-1/2 truncate text-center">
+                <span className="pointer-events-none absolute inset-x-3 top-1/2 z-10 flex min-w-0 -translate-y-1/2 items-center justify-center gap-2 text-center">
+                  <span className="min-w-0 truncate">
                   接待教师：{form.receiving_teacher || '未选择'}
+                  </span>
+                  {teacherWechatDone ? <CheckCircle2 size={16} className="shrink-0" /> : null}
                 </span>
                 <select
                   value={form.teacher_id}
                   onChange={(e) => handleTeacherChange(e.target.value)}
-                  disabled={readOnly || stageFrozen}
+                  disabled={!canEditConsultationStageFields('已加对应教师微信')}
                   className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-3 text-transparent outline-none"
                   aria-label="选择接待教师"
                 >
@@ -5572,26 +5649,26 @@ const ConsultationModal = ({
             <div className={`${compactFieldGridClass} mt-3`}>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>日期</span>
-                <input type="date" value={form.date} onChange={(e) => updateField('date', e.target.value)} disabled={readOnly} className={fieldClass} />
+                <input type="date" value={form.date} onChange={(e) => updateField('date', e.target.value)} disabled={baseFieldsDisabled} className={fieldClass} />
               </label>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>家长微信名</span>
-                <input value={form.parent_wechat_name} onChange={(e) => updateField('parent_wechat_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="家长微信昵称" />
+                <input value={form.parent_wechat_name} onChange={(e) => updateField('parent_wechat_name', e.target.value)} disabled={baseFieldsDisabled} className={fieldClass} placeholder="家长微信昵称" />
               </label>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>学生姓名</span>
-                <input value={form.child_name} onChange={(e) => updateField('child_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="学生姓名" />
+                <input value={form.child_name} onChange={(e) => updateField('child_name', e.target.value)} disabled={baseFieldsDisabled} className={fieldClass} placeholder="学生姓名" />
               </label>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>咨询年级</span>
-                <input value={form.grade} onChange={(e) => updateField('grade', e.target.value)} disabled={readOnly} list="consultation-grade-options" className={fieldClass} placeholder="如：三年级" />
+                <input value={form.grade} onChange={(e) => updateField('grade', e.target.value)} disabled={baseFieldsDisabled} list="consultation-grade-options" className={fieldClass} placeholder="如：三年级" />
               </label>
             </div>
 
             <div className={`${compactFieldGridClass} mt-3`}>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>咨询科目</span>
-                <select value={academicSubjectOptions.includes(form.consultation_subject) ? form.consultation_subject : ''} onChange={(e) => updateField('consultation_subject', e.target.value)} disabled={readOnly} className={fieldClass}>
+                <select value={academicSubjectOptions.includes(form.consultation_subject) ? form.consultation_subject : ''} onChange={(e) => updateField('consultation_subject', e.target.value)} disabled={baseFieldsDisabled} className={fieldClass}>
                   <option value="">请选择咨询科目</option>
                   {academicSubjectOptions.map((option) => (
                     <option key={option} value={option}>{option}</option>
@@ -5600,7 +5677,7 @@ const ConsultationModal = ({
               </label>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>来源渠道主类</span>
-                <select value={form.source_channel} onChange={(e) => updateField('source_channel', e.target.value)} disabled={readOnly} className={fieldClass}>
+                <select value={form.source_channel} onChange={(e) => updateField('source_channel', e.target.value)} disabled={baseFieldsDisabled} className={fieldClass}>
                   <option value="">请选择来源渠道</option>
                   {!consultationSourceOptions.includes(form.source_channel) && form.source_channel ? (
                     <option value={form.source_channel}>{form.source_channel}</option>
@@ -5612,7 +5689,7 @@ const ConsultationModal = ({
               </label>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>来源渠道备注</span>
-                <input value={form.source_channel_note} onChange={(e) => updateField('source_channel_note', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="例如：张妈妈转介绍" />
+                <input value={form.source_channel_note} onChange={(e) => updateField('source_channel_note', e.target.value)} disabled={baseFieldsDisabled} className={fieldClass} placeholder="例如：张妈妈转介绍" />
               </label>
             </div>
           </section>
@@ -5624,7 +5701,7 @@ const ConsultationModal = ({
               <textarea
                 value={form.need_detail}
                 onChange={(e) => updateField('need_detail', e.target.value)}
-                disabled={readOnly}
+                disabled={communicationFieldsDisabled}
                 rows={5}
                 className={`${fieldClass} resize-none`}
                 placeholder="家长本次咨询目标、问题背景、正在沟通的细节"
@@ -5641,7 +5718,7 @@ const ConsultationModal = ({
 	                  </div>
 	                  <label className="space-y-2 text-sm">
 	                    <span className={compactEditLabelClass}>是否测试</span>
-	                    <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
+		                    <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={testFieldsDisabled} className={fieldClass}>
                       <option value="">未记录</option>
                       <option value="是">是</option>
                       <option value="否">否</option>
@@ -5649,7 +5726,7 @@ const ConsultationModal = ({
                   </label>
                   <div className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>测试情况图片</span>
-                    {!readOnly && record ? (
+                    {!testFieldsDisabled && record ? (
                       <label className={`${workspaceSecondaryButtonClass} w-full cursor-pointer justify-center`}>
                         <Upload size={17} />
                         添加图片
@@ -5694,9 +5771,13 @@ const ConsultationModal = ({
               <div ref={trialSectionRef} className={cn(consultationFlowSectionClass(sectionStates.trial), 'min-h-[14rem] scroll-mt-6', trialHighlighted && consultationJumpHighlightClass)}>
                 <p className={compactFlowTitleClass(sectionStates.trial)}>试听</p>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <div className={compactStatusClass(Boolean(form.trial_teacher.trim()))}>
+                    <span className="min-w-0 truncate">试听教师：{form.trial_teacher.trim() || '未选择'}</span>
+                    {form.trial_teacher.trim() ? <CheckCircle2 size={16} className="shrink-0" /> : null}
+                  </div>
                   <label className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>是否试听</span>
-                    <select value={form.trial_taken} onChange={(e) => updateField('trial_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
+                    <select value={form.trial_taken} onChange={(e) => updateField('trial_taken', e.target.value)} disabled={trialFieldsDisabled} className={fieldClass}>
                       <option value="">未记录</option>
                       <option value="是">是</option>
                       <option value="否">否</option>
@@ -5704,7 +5785,7 @@ const ConsultationModal = ({
                   </label>
                   <label className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>试听教师</span>
-                    <select value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={readOnly} className={fieldClass}>
+                    <select value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={trialFieldsDisabled} className={fieldClass}>
                       <option value="">请选择试听教师</option>
                       {teacherOptions.map((option) => (
                         <option key={option.teacher_id} value={option.display_name}>{option.display_name}</option>
@@ -5724,7 +5805,7 @@ const ConsultationModal = ({
                         setTrialManualClassActive(false);
                         setForm((current) => deriveConsultationFlowFromFields({ ...current, trial_class_id: e.target.value ? Number(e.target.value) : null, trial_class_manual: '' }));
                       }}
-                      disabled={readOnly}
+                      disabled={trialFieldsDisabled}
                       className={fieldClass}
                     >
                       <option value="">请选择系统班级</option>
@@ -5738,18 +5819,18 @@ const ConsultationModal = ({
                     <span className={compactEditLabelClass}>试听时间段</span>
                     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
                       <ArrowRight size={18} className="text-slate-400" />
-                      <input value={form.trial_time_slot} onChange={(e) => updateField('trial_time_slot', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="如：周六 10:00-12:00" />
+                      <input value={form.trial_time_slot} onChange={(e) => updateField('trial_time_slot', e.target.value)} disabled={trialFieldsDisabled} className={fieldClass} placeholder="如：周六 10:00-12:00" />
                     </div>
                   </label>
                   {trialUsesManualClass && (
                     <label className="space-y-2 text-sm lg:col-span-2">
                       <span className={compactEditLabelClass}>其他班级</span>
-                      <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
+                      <input value={form.trial_class_manual} onChange={(e) => updateField('trial_class_manual', e.target.value)} disabled={trialFieldsDisabled} className={fieldClass} placeholder="其他：________" />
                     </label>
                   )}
                   <label className="space-y-2 text-sm lg:col-span-2">
                     <span className={compactEditLabelClass}>试听反馈</span>
-                    <textarea value={form.trial_feedback} onChange={(e) => updateField('trial_feedback', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="记录试听反馈、适配程度、下一步安排" />
+                    <textarea value={form.trial_feedback} onChange={(e) => updateField('trial_feedback', e.target.value)} disabled={trialFieldsDisabled} rows={4} className={`${fieldClass} resize-none`} placeholder="记录试听反馈、适配程度、下一步安排" />
                   </label>
                 </div>
               </div>
@@ -5760,6 +5841,10 @@ const ConsultationModal = ({
             {(showSuccessFields || !readOnly) && (
               <div ref={successSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', successHighlighted && consultationJumpHighlightClass)}>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <div className={compactStatusClass(Boolean(form.teaching_teacher.trim()))}>
+                    <span className="min-w-0 truncate">带课教师：{form.teaching_teacher.trim() || '未选择'}</span>
+                    {form.teaching_teacher.trim() ? <CheckCircle2 size={16} className="shrink-0" /> : null}
+                  </div>
                   <label className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>班级</span>
                     <select
@@ -5773,7 +5858,7 @@ const ConsultationModal = ({
                         setSuccessManualClassActive(false);
                         handleSuccessClassChange(e.target.value);
                       }}
-                      disabled={readOnly}
+                      disabled={successFieldsDisabled}
                       className={fieldClass}
                     >
                       <option value="">请选择系统班级</option>
@@ -5786,12 +5871,12 @@ const ConsultationModal = ({
                       {successUsesManualClass && (
                         <label className="space-y-2 text-sm">
                           <span className={compactEditLabelClass}>其他班级</span>
-                          <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
+                          <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={successFieldsDisabled} className={fieldClass} placeholder="其他：________" />
                         </label>
                       )}
                       <label className="space-y-2 text-sm">
                         <span className={compactEditLabelClass}>带课教师</span>
-                        <select value={form.teaching_teacher} onChange={(e) => updateField('teaching_teacher', e.target.value)} disabled={readOnly} className={fieldClass}>
+                        <select value={form.teaching_teacher} onChange={(e) => updateField('teaching_teacher', e.target.value)} disabled={successFieldsDisabled} className={fieldClass}>
                           <option value="">请选择带课教师</option>
                           {teacherOptions.map((option) => (
                             <option key={option.teacher_id} value={option.display_name}>{option.display_name}</option>
@@ -5800,7 +5885,7 @@ const ConsultationModal = ({
                       </label>
                       <label className="space-y-2 text-sm lg:col-span-2">
                         <span className={compactEditLabelClass}>带课交接备注</span>
-                        <textarea value={form.teaching_teacher_note} onChange={(e) => updateField('teaching_teacher_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} placeholder="记录进班后的交接信息、班级注意事项或需要带课老师补充的内容" />
+                        <textarea value={form.teaching_teacher_note} onChange={(e) => updateField('teaching_teacher_note', e.target.value)} disabled={successFieldsDisabled} rows={3} className={`${fieldClass} resize-none`} placeholder="记录进班后的交接信息、班级注意事项或需要带课老师补充的内容" />
                       </label>
                     </div>
                   </div>
@@ -5815,7 +5900,7 @@ const ConsultationModal = ({
 
             <label className="space-y-2 text-sm">
               <span className={compactEditLabelClass}>跟进备注（内部）</span>
-              <textarea value={form.follow_up_note} onChange={(e) => updateField('follow_up_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} placeholder="补充后续跟进安排或内部提醒" />
+              <textarea value={form.follow_up_note} onChange={(e) => updateField('follow_up_note', e.target.value)} disabled={communicationFieldsDisabled} rows={3} className={`${fieldClass} resize-none`} placeholder="补充后续跟进安排或内部提醒" />
             </label>
 
             {record && (
@@ -6339,6 +6424,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [modalMode, setModalMode] = useState<'view' | 'create' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
   const [activeFilter, setActiveFilter] = useState<ConsultationFilterKey>('pending');
+  const [activeSourceFilter, setActiveSourceFilter] = useState<ConsultationSourceFilterKey | ''>('');
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [flowNodeDialog, setFlowNodeDialog] = useState<InlineConsultationFlowNodeDialogState | null>(null);
@@ -6539,10 +6625,13 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
   }, [records, consultationTodayIso]);
   const visibleRecords = useMemo(() => {
     return sortConsultationsForFilter(
-      records.filter((record) => consultationMatchesFilter(record, activeFilter, consultationTodayIso)),
+      records.filter((record) => (
+        consultationMatchesFilter(record, activeFilter, consultationTodayIso)
+        && consultationMatchesSourceFilter(record, activeSourceFilter)
+      )),
       activeFilter,
     );
-  }, [records, consultationTodayIso, activeFilter]);
+  }, [records, consultationTodayIso, activeFilter, activeSourceFilter]);
   const getVisibleRecordSectionLabel = (record: ConsultationRecord, index: number): string | null => {
     return null;
   };
@@ -6739,6 +6828,24 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
     );
   };
 
+  const renderConsultationStageStatusChips = (record: ConsultationRecord) => {
+    const items = getConsultationCardStageStatusItems(record);
+    if (!items.length) return null;
+    return (
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {items.map((item) => (
+          <span
+            key={item}
+            className="inline-flex max-w-full items-center gap-1 rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-[11px] font-extrabold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200"
+          >
+            <span className="min-w-0 truncate">{item}</span>
+            <CheckCircle2 size={12} className="shrink-0" />
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   const renderTransferBadge = (record: ConsultationRecord, mobile = false) => {
     if (!record.is_transferred_consultation) {
       return null;
@@ -6861,6 +6968,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
           <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
+            {renderConsultationStageStatusChips(record)}
             {renderTimeRow(record)}
           </div>
           <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2.5 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
@@ -6901,6 +7009,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
           <div className="space-y-2 px-4 py-2.5">
             {renderConsultationDetail(needDetail, followUpNote)}
+            {renderConsultationStageStatusChips(record)}
             {renderTimeRow(record)}
           </div>
           <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
@@ -6970,6 +7079,7 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             {renderInfoCell('来源', getConsultationSourceLabel(record), 'col-span-2')}
           </div>
           {renderConsultationDetail(needDetail, followUpNote, true)}
+          {renderConsultationStageStatusChips(record)}
           {renderTimeRow(record, true)}
           <div className="space-y-2.5">
             <div className="grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-2">
@@ -7050,8 +7160,8 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
 
       <div className={`${workspaceCardClass} p-3 sm:p-4`}>
         <div className="grid min-w-0 gap-2 min-[720px]:flex min-[720px]:items-center min-[720px]:gap-5">
-          {consultationFilterGroups.map((group) => (
-            <div key={group.title} className="min-w-0 min-[720px]:flex min-[720px]:shrink-0 min-[720px]:items-center min-[720px]:gap-2">
+          {consultationFilterGroups.map((group, groupIndex) => (
+            <div key={group.title || `consultation-filter-group-${groupIndex}`} className="min-w-0 min-[720px]:flex min-[720px]:shrink-0 min-[720px]:items-center min-[720px]:gap-2">
               {group.title && <p className="shrink-0 text-[11px] font-bold text-slate-400">{group.title}</p>}
               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1 min-[720px]:mt-0 min-[720px]:gap-1.5">
                 {group.items.map((item) => {
@@ -7090,9 +7200,29 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
             </div>
           ))}
         </div>
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5 border-t border-sky-50 pt-3 dark:border-white/10">
+          {consultationSourceFilterOptions.map((item) => {
+            const active = activeSourceFilter === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setActiveSourceFilter((current) => current === item.key ? '' : item.key)}
+                className={`inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[11px] font-extrabold transition ${
+                  active
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-[0_8px_18px_rgba(16,185,129,0.12)] dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+                    : 'border-sky-100 bg-white text-[#4F6178] hover:bg-sky-50 hover:text-[#0EA5E9] dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
         <div className="mt-3 flex items-center gap-2 rounded-xl bg-sky-50/70 px-3 py-2 text-[11px] font-semibold leading-5 text-[#4F6178] dark:bg-sky-400/10 dark:text-sky-100">
           <Info size={13} className="shrink-0 text-[#0EA5E9]" />
-          <span>使用提醒：点击卡片右侧图标查看或编辑咨询记录。</span>
+          <span className="hidden md:inline">使用提醒：电脑端：左键编辑阶段状态，右键标记为当前阶段。</span>
+          <span className="md:hidden">使用提醒：Pad/手机：轻点编辑阶段状态，长按标记为当前阶段。</span>
         </div>
       </div>
 
@@ -7105,7 +7235,9 @@ const ConsultationPage = ({ currentUser }: { currentUser: CurrentUser }) => {
           </div>
         ) : visibleRecords.length === 0 ? (
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-            {activeFilter === 'pending' ? '当前暂无待处理咨询。' : `当前分类「${consultationFilterLabels[activeFilter]}」暂无咨询记录。`}
+            {activeSourceFilter
+              ? `当前分类「${consultationFilterLabels[activeFilter]} / ${activeSourceFilter === 'self' ? '自建咨询' : '转接咨询'}」暂无咨询记录。`
+              : activeFilter === 'pending' ? '当前暂无待处理咨询。' : `当前分类「${consultationFilterLabels[activeFilter]}」暂无咨询记录。`}
           </div>
         ) : (
           <>
