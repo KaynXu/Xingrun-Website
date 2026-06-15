@@ -1541,9 +1541,12 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
         story.append(Spacer(1, 2 * mm))
         story.append(CondPageBreak(60 * mm))
         story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, colors.white))
-        story.append(Spacer(1, 2 * mm))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
+        has_teacher_quote = index == 0 and day["quotes"]
+        has_replay_block = index == 0
+        if knowledge_items or has_teacher_quote or has_replay_block:
+            story.append(Spacer(1, 2 * mm))
         if knowledge_items:
             knowledge_mode = knowledge_mode_for_day(day, variant_key)
             if knowledge_mode == "mixed":
@@ -1554,19 +1557,19 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
                 knowledge_title = labels["knowledge_oral_title"]
             story.append(CondPageBreak(70 * mm))
             story.append(make_box(knowledge_title, knowledge_body, styles, colors.white))
-            story.append(Spacer(1, 2 * mm))
+            if has_teacher_quote or has_replay_block:
+                story.append(Spacer(1, 2 * mm))
 
-        if index == 0 and day["quotes"]:
+        if has_teacher_quote:
             quote_body = Paragraph("<br/>".join([f"“{quote}”" for quote in day["quotes"]]), styles["quote"])
             story.append(make_box(labels["teacher_quote_title"], quote_body, styles, styles["quote_bg"]))
             story.append(Spacer(1, 2 * mm))
 
-        if index == 0:
+        if has_replay_block:
             replay_text = build_quote_replay_text(day, labels, chinese_only)
             story.append(make_box(labels["quote_replay_title"], Paragraph(replay_text, styles["body"]), styles, styles["quote_bg"]))
             story.append(Spacer(1, 2 * mm))
             story.append(Paragraph(labels["check_text"], styles["body"]))
-            story.append(Spacer(1, 3 * mm))
 
     story.append(PageBreak())
     story.append(Paragraph(labels["final_reminder"], styles["h1"]))
