@@ -425,7 +425,7 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
     <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">复习生成</h2>
-        <button type="button" onClick={handleToggleComposer} className={workspacePrimaryButtonClass}>
+        <button type="button" onClick={handleToggleComposer} className={`${workspacePrimaryButtonClass} shadow-none`}>
           <PlusCircle size={20} />
           新建复习文档
         </button>
@@ -442,7 +442,7 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
 
       {composerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm sm:p-6">
-          <div className={`${workspaceCardClass} flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden`}>
+          <div className={`${workspaceCardClass} flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden border-slate-200/90 bg-white shadow-none backdrop-blur-0 dark:border-white/10 dark:bg-slate-950 [&_button]:shadow-none`}>
             <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 sm:px-6">
               <h3 className="text-xl font-semibold text-slate-900 dark:text-white">生成复习文档</h3>
               <button
