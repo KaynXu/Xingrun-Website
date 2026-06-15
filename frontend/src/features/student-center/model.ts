@@ -45,6 +45,9 @@ export interface UserItem {
   username?: string;
   last_login?: string | null;
   visible_pages?: string[];
+  avatar_source?: 'dicebear' | 'upload';
+  avatar_seed?: string;
+  avatar_upload_url?: string;
 }
 
 export type ClassStudentOption = {

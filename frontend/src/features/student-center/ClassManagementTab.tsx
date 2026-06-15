@@ -2,7 +2,7 @@ import type { KeyboardEvent, MouseEvent } from 'react';
 import { ChevronRight, PlusCircle } from 'lucide-react';
 import { FloatingFilterBar, type FloatingFilterItem, type FloatingFilterOption } from '../../components/FloatingFilterBar';
 import { getAcademicStageFromGrade, normalizeAcademicGradeLabel } from '../../domain/classNaming';
-import { cn } from '../../workspaceShared';
+import { buildDiceBearAvatarUrl, cn } from '../../workspaceShared';
 import type { ClassItem, UserItem } from './model';
 import {
   getStudentCenterSubjectBadgeClass,
@@ -155,6 +155,7 @@ export function ClassManagementTab({
                   const currentTeacherUserId = teacherBindingByClassId[item.id] ?? item.teacher_user_id ?? null;
                   const currentTeacher = currentTeacherUserId == null ? undefined : users.find((user) => user.id === currentTeacherUserId);
                   const teacherSummary = currentTeacher?.name || item.teacher_name || '未分配老师';
+                  const teacherAvatarUrl = buildDiceBearAvatarUrl(currentTeacher || { name: teacherSummary });
                   const gradeLabel = normalizeAcademicGradeLabel(item.current_grade || item.grade || '') || item.grade || '未填写年级';
                   const stageLabel = item.stage || getAcademicStageFromGrade(item.current_grade || item.grade || '') || '未填写学段';
                   const classStudents = studentsByClassId[item.id] || [];
@@ -218,7 +219,14 @@ export function ClassManagementTab({
                   <div className="grid grid-cols-3 gap-3 text-sm">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">上课教师</p>
-                      <p className="mt-1 truncate font-semibold text-slate-800 dark:text-slate-100">{teacherSummary}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <img
+                          src={teacherAvatarUrl}
+                          alt={`${teacherSummary} 头像`}
+                          className="h-6 w-6 shrink-0 rounded-full bg-slate-100 object-cover dark:bg-white/10"
+                        />
+                        <p className="truncate font-semibold text-slate-800 dark:text-slate-100">{teacherSummary}</p>
+                      </div>
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">班号</p>
