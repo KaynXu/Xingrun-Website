@@ -136,8 +136,8 @@ export const SidebarAccountSheet = ({
             <div className="flex min-w-0 items-start gap-3">
               <img src={avatarUrl} alt={`${preferredUserLabel} 头像`} className="h-12 w-12 shrink-0 rounded-xl bg-slate-100 object-cover dark:bg-white/10" />
               <div className="min-w-0 pt-0.5">
-                <p className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{preferredUserLabel}</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{preferredUserLabel}</p>
                   <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
                     {resolvedRoleLabel}
                   </span>

@@ -37,4 +37,6 @@ test('sidebar source derives footer and account sheet labels from display names 
   assert.match(sidebarSource, /function getPreferredUserLabel/);
   assert.match(sidebarSource, /return user\.display_name\.trim\(\) \|\| user\.username;/);
   assert.match(sidebarSource, /const preferredUserLabel = getPreferredUserLabel\(currentUser\);/);
+  assert.match(sidebarSource, /<div className="flex flex-wrap items-center gap-2">/);
+  assert.match(sidebarSource, /<p className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">\{preferredUserLabel\}<\/p>/);
 });
