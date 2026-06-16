@@ -2220,6 +2220,35 @@ def _drop_legacy_table_if_exists(conn: sqlite3.Connection, table: str) -> None:
         conn.execute(f"DROP TABLE {table}")
 
 
+def _drop_stale_index_if_bound_to_wrong_table(
+    conn: sqlite3.Connection, index_name: str, expected_table: str
+) -> None:
+    row = conn.execute(
+        "SELECT tbl_name FROM sqlite_master WHERE type='index' AND name=?",
+        (index_name,),
+    ).fetchone()
+    if row and row["tbl_name"] != expected_table:
+        conn.execute(f'DROP INDEX "{index_name}"')
+
+
+def _cleanup_class_feedback_student_entries_repair_legacy(conn: sqlite3.Connection) -> None:
+    legacy_table = "class_feedback_student_entries__repair_legacy"
+    _drop_stale_index_if_bound_to_wrong_table(
+        conn,
+        "idx_class_feedback_student_entries_task_student",
+        "class_feedback_student_entries",
+    )
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (legacy_table,),
+    ).fetchone()
+    if not row:
+        return
+    legacy_count = conn.execute(f'SELECT COUNT(*) AS c FROM "{legacy_table}"').fetchone()["c"]
+    if legacy_count == 0:
+        conn.execute(f'DROP TABLE "{legacy_table}"')
+
+
 def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sqlite3.Connection) -> None:
     column_rows = conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()
     columns = [row[1] for row in column_rows]
@@ -2842,6 +2871,7 @@ def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection)
 
 
 def _ensure_class_feedback_task_integrity_guards(conn: sqlite3.Connection) -> None:
+    _cleanup_class_feedback_student_entries_repair_legacy(conn)
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_class_feedback_student_entries_task_student
@@ -2938,6 +2968,26 @@ def init_db():
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS review_plan_runs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson_id        INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+            organization_id  INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            trace_id         TEXT NOT NULL UNIQUE,
+            status           TEXT NOT NULL DEFAULT 'running',
+            subject          TEXT NOT NULL DEFAULT '',
+            provider         TEXT NOT NULL DEFAULT '',
+            model            TEXT NOT NULL DEFAULT '',
+            prompt_version   TEXT NOT NULL DEFAULT '',
+            style_version    TEXT NOT NULL DEFAULT '',
+            schema_version   TEXT NOT NULL DEFAULT '',
+            warnings_json    TEXT NOT NULL DEFAULT '[]',
+            quality_review_json TEXT NOT NULL DEFAULT '{}',
+            node_outputs_json TEXT NOT NULL DEFAULT '{}',
+            logs_json        TEXT NOT NULL DEFAULT '[]',
+            created_at       TEXT DEFAULT (datetime('now','localtime')),
+            updated_at       TEXT DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS organizations (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL UNIQUE,
@@ -2953,6 +3003,9 @@ def init_db():
             status          TEXT NOT NULL DEFAULT 'active',
             organization_id INTEGER NOT NULL REFERENCES organizations(id),
             visible_pages_json TEXT DEFAULT NULL,
+            avatar_source   TEXT NOT NULL DEFAULT 'dicebear',
+            avatar_seed     TEXT NOT NULL DEFAULT '',
+            avatar_upload_path TEXT NOT NULL DEFAULT '',
             recovery_phone  TEXT NOT NULL DEFAULT '',
             security_question TEXT NOT NULL DEFAULT '',
             security_answer_hash TEXT NOT NULL DEFAULT '',
@@ -2987,6 +3040,9 @@ def init_db():
             created_at      TEXT DEFAULT (datetime('now','localtime'))
         );
 
+        CREATE INDEX IF NOT EXISTS idx_review_plan_runs_lesson_updated
+        ON review_plan_runs(lesson_id, updated_at);
+
         CREATE TABLE IF NOT EXISTS organization_requests (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_name TEXT NOT NULL,
@@ -3016,6 +3072,24 @@ def init_db():
         CREATE TABLE IF NOT EXISTS auth_sessions (
             token       TEXT PRIMARY KEY,
             user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS student_accounts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            student_id      INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+            username        TEXT NOT NULL UNIQUE,
+            password_hash   TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'active',
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            last_login      TEXT,
+            UNIQUE(student_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS student_auth_sessions (
+            token       TEXT PRIMARY KEY,
+            account_id  INTEGER NOT NULL REFERENCES student_accounts(id) ON DELETE CASCADE,
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
@@ -3677,6 +3751,15 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_lessons_organization_class_date
             ON lessons (organization_id, class_id, date);
 
+            CREATE INDEX IF NOT EXISTS idx_student_accounts_student
+            ON student_accounts (student_id);
+
+            CREATE INDEX IF NOT EXISTS idx_student_accounts_username_lower
+            ON student_accounts (lower(username));
+
+            CREATE INDEX IF NOT EXISTS idx_student_auth_sessions_account
+            ON student_auth_sessions (account_id, created_at);
+
             CREATE INDEX IF NOT EXISTS idx_course_calendar_schedules_org_date
             ON course_calendar_schedules (organization_id, date, time_block);
 
@@ -3739,6 +3822,12 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL")
         if "visible_pages_json" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN visible_pages_json TEXT DEFAULT NULL")
+        if "avatar_source" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_source TEXT NOT NULL DEFAULT 'dicebear'")
+        if "avatar_seed" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_seed TEXT NOT NULL DEFAULT ''")
+        if "avatar_upload_path" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN avatar_upload_path TEXT NOT NULL DEFAULT ''")
         if "recovery_phone" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN recovery_phone TEXT NOT NULL DEFAULT ''")
         if "security_question" not in user_cols:
@@ -4138,8 +4227,241 @@ def _public_user_dict(row):
         "created_at": row["created_at"],
         "last_login": row["last_login"] if "last_login" in keys else None,
         "visible_pages": _load_visible_pages_for_user(row),
+        "avatar_source": row["avatar_source"] if "avatar_source" in keys else "dicebear",
+        "avatar_seed": row["avatar_seed"] if "avatar_seed" in keys else "",
+        "avatar_upload_url": (
+            f"/api/profile-avatar-files/{row['avatar_upload_path']}"
+            if "avatar_upload_path" in keys and str(row["avatar_upload_path"] or "").strip()
+            else ""
+        ),
         "requires_class_claim": _requires_initial_class_claim(row),
     }
+
+
+def _class_names_from_csv(value: object) -> list[str]:
+    return [
+        class_name.strip()
+        for class_name in str(value or "").split(",")
+        if class_name.strip()
+    ]
+
+
+def _public_student_account_dict(row):
+    if not row:
+        return None
+    keys = row.keys() if hasattr(row, "keys") else []
+    return {
+        "id": int(row["id"]),
+        "username": row["username"],
+        "status": row["status"],
+        "organization_id": int(row["organization_id"]),
+        "organization_name": row["organization_name"] if "organization_name" in keys else "",
+        "student": {
+            "id": int(row["student_id"]),
+            "name": row["student_name"] if "student_name" in keys else "",
+            "organization_id": int(row["student_organization_id"] if "student_organization_id" in keys else row["organization_id"]),
+            "class_names": _class_names_from_csv(row["class_names"] if "class_names" in keys else ""),
+            "class_count": int(row["class_count"] if "class_count" in keys and row["class_count"] is not None else 0),
+        },
+        "created_at": row["created_at"],
+        "last_login": row["last_login"] if "last_login" in keys else None,
+    }
+
+
+def _student_account_select_sql(where_sql: str) -> str:
+    return f"""
+        SELECT
+            sa.*,
+            o.name AS organization_name,
+            s.name AS student_name,
+            s.organization_id AS student_organization_id,
+            GROUP_CONCAT(DISTINCT c.name) AS class_names,
+            COUNT(DISTINCT c.id) AS class_count
+        FROM student_accounts sa
+        JOIN organizations o ON o.id=sa.organization_id
+        JOIN students s ON s.id=sa.student_id
+        LEFT JOIN class_students cs ON cs.student_id=s.id
+        LEFT JOIN classes c ON c.id=cs.class_id
+        WHERE {where_sql}
+        GROUP BY sa.id
+        LIMIT 1
+    """
+
+
+def _fetch_student_account_row_by_id(conn: sqlite3.Connection, account_id: int):
+    return conn.execute(
+        _student_account_select_sql("sa.id=?"),
+        (account_id,),
+    ).fetchone()
+
+
+def _fetch_student_account_row_by_username(conn: sqlite3.Connection, username: str):
+    normalized_username = _normalize_username(username)
+    return conn.execute(
+        _student_account_select_sql("lower(sa.username)=lower(?)"),
+        (normalized_username,),
+    ).fetchone()
+
+
+def _get_active_class_invite_by_code_row(conn: sqlite3.Connection, invite_code: str):
+    normalized_code = (invite_code or "").strip()
+    return conn.execute(
+        """
+        SELECT
+            i.*,
+            c.name AS class_name,
+            c.subject AS class_subject,
+            c.grade AS class_grade
+        FROM class_invite_codes i
+        JOIN classes c ON c.id=i.class_id
+        WHERE upper(i.invite_code)=upper(?) AND i.status='active'
+        ORDER BY i.id DESC
+        LIMIT 1
+        """,
+        (normalized_code,),
+    ).fetchone()
+
+
+def get_active_class_invite_by_code(invite_code: str) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _get_active_class_invite_by_code_row(conn, invite_code)
+    return dict(row) if row else None
+
+
+def preview_student_class_invite(invite_code: str) -> Optional[dict]:
+    with get_conn() as conn:
+        invite = _get_active_class_invite_by_code_row(conn, invite_code)
+        if not invite:
+            return None
+        students = conn.execute(
+            """
+            SELECT s.*
+            FROM class_students cs
+            JOIN students s ON s.id=cs.student_id
+            WHERE cs.class_id=?
+            ORDER BY cs.id
+            """,
+            (invite["class_id"],),
+        ).fetchall()
+    return {
+        "class": {
+            "id": int(invite["class_id"]),
+            "name": invite["class_name"],
+            "subject": invite["class_subject"] or "",
+            "grade": invite["class_grade"] or "",
+            "organization_id": int(invite["organization_id"]),
+        },
+        "students": [dict(row) for row in students],
+    }
+
+
+def create_student_account_by_invite(
+    *,
+    invite_code: str,
+    student_id: int,
+    username: str,
+    password: str,
+) -> dict:
+    normalized_username = _normalize_username(username)
+    if not normalized_username:
+        raise ValueError("username required")
+    if len(password or "") < 6:
+        raise ValueError("password too short")
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        invite = _get_active_class_invite_by_code_row(conn, invite_code)
+        if not invite:
+            raise LookupError("invite not found")
+        student_row = conn.execute(
+            """
+            SELECT s.*
+            FROM class_students cs
+            JOIN students s ON s.id=cs.student_id
+            WHERE cs.class_id=? AND s.id=?
+            LIMIT 1
+            """,
+            (invite["class_id"], int(student_id)),
+        ).fetchone()
+        if not student_row:
+            raise LookupError("student not found")
+        if _fetch_student_account_row_by_username(conn, normalized_username):
+            raise ValueError("username exists")
+        existing_student_account = conn.execute(
+            "SELECT 1 FROM student_accounts WHERE student_id=? LIMIT 1",
+            (int(student_id),),
+        ).fetchone()
+        if existing_student_account:
+            raise ValueError("student account exists")
+        cur = conn.execute(
+            """
+            INSERT INTO student_accounts (
+                organization_id, student_id, username, password_hash, status
+            ) VALUES (?, ?, ?, ?, 'active')
+            """,
+            (
+                int(invite["organization_id"]),
+                int(student_id),
+                normalized_username,
+                hash_password(password),
+            ),
+        )
+        account_row = _fetch_student_account_row_by_id(conn, cur.lastrowid)
+    return _public_student_account_dict(account_row)
+
+
+def authenticate_student_account(username: str, password: str):
+    normalized_username = _normalize_username(username)
+    with get_conn() as conn:
+        row = _fetch_student_account_row_by_username(conn, normalized_username)
+        if not row:
+            return None, "username or password incorrect"
+        if row["status"] != "active":
+            return None, "account disabled"
+        if row["password_hash"] != hash_password(password):
+            return None, "username or password incorrect"
+        conn.execute(
+            "UPDATE student_accounts SET last_login=datetime('now','localtime') WHERE id=?",
+            (row["id"],),
+        )
+        row = _fetch_student_account_row_by_id(conn, row["id"])
+    return _public_student_account_dict(row), None
+
+
+def create_student_auth_session(account_id: int) -> str:
+    token = secrets.token_hex(32)
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO student_auth_sessions (token, account_id) VALUES (?, ?)",
+            (token, int(account_id)),
+        )
+        conn.execute(
+            """
+            DELETE FROM student_auth_sessions
+            WHERE account_id=? AND token NOT IN (
+                SELECT token FROM student_auth_sessions
+                WHERE account_id=?
+                ORDER BY created_at DESC, token DESC
+                LIMIT 10
+            )
+            """,
+            (int(account_id), int(account_id)),
+        )
+    return token
+
+
+def get_current_student_account(token: str):
+    if not token:
+        return None
+    with get_conn() as conn:
+        session = conn.execute(
+            "SELECT account_id FROM student_auth_sessions WHERE token=?",
+            (token,),
+        ).fetchone()
+        if not session:
+            return None
+        row = _fetch_student_account_row_by_id(conn, session["account_id"])
+    return _public_student_account_dict(row)
 
 
 def _ensure_organization(conn: sqlite3.Connection, name: str = DEFAULT_ORGANIZATION_NAME) -> sqlite3.Row:
@@ -4499,6 +4821,141 @@ def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
         )
         if cur.rowcount == 0:
             raise LookupError("lesson not found")
+
+
+def _dump_review_plan_run_json(value: object, fallback: object) -> str:
+    try:
+        return json.dumps(value if value is not None else fallback, ensure_ascii=False)
+    except TypeError:
+        return json.dumps(fallback, ensure_ascii=False)
+
+
+def _load_review_plan_run_json(value: object, fallback: object):
+    try:
+        parsed = json.loads(str(value or ""))
+    except json.JSONDecodeError:
+        return fallback
+    return parsed
+
+
+def save_review_plan_run(
+    *,
+    lesson_id: int,
+    organization_id: int,
+    trace_id: str,
+    status: str,
+    subject: str = "",
+    provider: str = "",
+    model: str = "",
+    prompt_version: str = "",
+    style_version: str = "",
+    schema_version: str = "",
+    warnings: object = None,
+    quality_review: object = None,
+    node_outputs: object = None,
+    logs: object = None,
+) -> None:
+    warnings_json = _dump_review_plan_run_json(warnings, [])
+    quality_review_json = _dump_review_plan_run_json(quality_review, {})
+    node_outputs_json = _dump_review_plan_run_json(node_outputs, {})
+    logs_json = _dump_review_plan_run_json(logs, [])
+    normalized_status = str(status or "running")
+    with get_conn() as conn:
+        if normalized_status == "running":
+            conn.execute(
+                """
+                UPDATE review_plan_runs
+                SET status='interrupted',
+                    updated_at=datetime('now','localtime')
+                WHERE lesson_id=?
+                  AND trace_id<>?
+                  AND status='running'
+                """,
+                (
+                    int(lesson_id),
+                    str(trace_id or ""),
+                ),
+            )
+        existing = conn.execute(
+            "SELECT id FROM review_plan_runs WHERE trace_id=?",
+            (str(trace_id or ""),),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE review_plan_runs
+                SET lesson_id=?, organization_id=?, status=?, subject=?, provider=?, model=?,
+                    prompt_version=?, style_version=?, schema_version=?, warnings_json=?,
+                    quality_review_json=?, node_outputs_json=?, logs_json=?,
+                    updated_at=datetime('now','localtime')
+                WHERE trace_id=?
+                """,
+                (
+                    int(lesson_id),
+                    int(organization_id),
+                    normalized_status,
+                    str(subject or ""),
+                    str(provider or ""),
+                    str(model or ""),
+                    str(prompt_version or ""),
+                    str(style_version or ""),
+                    str(schema_version or ""),
+                    warnings_json,
+                    quality_review_json,
+                    node_outputs_json,
+                    logs_json,
+                    str(trace_id or ""),
+                ),
+            )
+            return
+        conn.execute(
+            """
+            INSERT INTO review_plan_runs (
+                lesson_id, organization_id, trace_id, status, subject, provider, model,
+                prompt_version, style_version, schema_version, warnings_json,
+                quality_review_json, node_outputs_json, logs_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(lesson_id),
+                int(organization_id),
+                str(trace_id or ""),
+                normalized_status,
+                str(subject or ""),
+                str(provider or ""),
+                str(model or ""),
+                str(prompt_version or ""),
+                str(style_version or ""),
+                str(schema_version or ""),
+                warnings_json,
+                quality_review_json,
+                node_outputs_json,
+                logs_json,
+            ),
+        )
+
+
+def get_latest_review_plan_run_for_lesson(lesson_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM review_plan_runs
+            WHERE lesson_id=?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(lesson_id),),
+        ).fetchone()
+        if not row:
+            return None
+        run = dict(row)
+        run["warnings"] = _load_review_plan_run_json(run.get("warnings_json"), [])
+        run["quality_review"] = _load_review_plan_run_json(run.get("quality_review_json"), {})
+        run["node_outputs"] = _load_review_plan_run_json(run.get("node_outputs_json"), {})
+        run["logs"] = _load_review_plan_run_json(run.get("logs_json"), [])
+        return run
 
 
 def get_lesson(lesson_id: int):
@@ -5857,6 +6314,188 @@ def get_student_profile(student_id: int, organization_id: int | None = None) -> 
         if not row:
             return None
         return _build_student_profile_from_row(conn, row)
+_REVIEW_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _load_review_plan_days(raw_plan_json: str) -> tuple[dict, list[dict]]:
+    try:
+        plan = json.loads(raw_plan_json or "{}")
+    except json.JSONDecodeError:
+        return {}, []
+    if not isinstance(plan, dict):
+        return {}, []
+    days = plan.get("days")
+    if not isinstance(days, list):
+        return plan, []
+    return plan, [day for day in days if isinstance(day, dict)]
+
+
+def _extract_review_day_date(day_plan: dict) -> str:
+    for key in ("review_date", "date", "target_date"):
+        value = str(day_plan.get(key) or "").strip()
+        if _REVIEW_DATE_PATTERN.fullmatch(value):
+            return value
+    for key in ("label", "title", "day_label"):
+        match = _REVIEW_DATE_PATTERN.search(str(day_plan.get(key) or ""))
+        if match:
+            return match.group(0)
+    return ""
+
+
+def _extract_review_day_steps(day_plan: dict) -> list[str]:
+    raw_steps = day_plan.get("steps")
+    if not isinstance(raw_steps, list):
+        raw_steps = day_plan.get("tasks")
+    if not isinstance(raw_steps, list):
+        raw_steps = day_plan.get("items")
+    if not isinstance(raw_steps, list):
+        return ["按本课复习计划完成当天复习"]
+
+    steps: list[str] = []
+    for raw_step in raw_steps:
+        if isinstance(raw_step, str):
+            text = raw_step.strip()
+        elif isinstance(raw_step, dict):
+            text = str(
+                raw_step.get("title")
+                or raw_step.get("text")
+                or raw_step.get("content")
+                or raw_step.get("prompt")
+                or ""
+            ).strip()
+        else:
+            text = ""
+        if text:
+            steps.append(text)
+    return steps or ["按本课复习计划完成当天复习"]
+
+
+def _extract_review_day_pdf_page(day_plan: dict, day_index: int) -> tuple[int, bool]:
+    for key in ("pdf_page", "page", "start_page"):
+        value = day_plan.get(key)
+        if isinstance(value, bool):
+            continue
+        try:
+            page = int(value)
+        except (TypeError, ValueError):
+            continue
+        if page > 0:
+            return page, False
+    return max(1, 2 + int(day_index)), True
+
+
+def _student_review_student_row(conn: sqlite3.Connection, student_id: int):
+    return conn.execute(
+        """
+        SELECT
+            s.id,
+            s.name,
+            s.organization_id,
+            GROUP_CONCAT(DISTINCT c.name) AS class_names,
+            COUNT(DISTINCT c.id) AS class_count
+        FROM students s
+        JOIN class_students cs ON cs.student_id=s.id
+        JOIN classes c ON c.id=cs.class_id
+        WHERE s.id=?
+        GROUP BY s.id, s.name, s.organization_id
+        """,
+        (int(student_id),),
+    ).fetchone()
+
+
+def student_account_can_access_lesson(account: dict, lesson_id: int) -> bool:
+    student_id = int(((account or {}).get("student") or {}).get("id") or 0)
+    if not student_id:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM lessons l
+            JOIN class_students cs ON cs.class_id=l.class_id
+            WHERE l.id=? AND cs.student_id=?
+            LIMIT 1
+            """,
+            (int(lesson_id), student_id),
+        ).fetchone()
+    return row is not None
+
+
+def list_student_review_tasks_for_student_account(account: dict, review_date: str) -> Optional[dict]:
+    student_id = int(((account or {}).get("student") or {}).get("id") or 0)
+    organization_id = int((account or {}).get("organization_id") or 0)
+    if not student_id or not organization_id:
+        return None
+    with get_conn() as conn:
+        student_row = _student_review_student_row(conn, student_id)
+        if not student_row:
+            return None
+
+        rows = conn.execute(
+            """
+            SELECT
+                l.*,
+                c.name AS class_name,
+                c.subject AS class_subject,
+                c.grade AS class_grade
+            FROM lessons l
+            JOIN classes c ON c.id=l.class_id
+            JOIN class_students cs ON cs.class_id=c.id
+            WHERE cs.student_id=?
+              AND c.organization_id=?
+              AND COALESCE(l.plan_json, '') <> ''
+              AND COALESCE(l.record_status, 'ready') = 'ready'
+            ORDER BY l.date DESC, l.id DESC
+            """,
+            (student_id, organization_id),
+        ).fetchall()
+
+    tasks: list[dict] = []
+    for row in rows:
+        lesson = dict(row)
+        plan, day_plans = _load_review_plan_days(str(lesson.get("plan_json") or ""))
+        lesson_info = plan.get("lesson_info") if isinstance(plan.get("lesson_info"), dict) else {}
+        for day_index, day_plan in enumerate(day_plans):
+            if _extract_review_day_date(day_plan) != review_date:
+                continue
+            pdf_path = str(lesson.get("pdf_path") or "").strip()
+            pdf_page, pdf_page_estimated = _extract_review_day_pdf_page(day_plan, day_index)
+            lesson_id = int(lesson["id"])
+            topic = str(lesson.get("topic") or lesson_info.get("topic") or "").strip()
+            subject = str(lesson.get("subject") or lesson.get("class_subject") or lesson_info.get("subject") or "").strip()
+            label = str(day_plan.get("label") or day_plan.get("title") or f"{review_date} 复习").strip()
+            estimated_time = str(day_plan.get("time") or day_plan.get("estimated_time") or "").strip()
+            tasks.append(
+                {
+                    "lesson_id": lesson_id,
+                    "lesson_date": lesson.get("date") or "",
+                    "lesson_subject": subject,
+                    "lesson_topic": topic,
+                    "class_id": lesson.get("class_id"),
+                    "class_name": lesson.get("class_name") or "",
+                    "review_label": label,
+                    "estimated_time": estimated_time,
+                    "steps": _extract_review_day_steps(day_plan),
+                    "pdf_url": f"/api/student/pdf/{lesson_id}",
+                    "pdf_download_url": f"/api/student/pdf/download/{lesson_id}",
+                    "pdf_filename": Path(pdf_path).name if pdf_path else "",
+                    "pdf_available": bool(pdf_path and Path(pdf_path).exists()),
+                    "pdf_page": pdf_page,
+                    "pdf_page_estimated": pdf_page_estimated,
+                }
+            )
+
+    return {
+        "date": review_date,
+        "student": {
+            "id": int(student_row["id"]),
+            "name": student_row["name"],
+            "organization_id": student_row["organization_id"],
+            "class_names": _class_names_from_csv(student_row["class_names"]),
+            "class_count": int(student_row["class_count"] or 0),
+        },
+        "tasks": tasks,
+    }
 
 
 def _dedupe_student_name_in_class(
@@ -7372,6 +8011,34 @@ def update_user_profile(user_id: int, new_username: str, new_display_name: str):
         _sync_class_teacher_metadata(conn, [row["class_id"] for row in class_rows])
 
 
+def update_user_avatar_preferences(
+    user_id: int,
+    *,
+    avatar_source: str,
+    avatar_seed: str = "",
+    avatar_upload_path: str = "",
+):
+    normalized_source = str(avatar_source or "").strip() or "dicebear"
+    if normalized_source not in {"dicebear", "upload"}:
+        raise ValueError("avatar_source is invalid")
+    normalized_seed = str(avatar_seed or "").strip()
+    normalized_upload_path = str(avatar_upload_path or "").strip()
+    if normalized_source == "dicebear":
+        normalized_upload_path = ""
+    elif not normalized_upload_path:
+        raise ValueError("avatar_upload_path is required")
+    with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        conn.execute(
+            "UPDATE users SET avatar_source=?, avatar_seed=?, avatar_upload_path=? WHERE id=?",
+            (normalized_source, normalized_seed, normalized_upload_path, user_id),
+        )
+        updated = _fetch_user_row_by_id(conn, user_id)
+    return _public_user_dict(updated)
+
+
 def update_user_display_name_for_actor(actor_user: dict, target_user_id: int, display_name: str):
     normalized_display_name = (display_name or "").strip()
     if not normalized_display_name:
@@ -7570,6 +8237,23 @@ def reset_user_password_by_recovery(
         conn.execute(
             "UPDATE users SET password_hash=? WHERE id=?",
             (hash_password(new_password), row["id"]),
+        )
+
+
+def change_user_password(user_id: int, current_password: str, new_password: str) -> None:
+    if not current_password or not new_password:
+        raise ValueError("请填写当前密码和新密码")
+    if len(new_password) < 6:
+        raise ValueError("新密码至少需要 6 位")
+    with get_conn() as conn:
+        user_row = _fetch_user_row_by_id(conn, user_id)
+        if not user_row:
+            raise LookupError("user not found")
+        if user_row["password_hash"] != hash_password(current_password):
+            raise ValueError("当前密码不正确")
+        conn.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (hash_password(new_password), user_id),
         )
 
 
@@ -12299,8 +12983,8 @@ def cmd_add(args):
     print(f"\n课程信息：{lesson_date} | {subject} | {grade} | {topic}")
 
     # 3. AI 生成复习计划
-    from ai_processor import parse_and_generate_plan
-    plan = parse_and_generate_plan(
+    from review_plan_workflow.service import generate_single_lesson_review_plan
+    plan = generate_single_lesson_review_plan(
         summary_text=raw_text,
         subject=subject,
         grade=grade,

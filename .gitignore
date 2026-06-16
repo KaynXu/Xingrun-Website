@@ -20,6 +20,7 @@ data/database.db
 data/local.db
 data/lessons.db
 data/consultations.csv
+data/pdfs/student_portal_demo/
 
 # Local asset candidates (not wired into the product)
 Assets/

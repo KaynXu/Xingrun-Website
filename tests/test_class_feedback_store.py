@@ -261,6 +261,61 @@ class ClassFeedbackStoreTestCase(unittest.TestCase):
             "2026春季",
         )
 
+    def test_init_db_drops_empty_repair_legacy_table_and_restores_student_entry_unique_index(self):
+        with lesson_manager.get_conn() as conn:
+            conn.execute('DROP INDEX "idx_class_feedback_student_entries_task_student"')
+            conn.execute(
+                """
+                CREATE TABLE class_feedback_student_entries__repair_legacy (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL,
+                    student_id INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX idx_class_feedback_student_entries_task_student
+                ON class_feedback_student_entries__repair_legacy(task_id, student_id)
+                """
+            )
+            index_row = conn.execute(
+                """
+                SELECT tbl_name
+                FROM sqlite_master
+                WHERE type='index' AND name='idx_class_feedback_student_entries_task_student'
+                """
+            ).fetchone()
+            self.assertEqual(index_row["tbl_name"], "class_feedback_student_entries__repair_legacy")
+
+        lesson_manager.init_db()
+
+        with lesson_manager.get_conn() as conn:
+            legacy_table_row = conn.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type='table' AND name='class_feedback_student_entries__repair_legacy'
+                """
+            ).fetchone()
+            self.assertIsNone(legacy_table_row)
+            index_row = conn.execute(
+                """
+                SELECT tbl_name
+                FROM sqlite_master
+                WHERE type='index' AND name='idx_class_feedback_student_entries_task_student'
+                """
+            ).fetchone()
+            self.assertIsNotNone(index_row)
+            self.assertEqual(index_row["tbl_name"], "class_feedback_student_entries")
+            index_rows = conn.execute("PRAGMA index_list(class_feedback_student_entries)").fetchall()
+            self.assertTrue(
+                any(
+                    row["name"] == "idx_class_feedback_student_entries_task_student" and row["unique"] == 1
+                    for row in index_rows
+                )
+            )
+
     def test_create_task_persists_class_organization_id(self):
         owner = self._owner()
         class_id = lesson_manager.save_class("S01A1", subject="英语", grade="六年级")

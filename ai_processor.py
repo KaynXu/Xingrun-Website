@@ -18,8 +18,7 @@ import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from datetime import date
-from config_runtime import get_runtime_config
+from config_runtime import get_runtime_config, normalize_chat_provider, normalize_vision_provider
 from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
 
 # ─── 配置加载 ──────────────────────────────────────────────────────────────────
@@ -28,7 +27,7 @@ def _load_config() -> dict:
 
 
 def _provider_name() -> str:
-    return str(_load_config().get("provider", "deepseek") or "deepseek")
+    return normalize_chat_provider(_load_config().get("provider", "deepseek"))
 
 
 def _usage_dict(response, *, provider: str | None = None, model_fallback: str = "") -> dict:
@@ -45,7 +44,7 @@ def _get_client():
     """返回当前配置的 AI 服务商客户端（兼容 OpenAI SDK）。"""
     from openai import OpenAI
     cfg = _load_config()
-    provider = cfg.get("provider", "deepseek")
+    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
 
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
@@ -53,45 +52,29 @@ def _get_client():
             raise RuntimeError("未找到 DeepSeek API Key，请在设置页面配置。")
         return OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
 
-    elif provider == "mimo":
-        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
-        base_url = cfg.get("mimo_base_url", "").strip()
-        if not key:
-            raise RuntimeError("未找到 MiMo API Key，请在设置页面配置。")
-        if not base_url:
-            raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
+    key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        raise RuntimeError(
+            "未找到 OpenAI API Key。\n"
+            "请在设置页面配置 openai_api_key，"
+            "或设置环境变量 OPENAI_API_KEY。"
+        )
+    base_url = str(cfg.get("openai_base_url") or "").strip()
+    if base_url:
         return OpenAI(api_key=key, base_url=base_url)
-
-    else:  # openai（默认）
-        key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
-        if not key:
-            raise RuntimeError(
-                "未找到 OpenAI API Key。\n"
-                "请在设置页面配置 openai_api_key，"
-                "或设置环境变量 OPENAI_API_KEY。"
-            )
-        return OpenAI(api_key=key)
+    return OpenAI(api_key=key)
 
 
 def _get_vision_client():
     from openai import OpenAI
     cfg = _load_config()
-    provider = str(cfg.get("vision_provider") or "qwen").strip() or "qwen"
+    provider = normalize_vision_provider(cfg.get("vision_provider") or "qwen")
 
     if provider == "openai":
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
         if not key:
             raise RuntimeError("未找到 OpenAI API Key，请在设置页面配置。")
         return OpenAI(api_key=key)
-
-    if provider == "mimo":
-        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
-        base_url = cfg.get("mimo_base_url", "").strip()
-        if not key:
-            raise RuntimeError("未找到 MiMo API Key，请在设置页面配置。")
-        if not base_url:
-            raise RuntimeError("未配置 MiMo Base URL，请在设置页面填写接口地址。")
-        return OpenAI(api_key=key, base_url=base_url)
 
     if provider == "qwen":
         key = cfg.get("qwen_api_key", "") or os.environ.get("DASHSCOPE_API_KEY", "")
@@ -106,11 +89,9 @@ def _get_vision_client():
 def _get_chat_model() -> str:
     """返回当前服务商对应的对话模型名称。"""
     cfg = _load_config()
-    provider = cfg.get("provider", "deepseek")
+    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
     if provider == "deepseek":
         return cfg.get("deepseek_model", "deepseek-v4-pro")
-    elif provider == "mimo":
-        return cfg.get("mimo_model", "MiMo-7B-RL")
     return "gpt-4o"
 
 
@@ -377,12 +358,19 @@ items 中每一项必须包含：
 2.a 如果输入里提供了 reflection_summary、question_structured、knowledge_tags，就优先把它们当成这道题的主信息脊柱；child_reason_text、cause_note 和 topic_category 作为兼容补充，不要忽略更完整的结构化反思。
 2.b 内容证据优先级固定为：student_transcript > student_reason_text/学生原答案 > question_text/OCR/图片线索 > standard_solution > knowledge_tags/reflection_summary > 通用题型经验。高优先级信息存在时，不要绕开它去套低优先级标签。
 2.c 错因复盘必须优先基于 student_transcript。如果 student_transcript 存在，先判断学生真实卡点：他在哪一步误解、遗漏、跳步，或把哪个条件没有翻译成数学关系；必须结合本题条件解释。没有录音转录时，只能根据题目条件、学生文字、标准解法和常见题型写“本题常见卡点是”“最容易漏的是”，不得写成“学生一定是……”。
+2.c.1 当 student_transcript 缺失、student_reason_text 缺失或过于模糊、OCR 识别不完整、题干只剩图片线索、或错因解析失败时，自动进入 fallback 模式。fallback 模式下，不要直接输出“认真审题”“注意关键步骤”“下次多练”这类通用反思。
+2.c.2 fallback 模式下，你必须先在内部完整过一遍这道题的做题分析：这道题的目标是什么、题目给了哪些关键条件、每个条件通常能推出什么、哪些条件之间需要建立联系、第一步应该先看什么、学生最可能卡在哪里、这题真正考的是哪类思维。这个内部分析只用于生成引导式挖空，不要把整段解析原样输出给学生。
+2.c.3 fallback 模式产出的挖空复盘，重点要引导学生回答“看到这个条件，我应该想到什么”“这个条件能推出什么关系”“当前目标和已知条件之间缺了哪座桥”“我应该先找角度关系、长度关系、函数关系、受力关系还是代数关系”，不要只带学生重复计算。
 2.d 下次提醒不是复述本题答案，而是总结可迁移的题型动作。几何题要优先把平行、垂直、等角、60°、辅助点分别翻译成可用关系；方程、函数、行程等题也要写成下次先做什么、先检查什么、如何触发正确方法。
 2.e 挖空复盘必须从错因复盘和下次提醒里抽取关键数学动作、关键条件或题型框架。禁止出现“我这题错在 ______”“下次我要先看 ______”“我要注意 ______”“这一步需要先看清 ______”这类没有上下文的空格；每个空格前后必须让学生知道要填什么。
 2.f structured_content.blank_review_blocks 必须稳定包含“错因复盘”和“下次提醒”两类 block；可以用更具体标题，但 title 或 lines 里必须看得出这两类用途。
 2.g 整体语气要像老师把学生重新带回题目，不像在写分析报告。优先写“先看什么、先判断什么、再把什么改写成什么、最后检查什么”，少写“你的问题是……”“本次目标是……”这类评语句。
 2.h 每道题至少给学生一个清晰的“入口动作”。读完方法提醒后，学生应该知道这题重做时第一步先写什么、先圈什么、先判断什么。
 2.i method_hint_lines、reason_blank_prompt、improvement_summary_prompt 都优先写成动作链，不要只写判断句。尽量出现“先……再……最后……”或“先由……推出……，再把……改写成……，最后检查……”这种可执行顺序。
+2.j 不同题型不要共用同一套 fallback 话术。至少按下面的入口来组织引导：几何题先看角、平行、垂直、相似、圆、辅助线、面积关系；代数题先看目标式、已知式、变形方向、因式分解、代换关系；函数题先看定义域、图像特征、交点、单调性、极值、参数意义；微积分题先看求导/积分对象、变量关系、边界条件、几何意义；力学题先看受力、运动状态、约束条件、方向、守恒或方程选择；概率统计题先看事件定义、条件概率、分布类型、独立性、样本空间。
+2.k 按 Humanizer-zh 的规则写字：不要用“此外”“然而”“总的来说”“值得注意的是”“我们需要注意”“本题考察了”“这不仅仅是”这类报告腔或 AI 套话；不要写宣传式、总结式、口号式结尾；直接说这题先看什么、先做什么。
+2.l 如果学生自述只有“不会”“算错了”“看错了”“粗心了”这类空泛词，不要把这些词原样当成引导入口；要回到题目里的具体对象、条件、字母式子或图形关系来写。
+2.m 学生可见文案里不要出现“未分类”“待补充”“需要确认”“同类题经验”这类后台标签词；缺少标签时也要自然改写成“这类代数题”“这类几何题”之类的说法。
 3. 不要单独生成“下次提醒”或类似的第三个提示框；所有辅助都必须融进上面两个书写区里。
 4. 不要把两个书写区的小标题固定成“把错因补完整”“写一写以后怎么做”等统一模板，要根据每题错因自然生成。
 5. 两个书写区都要以挖空题为主，不要把其中任何一个写成纯叙述、开放作文题或老师提示语。
@@ -452,9 +440,9 @@ WRONG_QUESTION_PRACTICE_PACK_VARIANT_REVIEW_PROMPT = """你是错题练习变式
 后续再用一句话说明原因。"""
 
 WRONG_QUESTION_PRACTICE_SCHEMA_VERSION = "wrong_question_practice_schema.v1"
-WRONG_QUESTION_PRACTICE_PROMPT_VERSION = "wrong_question_practice_prompt.2026-06-03"
-WRONG_QUESTION_PRACTICE_TEMPLATE_VERSION = "wrong_question_practice_template.2026-06-03"
-WRONG_QUESTION_PRACTICE_RULE_VERSION = "wrong_question_practice_rules.2026-06-03"
+WRONG_QUESTION_PRACTICE_PROMPT_VERSION = "wrong_question_practice_prompt.2026-06-05"
+WRONG_QUESTION_PRACTICE_TEMPLATE_VERSION = "wrong_question_practice_template.2026-06-05"
+WRONG_QUESTION_PRACTICE_RULE_VERSION = "wrong_question_practice_rules.2026-06-05"
 
 WEEKLY_WRONG_QUESTION_FOLLOWUP_PROMPT = """你是老师微信沟通助手。
 你会收到学生本周错题概况，请写一段老师可以直接发给家长的微信。
@@ -809,6 +797,48 @@ def _clean_wrong_question_practice_prompt_text(value: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
+_WRONG_QUESTION_GENERIC_REASON_TEXTS = {
+    "不会",
+    "不太会",
+    "算错了",
+    "看错了",
+    "粗心了",
+    "做错了",
+    "没做出来",
+}
+
+_WRONG_QUESTION_WEAK_TAG_TEXTS = {
+    "未分类",
+    "待补充",
+    "同类题",
+    "同类题经验",
+    "需要确认",
+    "待确认",
+}
+
+_WRONG_QUESTION_HUMANIZER_PREFIX_RE = re.compile(
+    r"^(?:此外|另外|然而|总的来说|值得注意的是|需要注意的是|可以看到|实际上|当然|希望这对你有帮助(?:。|！)?|请告诉我(?:。|！)?)"
+)
+
+_WRONG_QUESTION_HUMANIZER_REPLACEMENTS = [
+    ("这不仅仅是", "这不是"),
+    ("本题考察了", "这题要用到"),
+    ("我们需要注意", "先看"),
+    ("值得注意的是", ""),
+    ("需要注意的是", ""),
+    ("总的来说", ""),
+    ("与此同时", ""),
+    ("希望这对你有帮助。", ""),
+    ("希望这对你有帮助", ""),
+    ("请告诉我。", ""),
+    ("请告诉我", ""),
+    ("这题先别急着算，关键是把", "别急着往下算，先把"),
+    ("如果一时接不上，就回头问自己：现在缺的是", "要是还连不上，就问自己还差哪一步"),
+    ("里的哪一座", "里的哪一步"),
+    ("再决定下一步", "再往下做"),
+]
+
+
 def _normalize_string_list(values: object, *, limit: int = 0) -> list[str]:
     normalized = [
         str(item or "").strip()
@@ -856,7 +886,8 @@ def _extract_prompt_title_and_lines(prompt: str) -> tuple[str, list[str]]:
 
 
 def _is_low_information_wrong_question_cloze(text: object) -> bool:
-    normalized = re.sub(r"\s+", "", str(text or "").strip())
+    raw_text = str(text or "").strip()
+    normalized = re.sub(r"\s+", "", raw_text)
     if not normalized:
         return False
     low_information_patterns = [
@@ -869,6 +900,19 @@ def _is_low_information_wrong_question_cloze(text: object) -> bool:
         "做完后我要检查______",
     ]
     if any(pattern in normalized for pattern in low_information_patterns):
+        return True
+    generic_guidance_patterns = [
+        "认真审题",
+        "理解题意",
+        "先理解题意",
+        "关键步骤",
+        "题目条件",
+        "注意条件",
+        "注意计算细节",
+        "检查关键条件",
+        "多练类似题目",
+    ]
+    if any(pattern in raw_text for pattern in generic_guidance_patterns) and not _contains_specific_math_anchor(raw_text):
         return True
     return "______" in normalized and len(normalized.replace("______", "")) <= 8
 
@@ -883,6 +927,339 @@ def _first_non_empty_text(*values: object) -> str:
         if text:
             return text
     return ""
+
+
+def _shorten_wrong_question_text(value: object, limit: int = 28) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(limit - 1, 1)].rstrip()}…"
+
+
+def _dedupe_non_empty_texts(values: list[str], *, limit: int = 4) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        deduped.append(text)
+        seen.add(text)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _contains_specific_math_anchor(text: object) -> bool:
+    raw_text = str(text or "").strip()
+    if not raw_text:
+        return False
+    if re.search(r"[A-Z]{1,3}|\d|[=<>≤≥⊥∥∠△□○%+\-×÷/\\^]", raw_text):
+        return True
+    specific_keywords = [
+        "垂直",
+        "平行",
+        "等角",
+        "相似",
+        "辅助线",
+        "面积",
+        "角平分线",
+        "切线",
+        "分母",
+        "因式",
+        "代换",
+        "移项",
+        "方程",
+        "定义域",
+        "单调",
+        "交点",
+        "极值",
+        "导数",
+        "积分",
+        "受力",
+        "守恒",
+        "样本空间",
+        "条件概率",
+        "分布",
+        "速度",
+        "位移",
+    ]
+    return any(keyword in raw_text for keyword in specific_keywords)
+
+
+def _is_generic_wrong_question_reason(text: object) -> bool:
+    normalized = re.sub(r"\s+", "", str(text or "").strip())
+    if not normalized:
+        return True
+    return normalized in _WRONG_QUESTION_GENERIC_REASON_TEXTS
+
+
+def _is_weak_wrong_question_anchor(text: object) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return True
+    if re.fullmatch(r"[xyzamn]", normalized):
+        return True
+    return normalized in {"条件", "关系", "目标", "题目条件"} or normalized in _WRONG_QUESTION_WEAK_TAG_TEXTS
+
+
+def _default_wrong_question_topic_phrase(kind: str) -> str:
+    return {
+        "geometry": "这类几何题",
+        "algebra": "这类代数题",
+        "function": "这类函数题",
+        "calculus": "这类微积分题",
+        "mechanics": "这类力学题",
+        "probability": "这类概率统计题",
+        "generic": "这类题",
+    }.get(kind, "这类题")
+
+
+def _humanize_wrong_question_copy(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text)
+    text = _WRONG_QUESTION_HUMANIZER_PREFIX_RE.sub("", text).strip(" ，；：")
+    for old, new in _WRONG_QUESTION_HUMANIZER_REPLACEMENTS:
+        text = text.replace(old, new)
+    text = text.replace("先先", "先")
+    text = text.replace("未分类题", "这类题")
+    text = text.replace("未分类", "这类题")
+    text = text.replace("待补充", "这一步")
+    text = text.replace("同类题经验", "这类题")
+    text = text.replace("同类题", "这类题")
+    text = re.sub(r"[，,]{2,}", "，", text)
+    text = re.sub(r"[。]{2,}", "。", text)
+    return text.strip(" ，；")
+
+
+def _humanize_wrong_question_copy_list(values: object, *, limit: int = 0) -> list[str]:
+    normalized: list[str] = []
+    for value in _normalize_string_list(values):
+        text = _humanize_wrong_question_copy(value)
+        if text:
+            normalized.append(text)
+    if limit > 0:
+        return normalized[:limit]
+    return normalized
+
+
+def _combine_wrong_question_analysis_text(context: dict) -> str:
+    question_structured = context.get("question_structured") if isinstance(context.get("question_structured"), dict) else {}
+    knowledge_tags = context.get("knowledge_tags") if isinstance(context.get("knowledge_tags"), list) else []
+    parts = [
+        str(context.get("question_text") or "").strip(),
+        str(question_structured.get("stem") or "").strip(),
+        str(context.get("topic_category") or "").strip(),
+        " ".join(str(tag or "").strip() for tag in knowledge_tags if str(tag or "").strip()),
+        str(context.get("standard_solution") or "").strip(),
+    ]
+    return "\n".join(part for part in parts if part)
+
+
+def _infer_wrong_question_practice_kind(context: dict) -> str:
+    analysis_text = _combine_wrong_question_analysis_text(context)
+    if context.get("is_geometry"):
+        return "geometry"
+
+    rules = [
+        ("calculus", ["导数", "积分", "极限", "微分", "切线斜率", "变化率", "导函数"]),
+        ("mechanics", ["受力", "牛顿", "加速度", "位移", "速度变化", "约束条件", "守恒", "动量", "能量", "功率"]),
+        ("probability", ["概率", "统计", "随机", "样本空间", "条件概率", "独立", "分布", "期望", "方差", "频率"]),
+        ("function", ["函数", "定义域", "值域", "图像", "单调", "极值", "零点", "交点", "参数", "斜率"]),
+        ("algebra", ["方程", "代数", "因式", "分母", "配方", "代换", "移项", "根式", "整式", "分式", "化简", "求值"]),
+        ("geometry", ["垂直", "平行", "等角", "相似", "圆", "辅助线", "面积", "角平分线", "切线", "三角形"]),
+    ]
+    for kind, keywords in rules:
+        if any(keyword in analysis_text for keyword in keywords):
+            return kind
+    if re.search(r"[A-Z]{1,3}\s*[⊥∥]|∠[A-Z]{1,3}|△[A-Z]{3}", analysis_text):
+        return "geometry"
+    return "generic"
+
+
+def _extract_wrong_question_goal(context: dict, kind: str) -> str:
+    question_structured = context.get("question_structured") if isinstance(context.get("question_structured"), dict) else {}
+    question_text = _first_non_empty_text(context.get("question_text"), question_structured.get("stem"))
+    for pattern in [
+        r"(求证[^。；，,\n]+)",
+        r"(证明[^。；，,\n]+)",
+        r"(求[^。；，,\n]+)",
+        r"(解[^。；，,\n]+)",
+        r"(化简[^。；，,\n]+)",
+        r"(比较[^。；，,\n]+)",
+        r"(判断[^。；，,\n]+)",
+    ]:
+        match = re.search(pattern, question_text)
+        if match:
+            return _shorten_wrong_question_text(match.group(1), limit=22)
+
+    defaults = {
+        "geometry": "找到图上能连到目标的关系",
+        "algebra": "把已知式稳稳变到目标式",
+        "function": "判断函数关系或参数范围",
+        "calculus": "判断变化关系或边界条件",
+        "mechanics": "连起受力、状态和方程",
+        "probability": "先定事件关系再下手计算",
+        "generic": "先把已知和目标连起来",
+    }
+    return defaults.get(kind, defaults["generic"])
+
+
+def _extract_wrong_question_condition_anchors(context: dict, kind: str) -> list[str]:
+    analysis_text = _combine_wrong_question_analysis_text(context)
+    knowledge_tags = context.get("knowledge_tags") if isinstance(context.get("knowledge_tags"), list) else []
+    matches: list[str] = []
+
+    for pattern in [
+        r"[A-Za-z]{1,3}\s*=\s*[^，。；\n]+",
+        r"[A-Z]{1,3}\s*⊥\s*[A-Z]{1,3}",
+        r"[A-Z]{1,3}\s*∥\s*[A-Z]{1,3}",
+        r"∠[A-Z]{1,3}\s*=\s*∠[A-Z]{1,3}",
+        r"\b\d+°",
+        r"\b[xyzamn]\b",
+        r"f\([^)]*\)",
+    ]:
+        matches.extend(match.group(0).replace(" ", "") for match in re.finditer(pattern, analysis_text))
+
+    keyword_map = {
+        "geometry": ["垂直", "平行", "等角", "相似", "圆", "辅助线", "面积", "角平分线", "切线", "中点"],
+        "algebra": ["分母", "因式", "代换", "移项", "配方", "未知数", "比例", "同类项", "根式", "方程"],
+        "function": ["定义域", "图像", "交点", "单调", "极值", "参数", "零点", "自变量", "函数值"],
+        "calculus": ["导数", "积分", "边界条件", "变化率", "切线", "极值", "单调", "几何意义"],
+        "mechanics": ["受力", "速度", "加速度", "位移", "方向", "守恒", "约束条件", "平衡", "运动状态"],
+        "probability": ["事件", "条件概率", "样本空间", "独立", "分布", "频率", "均值", "方差"],
+        "generic": ["条件", "关系", "目标"],
+    }
+    for keyword in keyword_map.get(kind, keyword_map["generic"]):
+        if keyword in analysis_text:
+            matches.append(keyword)
+
+    matches.extend(
+        str(tag or "").strip()
+        for tag in knowledge_tags
+        if str(tag or "").strip() and str(tag or "").strip() not in _WRONG_QUESTION_WEAK_TAG_TEXTS
+    )
+    topic_anchor = str(context.get("topic_category") or "").strip()
+    if topic_anchor and topic_anchor not in _WRONG_QUESTION_WEAK_TAG_TEXTS:
+        matches.append(topic_anchor)
+
+    filtered_matches = [match for match in matches if not _is_weak_wrong_question_anchor(match)]
+    return _dedupe_non_empty_texts(filtered_matches or matches, limit=4)
+
+
+def _build_wrong_question_guided_analysis(context: dict) -> dict:
+    kind = _infer_wrong_question_practice_kind(context)
+    goal = _extract_wrong_question_goal(context, kind)
+    conditions = _extract_wrong_question_condition_anchors(context, kind)
+    raw_topic_anchor = _first_non_empty_text(context.get("topic_category"))
+    topic_phrase = _default_wrong_question_topic_phrase(kind)
+    topic_anchor = raw_topic_anchor if raw_topic_anchor and raw_topic_anchor not in _WRONG_QUESTION_WEAK_TAG_TEXTS else topic_phrase
+    focus_source = _first_non_empty_text(
+        context.get("student_transcript"),
+        context.get("student_reason_text"),
+        context.get("cause_note"),
+        (
+            context.get("reflection_summary", {}).get("unknown_step")
+            if isinstance(context.get("reflection_summary"), dict)
+            else ""
+        ),
+    )
+    focus_hint = _shorten_wrong_question_text(focus_source, limit=24)
+    primary_condition = conditions[0] if conditions else ""
+    secondary_condition = conditions[1] if len(conditions) > 1 else ""
+    condition_pair = (
+        f"{primary_condition} 和 {secondary_condition}"
+        if primary_condition and secondary_condition and primary_condition != secondary_condition
+        else primary_condition
+    )
+
+    profiles = {
+        "geometry": {
+            "reason_title": "【图上先找关系】",
+            "reminder_title": "【下次先连条件】",
+            "default_pair": "图上的已知角和辅助线",
+            "focus_condition": primary_condition or "垂直、平行或等角",
+            "relation_bucket": "角度、长度、相似或辅助线关系",
+            "start_action": "先在图上标出已知角、直角或对应边",
+            "bridge_bucket": "角度、长度、相似还是辅助线",
+        },
+        "algebra": {
+            "reason_title": "【式子先看方向】",
+            "reminder_title": "【下次先找变形】",
+            "default_pair": "已知式和目标式",
+            "focus_condition": primary_condition or "分母、因式或代换条件",
+            "relation_bucket": "等式、变形或代换关系",
+            "start_action": "先盯住目标式和已知式差在哪一步",
+            "bridge_bucket": "移项、去分母、因式还是代换",
+        },
+        "function": {
+            "reason_title": "【先盯定义域和图像】",
+            "reminder_title": "【下次先看函数桥】",
+            "default_pair": "定义域和图像特征",
+            "focus_condition": primary_condition or "定义域、单调或参数条件",
+            "relation_bucket": "单调、交点或参数关系",
+            "start_action": "先圈出自变量范围和图像线索",
+            "bridge_bucket": "定义域、图像、单调还是参数",
+        },
+        "calculus": {
+            "reason_title": "【先看对象和边界】",
+            "reminder_title": "【下次先定变化关系】",
+            "default_pair": "求导对象和边界条件",
+            "focus_condition": primary_condition or "导数、积分或边界条件",
+            "relation_bucket": "变化率、单调或几何意义",
+            "start_action": "先看要求导还是积分，再圈边界条件",
+            "bridge_bucket": "变化率、单调、边界还是几何意义",
+        },
+        "mechanics": {
+            "reason_title": "【先画受力和状态】",
+            "reminder_title": "【下次先选方程】",
+            "default_pair": "受力情况和运动状态",
+            "focus_condition": primary_condition or "受力、方向或约束条件",
+            "relation_bucket": "受力、守恒或运动方程",
+            "start_action": "先分清受力、方向和当前运动状态",
+            "bridge_bucket": "受力、守恒、位移还是速度关系",
+        },
+        "probability": {
+            "reason_title": "【先定事件和样本】",
+            "reminder_title": "【下次先拆事件】",
+            "default_pair": "事件定义和样本空间",
+            "focus_condition": primary_condition or "事件、条件概率或分布信息",
+            "relation_bucket": "事件、独立性或分布关系",
+            "start_action": "先把事件和样本空间写清楚",
+            "bridge_bucket": "事件、独立、条件概率还是分布",
+        },
+        "generic": {
+            "reason_title": "【先把条件连起来】",
+            "reminder_title": "【下次先找入口】",
+            "default_pair": "题目条件和目标",
+            "focus_condition": primary_condition or "关键条件",
+            "relation_bucket": "条件和目标之间的数学关系",
+            "start_action": "先圈出已知和问题在问什么",
+            "bridge_bucket": "条件、关系、式子还是图形线索",
+        },
+    }
+    profile = profiles.get(kind, profiles["generic"])
+    normalized_topic_phrase = topic_anchor if topic_anchor == topic_phrase else (topic_anchor if topic_anchor.endswith("题") else f"{topic_anchor}题")
+    if not condition_pair:
+        condition_pair = profile["default_pair"]
+    focus_condition = profile["focus_condition"] if _is_weak_wrong_question_anchor(primary_condition) else primary_condition
+
+    return {
+        "kind": kind,
+        "goal": goal,
+        "topic_anchor": topic_anchor,
+        "topic_phrase": normalized_topic_phrase,
+        "focus_hint": focus_hint,
+        "condition_pair": condition_pair,
+        "focus_condition": focus_condition,
+        "relation_bucket": profile["relation_bucket"],
+        "start_action": profile["start_action"],
+        "bridge_bucket": profile["bridge_bucket"],
+        "reason_title": profile["reason_title"],
+        "reminder_title": profile["reminder_title"],
+    }
 
 
 def _pick_condition_anchor(context: dict) -> str:
@@ -900,45 +1277,64 @@ def _build_contextual_wrong_question_practice_blocks(context: dict) -> list[dict
     knowledge_tags = context.get("knowledge_tags") if isinstance(context.get("knowledge_tags"), list) else []
     student_transcript = str(context.get("student_transcript") or "").strip()
     reason_text = str(context.get("student_reason_text") or context.get("child_reason_text") or "").strip()
-    why_wrong = _first_non_empty_text(reflection.get("why_wrong"), context.get("cause_note"), context.get("primary_error_type"))
-    unknown_step = _first_non_empty_text(reflection.get("unknown_step"), context.get("cause_note"), context.get("topic_category"))
-    help_preference = _first_non_empty_text(reflection.get("help_preference"), context.get("topic_category"))
+    why_wrong = _first_non_empty_text(reflection.get("why_wrong"), context.get("cause_note"))
+    unknown_step = _first_non_empty_text(reflection.get("unknown_step"), context.get("topic_category"))
+    if _is_weak_wrong_question_anchor(unknown_step):
+        unknown_step = ""
+    help_preference = _first_non_empty_text(reflection.get("help_preference"))
+    tag_anchor = "、".join(
+        str(tag or "").strip()
+        for tag in knowledge_tags[:3]
+        if str(tag or "").strip() and not _is_weak_wrong_question_anchor(tag)
+    )
+    analysis = _build_wrong_question_guided_analysis(context)
     condition_anchor = _pick_condition_anchor(context)
-    topic_anchor = _first_non_empty_text(context.get("topic_category"), "同类题")
-    tag_anchor = "、".join(str(tag or "").strip() for tag in knowledge_tags[:3] if str(tag or "").strip())
+    source_anchor = _first_non_empty_text(
+        "" if _is_generic_wrong_question_reason(student_transcript) else student_transcript,
+        "" if _is_generic_wrong_question_reason(reason_text) else reason_text,
+        why_wrong,
+        unknown_step,
+    )
+    if _is_weak_wrong_question_anchor(source_anchor):
+        source_anchor = ""
+    source_prefix = f"先回到“{_shorten_wrong_question_text(source_anchor, limit=22)}”这一步，" if source_anchor else ""
+    condition_pair = analysis["condition_pair"] or condition_anchor
+    focus_condition = analysis["focus_condition"] or condition_anchor
 
-    if student_transcript:
-        reason_line = (
-            f"先回到你录音里提到的“{student_transcript}”，这一步要先把 {condition_anchor} "
-            "翻译成 ______。"
-        )
-    elif why_wrong:
-        reason_line = f"这类题别急着算，先把 {condition_anchor} 翻译成 ______；本题最容易卡在 {why_wrong}。"
-    elif reason_text:
-        reason_line = f"先回到你写下的“{reason_text}”，把 {condition_anchor} 对应到 ______，再继续往下推。"
-    else:
-        reason_line = f"本题信息还不完整，先回到原图和题干，确认 {condition_anchor} 表示的 ______。"
-
-    if unknown_step and unknown_step not in reason_line:
-        reason_second_line = f"别急着算，先说清“{unknown_step}”对应的是 ______，再写下一步。"
-    else:
-        reason_second_line = f"看到 {condition_anchor} 时，先标出 ______，再继续找关系。"
+    reason_line = (
+        f"{source_prefix}像这题，先看 {condition_pair}，"
+        "想想它们能不能连出 ______。"
+    )
+    reason_second_line = (
+        f"别急着往下算，先把 {focus_condition} "
+        f"改成能直接用的 ______，再往下做。"
+    )
 
     if help_preference:
-        reminder_line = f"下次遇到 {topic_anchor} 题，先按“{help_preference}”检查 ______，再下笔。"
-    elif tag_anchor:
-        reminder_line = f"下次遇到 {topic_anchor} 题，先把 {tag_anchor} 这些条件分别翻译成 ______。"
+        reminder_line = (
+            f"下次遇到 {analysis['topic_phrase']}，先按“{_shorten_wrong_question_text(help_preference, limit=18)}”的顺序，"
+            f"{analysis['start_action']}，再找 ______。"
+        )
     else:
-        reminder_line = f"下次遇到同类题，先把已知条件翻译成图上或式子里的 ______。"
+        reminder_line = (
+            f"下次遇到 {analysis['topic_phrase']}，我先{analysis['start_action']}，"
+            "先找 ______，再下笔。"
+        )
 
-    if tag_anchor:
-        reminder_second_line = f"再问自己：{tag_anchor} 是在提示角度、长度、比例还是 ______。"
-    else:
-        reminder_second_line = "如果只有图片信息，先请老师确认关键条件，再补完整 ______。"
+    bridge_source = tag_anchor or analysis["bridge_bucket"]
+    reminder_second_line = (
+        f"要是还连不上，就问自己：在 {bridge_source} 这里，还差哪一步 ______。"
+    )
 
     return [
-        {"title": "错因复盘", "lines": [reason_line, reason_second_line]},
-        {"title": "下次提醒", "lines": [reminder_line, reminder_second_line]},
+        {
+            "title": _humanize_wrong_question_copy(analysis["reason_title"]),
+            "lines": _humanize_wrong_question_copy_list([reason_line, reason_second_line], limit=2),
+        },
+        {
+            "title": _humanize_wrong_question_copy(analysis["reminder_title"]),
+            "lines": _humanize_wrong_question_copy_list([reminder_line, reminder_second_line], limit=2),
+        },
     ]
 
 
@@ -957,24 +1353,28 @@ def _normalize_wrong_question_practice_structured_content(
     reason_title, reason_lines = _extract_prompt_title_and_lines(reason_blank_prompt)
     improvement_title, improvement_lines = _extract_prompt_title_and_lines(improvement_summary_prompt)
 
-    mistake_focus = str(
+    mistake_focus = _humanize_wrong_question_copy(
+        str(
         structured_source.get("mistake_focus")
         or structured_source.get("mistakeFocus")
         or reason_title
         or ""
     ).strip()
-    review_goal = str(
+    )
+    review_goal = _humanize_wrong_question_copy(
+        str(
         structured_source.get("review_goal")
         or structured_source.get("reviewGoal")
         or improvement_title
         or ""
     ).strip()
-    method_hint_lines = _normalize_string_list(
+    )
+    method_hint_lines = _humanize_wrong_question_copy_list(
         structured_source.get("method_hint_lines") or structured_source.get("methodHintLines"),
         limit=3,
     )
     if not method_hint_lines and pitfall_reminder:
-        method_hint_lines = [str(pitfall_reminder).strip()]
+        method_hint_lines = [_humanize_wrong_question_copy(str(pitfall_reminder).strip())]
 
     raw_blocks = structured_source.get("blank_review_blocks") or structured_source.get("blankReviewBlocks")
     normalized_blocks = []
@@ -985,28 +1385,27 @@ def _normalize_wrong_question_practice_structured_content(
             block_lines = _normalize_string_list(block.get("lines"), limit=2)
             if block_title or block_lines:
                 normalized_blocks.append(
-                    {
-                        "title": block_title,
-                        "lines": block_lines,
-                    }
+                    {"title": _humanize_wrong_question_copy(block_title), "lines": _humanize_wrong_question_copy_list(block_lines, limit=2)}
                 )
     if not normalized_blocks:
         fallback_blocks = []
         if reason_title or reason_lines:
-            fallback_blocks.append({"title": reason_title, "lines": reason_lines[:2]})
+            fallback_blocks.append({"title": _humanize_wrong_question_copy(reason_title), "lines": _humanize_wrong_question_copy_list(reason_lines[:2], limit=2)})
         if improvement_title or improvement_lines:
-            fallback_blocks.append({"title": improvement_title, "lines": improvement_lines[:2]})
+            fallback_blocks.append({"title": _humanize_wrong_question_copy(improvement_title), "lines": _humanize_wrong_question_copy_list(improvement_lines[:2], limit=2)})
         normalized_blocks = [block for block in fallback_blocks if block["title"] or block["lines"]]
     if any(_has_low_information_wrong_question_cloze(block.get("lines")) for block in normalized_blocks):
         contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context or {})
         if contextual_blocks:
             normalized_blocks = contextual_blocks
 
-    teacher_feedback = str(
+    teacher_feedback = _humanize_wrong_question_copy(
+        str(
         structured_source.get("teacher_feedback")
         or structured_source.get("teacherFeedback")
         or ""
     ).strip()
+    )
     confirmation_reasons = _normalize_string_list(
         structured_source.get("confirmation_reasons") or structured_source.get("confirmationReasons"),
     )
@@ -1076,6 +1475,8 @@ def _normalize_wrong_question_practice_sheet_material(
                 reason_body = "\n".join(contextual_blocks[0]["lines"])
             while reason_body.count("______") < 2:
                 reason_body = f"{reason_body.rstrip('。')} ______。"
+            reason_title = _humanize_wrong_question_copy(reason_title)
+            reason_body = _humanize_wrong_question_copy(reason_body)
             reason_blank_prompt = (
                 f"{reason_title}\n{reason_body}".strip()
                 if reason_title
@@ -1090,6 +1491,8 @@ def _normalize_wrong_question_practice_sheet_material(
                     contextual_blocks = _build_contextual_wrong_question_practice_blocks(source_context)
                     improvement_title = contextual_blocks[1]["title"]
                     improvement_body = "\n".join(contextual_blocks[1]["lines"])
+                improvement_title = _humanize_wrong_question_copy(improvement_title)
+                improvement_body = _humanize_wrong_question_copy(improvement_body)
                 improvement_summary_prompt = f"{improvement_title}\n{improvement_body}".strip()
             else:
                 improvement_body = improvement_lines[0]
@@ -1099,7 +1502,7 @@ def _normalize_wrong_question_practice_sheet_material(
                         f"{contextual_blocks[1]['title']}\n" + "\n".join(contextual_blocks[1]["lines"])
                     ).strip()
                 else:
-                    improvement_summary_prompt = improvement_body
+                    improvement_summary_prompt = _humanize_wrong_question_copy(improvement_body)
 
         if (
             not wrong_question_record_id
@@ -1554,183 +1957,6 @@ def generate_weekly_wrong_question_followup_message(
     return content
 
 
-# ─── 生成复习计划的提示词 ───────────────────────────────────────────────────────
-PLAN_SYSTEM_PROMPT = r"""你是一位专业的初中学科辅导老师，擅长把课堂反馈整理成高质量课后复习计划。
-你将收到课堂总结与元信息，必须返回一个可直接用于 PDF 生成的结构化 JSON。
-
-【最高优先级：固定工作流（每次都必须严格执行）】
-1) 复习节点固定为 5 天：第1天、第2天、第7天、第14天、第30天。
-2) 每个复习日都必须完整覆盖整节课全部核心知识点，不能把 5 天拆成各自只复习一部分。
-3) 每天复习时长控制在 10-20 分钟。
-4) 题型以填空题为主，选择题为辅；选择题只承担三类功能：
-   - 检查基础记忆
-   - 辨析易混概念
-   - 纠正常见错误
-5) 必须保留“上课金句回顾”与“课堂原话回放”模块。
-6) 课堂原话使用比例控制在 10%-15%，只保留高价值句子，不可过多。
-7) 严禁把“作业布置”当成题目本体，不得出现“本节课布置了哪些作业/题号”等提问。
-8) 每个复习日标题必须包含实际日期，按“第0天=本次生成日期”计算：
-   - day1 = 第0天+1
-   - day2 = 第0天+2
-   - day7 = 第0天+7
-   - day14 = 第0天+14
-   - day30 = 第0天+30
-9) 每个复习日要有差异化复习重点，但都要覆盖全课：
-   - 第1天：框架回忆
-   - 第2天：方法巩固
-   - 第7天：题型迁移
-   - 第14天：口述提问强化
-   - 第30天：综合总复盘
-10) 知识点加练按天固定规则：
-   - 第1/2天：填空+选择混合
-   - 第7/14天：老师提问口述卡片
-   - 第30天：填空+选择混合
-
-【163320式教研整理要求】
-- 如果输入里出现“同一节课”的多段材料、多段录音纪要或补充材料，必须先合并成一节课理解；不要拆成多份计划，也不要遗漏后半段材料。
-- 生成前必须从课堂材料中提取 6 列教研信息：方法主线、题型入口、操作步骤、易错提醒、典型例题、老师原话。
-- 每个核心知识点都要写成可执行动作链：看到什么条件 → 先做什么 → 再做什么 → 易错点是什么。
-- 复习计划要像 163320 版一样保留密集方法地图：既覆盖全课主题，也保留课堂原话、最终提醒、知识点加练和选择题辅助。
-- 优先输出具体课堂内容，例如“看到等腰找中点”“面面夹角 60 度转线线角”“线面角正弦等于直线与法向量夹角余弦”，禁止只写泛泛学习建议。
-
-【内容质量硬性要求】
-- 所有 type="body" 与 type="fill" 的 text 必须是本节课具体内容，禁止模板占位词。
-- 禁止出现“板块一/板块X/（具体题目）/（按实际填写）/（板块名）/正确答案”等元描述。
-- 每道填空题都要可直接印刷给学生使用，读题后能明确考查点。
-- 纯公式型填空题（只要求默写公式、字母形式或符号关系）在全部填空题中的占比不得超过 30%。
-- 至少 70% 的填空题应围绕方法选择、结构识别、使用场景、推导依据、易错点或题目条件判断来设计，不能把整份复习计划做成公式默写表。
-- 每个 type="fill" 的题目都必须包含 "answer"，且答案简洁明确。
-
-【输出格式要求】
-- 只返回合法 JSON，不要输出额外说明。
-- 使用 ____ 表示空格（4条下划线）。
-- 所有数学公式、运算式、符号必须用 $…$（行内）包裹，例如 $\frac{a}{b}$、$x^2$、$\sin\theta$、$a^2+b^2=c^2$。禁止裸写 LaTeX 命令，禁止用 **…** 等 Markdown 格式包裹公式。
-- days 必须严格只包含 day=1,2,7,14,30 五项。
-- 每天必须有 self_test_phrase。
-- 第1/2/7天使用 type="day1" + steps；每个节点 3 个步骤，步骤3至少 6 道题。
-- 第14/30天使用 type="daily" + items，但仍必须覆盖全课全部核心知识点。
-【JSON 结构】
-{
-  "lesson_info": {
-    "subject": "科目",
-    "grade": "年级",
-    "topic": "本节主题",
-    "key_categories": ["最多6个核心知识板块"],
-    "group_a": ["前半板块名称，可用于兼容展示"],
-    "group_b": ["后半板块名称，可用于兼容展示"]
-  },
-  "full_review_topics": ["全课覆盖主题，可超过6项，用于保留方法地图"],
-  "quotes": ["高价值老师原话，10%-15%比例"],
-  "final_reminder_lines": ["最终提醒，必须是本节课可执行动作"],
-  "weak_points_summary": "学生薄弱点简述",
-  "days": [
-    {
-      "day": 1,
-      "label": "课后第1天复习（YYYY-MM-DD）",
-      "time": "10-20分钟",
-      "type": "day1",
-      "steps": [
-        {
-          "step_label": "⏱ 第1步（2-4分钟）",
-          "title": "复习目标/复习聚焦",
-          "items": [{"type": "body", "text": "..."}, {"type": "fill", "text": "...", "answer": "..."}]
-        },
-        {
-          "step_label": "⏱ 第2步（4-8分钟）",
-          "title": "全课覆盖清单+执行清单",
-          "items": [{"type": "fill", "text": "...", "answer": "..."}]
-        },
-        {
-          "step_label": "⏱ 第3步（4-8分钟）",
-          "title": "填空主任务+选择辅助+知识点加练/口述卡片+课堂原话回放",
-          "items": [{"type": "fill", "text": "...", "answer": "..."}]
-        }
-      ],
-      "choices": [{"question": "选择题题干", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "answer": "A"}],
-      "self_test_phrase": "出发口令：..."
-    },
-    {
-      "day": 14,
-      "label": "课后第14天复习（YYYY-MM-DD）",
-      "time": "10-20分钟",
-      "type": "daily",
-      "items": [{"type": "body", "text": "..."}, {"type": "fill", "text": "...", "answer": "..."}],
-      "choices": [{"question": "选择题题干", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], "answer": "A"}],
-      "self_test_phrase": "出发口令：..."
-    }
-  ],
-  "knowledge_sections": {
-    "第1天": [{"title": "知识点加练标题", "mixed": {"blanks": [["填空题____", "答案"]], "choices": [{"question": "...", "options": ["A. ...", "B. ..."], "answer": "A"}]}, "oral": {"prompts": ["老师追问"], "keypoints": ["回答要点"]}}]
-  },
-  "weekly_review_prompts": ["...", "...", "...", "..."]
-}
-"""
-
-# ─── 复习风格附加提示词 ────────────────────────────────────────────────────────
-PROMPT_STYLE_ADDONS = {
-    "B": """
-【三问法要求】
-每个复习节点（第1/2/7/14/30天）的 items 内容必须围绕三个维度展开，三条填空分别对应：
-① 是什么：清晰定义或描述该知识点（填空形式）
-② 为什么：解释原理或背后的逻辑（填空形式）
-③ 怎么用：给出具体的使用场景或做题步骤（填空形式）
-例如：① 一次函数定义：自变量x的最高次数为____，且k____0
-     ② k>0时图像递增，是因为____
-     ③ 遇到"两点求解析式"：第一步____，第二步____
-""",
-    "C": """
-【考题格式导向要求】
-每个复习节点聚焦一种考题题型，填空内容呈现该题型的解题框架：
-- 在 items 开头用 body 类型注明题型，如"📝 [填空题·斜率判断]"
-- 后续填空直接对应解题步骤模板
-- 最后一条填空指出该题型最常见的失分点，格式：⚠️ 易错点：____
-例如：📝 [解答题·待定系数法]
-看到"已知图像过两点" → 第一步必须____，第二步列____元方程组
-⚠️ 易错点：____
-""",
-    "D": """
-【对话自测要求】
-每个复习节点用"老师提问→学生回答"的对话链呈现：
-- body 类型 item 写老师的问题，fill 类型 item 写学生需要填写的答案
-- 问题之间自然衔接，由浅入深，每个节点包含2-3轮对话
-- 格式：老师问：[具体问题]？→ 你答：____
-例如：
-  {"type":"body","text":"👩‍🏫 老师问：一次函数 y=kx+b 中，k 的作用是什么？"}
-  {"type":"fill","text":"→ 你答：k 表示____，决定图像____"}
-  {"type":"body","text":"👩‍🏫 老师追问：如果 k<0，图像是什么走向？"}
-  {"type":"fill","text":"→ 你答：从左____到右____（递____）"}
-""",
-    "E": """
-【遗忘清单要求】
-每个复习节点以"核查清单"形式呈现，不要普通填空，改为：
-- 第一条 body 类型 item 写"✅ 今天快速核查，你还记得吗？"
-- 后续每条 fill 类型 item 用"☐"开头，一句话描述一个关键点，末尾加【易错】或【常考】标注
-- 每个节点列出3-5条，精准指向该天主题的核心记忆点
-例如：
-  {"type":"body","text":"✅ 今天快速核查，你还记得吗？"}
-  {"type":"fill","text":"☐ k的符号决定图像____方向（____为正，____为负）【易错】"}
-  {"type":"fill","text":"☐ b=0 时函数图像过____，叫____函数【常考】"}
-""",
-}
-
-
-def _build_system_prompt(styles: list) -> str:
-    """根据选中的风格列表，在基础提示词后追加附加要求。"""
-    base = PLAN_SYSTEM_PROMPT
-    if not styles:
-        return base
-    addon_parts = []
-    style_names = {"B": "三问法", "C": "考题格式", "D": "对话自测", "E": "遗忘清单"}
-    for s in styles:
-        if s in PROMPT_STYLE_ADDONS:
-            addon_parts.append(PROMPT_STYLE_ADDONS[s])
-    if not addon_parts:
-        return base
-    names = "、".join(style_names.get(s, s) for s in styles if s in PROMPT_STYLE_ADDONS)
-    header = f"\n\n【本次选用的教学风格：{names}】\n以下是各风格的具体要求，生成时需严格遵守："
-    return base + header + "\n".join(addon_parts)
-
-
 MONTHLY_SYSTEM_PROMPT = """你是一位专业的初中学科辅导老师。
 你将收到本月全部课堂总结（多节课），需要生成一份月度综合复习计划 JSON。
 
@@ -1800,61 +2026,6 @@ def transcribe_audio(audio_path: str, *, include_usage: bool = False):
     if include_usage:
         return transcription, _local_whisper_usage_dict()
     return transcription
-
-
-# ─── 课堂总结解析 ──────────────────────────────────────────────────────────────
-def parse_and_generate_plan(
-    summary_text: str,
-    subject: str = "",
-    grade: str = "",
-    topic: str = "",
-    weak_points: str = "",
-    lesson_date: str = "",
-    prompt_styles: list = None,
-    include_usage: bool = False,
-):
-    """
-    将自由格式课堂总结（文本）解析为结构化复习计划 JSON。
-    返回 plan dict，可直接传入 pdf_engine 生成 PDF，或存入数据库。
-    """
-    client = _get_client()
-
-    # 构建用户消息
-    meta_parts = [f"生成日期（第0天）：{date.today().isoformat()}"]
-    if subject:   meta_parts.append(f"科目：{subject}")
-    if grade:     meta_parts.append(f"年级：{grade}")
-    if topic:     meta_parts.append(f"本节课主题：{topic}")
-    if weak_points: meta_parts.append(f"学生薄弱点：{weak_points}")
-    if lesson_date: meta_parts.append(f"上课日期：{lesson_date}")
-    
-    meta_block = "\n".join(meta_parts)
-    user_msg = f"{meta_block}\n\n课堂总结：\n{summary_text}"
-
-    print("正在生成复习计划（AI处理中）...")
-    system_prompt = _build_system_prompt(prompt_styles or [])
-    response = client.chat.completions.create(
-        model=_get_structured_generation_model(),
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_msg},
-        ],
-        temperature=0.3,
-        response_format={"type": "json_object"},
-    )
-
-    raw = response.choices[0].message.content
-    plan = _loads_model_json(raw)
-    
-    # 补充日期
-    if lesson_date and "lesson_info" in plan:
-        plan["lesson_info"]["date"] = lesson_date
-    else:
-        plan.setdefault("lesson_info", {}).setdefault("date", str(date.today()))
-    
-    print("复习计划生成完成。")
-    if include_usage:
-        return plan, _usage_dict(response)
-    return plan
 
 
 def parse_consultation_batch_text(raw_text: str, *, include_usage: bool = False):

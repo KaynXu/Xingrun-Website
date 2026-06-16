@@ -1,0 +1,65 @@
+rubric_name: review_plan_quality
+passing_score: 85
+criteria:
+  - name: schema_validity
+    weight: 15
+    description: 结构是否完整，days/date/items 等字段是否符合 schema
+  - name: subject_fit
+    weight: 20
+    description: 是否体现数学、物理、雅思的学科特性
+  - name: task_actionability
+    weight: 15
+    description: 学生是否知道每天要完成什么
+  - name: factuality
+    weight: 10
+    description: 是否避免虚构考试日期、教材页码、官方要求或学生成绩
+  - name: review_loop
+    weight: 10
+    description: 是否包含复盘、错因、回炉、checkpoint
+  - name: workload_sanity
+    weight: 10
+    description: 任务量是否现实
+  - name: style_consistency
+    weight: 10
+    description: 是否符合统一物理蓝本视觉系统
+  - name: pdf_safety
+    weight: 10
+    description: 是否避免空框、截断、背景压正文和答案页干扰
+revision_triggers:
+  - score_below_85
+  - high_severity_issue
+  - schema_invalid
+  - missing_subject_specificity
+  - unrealistic_workload
+  - hallucinated_information
+  - no_review_loop
+  - unsafe_pdf_layout
+  - incomplete_problem_stems
+  - slogan_blank_items
+  - repeated_low_quality_questions
+  - wrong_subject_schedule
+  - missing_active_recall
+  - unclean_transcript_noise
+teacher_prompt_migration_checks:
+  universal:
+    - 5个复习节点必须是第1/2/7/14/30天，并标注实际日期
+    - 填空题为主、选择题为辅，选择题只做基础记忆、易混辨析和错误纠正
+    - 禁止把作业布置、本周题号或后续安排当成题目本身
+    - 课堂原话控制在10%-15%，不能挤占主体复习内容
+    - 主动回忆栏目必须落到具体知识、方法或题目
+    - 题干必须完整，不能用某题、这个题、第几题指代
+    - 转写噪声、AI纪要提示和明显口误不能进入成品
+  math:
+    - 数学填空答案必须具体、可推断，不能挖方法、入口、条件等抽象词
+    - 公式、分式、角、三角形符号必须可打印且符合数学表达
+    - 老师追问卡片必须有题干，且不能冒号后直接接英文字母导致 PDF 截断
+    - 第30天必须是综合迁移小题，不退回抽象口令
+  physics:
+    - 公式必须包含物理量含义、常用单位和适用条件
+    - 训练必须覆盖单位统一、数量级、方向或正负号、实验/图像解释
+    - 第14天和第30天只回收前三次内容，不新增新模块
+    - 背景公式必须来自当堂课公式，不塞无关通用公式
+  ielts:
+    - 阅读课每天填空题应覆盖题型扫描、填空逻辑、匹配题、判断题、易混词和错因复盘
+    - 题目以做题策略为主，不背文章内容
+    - 必须区分 True、False、Not Given 和词汇、定位、逻辑三类错因

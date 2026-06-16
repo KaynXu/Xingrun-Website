@@ -1,0 +1,40 @@
+{
+  "student_name": "康芮绮",
+  "class_name": "2025级·七年级·4班",
+  "teacher_name": "何姝健",
+  "date_label": "6月7日",
+  "start_ts": "2026-06-07 00:00:00",
+  "end_ts": "2026-06-08 00:00:00",
+  "query_source": "production:/home/ubuntu/Xingrun-Website/data/xingrun.db",
+  "question_surface": "original_uploaded_image_only",
+  "record_count": 3,
+  "recognized_count": 3,
+  "failed_count": 0,
+  "record_ids": [
+    "wechat-7b17430a06351f94",
+    "wechat-69aa975529a23671",
+    "wechat-9116e3ace6a052dc"
+  ],
+  "record_dates": [
+    "2026-06-07 17:37:41",
+    "2026-06-07 17:38:10",
+    "2026-06-07 17:38:33"
+  ],
+  "status_rows": [
+    {
+      "class_id": 14,
+      "class_name": "2025级·七年级·4班",
+      "student_id": 70,
+      "student_name": "康芮绮",
+      "day": "2026-06-07",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 3
+    }
+  ],
+  "title": "2025级·七年级·4班 康芮绮 6月7日错题练习",
+  "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-6月7日错题练习PDF-20260607-20260607/2025级·七年级·4班-康芮绮-6月7日错题练习-20260607-20260607.pdf",
+  "revision_note": "题面强制使用家长上传原图，不使用 OCR 题干重排、擦除图或生成图；如有识别失败记录，也以原图纳入。"
+}

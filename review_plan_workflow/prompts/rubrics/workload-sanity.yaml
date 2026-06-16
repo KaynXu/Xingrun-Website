@@ -1,0 +1,8 @@
+rubric_name: workload_sanity
+rules:
+  - 每日任务总时长不得明显超过用户可承受范围
+  - 每周任务总时长不得明显超过 availability.hoursPerWeek
+  - 每周至少保留一次复盘或缓冲
+  - 冲刺计划可以强度更高，但必须明确风险
+  - 时间明显不足时，不要强行保证目标达成
+  - mock test 后必须安排 review 或 correction

@@ -1,11 +1,14 @@
 import { Info } from 'lucide-react';
 import { FloatingOverviewFilter, type FloatingFilterOption } from '../../components/FloatingFilterBar';
 import {
-  workspaceCardClass,
-  workspaceSecondaryButtonClass,
-  workspaceSoftCardClass,
+  workspaceSectionTitleClass,
 } from '../../workspaceShared';
 import type { ClassBindingTarget, CurrentUser } from './model';
+import {
+  studentCenterMutedSurfaceClass,
+  studentCenterSecondaryButtonClass,
+  studentCenterSurfaceClass,
+} from './ui';
 
 export type CampusOverviewFilterLayer = 'subject' | 'teacher' | 'stage' | 'grade';
 
@@ -29,8 +32,6 @@ type CampusOverviewProps = {
   onHelpLeave: () => void;
   onHelpToggle: () => void;
   selectedSummary: string;
-  overviewTitle: string;
-  overviewScopeLabel: string;
   open: boolean;
   items: CampusOverviewFilterItem[];
   activeKey: CampusOverviewFilterLayer | null;
@@ -56,8 +57,6 @@ export function CampusOverview({
   onHelpLeave,
   onHelpToggle,
   selectedSummary,
-  overviewTitle,
-  overviewScopeLabel,
   open,
   items,
   activeKey,
@@ -74,30 +73,37 @@ export function CampusOverview({
   onSelect,
 }: CampusOverviewProps) {
   return (
-    <section className={`${workspaceCardClass} space-y-4 p-6`}>
-      <p className="text-sm uppercase tracking-[0.25em] text-sky-600">Class Workspace</p>
-      <div className="relative flex flex-wrap items-center gap-2">
-        <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{overviewTitle}</h3>
-        <div
-          className="relative"
-          onMouseEnter={onHelpEnter}
-          onMouseLeave={onHelpLeave}
-        >
-          <button
-            type="button"
-            onClick={onHelpToggle}
-            className="inline-flex h-8 w-8 items-center justify-center text-sky-600 transition hover:text-sky-700 dark:text-sky-300 dark:hover:text-sky-200"
-            aria-label={`查看${overviewTitle}说明`}
-          >
-            <Info size={16} />
-          </button>
-          {activeHelpKey === 'overview' && (
-            <div className="absolute left-0 top-10 z-20 w-[min(24rem,calc(100vw-3rem))] rounded-2xl border border-sky-100 bg-white p-4 text-sm text-slate-500 shadow-[0_18px_40px_rgba(14,165,233,0.12)] dark:border-white/10 dark:bg-slate-900 dark:text-slate-300">
-              <p className="font-semibold text-slate-900 dark:text-white">{overviewTitle}说明</p>
-              <p className="mt-2">这里汇总 {currentUser.organization_name} 的教师、学员、班级和小课数量，可按科目、教师、学段和年级查看不同范围。</p>
+    <section className={`${studentCenterSurfaceClass} space-y-5 p-6`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2">
+          <div className="relative flex flex-wrap items-center gap-2">
+            <h3 className={workspaceSectionTitleClass}>{overviewTitle}</h3>
+            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+              {currentUser.organization_name}
+            </span>
+            <div
+              className="relative"
+              onMouseEnter={onHelpEnter}
+              onMouseLeave={onHelpLeave}
+            >
+              <button
+                type="button"
+                onClick={onHelpToggle}
+                className="inline-flex h-8 w-8 items-center justify-center text-slate-400 transition hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200"
+                aria-label={`查看${overviewTitle}说明`}
+              >
+                <Info size={16} />
+              </button>
+              {activeHelpKey === 'overview' && (
+                <div className="absolute left-0 top-10 z-20 w-[min(24rem,calc(100vw-3rem))] rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-none dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">
+                  <p className="font-semibold text-slate-900 dark:text-white">{overviewTitle}说明</p>
+                  <p className="mt-2">查看 {currentUser.organization_name} 的教师、学员、班级和小课数量，可按科目、教师、学段、年级筛选。</p>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
+
         <FloatingOverviewFilter
           label={overviewScopeLabel}
           selectedSummary={selectedSummary}
@@ -106,6 +112,7 @@ export function CampusOverview({
           items={items}
           activeKey={activeKey}
           options={options}
+          tone="slate"
           onAreaEnter={onAreaEnter}
           onAreaLeave={onAreaLeave}
           onTriggerClick={onTriggerClick}
@@ -117,30 +124,34 @@ export function CampusOverview({
           onSelect={onSelect}
         />
       </div>
+
       {classBindingTarget && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-sky-500/30 dark:bg-sky-500/10">
+        <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-400/20 dark:bg-amber-400/10">
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-sky-600 dark:text-sky-300">绑定班级</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-200">绑定班级</p>
             <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">目标老师：{classBindingTarget?.teacherName}</p>
           </div>
           {onClearClassBindingTarget && (
             <button
               type="button"
               onClick={onClearClassBindingTarget}
-              className={workspaceSecondaryButtonClass}
+              className={studentCenterSecondaryButtonClass}
             >
               清除目标
             </button>
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        {summaryItems.map((item) => (
-          <div key={item.label} className={`${workspaceSoftCardClass} p-4`}>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{item.label}</p>
-            <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">{item.value}</p>
-          </div>
-        ))}
+
+      <div className={`${studentCenterMutedSurfaceClass} overflow-hidden p-0`}>
+        <div className="grid grid-cols-2 divide-x divide-y divide-slate-200 xl:grid-cols-4 xl:divide-y-0 dark:divide-white/10">
+          {summaryItems.map((item) => (
+            <div key={item.label} className="p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{item.label}</p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">{item.value}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

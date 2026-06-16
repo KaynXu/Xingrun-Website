@@ -1,0 +1,22 @@
+{
+  "name": "中国高中物理实验题与图像题薄弱",
+  "input": {
+    "subject": "physics",
+    "courseSystem": "中国高中物理",
+    "grade": "高一",
+    "knownWeaknesses": ["实验设计", "图像斜率含义", "误差分析", "公式适用条件"],
+    "target": "提升校内实验题和图像题得分稳定性"
+  },
+  "expectedCriteria": [
+    "must include graph interpretation",
+    "must include uncertainty/error analysis",
+    "must include formula/unit link",
+    "must use unified physics-master style",
+    "must stay within China high-school physics context"
+  ],
+  "checks": [
+    {"name": "physics_subject_markers", "containsAny": ["公式", "单位", "实验", "图像", "适用条件"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
+  ]
+}

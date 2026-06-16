@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import ai_processor
+from review_plan_workflow.llm import PromptRegistry, render_prompt
+from review_plan_workflow.llm.client import loads_model_json
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -129,18 +131,24 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
 
-    def test_plan_system_prompt_limits_formula_only_fill_ratio(self):
-        self.assertIn("纯公式型填空题", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("不得超过 30%", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("至少 70% 的填空题", ai_processor.PLAN_SYSTEM_PROMPT)
+    def test_review_plan_legacy_symbols_are_removed_from_ai_processor(self):
+        self.assertFalse(hasattr(ai_processor, "PLAN" + "_SYSTEM_PROMPT"))
+        self.assertFalse(hasattr(ai_processor, "PROMPT" + "_STYLE_ADDONS"))
+        self.assertFalse(hasattr(ai_processor, "parse" + "_and_generate_plan"))
 
-    def test_plan_system_prompt_requires_163320_style_method_map(self):
-        for phrase in ["方法主线", "题型入口", "操作步骤", "易错提醒", "典型例题", "老师原话"]:
-            self.assertIn(phrase, ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("看到什么条件", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("先做什么", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("同一节课", ai_processor.PLAN_SYSTEM_PROMPT)
-        self.assertIn("多段材料", ai_processor.PLAN_SYSTEM_PROMPT)
+    def test_review_plan_prompt_registry_owns_system_prompt(self):
+        rendered = render_prompt(
+            system_prompt_path="system/review-plan-agent.md",
+            node_prompt_path="nodes/task-generator.md",
+            subject_pack_path="subjects/math.yaml",
+            registry=PromptRegistry(),
+        )
+
+        self.assertIn("专业的复习计划生成 Agent", rendered["prompt"])
+        self.assertIn("中国小学、初中、高中课程与考试复习", rendered["prompt"])
+        self.assertIn("不要默认套用国际课程", rendered["prompt"])
+        self.assertIn("先诊断概念漏洞，再安排题型训练", rendered["prompt"])
+        self.assertIn("checkpoint_quiz", rendered["prompt"])
 
     def test_wrong_question_recognition_prompt_requests_mixed_latex_output(self):
         self.assertIn("正文 + LaTeX 公式", ai_processor.WRONG_QUESTION_RECOGNITION_PROMPT)
@@ -197,7 +205,28 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertIn("至少给学生一个清晰的“入口动作”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("优先写成动作链", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertIn("先……再……最后……", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("自动进入 fallback 模式", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("先在内部完整过一遍这道题的做题分析", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("看到这个条件，我应该想到什么", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("几何题先看角、平行、垂直、相似、圆、辅助线、面积关系", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("力学题先看受力、运动状态、约束条件、方向、守恒或方程选择", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("按 Humanizer-zh 的规则写字", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("不要用“此外”“然而”“总的来说”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("不要把这些词原样当成引导入口", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+        self.assertIn("不要出现“未分类”“待补充”", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
         self.assertNotIn("ai_hint", ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT)
+
+    def test_clean_wrong_question_practice_prompt_text_humanizes_ai_phrases(self):
+        cleaned = ai_processor._humanize_wrong_question_copy(
+            "此外，本题考察了整式变形。希望这对你有帮助。下次我先先看未分类题。"
+        )
+
+        self.assertNotIn("此外", cleaned)
+        self.assertNotIn("希望这对你有帮助", cleaned)
+        self.assertNotIn("本题考察了", cleaned)
+        self.assertNotIn("先先", cleaned)
+        self.assertNotIn("未分类", cleaned)
+        self.assertIn("这题要用到整式变形", cleaned)
 
     def test_practice_pack_variant_prompt_requires_same_reason_questions(self):
         prompt = ai_processor.WRONG_QUESTION_PRACTICE_PACK_VARIANT_PROMPT
@@ -349,11 +378,12 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         joined = "\n".join(line for block in blocks for line in block["lines"])
         self.assertNotIn("我这题错在 ______", joined)
         self.assertNotIn("下次我要先看 ______", joined)
-        self.assertIn("E 点为什么要连到 AD", joined)
+        self.assertIn("像这题", joined)
         self.assertIn("CE⊥AD", joined)
         self.assertIn("垂直", joined)
-        self.assertIn("先回到", joined)
-        self.assertIn("别急着算", joined)
+        self.assertIn("能不能连出 ______", joined)
+        self.assertIn("改成能直接用的 ______", joined)
+        self.assertIn("先在图上标出已知角、直角或对应边", joined)
 
     def test_wrong_question_practice_material_keeps_explicit_structured_content(self):
         fake_client = _FakeClient(
@@ -423,6 +453,47 @@ class AiProcessorPromptTestCase(unittest.TestCase):
             "deepseek-v4-pro",
         )
 
+    def test_wrong_question_practice_material_replaces_generic_condition_copy_without_math_anchor(self):
+        fake_client = _FakeClient(
+            {
+                "title": "函数错题练习",
+                "items": [
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "reason_blank_prompt": "错因复盘\n先检查题目条件，再理解题意。",
+                        "improvement_summary_prompt": "下次提醒\n注意关键步骤，多练类似题目。",
+                        "answer": "略",
+                        "key_steps": ["先看定义域", "再看单调性"],
+                        "pitfall_reminder": "不要跳过自变量范围。",
+                    }
+                ],
+            }
+        )
+
+        with patch("ai_processor._get_client", return_value=fake_client):
+            result = ai_processor.generate_wrong_question_practice_sheet_material(
+                student_name="Alice",
+                class_name="九年级 2 班",
+                teacher_name="周老师",
+                items=[
+                    {
+                        "wrong_question_record_id": "record-1",
+                        "question_order": 1,
+                        "question_text_snapshot": "已知函数 f(x) 在区间 [1,3] 上单调递减，比较 f(x+1) 与 f(2x-1) 的大小。",
+                        "topic_category_snapshot": "函数单调性",
+                        "knowledge_tags_snapshot_json": ["定义域", "单调", "函数"],
+                    }
+                ],
+            )
+
+        joined = "\n".join(line for block in result["items"][0]["structured_content"]["blank_review_blocks"] for line in block["lines"])
+        self.assertNotIn("先检查题目条件", joined)
+        self.assertNotIn("多练类似题目", joined)
+        self.assertNotIn("未分类", joined)
+        self.assertNotIn("先先", joined)
+        self.assertIn("像这题", joined)
+        self.assertIn("先圈出自变量范围和图像线索", joined)
+
     def test_wrong_question_practice_prompt_bans_template_copy_and_bullets(self):
         prompt = ai_processor.WRONG_QUESTION_PRACTICE_SHEET_PROMPT
 
@@ -487,22 +558,16 @@ class AiProcessorPromptTestCase(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
-    def test_parse_and_generate_plan_recovers_bare_latex_backslashes(self):
-        fake_client = _FakeClient(
+    def test_review_plan_json_parser_recovers_bare_latex_backslashes(self):
+        plan = loads_model_json(
             r"""{"lesson_info":{"topic":"含参方程"},"days":[{"items":[{"text":"观察 $\left(x+1\right)^2$ 的开口方向"}]}],"weekly_review_prompts":[]}"""
         )
-        with patch("ai_processor._get_client", return_value=fake_client):
-            plan = ai_processor.parse_and_generate_plan("课堂总结")
-
         self.assertEqual(plan["days"][0]["items"][0]["text"], r"观察 $\left(x+1\right)^2$ 的开口方向")
 
-    def test_parse_and_generate_plan_preserves_bare_latex_json_control_escapes(self):
-        fake_client = _FakeClient(
+    def test_review_plan_json_parser_preserves_bare_latex_json_control_escapes(self):
+        plan = loads_model_json(
             r"""{"lesson_info":{"topic":"分式"},"days":[{"items":[{"text":"计算 $\frac{1}{2}$ 的值"}]}],"weekly_review_prompts":[]}"""
         )
-        with patch("ai_processor._get_client", return_value=fake_client):
-            plan = ai_processor.parse_and_generate_plan("课堂总结")
-
         self.assertEqual(plan["days"][0]["items"][0]["text"], r"计算 $\frac{1}{2}$ 的值")
 
     def test_transcribe_child_reason_audio_uses_local_faster_whisper_auto_detect_first(self):

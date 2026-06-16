@@ -1,0 +1,258 @@
+{
+  "student_name": "唐语涵",
+  "class_name": "数学·初2020级·六年级·1班·小衔初",
+  "teacher_name": "何姝健",
+  "date_label": "6月7日",
+  "start_ts": "2026-06-07 00:00:00",
+  "end_ts": "2026-06-08 00:00:00",
+  "query_source": "production:/home/ubuntu/Xingrun-Website/data/xingrun.db",
+  "record_count": 7,
+  "recognized_count": 6,
+  "failed_count": 1,
+  "record_ids": [
+    "wechat-44c2873d504d7029",
+    "wechat-89b3a3b0cec5f465",
+    "wechat-483501dade633851",
+    "wechat-838ce6679719aabe",
+    "wechat-725c0d13d6806bd3",
+    "wechat-0e26f278b109cd08",
+    "wechat-3fc4e7e195345be6"
+  ],
+  "image_rows": [
+    {
+      "order": 1,
+      "record_id": "wechat-44c2873d504d7029",
+      "created_at": "2026-06-07 20:17:50",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/01-wechat-44c2873d504d7029-erased.png",
+      "erased_bytes": 614553,
+      "erased_sha256": "128e1c7148374bbd66388bae55db0e418373f74b30cde25ff0fbac13c0c288a9",
+      "changed_ratio": 0.066445
+    },
+    {
+      "order": 2,
+      "record_id": "wechat-89b3a3b0cec5f465",
+      "created_at": "2026-06-07 20:18:41",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/02-wechat-89b3a3b0cec5f465-erased.png",
+      "erased_bytes": 350509,
+      "erased_sha256": "aff7031286f6f7896dafd328640bb644007c98683fcddf6887c6cf87cf69052b",
+      "changed_ratio": 0.070393,
+      "manual_rotation_applied": "upright_landscape_correction",
+      "size_after_manual_rotation": [
+        833,
+        339
+      ]
+    },
+    {
+      "order": 3,
+      "record_id": "wechat-483501dade633851",
+      "created_at": "2026-06-07 20:18:57",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/03-wechat-483501dade633851-erased.png",
+      "erased_bytes": 105449,
+      "erased_sha256": "083e5483ae5179159fb3a1299c0a65dd094f212f8fd435a2b8afb28f13d1b337",
+      "changed_ratio": 0.201629
+    },
+    {
+      "order": 4,
+      "record_id": "wechat-838ce6679719aabe",
+      "created_at": "2026-06-07 20:19:25",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/04-wechat-838ce6679719aabe-erased.png",
+      "erased_bytes": 577639,
+      "erased_sha256": "2cda6628701db406c1ffb7d9b22978acdc214078a5968538981e41eb9ffe43dc",
+      "changed_ratio": 0.05939
+    },
+    {
+      "order": 5,
+      "record_id": "wechat-725c0d13d6806bd3",
+      "created_at": "2026-06-07 20:20:46",
+      "recognition_status": "failed",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/05-wechat-725c0d13d6806bd3-erased.png",
+      "erased_bytes": 1069693,
+      "erased_sha256": "8c25fb78afa55e2282305729a8ed2b03b88ab6a022ed142746bfa94834990dac",
+      "changed_ratio": 0.065657
+    },
+    {
+      "order": 6,
+      "record_id": "wechat-0e26f278b109cd08",
+      "created_at": "2026-06-07 20:20:59",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/06-wechat-0e26f278b109cd08-erased.png",
+      "erased_bytes": 391688,
+      "erased_sha256": "f64369729480c244531e746c71d6076456ca94981048b3b8c8617a587893aa05",
+      "changed_ratio": 0.139986
+    },
+    {
+      "order": 7,
+      "record_id": "wechat-3fc4e7e195345be6",
+      "created_at": "2026-06-07 20:21:22",
+      "recognition_status": "recognized",
+      "erased_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/images/erased/07-wechat-3fc4e7e195345be6-erased.png",
+      "erased_bytes": 1011813,
+      "erased_sha256": "12ef90f413ec57da4fe72ee2ef19acf5375538d701e3df224a6e8378dc8a982b",
+      "changed_ratio": 0.069006
+    }
+  ],
+  "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607/2020级·六年级·1班·衔接-唐语涵-6月7日错题练习擦除版-20260607-20260607.pdf",
+  "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/唐语涵-6月7日错题练习擦除版PDF-20260607-20260607.zip",
+  "proof": {
+    "pdf_pages": 7,
+    "pdf_bytes": 4924355,
+    "text_counts": {
+      "原题 / 原图": 7,
+      "方法提醒": 7,
+      "挖空复盘": 7,
+      "订正区": 7,
+      "clean": 7,
+      "第7题": 2,
+      "等式性质": 2,
+      "多边形": 0,
+      "$": 0,
+      "rac": 0,
+      "mathbbR": 0,
+      "ldots": 0,
+      "\\frac": 0
+    },
+    "page_starts": [
+      {
+        "page": 1,
+        "first_lines": [
+          "数学·初2020级·六年级·1班·小衔初 唐语涵 6月7日错题练习擦除版",
+          "第 1 题",
+          "原题 / 原图",
+          "干净几何原题图片",
+          "题干摘要"
+        ]
+      },
+      {
+        "page": 2,
+        "first_lines": [
+          "第 2 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“在判断第二个选项是否正确时再排列组合这一步出了错”这里倒回来，这题第一手先做：先把题目里的条件、限制和问法分开圈出"
+        ]
+      },
+      {
+        "page": 3,
+        "first_lines": [
+          "第 3 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“没有理解这道题的本质将它想复杂了”这里倒回来，这题第一手先做：先把题目里的条件、限制和问法分开圈出来。"
+        ]
+      },
+      {
+        "page": 4,
+        "first_lines": [
+          "第 4 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“不会在化简分离时拆绝对值进行运算”这里倒回来，这题第一手先做：先把题目里的条件、限制和问法分开圈出来。"
+        ]
+      },
+      {
+        "page": 5,
+        "first_lines": [
+          "第 5 题",
+          "原题 / 原图",
+          "干净原题图片",
+          "题干摘要",
+          "先从“题目给的数据没有看完整，看图时也没有结合题目信息来看”这里倒回来，这题第一手先做：先回到题面图片，把图表数据、题目"
+        ]
+      },
+      {
+        "page": 6,
+        "first_lines": [
+          "第 6 题",
+          "原题 / 原图",
+          "干净几何原题图片",
+          "题干摘要",
+          "先从“因为没有看到直线两个字所以没有考虑到所有情况”这里倒回来，这题第一手先做：先把题目里的条件、限制和问法分开圈出来。"
+        ]
+      },
+      {
+        "page": 7,
+        "first_lines": [
+          "第 7 题",
+          "原题 / 原图",
+          "干净几何原题图片",
+          "题干摘要",
+          "先从“没有时间去做也没有看清题目以为只有一种答案”这里倒回来，这题第一手先做：先把题目里的条件、限制和问法分开圈出来。"
+        ]
+      }
+    ],
+    "image_rects": [
+      {
+        "page": 1,
+        "width_pt": 448.5,
+        "height_pt": 192.8
+      },
+      {
+        "page": 2,
+        "width_pt": 474.0,
+        "height_pt": 192.8
+      },
+      {
+        "page": 3,
+        "width_pt": 514.5,
+        "height_pt": 44.2
+      },
+      {
+        "page": 4,
+        "width_pt": 477.0,
+        "height_pt": 192.7
+      },
+      {
+        "page": 5,
+        "width_pt": 240.0,
+        "height_pt": 192.7
+      },
+      {
+        "page": 6,
+        "width_pt": 514.5,
+        "height_pt": 116.2
+      },
+      {
+        "page": 7,
+        "width_pt": 240.0,
+        "height_pt": 192.8
+      }
+    ],
+    "render_nonwhite": [
+      {
+        "page": 1,
+        "nonwhite_pixels": 19463
+      },
+      {
+        "page": 2,
+        "nonwhite_pixels": 17612
+      },
+      {
+        "page": 5,
+        "nonwhite_pixels": 12200
+      },
+      {
+        "page": 7,
+        "nonwhite_pixels": 12119
+      }
+    ],
+    "zip_counts": {
+      "pdf": 1,
+      "erased_images": 7,
+      "original": 0
+    },
+    "one_question_per_page": true,
+    "question_image_enlarged": true
+  },
+  "source_original_images_removed_from_output": true,
+  "analysis_revision_note": "2026-06-09: 第 1 张图片含第6题和第7题，后续分析已改为使用图片下面第7题的等式性质/方程变形判断。",
+  "image_rotation_revision_note": "2026-06-09: 第 2 张擦除图已手动放正，最终尺寸为 833x339，PDF 第 2 页已渲染确认文字方向正确。",
+  "layout_revision_note": "2026-06-09: 错题练习模板改为紧凑一页一题；唐语涵擦除版已重排，第二页从第2题开始。",
+  "clarity_revision_note": "2026-06-10: 题图显示高度从48mm提升到68mm，订正线收为6条，优先保证题目图片清晰可读。"
+}

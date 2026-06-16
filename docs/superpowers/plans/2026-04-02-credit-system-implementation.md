@@ -150,7 +150,6 @@ FILE_CONFIG_DEFAULTS = {
 ENV_CONTROLLED_KEYS = {
     "openai_api_key",
     "deepseek_api_key",
-    "mimo_api_key",
     "qwen_api_key",
     "xhs_app_id",
     "xhs_app_secret",

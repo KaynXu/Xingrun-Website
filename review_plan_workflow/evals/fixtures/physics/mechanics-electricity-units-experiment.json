@@ -1,0 +1,22 @@
+{
+  "name": "中国初中物理力学电学单位与实验复习",
+  "input": {
+    "subject": "physics",
+    "courseSystem": "中国初中物理",
+    "grade": "九年级",
+    "knownWeaknesses": ["力学受力分析", "电路识别", "单位换算", "实验数据处理"],
+    "target": "中考前巩固力学、电学和实验题基础"
+  },
+  "expectedCriteria": [
+    "must include formula conditions",
+    "must include unit check",
+    "must include experiment or data processing",
+    "must include concept explanation",
+    "must stay within China middle-school physics context"
+  ],
+  "checks": [
+    {"name": "physics_subject_markers", "containsAny": ["公式", "单位", "实验", "图像", "适用条件"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
+  ]
+}

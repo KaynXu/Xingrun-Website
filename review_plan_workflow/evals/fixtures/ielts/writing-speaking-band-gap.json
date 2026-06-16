@@ -1,0 +1,21 @@
+{
+  "name": "IELTS Writing and Speaking band gap",
+  "input": {
+    "subject": "ielts",
+    "courseSystem": "IELTS",
+    "studentLevel": "6.5",
+    "target": "7.0",
+    "knownWeaknesses": ["Writing Task 2", "Speaking Part 2"]
+  },
+  "expectedCriteria": [
+    "must include band gap",
+    "must include writing feedback and rewrite",
+    "must include speaking recording or retell",
+    "must include feedback loop"
+  ],
+  "checks": [
+    {"name": "ielts_skill_markers", "containsAny": ["Writing", "Speaking", "feedback", "题型"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
+  ]
+}

@@ -6,7 +6,7 @@ import {
   workspacePrimaryButtonClass,
   workspaceSecondaryButtonClass,
   workspaceSoftCardClass,
-} from './App';
+} from './workspaceShared';
 import type {
   ClassFeedbackStageNotes,
   ClassFeedbackStudentCard,

@@ -4,12 +4,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+const sidebarSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Sidebar.tsx'), 'utf8');
+const headerSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/Header.tsx'), 'utf8');
+const shellSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspaceShellLayout.tsx'), 'utf8');
 const cssSource = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
 const courseCalendarSource = readFileSync(resolve(process.cwd(), 'src/CourseCalendarPage.tsx'), 'utf8');
 const smartWrongQuestionsSource = readFileSync(resolve(process.cwd(), 'src/SmartWrongQuestionsPage.tsx'), 'utf8');
 
 test('mobile sidebar nav buttons use touch-optimized button semantics', () => {
-  const sidebarBlock = source.match(/const Sidebar = \(\{[\s\S]*?\n};\n\nconst Header/);
+  const sidebarBlock = sidebarSource.match(/export function Sidebar\([\s\S]*?\n}\n/);
 
   assert.ok(sidebarBlock);
   assert.match(sidebarBlock[0], /<button\s+type="button"/);
@@ -20,20 +23,20 @@ test('workspace shell disables wait-mode page transitions and heavy blur on mobi
   assert.match(source, /const \[isMobileViewport, setIsMobileViewport\] = useState\(getInitialMobileViewport\);/);
   assert.match(source, /<AnimatePresence mode=\{isMobileViewport \? undefined : 'wait'\}>/);
   assert.match(source, /transition=\{isMobileViewport \? \{ duration: 0 \} : \{ duration: 0\.18 \}\}/);
-  assert.match(source, /className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-sky-100\/80 bg-white\/92 px-4 sm:bg-white\/78 sm:backdrop-blur-xl/);
-  assert.match(source, /className="absolute inset-0 bg-slate-950\/45 sm:backdrop-blur-sm"/);
+  assert.match(headerSource, /className="sticky top-0 z-10 border-b border-slate-200\/70 bg-\[rgba\(251,253,255,0\.88\)\] backdrop-blur-xl dark:border-white\/10 dark:bg-\[#0f172a\]\/88"/);
+  assert.match(shellSource, /className="absolute inset-0 bg-slate-950\/45 sm:backdrop-blur-sm"/);
 });
 
 test('workspace shell uses stable viewport height containers for mobile browser chrome', () => {
-  assert.match(source, /<div className="relative min-h-\[100svh\] overflow-x-hidden[^\"]*sm:min-h-screen/);
-  assert.match(source, /<div className="relative flex min-h-\[100svh\] sm:min-h-screen">/);
-  assert.doesNotMatch(source, /<div className="relative min-h-\[100dvh\] overflow-x-hidden/);
-  assert.doesNotMatch(source, /<div className="relative flex min-h-\[100dvh\]/);
-  assert.doesNotMatch(source, /<div className="relative min-h-screen overflow-x-hidden bg-\[linear-gradient\(180deg,#f8fbff_0%,#eef6ff_100%\)\]/);
+  assert.match(shellSource, /<div className="relative min-h-\[100svh\] overflow-x-hidden[^\"]*sm:min-h-screen/);
+  assert.match(shellSource, /<div className="relative flex min-h-\[100svh\] sm:min-h-screen">/);
+  assert.doesNotMatch(shellSource, /<div className="relative min-h-\[100dvh\] overflow-x-hidden/);
+  assert.doesNotMatch(shellSource, /<div className="relative flex min-h-\[100dvh\]/);
+  assert.doesNotMatch(shellSource, /<div className="relative min-h-screen overflow-x-hidden bg-\[#f5f8fc\]/);
 });
 
 test('workspace shell keeps authenticated content on native page scroll', () => {
-  const shellBlock = source.match(/<div className="relative flex min-h-\[100svh\] sm:min-h-screen">[\s\S]*?<\/main>\n\s*<\/div>\n\s*<\/div>\n\s*\);\n}/);
+  const shellBlock = shellSource.match(/<div className="relative flex min-h-\[100svh\] sm:min-h-screen">[\s\S]*?<\/main>\n\s*<\/div>\n\s*<\/div>\n\s*\);\n}/);
 
   assert.ok(shellBlock);
   assert.match(shellBlock[0], /<main className=\{cn\('flex min-w-0 flex-1 flex-col'/);

@@ -1,15 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { getCurrentClassDisplayName } from '../../classDisplay';
 import {
   academicGradeGroups,
   academicGradeOptions,
   academicStageOptions,
-  formatClassDisplayName,
 } from '../../domain/classNaming';
 import {
   apiFetch,
   cn,
   workspacePageClass,
+  workspaceSectionTextClass,
+  workspaceSectionTitleClass,
 } from '../../workspaceShared';
 import {
   createClassStudent,
@@ -142,6 +144,7 @@ import {
   resolveTeacherSearchAfterChange,
 } from './classEditorStateRules';
 import { buildClassEditorModalState } from './classEditorModalState';
+import { studentCenterMutedSurfaceClass } from './ui';
 import {
   cancelFilterCloseTimer,
   resolveOverviewFilterItemClick,
@@ -156,10 +159,6 @@ const studentCenterStageOptions = [...academicStageOptions];
 const studentCenterGradeOptions = [...academicGradeOptions];
 const studentCenterGradeGroups: Record<string, string[]> = academicGradeGroups;
 const emptyStudentProfileDraft: StudentProfileDraft = { name: '', source: '', parent_contact: '' };
-
-function getCurrentClassDisplayName(item: ClassItem | null | undefined, showCohortYear = false): string {
-  return formatClassDisplayName(item, { showCohortYear });
-}
 
 async function copyTextToClipboard(value: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -1189,7 +1188,7 @@ export function StudentCenterPage({
     newClass: classEditorNewClass,
     editing: classEditorEditing,
   } = classEditorModalState;
-  const { editingClass, editingFormState } = classEditorMode;
+  const { editingClass } = classEditorMode;
   const getClassDisplayName = (item: ClassItem) => getCurrentClassDisplayName(item, showClassCohortYear);
   const resetClassFormDraft = (classId: number | 'new') => {
     if (classId === 'new') {
@@ -1365,7 +1364,13 @@ export function StudentCenterPage({
   });
 
   return (
-    <div className={`${workspacePageClass} space-y-8`}>
+    <div className={`${workspacePageClass} space-y-6`}>
+      <section className="space-y-2">
+        <div className="space-y-2">
+          <h2 className={workspaceSectionTitleClass}>学管中心</h2>
+        </div>
+      </section>
+
       <CampusOverview
         currentUser={currentUser}
         classBindingTarget={classBindingTarget}
@@ -1423,7 +1428,7 @@ export function StudentCenterPage({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-sky-50 p-1 dark:bg-white/5">
+      <div className={`${studentCenterMutedSurfaceClass} grid grid-cols-2 gap-1.5 p-1.5`}>
         {[
           { key: 'classes' as const, label: '班级管理' },
           { key: 'students' as const, label: '学员管理' },
@@ -1433,10 +1438,10 @@ export function StudentCenterPage({
             type="button"
             onClick={() => setStudentCenterTab(item.key)}
             className={cn(
-              'h-10 rounded-xl text-sm font-bold transition',
+              'flex h-11 items-center justify-center rounded-[1rem] text-sm font-semibold transition',
               studentCenterTab === item.key
-                ? 'bg-white text-sky-700 shadow-sm dark:bg-sky-400/15 dark:text-sky-100'
-                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white',
+                ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950'
+                : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-white',
             )}
           >
             {item.label}

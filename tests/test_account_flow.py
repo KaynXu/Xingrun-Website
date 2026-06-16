@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 import gc
+import io
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlparse
@@ -473,6 +474,90 @@ class AccountFlowTestCase(unittest.TestCase):
             json={"username": "security_reset_member", "password": "newpass123"},
         )
         self.assertEqual(security_login.status_code, 200)
+
+    def test_backend_profile_password_change_updates_login(self):
+        kayn_token = self.login_as_kayn()
+        member_payload = self.approve_user(
+            owner_token=kayn_token,
+            username="profile_password_member",
+            display_name="Profile Password Member",
+            password="oldpass123",
+        )
+
+        update = self.client.put(
+            "/api/profile/password",
+            headers=self.auth_headers(member_payload["token"]),
+            json={"current_password": "oldpass123", "new_password": "newpass456"},
+        )
+        self.assertEqual(update.status_code, 200)
+
+        old_login = self.client.post(
+            "/api/login",
+            json={"username": "profile_password_member", "password": "oldpass123"},
+        )
+        self.assertEqual(old_login.status_code, 401)
+
+        new_login = self.client.post(
+            "/api/login",
+            json={"username": "profile_password_member", "password": "newpass456"},
+        )
+        self.assertEqual(new_login.status_code, 200)
+
+    def test_backend_profile_avatar_supports_seed_switch_and_upload(self):
+        kayn_token = self.login_as_kayn()
+        member_payload = self.approve_user(
+            owner_token=kayn_token,
+            username="profile_avatar_member",
+            display_name="Profile Avatar Member",
+            password="avatarpass123",
+        )
+
+        preset = self.client.put(
+            "/api/profile/avatar",
+            headers=self.auth_headers(member_payload["token"]),
+            json={"avatar_source": "dicebear", "avatar_seed": "custom-avatar-seed"},
+        )
+        self.assertEqual(preset.status_code, 200)
+        preset_payload = preset.get_json()
+        self.assertIsNotNone(preset_payload)
+        self.assertEqual(preset_payload["user"]["avatar_source"], "dicebear")
+        self.assertEqual(preset_payload["user"]["avatar_seed"], "custom-avatar-seed")
+        self.assertEqual(preset_payload["user"]["avatar_upload_url"], "")
+
+        upload = self.client.post(
+            "/api/profile/avatar-upload",
+            headers=self.auth_headers(member_payload["token"]),
+            data={
+                "avatar": (
+                    io.BytesIO(
+                        b"\x89PNG\r\n\x1a\n"
+                        b"\x00\x00\x00\rIHDR"
+                        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+                        b"\x1f\x15\xc4\x89"
+                        b"\x00\x00\x00\x0cIDATx\x9cc``\xf8\xff\xff?\x00\x05\xfe\x02\xfeA\xdd\xb1\x8d"
+                        b"\x00\x00\x00\x00IEND\xaeB`\x82"
+                    ),
+                    "avatar.png",
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(upload.status_code, 200)
+        upload_payload = upload.get_json()
+        self.assertIsNotNone(upload_payload)
+        self.assertEqual(upload_payload["user"]["avatar_source"], "upload")
+        self.assertIn("/api/profile-avatar-files/profile-avatars/user-", upload_payload["user"]["avatar_upload_url"])
+
+        avatar_response = self.client.get(upload_payload["user"]["avatar_upload_url"])
+        self.assertEqual(avatar_response.status_code, 200)
+        self.assertEqual(avatar_response.mimetype, "image/png")
+        avatar_response.close()
+
+        me = self.client.get("/api/me", headers=self.auth_headers(member_payload["token"]))
+        self.assertEqual(me.status_code, 200)
+        me_payload = me.get_json()
+        self.assertEqual(me_payload["avatar_source"], "upload")
+        self.assertEqual(me_payload["avatar_upload_url"], upload_payload["user"]["avatar_upload_url"])
 
     def test_member_first_login_claims_unbound_classes(self):
         owner_token, invite_payload = self.create_approved_organization_with_invite(
@@ -1997,7 +2082,8 @@ class AccountFlowTestCase(unittest.TestCase):
         with patch("app.has_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
-             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
+             patch("app._start_review_plan_generation_thread"), \
+             patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json", return_value=({"questions": []}, {})):
             missing_class_response = self.client.post(
                 "/api/review-plans",
                 headers=self.auth_headers(target_member["token"]),
@@ -2039,7 +2125,7 @@ class AccountFlowTestCase(unittest.TestCase):
 
         self.assertEqual(missing_class_response.status_code, 400)
         self.assertEqual(forbidden_class_response.status_code, 403)
-        self.assertEqual(allowed_class_response.status_code, 201)
+        self.assertEqual(allowed_class_response.status_code, 202)
 
     def test_member_class_feedback_task_access_requires_owned_class(self):
         owner_token = self.login_as_kayn()
@@ -2172,7 +2258,8 @@ class AccountFlowTestCase(unittest.TestCase):
         with patch("app.has_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
-             patch("ai_processor.parse_and_generate_plan", return_value={"questions": []}):
+             patch("app._start_review_plan_generation_thread"), \
+             patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json", return_value=({"questions": []}, {})):
             owner_response = self.client.post(
                 "/api/review-plans",
                 headers=self.auth_headers(owner_token),
@@ -2187,7 +2274,7 @@ class AccountFlowTestCase(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(owner_response.status_code, 201)
+        self.assertEqual(owner_response.status_code, 202)
 
     def test_lesson_api_hides_stale_pdf_paths_when_file_is_missing(self):
         owner_token = self.login_as_kayn()

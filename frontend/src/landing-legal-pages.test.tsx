@@ -20,18 +20,14 @@ test('landing page renders Starain hero branding and a theme-aware grainient her
   );
 
   assert.match(markup, /Starain/);
-  assert.match(markup, /学习全流程 AI 平台/);
-  assert.match(markup, /用ai创造教育/);
-  assert.doesNotMatch(markup, /Starain，用 AI 赋能教育机构。/);
-  assert.match(markup, /Starain 正在把日常教学里最常重复的工作整理进同一套平台流程/);
-  assert.match(markup, /查看平台方案/);
-  assert.match(markup, /href="#features"/);
-  assert.match(markup, /申请开通机构/);
-  assert.match(markup, /data-background="grainient"/);
-  assert.match(markup, /data-grainient-palette="sky-cyan"/);
-  assert.match(markup, /data-grainient-motion="pronounced"/);
-  assert.match(markup, /data-grainient-style="flow-bands"/);
-  assert.doesNotMatch(markup, /data-stream-src=/);
+  assert.match(markup, /教学工作平台/);
+  assert.match(markup, /教师日常教学的 AI 助手/);
+  assert.match(markup, /帮老师整理复习资料、记录错题、准备讲义。/);
+  assert.match(markup, /申请试用/);
+  assert.match(markup, /href="#privacy-policy"/);
+  assert.match(markup, /href="#terms-of-service"/);
+  assert.doesNotMatch(markup, /学习全流程 AI 平台/);
+  assert.doesNotMatch(markup, /data-background="grainient"/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });
 
@@ -49,16 +45,14 @@ test('landing hero uses exhibition-panel copy with a light result preview instea
     <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
   );
 
-  assert.match(markup, /服务学校与机构的 AI 教育平台/);
-  assert.match(markup, /复习资料生成/);
-  assert.match(markup, /错题跟进与复习安排/);
-  assert.match(markup, /教师协作交付/);
-  assert.match(markup, /平台概览/);
-  assert.match(markup, /面向学习全流程的 AI 教育平台/);
-  assert.match(markup, /复习资料/);
-  assert.match(markup, /错题跟进/);
-  assert.match(markup, /教学交付/);
-  assert.doesNotMatch(markup, /rounded-\[2rem\] border border-sky-100 bg-white\/85 p-5 sm:p-8 md:p-12/);
+  assert.match(markup, /复习计划生成/);
+  assert.match(markup, /课堂材料/);
+  assert.match(markup, /课堂录音/);
+  assert.match(markup, /补充笔记/);
+  assert.match(markup, /生成复习计划/);
+  assert.match(markup, /讲义大纲/);
+  assert.match(markup, /课后练习/);
+  assert.doesNotMatch(markup, /服务学校与机构的 AI 教育平台/);
   assert.doesNotMatch(markup, /题库系统/);
 });
 
@@ -76,22 +70,14 @@ test('landing page tells the validated workflow story', () => {
     <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
   );
 
-  assert.match(markup, /从课堂素材到复习交付/);
-  assert.match(markup, /把错误整理成可持续跟进记录/);
-  assert.match(markup, /把题目整理成可复用的教学素材/);
-  assert.match(markup, /围绕课堂练习、作业和错题记录，帮助老师逐步整理出更稳定的讲义与练习素材。/);
-  assert.match(markup, /题目整理/);
-  assert.doesNotMatch(markup, /AP、A-Level、IB/);
-  assert.doesNotMatch(markup, /AP \/ A-Level \/ IB/);
-  assert.match(markup, /把课程目标转化为讲义与教研交付/);
-  assert.match(markup, /课堂录音、笔记与教学内容进入平台后/);
-  assert.match(markup, /课堂分析/);
-  assert.match(markup, /复习资料生成/);
-  assert.match(markup, /教学交付/);
+  assert.match(markup, /课堂内容整理成复习资料/);
+  assert.match(markup, /错题记录集中保存/);
+  assert.match(markup, /题目和讲义继续整理/);
+  assert.match(markup, /讲义和教研材料放在一起/);
   assert.match(markup, /关于 Starain/);
-  assert.match(markup, /不是从 PPT 里想出来的/);
-  assert.doesNotMatch(markup, /把错误沉淀成可追踪资产/);
-  assert.doesNotMatch(markup, /把题目沉淀成可调用的题库系统/);
+  assert.match(markup, /复习资料、错题跟进、讲义整理和教师协作，集中放在同一套工作流里。/);
+  assert.doesNotMatch(markup, /不是从 PPT 里想出来的/);
+  assert.doesNotMatch(markup, /AP、A-Level、IB/);
 });
 
 test('legal pages use Starain branding in the chrome', () => {
@@ -108,7 +94,7 @@ test('legal pages use Starain branding in the chrome', () => {
   );
 
   assert.match(markup, /Starain/);
-  assert.match(markup, /学习全流程 AI 平台/);
+  assert.match(markup, /教学工作平台/);
   assert.doesNotMatch(markup, /星润 AI 教育解决方案/);
 });
 
@@ -137,7 +123,7 @@ test('landing and legal pages use the bright Starain shell', () => {
 
   assert.doesNotMatch(landingMarkup, /min-h-screen bg-black text-white/);
   assert.doesNotMatch(legalMarkup, /min-h-screen bg-black text-white/);
-  assert.match(landingMarkup, /bg-\[#F6FBFF\]/);
+  assert.match(landingMarkup, /bg-white/);
   assert.match(landingMarkup, /text-slate-900/);
   assert.match(legalMarkup, /bg-\[#F6FBFF\]/);
 });
@@ -192,9 +178,9 @@ test('terms page renders service-boundary sections', () => {
   );
 
   assert.match(markup, /服务条款/);
-  assert.match(markup, /账号注册与使用/);
-  assert.match(markup, /AI 生成内容说明/);
-  assert.match(markup, /争议解决/);
+  assert.match(markup, /账号与使用边界/);
+  assert.match(markup, /AI 结果与责任分工/);
+  assert.match(markup, /服务调整与争议处理/);
 });
 
 test('landing app hash helper maps legal hashes to standalone pages', () => {
@@ -224,10 +210,10 @@ test('landing page keeps a single about link per nav group and exposes a dark mo
     <LandingPage onLogin={() => undefined} onRegister={() => undefined} />,
   );
 
-  assert.equal((markup.match(/href="#about"/g) ?? []).length, 2);
-  assert.doesNotMatch(markup, /我们的故事/);
+  assert.match(markup, /id="about"/);
+  assert.doesNotMatch(markup, /href="#about"/);
   assert.match(markup, /aria-label="切换夜间模式"/);
-  assert.match(markup, /dark:bg-\[#0d1220\]/);
+  assert.match(markup, /dark:bg-slate-950/);
   assert.match(markup, /dark:border-white\/8/);
   assert.match(markup, /dark:text-slate-400/);
 });
@@ -247,9 +233,9 @@ test('landing page dark mode styles cover the about section and footer shell', (
   );
 
   assert.match(markup, /id="about" class="border-t border-sky-100\/80 py-24 dark:border-white\/8"/);
-  assert.match(markup, /ABOUT STARAIN/);
-  assert.match(markup, /dark:bg-slate-950\/35 dark:text-sky-200/);
-  assert.match(markup, /dark:bg-\[linear-gradient\(180deg,rgba\(2,6,23,0\.42\)_0%,rgba\(15,23,42,0\.7\)_100%\)\]/);
+  assert.match(markup, /关于 Starain/);
+  assert.match(markup, /教学工作平台/);
+  assert.match(markup, /面向学校、机构和教学团队的教学工作平台。/);
   assert.match(markup, /dark:text-white/);
   assert.match(markup, /<footer class="border-t border-sky-100\/80 py-20 dark:border-white\/8"/);
   assert.match(markup, /保留所有权利/);

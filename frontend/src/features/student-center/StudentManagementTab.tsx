@@ -1,13 +1,13 @@
 import { Plus, Search } from 'lucide-react';
 import { FloatingFilterBar, type FloatingFilterItem, type FloatingFilterOption } from '../../components/FloatingFilterBar';
-import {
-  workspaceCardClass,
-  workspaceFieldClass,
-  workspacePrimaryButtonClass,
-  workspaceSecondaryButtonClass,
-} from '../../workspaceShared';
 import type { ClassItem, UserItem } from './model';
 import type { StudentScheduleStatusFilter } from './studentFilterRules';
+import {
+  studentCenterFieldClass,
+  studentCenterPrimaryButtonClass,
+  studentCenterSecondaryButtonClass,
+  studentCenterSurfaceClass,
+} from './ui';
 
 export type StudentManagementFilterLayer = 'subject' | 'teacher' | 'stage' | 'grade' | 'class';
 
@@ -65,14 +65,14 @@ export function StudentManagementTab({
   getClassDisplayName,
 }: StudentManagementTabProps) {
   return (
-    <section className={`${workspaceCardClass} space-y-5 p-6`}>
+    <section className={`${studentCenterSurfaceClass} space-y-5 p-6`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学员管理</h4>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">默认展示全部学员，可按教师、科目、学段、年级、班级筛选，并查询学员姓名。</p>
+          <h4 className="text-xl font-semibold text-slate-900 dark:text-white">学员列表</h4>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">按排课状态和课程范围筛选学员，进入档案继续维护来源、家长联系方式和班级安排。</p>
         </div>
         {canManageStudents ? (
-          <button type="button" onClick={onCreateStudent} className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm`}>
+          <button type="button" onClick={onCreateStudent} className={`${studentCenterPrimaryButtonClass} h-10 px-4 py-2 text-sm`}>
             <Plus size={16} />
             新建学员
           </button>
@@ -91,8 +91,8 @@ export function StudentManagementTab({
             className={[
               'h-9 rounded-full px-4 text-sm font-semibold transition',
               scheduleStatusFilter === item.key
-                ? 'bg-sky-600 text-white shadow-[0_10px_24px_rgba(14,165,233,0.22)]'
-                : 'border border-sky-100 bg-white text-slate-500 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10',
+                ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950'
+                : 'border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.08]',
             ].join(' ')}
           >
             {item.label}
@@ -106,6 +106,7 @@ export function StudentManagementTab({
           options={activeStudentFilterOptions}
           scopeLabel={studentScopeLabel}
           summary={activeStudentFilterSummary}
+          tone="slate"
           onAreaEnter={onStudentFilterAreaEnter}
           onAreaLeave={onStudentFilterAreaLeave}
           onActivate={onActivateStudentFilter}
@@ -113,18 +114,18 @@ export function StudentManagementTab({
           onSelect={onSelectStudentFilterOption}
           extraControls={(
             <label className="relative w-full sm:ml-2 sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-300" size={16} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
               <input
                 value={studentNameFilter}
                 onChange={(event) => onStudentNameFilterChange(event.target.value)}
                 placeholder="学员姓名查询"
-                className={`${workspaceFieldClass} h-10 rounded-full bg-white py-2 pl-9 pr-9 text-sm dark:bg-slate-900/60`}
+                className={`${studentCenterFieldClass} h-10 rounded-full py-2 pl-9 pr-9 text-sm`}
               />
               {studentNameFilter.trim() ? (
                 <button
                   type="button"
                   onClick={() => onStudentNameFilterChange('')}
-                  className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400 transition hover:bg-sky-100 hover:text-sky-600 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-sky-400/20 dark:hover:text-sky-100"
+                  className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:bg-white/10 dark:text-slate-300 dark:hover:bg-white/15 dark:hover:text-white"
                   aria-label="清空学员姓名查询"
                 >
                   ×
@@ -134,14 +135,14 @@ export function StudentManagementTab({
           )}
         />
       ) : null}
-      <div className="overflow-hidden rounded-2xl border border-sky-100 bg-white/72 dark:border-white/10 dark:bg-white/5">
-        <div className="hidden grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_minmax(9rem,1fr)_auto] gap-3 border-b border-sky-100 bg-sky-50/70 px-4 py-3 text-xs font-bold text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-500 md:grid">
+      <div className="overflow-hidden rounded-[1.25rem] border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950">
+        <div className="hidden grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_minmax(9rem,1fr)_auto] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-500 md:grid">
           <span>学员</span>
           <span>课程状态</span>
           <span>负责教师</span>
           <span className="text-right">操作</span>
         </div>
-        <div className="divide-y divide-sky-100 dark:divide-white/10">
+        <div className="divide-y divide-slate-200 dark:divide-white/10">
         {filteredStudentRows.length ? filteredStudentRows.map((item) => {
           const teacher = item.teacherUserId == null ? undefined : users.find((user) => user.id === item.teacherUserId);
           const classLabel = item.classItem ? getClassDisplayName(item.classItem) : '未排课';
@@ -152,7 +153,7 @@ export function StudentManagementTab({
           return (
             <div
               key={`${item.classItem?.id || 'unscheduled'}-${item.id}`}
-              className="grid gap-3 px-4 py-3 transition hover:bg-sky-50/70 md:grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_minmax(9rem,1fr)_auto] md:items-center dark:hover:bg-white/5"
+              className="grid gap-3 px-4 py-3 transition hover:bg-slate-50 md:grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_minmax(9rem,1fr)_auto] md:items-center dark:hover:bg-white/[0.04]"
             >
               <div>
                 <p className="text-base font-semibold text-slate-900 dark:text-white">{item.name}</p>
@@ -166,7 +167,7 @@ export function StudentManagementTab({
               <button
                 type="button"
                 onClick={() => onOpenStudentProfile(item.id)}
-                className={`${workspaceSecondaryButtonClass} h-9 justify-self-start px-3 py-2 text-sm md:justify-self-end`}
+                className={`${studentCenterSecondaryButtonClass} h-9 justify-self-start px-3 py-2 text-sm md:justify-self-end`}
               >
                 学员详情
               </button>

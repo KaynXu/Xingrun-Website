@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
-const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const studentCenterSource = readFileSync(new URL('./features/student-center/StudentCenterPage.tsx', import.meta.url), 'utf8');
 const campusOverviewSource = readFileSync(new URL('./features/student-center/CampusOverview.tsx', import.meta.url), 'utf8');
 const classManagementTabSource = readFileSync(new URL('./features/student-center/ClassManagementTab.tsx', import.meta.url), 'utf8');
@@ -24,9 +23,9 @@ test('class management fetches and resets class invite codes', () => {
   assert.match(studentCenterSource, /executeClassInviteResetRequest\(classId, apiFetch\)/);
   assert.match(classInviteRulesSource, /apiFetch<ClassInviteInfo>\(request\.endpoint\)/);
   assert.match(classInviteRulesSource, /apiFetch<ClassInviteInfo>\(request\.endpoint, request\.init\)/);
-  assert.match(classEditorModalSource, /家长绑定邀请码/);
-  assert.match(classEditorModalSource, /当前邀请码/);
-  assert.match(classEditorModalSource, /微信小程序里绑定该班级/);
+  assert.match(classEditorModalSource, /邀请码：/);
+  assert.match(classEditorModalSource, /getClassInviteCopyButtonLabel/);
+  assert.match(classEditorModalSource, /重置/);
 });
 
 test('class management uses scoped floating filters and compact clickable cards', () => {
@@ -42,7 +41,7 @@ test('class management uses scoped floating filters and compact clickable cards'
   assert.match(classPageBlock[0], /!studentCenterPermissions\.isTeacherScoped/);
   assert.match(classPageBlock[0], /handleClassCardClick/);
   assert.match(classManagementTabSource, /ChevronRight,/);
-  assert.match(classPageBlock[0], /grid-cols-\[minmax\(14rem,1\.25fr\)_minmax\(18rem,1fr\)_auto\]/);
+  assert.match(classPageBlock[0], /grid-cols-\[minmax\(14rem,1\.3fr\)_minmax\(18rem,1fr\)_auto\]/);
   assert.match(classPageBlock[0], /Command\+S \/ Ctrl\+S/);
 });
 
@@ -68,11 +67,11 @@ test('class management editor uses structured naming and duplicate protection', 
   assert.ok(classPageBlock);
   assert.match(studentCenterSource, /academicGradeOptions/);
   assert.match(studentCenterSource, /const studentCenterGradeOptions = \[\.\.\.academicGradeOptions\]/);
-  assert.match(classPageBlock[0], /buildClassDisplayName\(form\)/);
+  assert.match(classPageBlock[0], /displayNamePreview: editingFormState \? buildClassDisplayName\(\{ \.\.\.editingFormState/);
   assert.match(classPageBlock[0], /findDuplicateClass\(classes, classId, payload\)/);
   assert.match(classPageBlock[0], /已存在相同学科、学段、年级、班号和入学年份的班级/);
   assert.match(classPageBlock[0], /入学年份/);
-  assert.match(classPageBlock[0], /2025级·四年级·1班/);
+  assert.match(classPageBlock[0], /数学·四年级·1班/);
   assert.match(classPageBlock[0], /保存更改/);
   assert.doesNotMatch(classPageBlock[0], /span className="text-slate-500 dark:text-slate-400">显示入学级<\/span>/);
 });
@@ -119,10 +118,10 @@ test('class management summary uses campus overview filters and compact help wit
   assert.match(classPageBlock[0], /label: '教师人数'[\s\S]*label: '学员人数'[\s\S]*label: '班级数量'[\s\S]*label: '小课数量'/);
   assert.match(classPageBlock[0], /label: '主讲教师', value: currentUser\.display_name \|\| currentUser\.username/);
   assert.match(classPageBlock[0], /const classSummaryItems = resolveOverviewSummaryItems\(\{/);
-  assert.match(classPageBlock[0], /grid grid-cols-2 gap-4 xl:grid-cols-4/);
+  assert.match(classPageBlock[0], /grid grid-cols-2 divide-x divide-y divide-slate-200 xl:grid-cols-4 xl:divide-y-0/);
   assert.match(classPageBlock[0], /activeClassHelpKey/);
   assert.match(classPageBlock[0], /校区总览说明/);
-  assert.match(classPageBlock[0], /inline-flex h-8 w-8 items-center justify-center text-sky-600/);
+  assert.match(classPageBlock[0], /inline-flex h-8 w-8 items-center justify-center text-slate-400/);
   assert.match(classPageBlock[0], /const filteredClasses = resolveFilteredClasses\(\{/);
   assert.match(classFilterRulesSource, /isClassInfoIncomplete/);
   assert.match(classFilterRulesSource, /Number\(isClassInfoIncomplete\(right, args\.teacherBindingByClassId, args\.subjectOptions\)\) - Number\(isClassInfoIncomplete\(left, args\.teacherBindingByClassId, args\.subjectOptions\)\)/);

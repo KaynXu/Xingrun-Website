@@ -1,0 +1,177 @@
+{
+  "requested_range": "2026-06-07 00:00:00 <= created_at < 2026-06-09 00:00:00",
+  "actual_generated_label": "6月7日",
+  "requested_name_note": {
+    "吴婧萱": "吴靖萱"
+  },
+  "production_status_rows": [
+    {
+      "class_id": 15,
+      "class_name": "2025级·七年级·5班",
+      "student_id": 75,
+      "student_name": "刘益函",
+      "day": "2026-06-07",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 2
+    },
+    {
+      "class_id": 14,
+      "class_name": "2025级·七年级·4班",
+      "student_id": 71,
+      "student_name": "吴靖萱",
+      "day": "2026-06-07",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 3
+    },
+    {
+      "class_id": 14,
+      "class_name": "2025级·七年级·4班",
+      "student_id": 70,
+      "student_name": "康芮绮",
+      "day": "2026-06-07",
+      "source": "wechat_mp",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "status": "pending",
+      "question_count": 3
+    }
+  ],
+  "production_2026_06_08_rows_for_targets": [],
+  "student_question_counts": {
+    "康芮绮": 3,
+    "吴靖萱": 3,
+    "刘益函": 2
+  },
+  "pdf_count": 3,
+  "zip_pdf_count": 3,
+  "zip_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607.zip",
+  "contact_sheet": "/private/tmp/xingrun_0607_wrong_practice_contact_sheet.png",
+  "students": [
+    {
+      "student_name": "吴靖萱",
+      "record_count": 3,
+      "pages": 4,
+      "bytes": 390855,
+      "section_counts": {
+        "原题 / 原图": 3,
+        "方法提醒": 3,
+        "挖空复盘": 3,
+        "订正区": 3,
+        "原题图片": 3,
+        "干净原题图片": 0,
+        "生成图像": 0,
+        "擦除后原题图片": 0
+      },
+      "bad_latex_counts": {
+        "$": 0,
+        "rac": 0,
+        "mathbbR": 0,
+        "ldots": 0,
+        "\\frac": 0
+      },
+      "section_order_ok": true,
+      "render_samples": [
+        {
+          "page": 1,
+          "nonwhite_pixels": 10746
+        },
+        {
+          "page": 3,
+          "nonwhite_pixels": 9147
+        },
+        {
+          "page": 4,
+          "nonwhite_pixels": 9902
+        }
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607/2025级·七年级·4班-吴靖萱-6月7日错题练习-20260607-20260607.pdf"
+    },
+    {
+      "student_name": "康芮绮",
+      "record_count": 3,
+      "pages": 4,
+      "bytes": 636298,
+      "section_counts": {
+        "原题 / 原图": 3,
+        "方法提醒": 3,
+        "挖空复盘": 3,
+        "订正区": 3,
+        "原题图片": 3,
+        "干净原题图片": 0,
+        "生成图像": 0,
+        "擦除后原题图片": 0
+      },
+      "bad_latex_counts": {
+        "$": 0,
+        "rac": 0,
+        "mathbbR": 0,
+        "ldots": 0,
+        "\\frac": 0
+      },
+      "section_order_ok": true,
+      "render_samples": [
+        {
+          "page": 1,
+          "nonwhite_pixels": 10519
+        },
+        {
+          "page": 3,
+          "nonwhite_pixels": 12251
+        },
+        {
+          "page": 4,
+          "nonwhite_pixels": 8333
+        }
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607/2025级·七年级·4班-康芮绮-6月7日错题练习-20260607-20260607.pdf"
+    },
+    {
+      "student_name": "刘益函",
+      "record_count": 2,
+      "pages": 3,
+      "bytes": 402301,
+      "section_counts": {
+        "原题 / 原图": 2,
+        "方法提醒": 2,
+        "挖空复盘": 2,
+        "订正区": 2,
+        "原题图片": 2,
+        "干净原题图片": 0,
+        "生成图像": 0,
+        "擦除后原题图片": 0
+      },
+      "bad_latex_counts": {
+        "$": 0,
+        "rac": 0,
+        "mathbbR": 0,
+        "ldots": 0,
+        "\\frac": 0
+      },
+      "section_order_ok": true,
+      "render_samples": [
+        {
+          "page": 1,
+          "nonwhite_pixels": 9521
+        },
+        {
+          "page": 2,
+          "nonwhite_pixels": 8862
+        },
+        {
+          "page": 3,
+          "nonwhite_pixels": 6678
+        }
+      ],
+      "pdf_path": "/Users/xiaodi/Desktop/xingrun.web/output/pdf/康芮绮-吴靖萱-刘益函-6月7日错题练习PDF-20260607-20260607/2025级·七年级·5班-刘益函-6月7日错题练习-20260607-20260607.pdf"
+    }
+  ],
+  "git_diff_check_returncode": 0,
+  "git_diff_check_stdout": "",
+  "git_diff_check_stderr": ""
+}

@@ -110,7 +110,7 @@ def _question_pool(plan_data: dict) -> list[dict]:
 
 
 def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
-    day_number = int(day_data.get("day") or 0) or 1
+    day_number = int(day_data.get("day") or day_data.get("day_number") or 0) or 1
     tasks: list[str] = []
     blanks: list[tuple[str, str]] = []
 
@@ -132,9 +132,42 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         elif text:
             tasks.append(text)
 
+    for field in ("goal", "focus"):
+        text = _clean_text(day_data.get(field))
+        if text and text not in tasks:
+            tasks.append(text)
+
+    active_recall = day_data.get("active_recall")
+    if isinstance(active_recall, dict):
+        for field in ("instructions", "expected"):
+            text = _clean_text(active_recall.get(field))
+            if text and text not in tasks:
+                tasks.append(text)
+    elif isinstance(active_recall, str):
+        text = _clean_text(active_recall)
+        if text and text not in tasks:
+            tasks.append(text)
+
+    for blank in day_data.get("blanks", []) if isinstance(day_data.get("blanks"), list) else []:
+        if isinstance(blank, dict):
+            text = _clean_text(blank.get("text"))
+            answer = _clean_text(blank.get("answer"), "见课堂笔记")
+        elif isinstance(blank, (list, tuple)) and blank:
+            text = _clean_text(blank[0])
+            answer = _clean_text(blank[1] if len(blank) > 1 else "", "见课堂笔记")
+        else:
+            text = _clean_text(blank)
+            answer = "见课堂笔记"
+        if text:
+            blanks.append((text, answer))
+
     phrase = _clean_text(day_data.get("self_test_phrase"))
     if phrase:
         tasks.append(phrase)
+    elif isinstance(active_recall, dict):
+        phrase = _clean_text(active_recall.get("expected") or active_recall.get("instructions"))
+        if phrase:
+            tasks.append(phrase)
 
     task_values = tasks[:4] or [f"完整复习{topic or '本课内容'}并复述关键方法。"]
     blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
@@ -143,7 +176,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
     for choice in day_data.get("choices", []) if isinstance(day_data.get("choices"), list) else []:
         if not isinstance(choice, dict):
             continue
-        question = _clean_text(choice.get("question"))
+        question = _clean_text(choice.get("question") or choice.get("stem"))
         options = _dedupe_clean_lines(choice.get("options"))
         answer = _clean_text(choice.get("answer"), "A")
         if question and options:
@@ -158,7 +191,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
     return {
         "offset": day_number,
         "day": f"第{day_number}天",
-        "focus": _clean_text(day_data.get("theme") or day_data.get("label"), f"聚焦复习{topic or '本课内容'}"),
+        "focus": _clean_text(day_data.get("focus") or day_data.get("theme") or day_data.get("label"), f"聚焦复习{topic or '本课内容'}"),
         "goal": f"完整回顾{topic or '本课内容'}，并复述关键方法与易错点。",
         "tasks": task_values,
         "blanks": blank_values,
@@ -169,7 +202,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 
 def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], list[str]]:
     lesson_info = plan_data.get("lesson_info", {})
-    topic = _clean_text(lesson_info.get("topic"), "课后")
+    topic = _clean_text(lesson_info.get("topic") or plan_data.get("topic"), "课后")
     weak_points = _clean_text(plan_data.get("weak_points_summary"))
     full_review_topics = _dedupe_clean_lines(lesson_info.get("key_categories"))
     for text in _dedupe_clean_lines(plan_data.get("full_review_topics")):
@@ -180,6 +213,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
         "subtitle": "",
         "audience": "老师发给学生使用",
         "duration": "每次 10-20 分钟",
+        "base_date": _clean_text(lesson_info.get("date") or plan_data.get("lesson_date")),
         "core_points": [weak_points] if weak_points else [],
         "full_review_topics": full_review_topics or [topic],
         "quotes": collect_plan_quotes(plan_data),
@@ -203,6 +237,7 @@ def generate_single_lesson_pdf(plan_data: dict, output_path: str) -> str:
         output_path=str(output),
         variant_key="cn",
         knowledge_sections=extract_knowledge_sections(plan_data),
+        base_date=lesson.get("base_date"),
     )
 
 

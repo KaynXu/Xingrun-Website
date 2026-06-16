@@ -5,3 +5,5 @@ flask>=3.0.0
 flask-cors>=6.0.0
 redis>=5.0.0
 rq>=1.16.0
+pydantic>=2.7.0
+PyYAML>=6.0.0

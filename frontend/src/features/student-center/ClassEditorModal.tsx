@@ -10,12 +10,17 @@ import {
 } from '../../domain/classNaming';
 import { getClassInviteCopyButtonLabel } from './classInviteRules';
 import {
-  workspaceCardClass,
-  workspaceFieldClass,
-  workspacePrimaryButtonClass,
-  workspaceSecondaryButtonClass,
+  cn,
 } from '../../workspaceShared';
 import type { ClassFormValues, ClassInviteInfo, ClassItem, ClassStudentOption, UserItem } from './model';
+import {
+  studentCenterBadgeClass,
+  studentCenterFieldClass,
+  studentCenterMutedSurfaceClass,
+  studentCenterPrimaryButtonClass,
+  studentCenterSecondaryButtonClass,
+  studentCenterSurfaceClass,
+} from './ui';
 
 type ClassStudent = { id: number; name: string };
 type TeacherFilterLayer = 'subject' | 'stage';
@@ -253,23 +258,23 @@ export function ClassEditorModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 18 }}
             transition={{ duration: 0.2 }}
-            className="relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.18)] max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900 dark:shadow-[0_30px_90px_rgba(2,6,23,0.55)]"
+            className={`relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden ${studentCenterSurfaceClass} max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] sm:rounded-[2rem]`}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-sky-100/80 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:px-6 sm:py-5 dark:border-white/10">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-600">Class Management</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500">Class Management</p>
                 <div className="mt-2 flex flex-wrap items-center gap-3">
                   <h3 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
                     {newClassExpanded ? '新建班级' : `编辑班级：${editingClass ? getClassDisplayName(editingClass) : ''}`}
                   </h3>
                   {editingClass ? (
-                    <div className="flex flex-wrap items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                    <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200">
                       <span>邀请码：{editing.inviteInfo?.invite_code || (editing.inviteLoading ? '加载中' : '未加载')}</span>
                       <button
                         type="button"
                         onClick={() => void handleCopyInvite(editingClass.id)}
                         disabled={editing.inviteLoading || editing.inviteResetting || copyingInviteClassId === editingClass.id}
-                        className="rounded-full px-2 py-1 text-sky-600 transition hover:bg-white hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-sky-300 dark:hover:bg-white/10"
+                        className="rounded-full px-2 py-1 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300 dark:hover:bg-white/10"
                       >
                         {getClassInviteCopyButtonLabel({
                           loading: editing.inviteLoading,
@@ -281,7 +286,7 @@ export function ClassEditorModal({
                         type="button"
                         onClick={() => actions.onResetClassInvite(editingClass.id)}
                         disabled={editing.inviteLoading || editing.inviteResetting}
-                        className="rounded-full px-2 py-1 text-sky-600 transition hover:bg-white hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-sky-300 dark:hover:bg-white/10"
+                        className="rounded-full px-2 py-1 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300 dark:hover:bg-white/10"
                       >
                         {editing.inviteResetting ? '重置中' : '重置'}
                       </button>
@@ -300,7 +305,7 @@ export function ClassEditorModal({
                   type="button"
                   onClick={() => void actions.onSaveClass(newClassExpanded ? 'new' : editingClass?.id || 'new')}
                   disabled={saveClassDisabled}
-                  className={`${workspacePrimaryButtonClass} h-10 px-4 py-2 text-sm`}
+                  className={`${studentCenterPrimaryButtonClass} h-10 px-4 py-2 text-sm`}
                   title="Command+S / Ctrl+S"
                 >
                   {saving ? '保存中...' : (newClassExpanded ? '创建班级' : '保存更改')}
@@ -313,7 +318,7 @@ export function ClassEditorModal({
                     }
                   }}
                   disabled={classCardInteractionLocked}
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-50 text-slate-500 transition-colors hover:bg-sky-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
                   aria-label="关闭班级编辑窗口"
                 >
                   <X size={18} />
@@ -333,7 +338,7 @@ export function ClassEditorModal({
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                     {newClass.form.subject.trim() ? (
-                      <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                      <span className={studentCenterBadgeClass}>
                         {newClass.form.subject.trim()}
                       </span>
                     ) : null}
@@ -347,7 +352,7 @@ export function ClassEditorModal({
                       <select
                         value={newClass.form.class_type}
                         onChange={(e) => actions.onFieldChange('new', 'class_type', e.target.value)}
-                        className={workspaceFieldClass}
+                        className={studentCenterFieldClass}
                       >
                         <option value="group">多人班课</option>
                         <option value="1v1">1v1</option>
@@ -360,7 +365,7 @@ export function ClassEditorModal({
                       <select
                         value={academicSubjectOptions.includes(newClass.form.subject) ? newClass.form.subject : ''}
                         onChange={(e) => actions.onFieldChange('new', 'subject', e.target.value)}
-                        className={workspaceFieldClass}
+                        className={studentCenterFieldClass}
                       >
                         <option value="">请选择学科</option>
                         {academicSubjectOptions.map((option) => (
@@ -370,7 +375,7 @@ export function ClassEditorModal({
                     </label>
                     <label className="space-y-2 text-sm">
                       <span className="text-slate-500 dark:text-slate-400">学段</span>
-                      <select value={newClass.form.stage} onChange={(e) => actions.onFieldChange('new', 'stage', e.target.value)} className={workspaceFieldClass}>
+                      <select value={newClass.form.stage} onChange={(e) => actions.onFieldChange('new', 'stage', e.target.value)} className={studentCenterFieldClass}>
                         {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                       </select>
                     </label>
@@ -379,7 +384,7 @@ export function ClassEditorModal({
                       <select
                         value={newClass.form.current_grade}
                         onChange={(e) => actions.onFieldChange('new', 'current_grade', e.target.value)}
-                        className={workspaceFieldClass}
+                        className={studentCenterFieldClass}
                       >
                         {newClass.gradeOptions.map((option) => (
                           <option key={option} value={option}>{option}</option>
@@ -389,19 +394,19 @@ export function ClassEditorModal({
                     {newClass.form.class_type === 'group' ? (
                       <label className="space-y-2 text-sm">
                         <span className="text-slate-500 dark:text-slate-400">班号</span>
-                        <input type="number" min="1" value={newClass.form.class_number} onChange={(e) => actions.onFieldChange('new', 'class_number', e.target.value)} className={workspaceFieldClass} />
+                        <input type="number" min="1" value={newClass.form.class_number} onChange={(e) => actions.onFieldChange('new', 'class_number', e.target.value)} className={studentCenterFieldClass} />
                       </label>
                     ) : (
                       <div className="space-y-2 text-sm md:col-span-2">
                         <span className="text-slate-500 dark:text-slate-400">选择学员</span>
-                        <div className="rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-white/5">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.04]">
                           <label className="relative block">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={16} />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
                             <input
                               value={newClassStudentSearch}
                               onChange={(event) => setNewClassStudentSearch(event.target.value)}
                               placeholder="搜索学员姓名"
-                              className={`${workspaceFieldClass} h-10 pl-9`}
+                              className={`${studentCenterFieldClass} h-10 pl-9`}
                             />
                           </label>
                           {selectedNewClassStudents.length ? (
@@ -411,7 +416,7 @@ export function ClassEditorModal({
                                   key={student.id}
                                   type="button"
                                   onClick={() => actions.onNewClassStudentSelectionChange(student.id, false)}
-                                  className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+                                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:bg-white/10"
                                 >
                                   {student.name} ×
                                 </button>
@@ -420,7 +425,7 @@ export function ClassEditorModal({
                           ) : null}
                           <div className="mt-3 grid max-h-40 gap-2 overflow-y-auto sm:grid-cols-2">
                             {newClass.allStudents.length ? filteredNewClassStudents.map((student) => (
-                              <label key={student.id} className="flex items-center gap-2 rounded-xl px-2 py-1 text-sm text-slate-700 hover:bg-sky-50 dark:text-slate-200 dark:hover:bg-white/10">
+                              <label key={student.id} className="flex items-center gap-2 rounded-xl px-2 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10">
                                 <input
                                   type="checkbox"
                                   checked={newClass.form.selected_student_ids.includes(student.id)}
@@ -429,12 +434,12 @@ export function ClassEditorModal({
                                 <span>{student.name}</span>
                               </label>
                             )) : (
-                              <div className="rounded-xl border border-dashed border-sky-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
+                              <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
                               暂无已有学员，请先在学员管理中建立学员档案。
                               </div>
                             )}
                             {newClass.allStudents.length && !filteredNewClassStudents.length ? (
-                              <div className="rounded-xl border border-dashed border-sky-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
+                              <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
                                 没有匹配的学员
                               </div>
                             ) : null}
@@ -451,13 +456,13 @@ export function ClassEditorModal({
                       <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                     </label>
                     {newClass.form.is_bridge ? (
-                      <div className="space-y-2 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 text-sm md:col-span-2 dark:border-white/10 dark:bg-white/5">
+                      <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm md:col-span-2 dark:border-white/10 dark:bg-white/[0.04]">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                           <span className="font-semibold text-slate-700 dark:text-slate-200">衔接方向</span>
                           <select
                             value={newClassBridge.fromStage}
                             onChange={(event) => updateBridgeTarget('new', event.target.value, newClassBridge.toStage)}
-                            className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                            className={`${studentCenterFieldClass} h-10 sm:max-w-40`}
                           >
                             {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                           </select>
@@ -465,7 +470,7 @@ export function ClassEditorModal({
                           <select
                             value={newClassBridge.toStage}
                             onChange={(event) => updateBridgeTarget('new', newClassBridge.fromStage, event.target.value)}
-                            className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                            className={`${studentCenterFieldClass} h-10 sm:max-w-40`}
                           >
                             {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                           </select>
@@ -475,33 +480,33 @@ export function ClassEditorModal({
                         ) : null}
                       </div>
                     ) : null}
-                    <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
+                    <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100">
                       名称预览：{newClass.displayNamePreview}
                     </div>
                   </div>
 
-                  <div className={`${workspaceCardClass} space-y-5 p-5`}>
+                  <div className={`${studentCenterSurfaceClass} space-y-5 p-5`}>
                     <div>
                       <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
                     </div>
 
                     <label className="relative block">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
                       <input
                         type="text"
                         value={teacherSearchByClassId.new || ''}
                         onChange={(e) => actions.onTeacherSearchChange('new', e.target.value)}
                         placeholder="搜索老师"
-                        className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                        className={`${studentCenterFieldClass} rounded-full py-2.5 pl-11 pr-4`}
                       />
                     </label>
 
                     {users.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                      <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
                         当前暂无成员，成员通过审批后会出现在这里。
                       </div>
                     ) : newClass.filteredUsers.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                      <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
                         没有匹配到老师，请调整搜索关键词。
                       </div>
                     ) : (
@@ -512,7 +517,7 @@ export function ClassEditorModal({
                           actions.onNewClassTeacherUserIdChange(Number.isFinite(nextTeacherUserId) && nextTeacherUserId > 0 ? nextTeacherUserId : null);
                         }}
                         disabled={classInteractionLocked || newClass.filteredUsers.length === 0}
-                        className={workspaceFieldClass}
+                        className={studentCenterFieldClass}
                       >
                         <option value="">请选择负责老师</option>
                         {newClass.filteredUsers.map((user) => (
@@ -522,12 +527,12 @@ export function ClassEditorModal({
                     )}
                   </div>
 
-                  <div className="flex flex-col gap-3 border-t border-sky-100/80 pt-5 sm:flex-row sm:items-center sm:justify-end dark:border-white/10">
+                  <div className="flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-end dark:border-white/10">
                     <button
                       type="button"
                       onClick={() => actions.onSaveClass('new')}
                       disabled={saveClassDisabled}
-                      className={workspacePrimaryButtonClass}
+                      className={studentCenterPrimaryButtonClass}
                     >
                       {saving ? '保存中...' : '创建班级'}
                     </button>
@@ -537,7 +542,7 @@ export function ClassEditorModal({
                 <div className="space-y-5">
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.95fr)] lg:items-start">
                     <div className="space-y-4">
-                      <div className={`${workspaceCardClass} space-y-4 p-5`}>
+                      <div className={`${studentCenterSurfaceClass} space-y-4 p-5`}>
                         <h4 className="text-xl font-semibold text-slate-900 dark:text-white">基础信息</h4>
 
                         <div className="grid gap-4 md:grid-cols-2">
@@ -546,7 +551,7 @@ export function ClassEditorModal({
                             <select
                               value={editingFormState.class_type}
                               onChange={(e) => actions.onFieldChange(editingClass.id, 'class_type', e.target.value)}
-                              className={workspaceFieldClass}
+                              className={studentCenterFieldClass}
                             >
                               <option value="group">多人班课</option>
                               <option value="1v1">1v1</option>
@@ -559,7 +564,7 @@ export function ClassEditorModal({
                             <select
                               value={academicSubjectOptions.includes(editingFormState.subject) ? editingFormState.subject : ''}
                               onChange={(e) => actions.onFieldChange(editingClass.id, 'subject', e.target.value)}
-                              className={workspaceFieldClass}
+                              className={studentCenterFieldClass}
                             >
                               <option value="">请选择学科</option>
                               {academicSubjectOptions.map((option) => (
@@ -569,7 +574,7 @@ export function ClassEditorModal({
                           </label>
                           <label className="space-y-2 text-sm">
                             <span className="text-slate-500 dark:text-slate-400">学段</span>
-                            <select value={editingFormState.stage} onChange={(e) => actions.onFieldChange(editingClass.id, 'stage', e.target.value)} className={workspaceFieldClass}>
+                            <select value={editingFormState.stage} onChange={(e) => actions.onFieldChange(editingClass.id, 'stage', e.target.value)} className={studentCenterFieldClass}>
                               {studentCenterStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                             </select>
                           </label>
@@ -578,7 +583,7 @@ export function ClassEditorModal({
                             <select
                               value={editingFormState.current_grade || editingFormState.grade}
                               onChange={(e) => actions.onFieldChange(editingClass.id, 'current_grade', e.target.value)}
-                              className={workspaceFieldClass}
+                              className={studentCenterFieldClass}
                             >
                               {editing.gradeOptions.map((option) => (
                                 <option key={option} value={option}>{option}</option>
@@ -588,7 +593,7 @@ export function ClassEditorModal({
                           {editingFormState.class_type === 'group' ? (
                             <label className="space-y-2 text-sm">
                               <span className="text-slate-500 dark:text-slate-400">班号</span>
-                              <input type="number" min="1" value={editingFormState.class_number} onChange={(e) => actions.onFieldChange(editingClass.id, 'class_number', e.target.value)} className={workspaceFieldClass} />
+                              <input type="number" min="1" value={editingFormState.class_number} onChange={(e) => actions.onFieldChange(editingClass.id, 'class_number', e.target.value)} className={studentCenterFieldClass} />
                             </label>
                           ) : null}
                           <label className="flex items-center gap-2 text-sm">
@@ -600,13 +605,13 @@ export function ClassEditorModal({
                             <span className="text-slate-500 dark:text-slate-400">衔接班</span>
                           </label>
                           {editingFormState.is_bridge && editingBridge ? (
-                            <div className="space-y-2 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 text-sm md:col-span-2 dark:border-white/10 dark:bg-white/5">
+                            <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm md:col-span-2 dark:border-white/10 dark:bg-white/[0.04]">
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                                 <span className="font-semibold text-slate-700 dark:text-slate-200">衔接方向</span>
                                 <select
                                   value={editingBridge.fromStage}
                                   onChange={(event) => updateBridgeTarget(editingClass.id, event.target.value, editingBridge.toStage)}
-                                  className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                                  className={`${studentCenterFieldClass} h-10 sm:max-w-40`}
                                 >
                                   {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                                 </select>
@@ -614,7 +619,7 @@ export function ClassEditorModal({
                                 <select
                                   value={editingBridge.toStage}
                                   onChange={(event) => updateBridgeTarget(editingClass.id, editingBridge.fromStage, event.target.value)}
-                                  className={`${workspaceFieldClass} h-10 sm:max-w-40`}
+                                  className={`${studentCenterFieldClass} h-10 sm:max-w-40`}
                                 >
                                   {bridgeStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                                 </select>
@@ -624,14 +629,14 @@ export function ClassEditorModal({
                               ) : null}
                             </div>
                           ) : null}
-                          <div className="md:col-span-2 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100">
+                          <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100">
                             名称预览：{editing.displayNamePreview}
                           </div>
                         </div>
                       </div>
 
                       {editing.canEditTeacherBinding && (
-                        <div className={`${workspaceCardClass} relative space-y-5 overflow-visible p-5`}>
+                        <div className={`${studentCenterSurfaceClass} relative space-y-5 overflow-visible p-5`}>
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="flex flex-wrap items-center gap-3">
                               <h4 className="text-xl font-semibold text-slate-900 dark:text-white">负责老师</h4>
@@ -644,6 +649,7 @@ export function ClassEditorModal({
                                 floatingOptions
                                 compact
                                 activateOnHover={false}
+                                tone="slate"
                                 onAreaEnter={() => undefined}
                                 onAreaLeave={() => undefined}
                                 onActivate={(key) => {
@@ -660,7 +666,7 @@ export function ClassEditorModal({
                               type="button"
                               onClick={() => actions.onRefreshAssignment(editingClass.id)}
                               disabled={assignmentRefreshLocked}
-                              className={workspaceSecondaryButtonClass}
+                              className={studentCenterSecondaryButtonClass}
                             >
                               刷新分配
                             </button>
@@ -682,7 +688,7 @@ export function ClassEditorModal({
                           }}
                         >
                           <label className="relative block max-w-[220px]">
-                            <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sky-500 dark:text-sky-400">
+                            <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-slate-400 dark:text-slate-500">
                               <Search size={18} />
                             </span>
                             <input
@@ -695,12 +701,12 @@ export function ClassEditorModal({
                                 setTeacherResultsOpen(true);
                               }}
                               placeholder="搜索老师"
-                              className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                              className={`${studentCenterFieldClass} rounded-full py-2.5 pl-11 pr-4`}
                             />
                           </label>
 
                           {teacherResultsOpen || teacherSearchHasText ? (
-                          <div className="mt-4 min-h-24 rounded-2xl border border-sky-100 bg-sky-50/40 p-2 shadow-[0_18px_44px_rgba(47,128,237,0.08)] lg:absolute lg:left-[calc(100%+2rem)] lg:top-1/2 lg:z-30 lg:mt-0 lg:w-[320px] lg:-translate-y-1/2 dark:border-white/10 dark:bg-slate-900/95">
+                          <div className="mt-4 min-h-24 rounded-2xl border border-slate-200 bg-white p-2 lg:absolute lg:left-[calc(100%+2rem)] lg:top-1/2 lg:z-30 lg:mt-0 lg:w-[320px] lg:-translate-y-1/2 dark:border-white/10 dark:bg-slate-900/95">
                             {users.length === 0 ? (
                               <div className="px-3 py-2 text-sm text-slate-400 dark:text-slate-500">当前暂无成员</div>
                             ) : filteredTeacherUsers.length === 0 ? (
@@ -720,11 +726,12 @@ export function ClassEditorModal({
                                         setTeacherResultsOpen(false);
                                       }}
                                       disabled={editing.teacherBindingSaving || classInteractionLocked}
-                                      className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                      className={cn(
+                                        'rounded-full border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
                                         selected
-                                          ? 'border-sky-500 bg-sky-500 text-white'
-                                          : 'border-sky-100 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
-                                      }`}
+                                          ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
+                                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:bg-white/10',
+                                      )}
                                     >
                                       {user.name}
                                     </button>
@@ -736,7 +743,7 @@ export function ClassEditorModal({
                           ) : null}
                         </div>
 
-                        <div className="border-t border-sky-100/80 pt-5 dark:border-white/10">
+                        <div className="border-t border-slate-200 pt-5 dark:border-white/10">
                           <button
                             type="button"
                             onClick={() => actions.onDeleteClass(editingClass.id)}
@@ -751,7 +758,7 @@ export function ClassEditorModal({
                       )}
                     </div>
 
-                    <div className={`${workspaceCardClass} space-y-4 p-5`}>
+                    <div className={`${studentCenterSurfaceClass} space-y-4 p-5`}>
                       <h4 className="text-xl font-semibold text-slate-900 dark:text-white">编辑学生</h4>
 
                       {editing.studentError ? (
@@ -767,23 +774,23 @@ export function ClassEditorModal({
                         </div>
                       ) : null}
                       {editingSmallClassFull ? (
-                        <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
                           当前班型最多 {editingSmallClassLimit} 名学员，如需调整请先移除原学员。
                         </div>
                       ) : (
                         <div className="space-y-3">
                           <label className="relative block">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-500 dark:text-sky-400" size={18} />
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
                             <input
                               type="text"
                               value={editingStudentSearch}
                               onChange={(e) => setEditingStudentSearch(e.target.value)}
                               placeholder="搜索已有学员"
-                              className={`${workspaceFieldClass} rounded-full py-2.5 pl-11 pr-4`}
+                              className={`${studentCenterFieldClass} rounded-full py-2.5 pl-11 pr-4`}
                             />
                           </label>
                           {normalizedEditingStudentSearch ? (
-                            <div className="grid max-h-40 gap-2 overflow-y-auto rounded-2xl border border-sky-100 bg-white/70 p-3 dark:border-white/10 dark:bg-white/5 sm:grid-cols-2">
+                            <div className="grid max-h-40 gap-2 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.04] sm:grid-cols-2">
                               {filteredEditingStudentOptions.length ? filteredEditingStudentOptions.map((student) => (
                                 <button
                                   key={student.id}
@@ -793,12 +800,12 @@ export function ClassEditorModal({
                                     setEditingStudentSearch('');
                                   }}
                                   disabled={editing.studentSaving}
-                                  className="rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-white/10"
+                                  className="rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-white/10"
                                 >
                                   {student.name}
                                 </button>
                               )) : (
-                                <div className="rounded-xl border border-dashed border-sky-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
+                                <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-slate-500 dark:border-white/10 dark:text-slate-400 sm:col-span-2">
                                   {editing.allStudents.length ? '没有匹配的可添加学员' : '暂无已有学员，请先在学员管理中建立学员档案。'}
                                 </div>
                               )}
@@ -808,22 +815,22 @@ export function ClassEditorModal({
                       )}
 
                       {editing.studentsLoading ? (
-                        <div className="rounded-2xl border border-dashed border-sky-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
+                        <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
                           正在加载学生...
                         </div>
                       ) : editing.students.length === 0 ? (
-                        <div className="min-h-56 rounded-2xl border border-sky-100 bg-sky-50/40 p-3 dark:border-white/10 dark:bg-white/5" />
+                        <div className="min-h-56 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-white/10 dark:bg-white/[0.04]" />
                       ) : (
-                        <div className="grid min-h-56 grid-cols-2 content-start gap-2 rounded-2xl border border-sky-100 bg-sky-50/40 p-3 sm:grid-cols-3 dark:border-white/10 dark:bg-white/5">
+                        <div className="grid min-h-56 grid-cols-2 content-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-3 dark:border-white/10 dark:bg-white/[0.04]">
                           {editing.students.map((student) => (
                             <div
                               key={student.id}
-                              className="flex h-9 min-w-0 items-center overflow-hidden rounded-full border border-sky-100 bg-white text-sm font-semibold text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/10 dark:text-slate-100"
+                              className="flex h-9 min-w-0 items-center overflow-hidden rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-slate-100"
                             >
                               <button
                                 type="button"
                                 onClick={() => actions.onOpenStudentProfile(student.id)}
-                                className="flex h-full min-w-0 flex-1 items-center justify-center px-3 text-center transition-colors hover:bg-sky-50 dark:hover:bg-white/10"
+                                className="flex h-full min-w-0 flex-1 items-center justify-center px-3 text-center transition-colors hover:bg-slate-50 dark:hover:bg-white/10"
                                 title="查看学员详情"
                               >
                                 <span className="truncate">{student.name}</span>

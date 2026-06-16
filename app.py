@@ -27,7 +27,20 @@ from typing import Optional, Set
 from flask import Flask, abort, redirect, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from config_runtime import env_controlled_keys, get_runtime_config, load_file_config, write_file_config
+from config_runtime import (
+    chat_model_for_provider,
+    env_controlled_keys,
+    get_runtime_config,
+    load_file_config,
+    normalize_chat_provider,
+    normalize_reasoning_effort,
+    resolve_review_plan_model,
+    resolve_review_plan_provider,
+    resolve_review_plan_reasoning_effort,
+    resolve_review_plan_writer_model,
+    resolve_review_plan_writer_provider,
+    write_file_config,
+)
 import ai_processor
 import pdf_engine
 
@@ -47,6 +60,8 @@ app.secret_key = "review_plan_local_2026"
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
 REVIEW_PLAN_AUDIO_MAX_BYTES = 100 * 1024 * 1024
 REVIEW_PLAN_AUDIO_MAX_LABEL = "100MB"
+PROFILE_AVATAR_MAX_BYTES = 4 * 1024 * 1024
+PROFILE_AVATAR_MAX_LABEL = "4MB"
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:8080", "http://127.0.0.1:8080",
     "http://localhost:5173", "http://127.0.0.1:5173",
@@ -68,6 +83,7 @@ from lesson_manager import (
     approve_registration_request,
     authenticate_user,
     add_existing_student_to_class,
+    authenticate_student_account,
     bind_parent_to_student,
     confirm_class_feedback_task,
     create_class_feedback_task,
@@ -82,6 +98,8 @@ from lesson_manager import (
     create_wechat_wrong_question_upload_task,
     create_organization_request,
     create_auth_session,
+    create_student_account_by_invite,
+    create_student_auth_session,
     create_consultation,
     create_course_calendar_custom_item,
     create_course_calendar_custom_schedule,
@@ -113,10 +131,13 @@ from lesson_manager import (
     get_course_calendar_custom_schedule,
     get_course_calendar_schedule,
     get_current_user,
+    get_current_student_account,
     get_parent_student_binding,
     get_parent_student_binding_for_student,
+    get_active_class_invite_by_code,
     get_or_create_active_class_invite,
     get_lesson,
+    get_latest_review_plan_run_for_lesson,
     get_student_profile,
     get_wrong_question_chat_session,
     get_weekly_wrong_question_followup_message,
@@ -158,6 +179,7 @@ from lesson_manager import (
     list_wrong_question_submissions_for_chat_session,
     list_wrong_question_assets,
     list_wrong_question_submissions_for_ingestion_run,
+    list_student_review_tasks_for_student_account,
     list_students_for_class,
     list_student_class_history,
     list_wechat_wrong_question_submissions_for_parent_student,
@@ -170,6 +192,7 @@ from lesson_manager import (
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
     normalize_consultation_batch_parse_result,
+    preview_student_class_invite,
     reject_organization_request,
     reject_registration_request,
     reset_class_invite,
@@ -220,7 +243,10 @@ from lesson_manager import (
     get_teacher_alias_entries,
     upsert_teacher_alias,
     delete_teacher_alias,
+    change_user_password,
     reset_user_password_by_recovery,
+    student_account_can_access_lesson,
+    update_user_avatar_preferences,
 )
 from ai_processor import parse_consultation_batch_text
 import smart_wrong_questions
@@ -263,17 +289,34 @@ def get_config():
 
 
 def _default_ai_provider_name() -> str:
-    return str(get_config().get("provider", "deepseek") or "deepseek")
+    return normalize_chat_provider(get_config().get("provider", "deepseek"))
 
 
 def _default_chat_model_name() -> str:
-    cfg = get_config()
-    provider = _default_ai_provider_name()
-    if provider == "deepseek":
-        return str(cfg.get("deepseek_model", "deepseek-v4-pro") or "deepseek-v4-pro")
-    if provider == "mimo":
-        return str(cfg.get("mimo_model", "MiMo-7B-RL") or "MiMo-7B-RL")
-    return "gpt-4o"
+    return chat_model_for_provider(_default_ai_provider_name(), get_config())
+
+
+def _review_plan_ai_provider_name() -> str:
+    return resolve_review_plan_provider(get_config())
+
+
+def _review_plan_chat_model_name() -> str:
+    provider = _review_plan_ai_provider_name()
+    return resolve_review_plan_model(get_config(), provider=provider)
+
+
+def _review_plan_reasoning_effort() -> str:
+    provider = _review_plan_ai_provider_name()
+    return resolve_review_plan_reasoning_effort(get_config(), provider=provider)
+
+
+def _review_plan_writer_ai_provider_name() -> str:
+    return resolve_review_plan_writer_provider(get_config())
+
+
+def _review_plan_writer_chat_model_name() -> str:
+    provider = _review_plan_writer_ai_provider_name()
+    return resolve_review_plan_writer_model(get_config(), provider=provider)
 
 
 def _normalize_ai_usage_payload(usage: object, *, provider: str, model: str) -> dict:
@@ -472,6 +515,14 @@ def _uploaded_file_content_fingerprint(file_storage) -> str:
         return digest.hexdigest()
     except (OSError, ValueError):
         return ""
+
+
+def _profile_avatar_upload_relative_path(user_id: int, original_filename: str) -> str:
+    safe_filename = secure_filename(original_filename or "")
+    suffix = Path(safe_filename).suffix.lower()
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        suffix = ".png"
+    return f"profile-avatars/user-{int(user_id)}-{int(time() * 1000)}{suffix}"
 
 
 def _request_payload_fingerprint(*, include_file_content: bool = False) -> str:
@@ -789,7 +840,7 @@ def _run_review_plan_generation_job(
         weak_points = str(lesson.get("weak_points") or "")
         raw_text = str(lesson.get("summary") or "")
 
-        from ai_processor import parse_and_generate_plan
+        from review_plan_workflow.service import generate_single_lesson_review_plan
         try:
             plan = _run_ai_feature_with_charge(
                 user=user,
@@ -797,13 +848,17 @@ def _run_review_plan_generation_job(
                 source_record_type="lesson",
                 source_record_id=lesson_id,
                 producer=lambda: _call_ai_helper_with_usage(
-                    parse_and_generate_plan,
+                    generate_single_lesson_review_plan,
                     summary_text=raw_text,
                     subject=subject,
                     grade=grade,
                     topic=topic,
                     weak_points=weak_points,
                     lesson_date=lesson_date,
+                    provider=chat_provider,
+                    model=chat_model,
+                    lesson_id=lesson_id,
+                    organization_id=int(user["organization_id"]),
                 ),
                 provider=chat_provider,
                 model=chat_model,
@@ -832,6 +887,8 @@ def _run_review_plan_generation_job(
             except LookupError:
                 logger.exception("Failed to mark lesson %s as failed after AI error", lesson_id)
             return
+        if isinstance(plan, tuple) and len(plan) == 2 and isinstance(plan[1], dict):
+            plan = plan[0]
 
         from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
@@ -1578,16 +1635,22 @@ def _start_monthly_plan_generation_thread(**job_kwargs) -> None:
     ).start()
 
 
-def has_api_key():
+def _has_api_key_for_provider(provider: str) -> bool:
     cfg = get_config()
-    provider = cfg.get("provider", "deepseek")
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
-    elif provider == "mimo":
-        key = cfg.get("mimo_api_key", "") or os.environ.get("MIMO_API_KEY", "")
     else:
         key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     return bool(key.strip())
+
+
+def has_api_key():
+    return _has_api_key_for_provider(_default_ai_provider_name())
+
+
+def has_review_plan_api_key():
+    providers = {_review_plan_ai_provider_name(), _review_plan_writer_ai_provider_name()}
+    return all(_has_api_key_for_provider(provider) for provider in providers)
 
 
 def _extract_field(text, field):
@@ -1660,6 +1723,34 @@ def download_pdf(lesson_id):
                      download_name=Path(pdf_path).name)
 
 
+@app.route("/api/student/pdf/<int:lesson_id>")
+def serve_student_pdf(lesson_id):
+    account, error = _require_student_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not student_account_can_access_lesson(account, lesson_id):
+        abort(404)
+    pdf_path = lesson.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        abort(404)
+    return send_file(pdf_path, mimetype="application/pdf", download_name=Path(pdf_path).name)
+
+
+@app.route("/api/student/pdf/download/<int:lesson_id>")
+def download_student_pdf(lesson_id):
+    account, error = _require_student_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not student_account_can_access_lesson(account, lesson_id):
+        abort(404)
+    pdf_path = lesson.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        abort(404)
+    return send_file(pdf_path, as_attachment=True, download_name=Path(pdf_path).name)
+
+
 @app.route("/pdf/answer/<int:lesson_id>")
 @app.route("/api/pdf/answer/<int:lesson_id>")
 def serve_answer_pdf(lesson_id):
@@ -1704,6 +1795,77 @@ def api_login():
         return jsonify({"error": error}), 401
     token = create_auth_session(user["id"])
     return jsonify({"token": token, "user": user})
+
+
+@app.route("/api/student/class-invite/<invite_code>", methods=["GET"])
+def api_student_class_invite_preview(invite_code):
+    payload = preview_student_class_invite(invite_code)
+    if not payload:
+        return jsonify({"error": "invite not found"}), 404
+    return jsonify(payload)
+
+
+@app.route("/api/student/register", methods=["POST"])
+def api_student_register():
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    raw_student_id = data.get("student_id")
+    if isinstance(raw_student_id, bool) or not isinstance(raw_student_id, int):
+        return jsonify({"error": "student_id required"}), 400
+    try:
+        account = create_student_account_by_invite(
+            invite_code=(data.get("invite_code") or "").strip(),
+            student_id=raw_student_id,
+            username=(data.get("username") or "").strip(),
+            password=(data.get("password") or "").strip(),
+        )
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        status_code = 409 if str(exc) in {"username exists", "student account exists"} else 400
+        return jsonify({"error": str(exc)}), status_code
+    token = create_student_auth_session(account["id"])
+    return jsonify({"token": token, "account": account}), 201
+
+
+@app.route("/api/student/login", methods=["POST"])
+def api_student_login():
+    data, error = _get_json_object_payload()
+    if error:
+        return error
+    account, message = authenticate_student_account(
+        username=(data.get("username") or "").strip(),
+        password=(data.get("password") or "").strip(),
+    )
+    if not account:
+        return jsonify({"error": message}), 401
+    token = create_student_auth_session(account["id"])
+    return jsonify({"token": token, "account": account})
+
+
+@app.route("/api/student/me", methods=["GET"])
+def api_student_me():
+    account, error = _require_student_auth()
+    if error:
+        return error
+    return jsonify({"account": account})
+
+
+@app.route("/api/student/review-tasks", methods=["GET"])
+def api_student_review_tasks():
+    account, error = _require_student_auth()
+    if error:
+        return error
+    raw_date = str(request.args.get("date") or date.today().isoformat()).strip()
+    try:
+        date.fromisoformat(raw_date)
+    except ValueError:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+    payload = list_student_review_tasks_for_student_account(account, raw_date)
+    if payload is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(payload)
 
 
 def _is_recovery_setup_error(message: str) -> bool:
@@ -1856,6 +2018,17 @@ def _require_auth():
     if not user:
         return None, (jsonify({"error": "未授权"}), 401)
     return user, None
+
+
+def _require_student_auth():
+    token = (
+        request.headers.get("X-Student-Auth-Token", "").strip()
+        or request.args.get("token", "").strip()
+    )
+    account = get_current_student_account(token)
+    if not account:
+        return None, (jsonify({"error": "unauthorized"}), 401)
+    return account, None
 
 
 def _require_staff():
@@ -2199,6 +2372,27 @@ def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
     pdf_path = serialized.get("pdf_path", "")
     if not pdf_path or not Path(pdf_path).exists():
         serialized["pdf_path"] = ""
+    try:
+        latest_run = get_latest_review_plan_run_for_lesson(int(serialized.get("id") or 0))
+    except Exception:
+        latest_run = None
+    if latest_run:
+        serialized["trace_id"] = latest_run.get("trace_id", "")
+        serialized["workflow_warnings"] = latest_run.get("warnings", [])
+        serialized["quality_review"] = latest_run.get("quality_review", {})
+        serialized["prompt_version"] = latest_run.get("prompt_version", "")
+        serialized["style_version"] = latest_run.get("style_version", "")
+    creator_user_id = int(serialized.get("created_by_user_id") or 0)
+    creator = get_user_by_id(creator_user_id) if creator_user_id else None
+    serialized["creator_display_name"] = str(
+        (creator or {}).get("display_name")
+        or (creator or {}).get("username")
+        or ""
+    ).strip()
+    serialized["creator_username"] = str(
+        (creator or {}).get("username")
+        or ""
+    ).strip()
     return serialized
 
 
@@ -2211,6 +2405,726 @@ def _serialize_lessons_for_response(lessons: object) -> list[dict]:
         if serialized is not None:
             serialized_lessons.append(serialized)
     return serialized_lessons
+
+
+_DASHBOARD_PENDING_REVIEW_STATUSES = {"pending", "queued", "processing", "transcribing", "generating"}
+_DASHBOARD_TERMINAL_CONSULTATION_STAGES = {"成功进班", "试听失败", "咨询结束"}
+
+
+def _dashboard_can_open_page(user: dict, page: str) -> bool:
+    if page in {"dashboard", "settings"}:
+        return True
+    visible_pages = user.get("visible_pages")
+    if not isinstance(visible_pages, list):
+        return True
+    return page in visible_pages
+
+
+def _dashboard_parse_datetime(value: object) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    normalized = raw.replace(" ", "T")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _dashboard_item_datetime(item: dict, *field_names: str) -> datetime:
+    for field_name in field_names:
+        parsed = _dashboard_parse_datetime(item.get(field_name))
+        if parsed is not None:
+            return parsed
+    return datetime.fromtimestamp(0)
+
+
+def _dashboard_sort_desc(items: list[dict], *field_names: str) -> list[dict]:
+    return sorted(
+        items,
+        key=lambda item: (_dashboard_item_datetime(item, *field_names), int(item.get("id") or 0)),
+        reverse=True,
+    )
+
+
+def _dashboard_get_today_classes(user: dict) -> list[dict]:
+    role = str(user.get("role") or "")
+    if role in {"super_owner", "owner", "admin"}:
+        return list_classes_for_actor(user)
+    return _filter_classes_for_user(user, list_classes())
+
+
+def _dashboard_get_lessons(user: dict) -> list[dict]:
+    lessons = list_lessons_for_actor(user)
+    return _dashboard_sort_desc(
+        _serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)),
+        "created_at",
+        "date",
+    )
+
+
+def _dashboard_get_open_consultations(user: dict) -> list[dict]:
+    consultations = list_consultations_for_actor(user, query="", search_mode="fuzzy")
+    return [
+        item
+        for item in consultations
+        if isinstance(item, dict)
+        and str(item.get("flow_stage") or "").strip() not in _DASHBOARD_TERMINAL_CONSULTATION_STAGES
+    ]
+
+
+def _dashboard_get_today_schedules(user: dict, today_iso: str) -> list[dict]:
+    items = list_course_calendar_schedules_for_actor(
+        user,
+        start_date=today_iso,
+        end_date=today_iso,
+    )
+    return _dashboard_sort_desc(items, "created_at", "date")
+
+
+def _dashboard_get_week_start_iso(today_value: date) -> str:
+    return (today_value - timedelta(days=today_value.weekday())).isoformat()
+
+
+def _dashboard_review_state(lesson: dict) -> str:
+    status = str(lesson.get("record_status") or "").strip()
+    if status in _DASHBOARD_PENDING_REVIEW_STATUSES:
+        return "pending"
+    if status in {"failed", "expired"}:
+        return "failed"
+    if str(lesson.get("pdf_path") or "").strip():
+        return "ready"
+    if status == "ready":
+        return "missing-output"
+    return "empty"
+
+
+def _dashboard_review_status_label(lesson: dict) -> str:
+    status = str(lesson.get("record_status") or "").strip()
+    if status == "transcribing":
+        return "转写中"
+    if status == "generating":
+        return "生成中"
+    if status in {"pending", "queued", "processing"}:
+        return "排队中"
+    if status in {"failed", "expired"}:
+        return "失败"
+    if _dashboard_review_state(lesson) == "ready":
+        return "已完成"
+    return "待处理"
+
+
+def _dashboard_get_class_feedback_tasks(user: dict) -> list[dict]:
+    role = str(user.get("role") or "")
+    params: list[object] = []
+    query = """
+        SELECT *
+        FROM class_feedback_tasks
+    """
+    if role == "super_owner":
+        query += " ORDER BY updated_at DESC, id DESC"
+    elif role in {"owner", "admin"}:
+        query += " WHERE organization_id=? ORDER BY updated_at DESC, id DESC"
+        params.append(int(user.get("organization_id") or 0))
+    else:
+        owned_class_ids = [class_id for class_id in get_user_class_ids(int(user["id"])) if int(class_id or 0) > 0]
+        query += " WHERE teacher_user_id=?"
+        params.append(int(user["id"]))
+        if owned_class_ids:
+            placeholders = ",".join("?" for _ in owned_class_ids)
+            query += f" OR class_id IN ({placeholders})"
+            params.extend(owned_class_ids)
+        query += " ORDER BY updated_at DESC, id DESC"
+    with get_conn() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _dashboard_feedback_state(task: dict) -> str:
+    status = str(task.get("status") or "").strip()
+    if status == "confirmed":
+        return "confirmed"
+    if status in {"pending", "queued", "processing", "generating"}:
+        return "generating"
+    return "draft"
+
+
+def _dashboard_feedback_status_label(task: dict) -> str:
+    state = _dashboard_feedback_state(task)
+    if state == "confirmed":
+        return "已确认"
+    if state == "generating":
+        return "生成中"
+    return "待反馈"
+
+
+def _dashboard_time_label(schedule: dict) -> str:
+    raw = str(schedule.get("time_block") or "").strip()
+    if "-" in raw:
+        return raw.split("-", 1)[0].strip()
+    return raw or "--:--"
+
+
+def _dashboard_class_name(value: object, fallback: str = "未命名班级") -> str:
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def _dashboard_lesson_title(lesson: dict, class_name_by_id: dict[int, str]) -> str:
+    class_name = class_name_by_id.get(int(lesson.get("class_id") or 0), "")
+    topic = str(lesson.get("topic") or "").strip()
+    subject = str(lesson.get("subject") or "").strip()
+    if class_name and topic:
+        return f"{class_name} · {topic}"
+    if class_name and subject:
+        return f"{class_name} · {subject}"
+    return topic or class_name or subject or f"复习资料 #{lesson.get('id')}"
+
+
+def _dashboard_lesson_meta(lesson: dict, class_name_by_id: dict[int, str]) -> str:
+    lesson_date = str(lesson.get("date") or "").strip()
+    class_name = class_name_by_id.get(int(lesson.get("class_id") or 0), "")
+    parts = [part for part in (lesson_date, class_name) if part]
+    return " · ".join(parts) or f"记录 #{lesson.get('id')}"
+
+
+def _dashboard_schedule_detail(schedule: dict) -> str:
+    teacher_name = str(schedule.get("teacher_name") or "").strip()
+    subject = str(schedule.get("subject") or "").strip()
+    parts = [part for part in (teacher_name, subject) if part]
+    return " · ".join(parts) or "查看课程安排"
+
+
+def _dashboard_build_member_payload(user: dict) -> dict:
+    today_value = date.today()
+    today_iso = today_value.isoformat()
+    week_start_iso = _dashboard_get_week_start_iso(today_value)
+
+    classes = _dashboard_get_today_classes(user)
+    class_name_by_id = {
+        int(item.get("id") or 0): _dashboard_class_name(item.get("name"))
+        for item in classes
+        if int(item.get("id") or 0) > 0
+    }
+    lessons = _dashboard_get_lessons(user)
+    open_consultations = _dashboard_get_open_consultations(user)
+    today_schedules = _dashboard_get_today_schedules(user, today_iso)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
+
+    pending_lessons = [
+        lesson
+        for lesson in lessons
+        if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
+    ]
+    ready_lessons = [lesson for lesson in lessons if _dashboard_review_state(lesson) == "ready"]
+    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
+    week_ready_lessons = [
+        lesson
+        for lesson in ready_lessons
+        if week_start_iso <= str(lesson.get("created_at") or "")[:10] <= today_iso
+    ]
+
+    today_queue: list[dict] = []
+    for lesson in pending_lessons[:2]:
+        today_queue.append(
+            {
+                "page": "review-generation",
+                "title": _dashboard_lesson_title(lesson, class_name_by_id),
+                "meta": _dashboard_lesson_meta(lesson, class_name_by_id),
+                "status": _dashboard_review_status_label(lesson),
+                "action": "进入",
+            }
+        )
+    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation") and len(today_queue) < 3:
+        latest_feedback_task = active_feedback_tasks[0]
+        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
+        today_queue.append(
+            {
+                "page": "class-feedback-generation",
+                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
+                "meta": latest_feedback_class_name,
+                "status": _dashboard_feedback_status_label(latest_feedback_task),
+                "action": "进入",
+            }
+        )
+    if open_consultations and _dashboard_can_open_page(user, "consultation") and len(today_queue) < 3:
+        earliest = min(open_consultations, key=lambda item: str(item.get("date") or "9999-12-31"))
+        today_queue.append(
+            {
+                "page": "consultation",
+                "title": f"待跟进咨询 {len(open_consultations)} 条",
+                "meta": f"{str(earliest.get('date') or '').strip() or today_iso} 起有咨询待处理",
+                "status": "待跟进",
+                "action": "进入",
+            }
+        )
+    if today_schedules and _dashboard_can_open_page(user, "calendar") and len(today_queue) < 3:
+        first_schedule = today_schedules[0]
+        today_queue.append(
+            {
+                "page": "calendar",
+                "title": f"今天排课 {len(today_schedules)} 节",
+                "meta": _dashboard_class_name(first_schedule.get("class_name")),
+                "status": "已排课",
+                "action": "查看",
+            }
+        )
+
+    recent_outputs = [
+        {
+            "page": "review-generation",
+            "title": _dashboard_lesson_title(lesson, class_name_by_id),
+            "meta": _dashboard_lesson_meta(lesson, class_name_by_id),
+            "status": _dashboard_review_status_label(lesson),
+        }
+        for lesson in [item for item in lessons if _dashboard_review_state(item) != "empty"][:4]
+    ]
+
+    weekly_stats = [
+        {"label": "本周资料", "value": str(len(week_ready_lessons)), "note": "本周生成完成"},
+        {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "含转写中和失败记录"},
+        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
+    ]
+
+    schedule = [
+        {
+            "time": _dashboard_time_label(item),
+            "title": _dashboard_class_name(item.get("class_name")),
+            "detail": _dashboard_schedule_detail(item),
+            "page": "calendar",
+            "action": "查看日历",
+        }
+        for item in today_schedules[:4]
+        if _dashboard_can_open_page(user, "calendar")
+    ]
+
+    return {
+        "todayQueue": today_queue,
+        "recentOutputs": recent_outputs,
+        "weeklyStats": weekly_stats,
+        "schedule": schedule,
+    }
+
+
+def _dashboard_build_organization_payload(user: dict) -> dict:
+    today_value = date.today()
+    today_iso = today_value.isoformat()
+    week_start_iso = _dashboard_get_week_start_iso(today_value)
+    can_open_accounts = _dashboard_can_open_page(user, "accounts")
+    can_open_credit = _dashboard_can_open_page(user, "credit")
+
+    classes = _dashboard_get_today_classes(user)
+    class_name_by_id = {
+        int(item.get("id") or 0): _dashboard_class_name(item.get("name"))
+        for item in classes
+        if int(item.get("id") or 0) > 0
+    }
+    lessons = _dashboard_get_lessons(user)
+    open_consultations = _dashboard_get_open_consultations(user)
+    today_schedules = _dashboard_get_today_schedules(user, today_iso)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
+    pending_lessons = [
+        lesson
+        for lesson in lessons
+        if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
+    ]
+    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
+    week_ready_lessons = [
+        lesson
+        for lesson in lessons
+        if _dashboard_review_state(lesson) == "ready"
+        and week_start_iso <= str(lesson.get("created_at") or "")[:10] <= today_iso
+    ]
+    pending_registrations = list_registration_requests_for_actor(user, "pending") if can_open_accounts else []
+    credit_overview = get_credit_overview(int(user["organization_id"])) if can_open_credit else None
+    credit_balance = int(credit_overview.get("credit_balance") or 0) if isinstance(credit_overview, dict) else None
+
+    pending_items: list[dict] = []
+    if pending_registrations:
+        pending_items.append(
+            {
+                "page": "accounts",
+                "title": f"待审批账号 {len(pending_registrations)} 条",
+                "meta": "新成员申请还没处理",
+                "status": "待审批",
+                "action": "进入",
+            }
+        )
+    if pending_lessons:
+        pending_items.append(
+            {
+                "page": "review-generation",
+                "title": f"待处理复习资料 {len(pending_lessons)} 份",
+                "meta": "包含转写中、生成中和失败记录",
+                "status": "待处理",
+                "action": "进入",
+            }
+        )
+    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation"):
+        latest_feedback_task = active_feedback_tasks[0]
+        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
+        pending_items.append(
+            {
+                "page": "class-feedback-generation",
+                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
+                "meta": latest_feedback_class_name,
+                "status": _dashboard_feedback_status_label(latest_feedback_task),
+                "action": "进入",
+            }
+        )
+    if credit_balance is not None and can_open_credit and credit_balance <= 20:
+        pending_items.append(
+            {
+                "page": "credit",
+                "title": f"积分余额 {credit_balance}",
+                "meta": "额度较低，可能影响后续 AI 生成。",
+                "status": "低余额",
+                "action": "查看",
+            }
+        )
+    if open_consultations and _dashboard_can_open_page(user, "consultation"):
+        pending_items.append(
+            {
+                "page": "consultation",
+                "title": f"待跟进咨询 {len(open_consultations)} 条",
+                "meta": "按日期顺序继续处理",
+                "status": "待跟进",
+                "action": "进入",
+            }
+        )
+    if today_schedules:
+        target_page = "calendar" if _dashboard_can_open_page(user, "calendar") else "classes"
+        pending_items.append(
+            {
+                "page": target_page,
+                "title": f"今天排课 {len(today_schedules)} 节",
+                "meta": "查看今天班级安排",
+                "status": "已排课",
+                "action": "查看",
+            }
+        )
+
+    pending_by_class_id = {
+        int(lesson.get("class_id") or 0): lesson
+        for lesson in pending_lessons
+        if int(lesson.get("class_id") or 0) > 0
+    }
+    feedback_by_class_id = {
+        int(task.get("class_id") or 0): task
+        for task in active_feedback_tasks
+        if int(task.get("class_id") or 0) > 0
+    }
+    class_rows = []
+    for schedule in today_schedules[:6]:
+        class_id = int(schedule.get("class_id") or 0)
+        linked_lesson = pending_by_class_id.get(class_id)
+        linked_feedback_task = feedback_by_class_id.get(class_id)
+        if linked_feedback_task is not None:
+            row_page = "class-feedback-generation"
+            row_status = _dashboard_feedback_status_label(linked_feedback_task)
+        elif linked_lesson is not None:
+            row_page = "review-generation"
+            row_status = _dashboard_review_status_label(linked_lesson)
+        else:
+            row_page = "calendar" if _dashboard_can_open_page(user, "calendar") else "classes"
+            row_status = "已排课"
+        class_rows.append(
+            {
+                "name": _dashboard_class_name(schedule.get("class_name"), fallback=class_name_by_id.get(class_id, "未命名班级")),
+                "schedule": _dashboard_time_label(schedule),
+                "teacher": str(schedule.get("teacher_name") or "").strip() or "未分配",
+                "status": row_status,
+                "page": row_page,
+            }
+        )
+
+    stats = [
+        {"label": "今日排课", "value": str(len(today_schedules)), "note": "今天课程安排"},
+        {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "待完成资料记录"},
+        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
+        {"label": "待跟进咨询", "value": str(len(open_consultations)), "note": "当前未结束咨询"},
+        (
+            {
+                "label": "积分余额",
+                "value": str(credit_balance),
+                "note": "当前机构可用额度",
+            }
+            if credit_balance is not None
+            else {
+                "label": "待审批账号" if can_open_accounts else "本周资料",
+                "value": str(len(pending_registrations) if can_open_accounts else len(week_ready_lessons)),
+                "note": "机构成员申请" if can_open_accounts else "本周已完成资料",
+            }
+        ),
+    ]
+
+    return {
+        "pendingItems": pending_items[:4],
+        "stats": stats,
+        "classRows": class_rows,
+    }
+
+
+def _dashboard_build_platform_payload(user: dict) -> dict:
+    today_value = date.today()
+    today_iso = today_value.isoformat()
+    week_start_iso = _dashboard_get_week_start_iso(today_value)
+
+    organizations = list_organizations()
+    lessons = _dashboard_get_lessons(user)
+    users = list_users_for_actor(user)
+    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
+    open_consultations = _dashboard_get_open_consultations(user)
+    pending_registration_requests = list_registration_requests_for_actor(user, "pending")
+    pending_organization_requests = list_organization_requests()
+
+    members_by_org: dict[int, int] = {}
+    for item in users:
+        organization_id = int(item.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        members_by_org[organization_id] = members_by_org.get(organization_id, 0) + 1
+
+    today_output_by_org: dict[int, int] = {}
+    week_output_by_org: dict[int, int] = {}
+    for lesson in lessons:
+        organization_id = int(lesson.get("organization_id") or 0)
+        if organization_id <= 0 or _dashboard_review_state(lesson) != "ready":
+            continue
+        created_date = str(lesson.get("created_at") or "")[:10]
+        if created_date == today_iso:
+            today_output_by_org[organization_id] = today_output_by_org.get(organization_id, 0) + 1
+        if week_start_iso <= created_date <= today_iso:
+            week_output_by_org[organization_id] = week_output_by_org.get(organization_id, 0) + 1
+
+    pending_registration_by_org: dict[int, int] = {}
+    for request_item in pending_registration_requests:
+        organization_id = int(request_item.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_registration_by_org[organization_id] = pending_registration_by_org.get(organization_id, 0) + 1
+
+    pending_feedback_by_org: dict[int, int] = {}
+    for task in feedback_tasks:
+        if _dashboard_feedback_state(task) == "confirmed":
+            continue
+        organization_id = int(task.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_feedback_by_org[organization_id] = pending_feedback_by_org.get(organization_id, 0) + 1
+
+    pending_consultations_by_org: dict[int, int] = {}
+    for item in open_consultations:
+        organization_id = int(item.get("organization_id") or 0)
+        if organization_id <= 0:
+            continue
+        pending_consultations_by_org[organization_id] = pending_consultations_by_org.get(organization_id, 0) + 1
+
+    low_credit_by_org: dict[int, int] = {}
+    for organization in organizations:
+        organization_id = int(organization.get("id") or 0)
+        if organization_id <= 0:
+            continue
+        overview = get_credit_overview(organization_id)
+        credit_balance = int(overview.get("credit_balance") or 0)
+        if credit_balance <= 20:
+            low_credit_by_org[organization_id] = credit_balance
+
+    attention_items: list[dict] = []
+    if pending_organization_requests:
+        attention_items.append(
+            {
+                "organization": "机构开通申请",
+                "issue": f"当前有 {len(pending_organization_requests)} 条新机构申请待处理。",
+                "status": "待审批",
+                "page": "accounts",
+                "action": "进入",
+            }
+        )
+
+    organizations_by_pending = sorted(
+        organizations,
+        key=lambda item: (
+            pending_registration_by_org.get(int(item.get("id") or 0), 0),
+            today_output_by_org.get(int(item.get("id") or 0), 0),
+        ),
+        reverse=True,
+    )
+    for organization in organizations_by_pending:
+        organization_id = int(organization.get("id") or 0)
+        pending_count = pending_registration_by_org.get(organization_id, 0)
+        if pending_count <= 0:
+            continue
+        attention_items.append(
+            {
+                "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                "issue": f"有 {pending_count} 条成员账号申请待处理。",
+                "status": "待审批",
+                "page": "accounts",
+                "action": "进入",
+            }
+        )
+        if len(attention_items) >= 4:
+            break
+
+    if len(attention_items) < 4:
+        feedback_organizations = sorted(
+            organizations,
+            key=lambda item: pending_feedback_by_org.get(int(item.get("id") or 0), 0),
+            reverse=True,
+        )
+        for organization in feedback_organizations:
+            organization_id = int(organization.get("id") or 0)
+            feedback_count = pending_feedback_by_org.get(organization_id, 0)
+            if feedback_count <= 0:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"有 {feedback_count} 条课堂反馈任务待处理。",
+                    "status": "待反馈",
+                    "page": "class-feedback-generation",
+                    "action": "进入",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
+        consultation_organizations = sorted(
+            organizations,
+            key=lambda item: pending_consultations_by_org.get(int(item.get("id") or 0), 0),
+            reverse=True,
+        )
+        for organization in consultation_organizations:
+            organization_id = int(organization.get("id") or 0)
+            consultation_count = pending_consultations_by_org.get(organization_id, 0)
+            if consultation_count <= 0:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"有 {consultation_count} 条咨询待继续跟进。",
+                    "status": "待咨询",
+                    "page": "consultation",
+                    "action": "进入",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
+        low_credit_organizations = sorted(
+            organizations,
+            key=lambda item: low_credit_by_org.get(int(item.get("id") or 0), 999999),
+        )
+        for organization in low_credit_organizations:
+            organization_id = int(organization.get("id") or 0)
+            credit_balance = low_credit_by_org.get(organization_id)
+            if credit_balance is None:
+                continue
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": f"当前积分余额 {credit_balance}，建议尽快处理。",
+                    "status": "低余额",
+                    "page": "credit",
+                    "action": "查看",
+                }
+            )
+            if len(attention_items) >= 4:
+                break
+
+    if len(attention_items) < 4:
+        quiet_organizations = [
+            organization
+            for organization in organizations
+            if week_output_by_org.get(int(organization.get("id") or 0), 0) == 0
+            and int(organization.get("member_count") or 0) > 0
+        ]
+        for organization in quiet_organizations[: 4 - len(attention_items)]:
+            attention_items.append(
+                {
+                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                    "issue": "最近 7 天没有新增复习资料。",
+                    "status": "需查看",
+                    "page": "review-generation",
+                    "action": "查看",
+                }
+            )
+
+    total_pending_approvals = len(pending_organization_requests) + len(pending_registration_requests)
+    priority_items = []
+    if total_pending_approvals:
+        priority_items.append(
+            {
+                "title": "先处理审批",
+                "detail": f"当前共有 {total_pending_approvals} 条申请待处理。",
+                "page": "accounts",
+            }
+        )
+    if attention_items:
+        primary_attention = attention_items[0]
+        priority_items.append(
+            {
+                "title": f"再看 {primary_attention['organization']}",
+                "detail": str(primary_attention.get("issue") or ""),
+                "page": primary_attention["page"],
+            }
+        )
+    priority_items.append(
+        {
+            "title": "最后看机构班级",
+            "detail": f"当前共有 {sum(int(item.get('class_count') or 0) for item in organizations)} 个班级。",
+            "page": "classes",
+        }
+    )
+
+    stats = [
+        {"label": "机构数", "value": str(len(organizations)), "note": "当前在库机构"},
+        {"label": "待审批", "value": str(total_pending_approvals), "note": "机构申请和成员申请"},
+        {"label": "待反馈", "value": str(sum(pending_feedback_by_org.values())), "note": "课堂反馈任务"},
+        {"label": "低余额机构", "value": str(len(low_credit_by_org)), "note": "余额 20 及以下"},
+    ]
+
+    organization_rows = []
+    for organization in organizations_by_pending:
+        organization_id = int(organization.get("id") or 0)
+        pending_count = pending_registration_by_org.get(organization_id, 0)
+        today_output_count = today_output_by_org.get(organization_id, 0)
+        week_output_count = week_output_by_org.get(organization_id, 0)
+        feedback_count = pending_feedback_by_org.get(organization_id, 0)
+        consultation_count = pending_consultations_by_org.get(organization_id, 0)
+        credit_balance = low_credit_by_org.get(organization_id)
+        if pending_count > 0:
+            status = f"待审批 {pending_count}"
+        elif feedback_count > 0:
+            status = f"待反馈 {feedback_count}"
+        elif consultation_count > 0:
+            status = f"待咨询 {consultation_count}"
+        elif credit_balance is not None:
+            status = f"余额 {credit_balance}"
+        elif today_output_count > 0:
+            status = f"今日资料 {today_output_count}"
+        else:
+            status = f"本周资料 {week_output_count}"
+        organization_rows.append(
+            {
+                "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
+                "teachers": str(members_by_org.get(organization_id, int(organization.get("member_count") or 0))),
+                "outputs": str(today_output_count),
+                "approvals": str(pending_count),
+                "status": status,
+                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("consultation" if consultation_count > 0 else ("credit" if credit_balance is not None else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes")))),
+            }
+        )
+
+    return {
+        "attentionItems": attention_items,
+        "stats": stats,
+        "organizationRows": organization_rows[:8],
+        "priorityItems": priority_items[:3],
+    }
 
 
 def _serialize_wrong_question_practice_sheet_for_response(sheet: object) -> Optional[dict]:
@@ -2833,19 +3747,6 @@ def _get_parent_wechat_account_by_openid(open_id: str):
     return dict(row) if row else None
 
 
-def _get_active_class_invite_by_code(invite_code: str):
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT *
-            FROM class_invite_codes
-            WHERE invite_code=? AND status='active'
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (invite_code,),
-        ).fetchone()
-    return dict(row) if row else None
 def _credit_redeem_failure_key(user_id: int, platform_order_id: str) -> tuple[int, str]:
     return (int(user_id), str(platform_order_id or "").strip().lower())
 
@@ -3170,6 +4071,81 @@ def api_profile_update():
         update_user_profile(user["id"], new_username, new_display_name)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
+    return jsonify({"ok": True, "user": get_user_by_id(user["id"])})
+
+
+@app.route("/api/profile/avatar", methods=["PUT"])
+def api_profile_avatar_update():
+    user, error = _require_auth()
+    if error:
+        return error
+    data = request.json or {}
+    avatar_source = str(data.get("avatar_source") or "").strip() or "dicebear"
+    avatar_seed = str(data.get("avatar_seed") or "").strip()
+    try:
+        updated_user = update_user_avatar_preferences(
+            user["id"],
+            avatar_source=avatar_source,
+            avatar_seed=avatar_seed,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True, "user": updated_user})
+
+
+@app.route("/api/profile/avatar-upload", methods=["POST"])
+def api_profile_avatar_upload():
+    user, error = _require_auth()
+    if error:
+        return error
+    avatar_file = request.files.get("avatar")
+    if not avatar_file or not avatar_file.filename:
+        return jsonify({"error": "请先选择头像图片"}), 400
+    mime_type = str(getattr(avatar_file, "mimetype", "") or "").lower()
+    if not mime_type.startswith("image/"):
+        return jsonify({"error": "仅支持上传图片文件"}), 400
+    file_size = _uploaded_file_size(avatar_file)
+    if file_size > PROFILE_AVATAR_MAX_BYTES:
+        return jsonify({"error": f"头像图片不能超过 {PROFILE_AVATAR_MAX_LABEL}"}), 400
+
+    profile_avatar_dir = UPLOAD_DIR / "profile-avatars"
+    profile_avatar_dir.mkdir(parents=True, exist_ok=True)
+    for existing in profile_avatar_dir.glob(f"user-{int(user['id'])}-*"):
+        existing.unlink(missing_ok=True)
+
+    relative_path = _profile_avatar_upload_relative_path(user["id"], avatar_file.filename)
+    save_path = UPLOAD_DIR / relative_path
+    avatar_file.save(save_path)
+
+    try:
+        updated_user = update_user_avatar_preferences(
+            user["id"],
+            avatar_source="upload",
+            avatar_upload_path=relative_path,
+        )
+    except (LookupError, ValueError) as exc:
+        save_path.unlink(missing_ok=True)
+        status_code = 404 if isinstance(exc, LookupError) else 400
+        return jsonify({"error": str(exc)}), status_code
+    return jsonify({"ok": True, "user": updated_user})
+
+
+@app.route("/api/profile/password", methods=["PUT"])
+def api_profile_password_update():
+    user, error = _require_auth()
+    if error:
+        return error
+    data = request.json or {}
+    current_password = str(data.get("current_password") or "")
+    new_password = str(data.get("new_password") or "")
+    try:
+        change_user_password(user["id"], current_password, new_password)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
     return jsonify({"ok": True})
 
 
@@ -3312,6 +4288,9 @@ def api_admin_users():
             "org": u["organization_name"],
             "role": u["role"],
             "visible_pages": u.get("visible_pages", []),
+            "avatar_source": u.get("avatar_source", "dicebear"),
+            "avatar_seed": u.get("avatar_seed", ""),
+            "avatar_upload_url": u.get("avatar_upload_url", ""),
         }
         if is_super:
             row["last_login"] = u.get("last_login")
@@ -4908,6 +5887,11 @@ def api_wrong_question_ingestion_asset_file(filename: str):
     return send_from_directory(UPLOAD_DIR, filename)
 
 
+@app.route("/api/profile-avatar-files/<path:filename>", methods=["GET"])
+def api_profile_avatar_file(filename: str):
+    return send_from_directory(UPLOAD_DIR, filename)
+
+
 @app.route("/api/wrong-question-practice-packs", methods=["GET"])
 def api_wrong_question_practice_pack_list():
     user, error = _require_auth()
@@ -5480,6 +6464,23 @@ def api_stats():
     })
 
 
+@app.route("/api/dashboard", methods=["GET"])
+def api_dashboard():
+    user, error = _require_auth()
+    if error:
+        return error
+
+    role = str(user.get("role") or "")
+    payload = {"role": role}
+    if role == "member":
+        payload["member"] = _dashboard_build_member_payload(user)
+    elif role in {"owner", "admin"}:
+        payload["organization"] = _dashboard_build_organization_payload(user)
+    else:
+        payload["platform"] = _dashboard_build_platform_payload(user)
+    return jsonify(payload)
+
+
 @app.route("/api/classes", methods=["GET"])
 def api_classes_list():
     user, error = _require_auth()
@@ -5981,7 +6982,7 @@ def api_wechat_bind_class():
     if not account:
         return jsonify({"error": "parent wechat account not found"}), 404
 
-    invite = _get_active_class_invite_by_code(invite_code)
+    invite = get_active_class_invite_by_code(invite_code)
     if not invite:
         return jsonify({"error": "invite not found"}), 404
 
@@ -6595,7 +7596,7 @@ def api_lesson_create():
     user, error = _require_auth()
     if error:
         return error
-    if not has_api_key():
+    if not has_review_plan_api_key():
         return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
     
     if request.is_json:
@@ -6625,8 +7626,8 @@ def api_lesson_create():
     audio_path = ""
     audio_request_key = None
     initial_record_status = "pending"
-    chat_provider = _default_ai_provider_name()
-    chat_model = _default_chat_model_name()
+    chat_provider = _review_plan_ai_provider_name()
+    chat_model = _review_plan_chat_model_name()
     
     if input_type == "text" or request.is_json:
         raw_text = data.get("summary_text", "").strip()
@@ -7112,13 +8113,17 @@ def api_settings_get():
         return (k[:4] + "..." + k[-4:]) if len(k) > 8 else ("*" * len(k) if k else "")
     return jsonify({
         "provider": cfg.get("provider", "deepseek"),
+        "review_plan_provider": cfg.get("review_plan_provider", ""),
+        "review_plan_model": cfg.get("review_plan_model", ""),
+        "review_plan_reasoning_effort": cfg.get("review_plan_reasoning_effort", ""),
+        "review_plan_writer_provider": cfg.get("review_plan_writer_provider", "deepseek"),
+        "review_plan_writer_model": cfg.get("review_plan_writer_model", ""),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
+        "openai_model": cfg.get("openai_model", "gpt-4o"),
+        "openai_base_url": cfg.get("openai_base_url", ""),
         "deepseek_set": bool(cfg.get("deepseek_api_key")),
         "deepseek_masked": _mask(cfg.get("deepseek_api_key", "")),
-        "mimo_set": bool(cfg.get("mimo_api_key")),
-        "mimo_masked": _mask(cfg.get("mimo_api_key", "")),
-        "mimo_base_url": cfg.get("mimo_base_url", ""),
         "qwen_set": bool(cfg.get("qwen_api_key")),
         "qwen_masked": _mask(cfg.get("qwen_api_key", "")),
         "qwen_base_url": cfg.get("qwen_base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
@@ -7135,8 +8140,18 @@ def api_settings_save():
     data = request.json or {}
     controlled_keys = env_controlled_keys()
     if "provider" in data and "provider" not in controlled_keys:
-        cfg["provider"] = data["provider"].strip()
-    for key in ("openai_api_key", "deepseek_api_key", "mimo_api_key", "mimo_base_url", "qwen_api_key", "qwen_base_url"):
+        cfg["provider"] = normalize_chat_provider(data["provider"])
+    if "review_plan_provider" in data and "review_plan_provider" not in controlled_keys:
+        cfg["review_plan_provider"] = normalize_chat_provider(data["review_plan_provider"]) if str(data["review_plan_provider"] or "").strip() else ""
+    if "review_plan_model" in data and "review_plan_model" not in controlled_keys:
+        cfg["review_plan_model"] = str(data["review_plan_model"] or "").strip()
+    if "review_plan_reasoning_effort" in data and "review_plan_reasoning_effort" not in controlled_keys:
+        cfg["review_plan_reasoning_effort"] = normalize_reasoning_effort(data["review_plan_reasoning_effort"])
+    if "review_plan_writer_provider" in data and "review_plan_writer_provider" not in controlled_keys:
+        cfg["review_plan_writer_provider"] = normalize_chat_provider(data["review_plan_writer_provider"] or "deepseek")
+    if "review_plan_writer_model" in data and "review_plan_writer_model" not in controlled_keys:
+        cfg["review_plan_writer_model"] = str(data["review_plan_writer_model"] or "").strip()
+    for key in ("openai_api_key", "openai_model", "openai_base_url", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()
     write_file_config(cfg)

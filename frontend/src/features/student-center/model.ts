@@ -45,6 +45,9 @@ export interface UserItem {
   username?: string;
   last_login?: string | null;
   visible_pages?: string[];
+  avatar_source?: 'dicebear' | 'upload';
+  avatar_seed?: string;
+  avatar_upload_url?: string;
 }
 
 export type ClassStudentOption = {
@@ -117,7 +120,7 @@ export type LoadPageResult =
   | { status: 'stale' }
   | { status: 'refresh-error'; error: Error };
 
-export function getClassFormDirtySignature(form: Pick<ClassFormValues, 'subject' | 'stage' | 'current_grade' | 'grade' | 'class_number' | 'cohort_year' | 'is_bridge' | 'bridge_target' | 'content_track'>): string {
+export function getClassFormDirtySignature(form: Pick<ClassFormValues, 'class_type' | 'subject' | 'stage' | 'current_grade' | 'grade' | 'class_number' | 'cohort_year' | 'is_bridge' | 'bridge_target' | 'content_track'>): string {
   return JSON.stringify({
     subject: form.subject.trim(),
     class_type: form.class_type || 'group',

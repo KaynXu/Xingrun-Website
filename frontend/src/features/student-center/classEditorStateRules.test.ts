@@ -11,6 +11,7 @@ import {
 
 const baseForm: ClassFormValues = {
   name: '',
+  class_type: 'group',
   subject: '数学',
   grade: '',
   teacher_name: '',
@@ -22,6 +23,7 @@ const baseForm: ClassFormValues = {
   is_bridge: false,
   bridge_target: '小学衔接初中',
   content_track: '',
+  selected_student_ids: [],
 };
 
 const emptyForm: ClassFormValues = {

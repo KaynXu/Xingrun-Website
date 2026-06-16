@@ -4,24 +4,41 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+const authActionsSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authActions.ts'), 'utf8');
+const authSource = readFileSync(resolve(process.cwd(), 'src/features/auth/PublicAuthModals.tsx'), 'utf8');
+const authFlowSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authFlow.ts'), 'utf8');
+const authStateSource = readFileSync(resolve(process.cwd(), 'src/features/auth/authState.ts'), 'utf8');
+const authHookSource = readFileSync(resolve(process.cwd(), 'src/features/auth/useWorkspaceAuthState.ts'), 'utf8');
+const accessSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/workspaceAccess.ts'), 'utf8');
+const approvalSource = readFileSync(resolve(process.cwd(), 'src/features/approval/ApprovalPage.tsx'), 'utf8');
 
 function getApprovalPageSource(): string {
-  const approvalBlock = appSource.match(/const ApprovalPage = \([\s\S]*?\n};\n\nconst SettingsPage/);
-  assert.ok(approvalBlock);
-  return approvalBlock[0];
+  return approvalSource;
 }
 
 test('landing and login source expose separate organization application and invite join entry points', () => {
   assert.match(appSource, /apply-organization/);
   assert.match(appSource, /join-organization/);
-  assert.match(appSource, /申请开通机构/);
-  assert.match(appSource, /加入已有机构/);
-  assert.match(appSource, /getJoinInviteTokenFromPath/);
+  assert.match(authSource, /申请开通机构/);
+  assert.match(authSource, /加入已有机构/);
+  assert.match(authFlowSource, /export function getJoinInviteTokenFromPath/);
+  assert.match(authStateSource, /export type PublicAuthModal = 'login' \| 'apply-organization' \| 'join-organization' \| 'password-reset'/);
+  assert.match(authStateSource, /export function getInitialPublicAuthModal/);
+  assert.match(authStateSource, /export function getInitialJoinInviteToken/);
+  assert.match(authActionsSource, /export function closePublicAuthState/);
+  assert.match(authActionsSource, /export function openApplyOrganizationState/);
+  assert.match(authActionsSource, /export function openJoinOrganizationState/);
+  assert.match(authActionsSource, /export function openPasswordResetState/);
+  assert.match(authActionsSource, /export function backToLoginState/);
+  assert.match(authHookSource, /export function useWorkspaceAuthState\(\): WorkspaceAuthState \{/);
+  assert.match(authHookSource, /apiFetch<CurrentUser>\('\/api\/me', \{ reloadOnUnauthorized: false \}\)/);
+  assert.match(authHookSource, /writeLocalStorageItem\('xr_token', nextToken\)/);
+  assert.match(authHookSource, /removeLocalStorageItem\('xr_token'\)/);
   assert.match(appSource, /publicAuthModal === 'join-organization'/);
-  assert.match(appSource, /if \(!data\.token\)/);
-  assert.match(appSource, /clearJoinInvitePathIfNeeded/);
-  assert.doesNotMatch(appSource, /organization_name:\s*'星润Starain'/);
-  assert.doesNotMatch(appSource, /\/api\/register-request/);
+  assert.match(authSource, /if \(!data\.token\)/);
+  assert.match(authFlowSource, /export function clearJoinInvitePathIfNeeded/);
+  assert.doesNotMatch(authSource, /organization_name:\s*'星润Starain'/);
+  assert.doesNotMatch(authSource, /\/api\/register-request/);
 });
 
 test('approval page source includes organization review and invite management sections', () => {
@@ -51,7 +68,7 @@ test('approval page source refreshes member login info after decisions and when 
 test('approval page source lets managers edit member visible pages', () => {
   const approvalSource = getApprovalPageSource();
 
-  assert.match(appSource, /const configurableWorkspacePages/);
+  assert.match(accessSource, /export const configurableWorkspacePages/);
   assert.match(approvalSource, /const \[visiblePageSavingUserId, setVisiblePageSavingUserId\] = useState<number \| null>\(null\);/);
   assert.match(approvalSource, /const handleToggleVisiblePage = async \(targetUser: UserItem, page: Page\) => \{/);
   assert.match(approvalSource, /apiFetch<\{ ok: boolean; user: UserItem \}>\(`\/api\/admin\/users\/\$\{targetUser\.id\}\/visible-pages`/);
@@ -60,7 +77,6 @@ test('approval page source lets managers edit member visible pages', () => {
 });
 
 test('organization application success copy stays neutral and does not mention a specific reviewer name', () => {
-  assert.match(appSource, /申请已提交，等待审核(?:通过后即可登录后台。|。)/);
-  assert.match(appSource, /机构申请已提交，等待审核。/);
-  assert.doesNotMatch(appSource, /等待 Kayn 审批/);
+  assert.match(authSource, /机构申请已提交，等待审核。/);
+  assert.doesNotMatch(authSource, /等待 Kayn 审批/);
 });

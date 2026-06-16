@@ -13,6 +13,7 @@ const gradeOptions = [...gradeGroups.小奥, ...gradeGroups.初中, ...gradeGrou
 
 const emptyForm: ClassFormValues = {
   name: '',
+  class_type: 'group',
   subject: '',
   grade: '',
   teacher_name: '',
@@ -24,6 +25,7 @@ const emptyForm: ClassFormValues = {
   is_bridge: false,
   bridge_target: '小学衔接初中',
   content_track: '',
+  selected_student_ids: [],
 };
 
 const newForm: ClassFormValues = {
