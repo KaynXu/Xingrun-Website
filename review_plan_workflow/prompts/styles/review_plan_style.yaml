@@ -24,6 +24,7 @@ page:
   answer_pages_background: plain
 brand:
   logo_path: frontend/public/logo.png
+  name: 星润教育
   logo_transparent_required: true
 components:
   - home_usage_box

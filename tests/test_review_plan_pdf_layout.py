@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from review_plan_templates import generate_review_pdfs
@@ -42,6 +43,67 @@ def _sample_days():
 
 
 class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
+    def test_page_header_draws_left_aligned_brand_name(self):
+        generate_review_pdfs.register_fonts()
+        styles = generate_review_pdfs.build_styles({"brand": {"name": "星润教育"}})
+
+        class FakeCanvas:
+            def __init__(self):
+                self.draw_strings = []
+                self.images = []
+
+            def saveState(self):
+                pass
+
+            def restoreState(self):
+                pass
+
+            def setStrokeColor(self, _color):
+                pass
+
+            def setLineWidth(self, _width):
+                pass
+
+            def line(self, *_args):
+                pass
+
+            def drawImage(self, image, x, y, width, height, **_kwargs):
+                self.images.append((image, x, y, width, height))
+
+            def setFont(self, *_args):
+                pass
+
+            def setFillColor(self, _color):
+                pass
+
+            def drawString(self, x, y, text):
+                self.draw_strings.append((x, y, text))
+
+            def drawRightString(self, *_args):
+                pass
+
+            def getPageNumber(self):
+                return 1
+
+        canvas = FakeCanvas()
+        doc = SimpleNamespace(leftMargin=18 * generate_review_pdfs.mm, rightMargin=18 * generate_review_pdfs.mm)
+
+        with patch("review_plan_templates.generate_review_pdfs._resolve_brand_logo", return_value=Path("logo.png")), \
+             patch("review_plan_templates.generate_review_pdfs.ImageReader", return_value=object()):
+            draw = generate_review_pdfs.on_page(
+                styles,
+                "cn",
+                style_config={"brand": {"name": "星润教育"}},
+                lesson_title="测试课程",
+            )
+            draw(canvas, doc)
+
+        self.assertIn("星润教育", [text for _x, _y, text in canvas.draw_strings])
+        self.assertEqual(len(canvas.images), 1)
+        brand_x = next(x for x, _y, text in canvas.draw_strings if text == "星润教育")
+        expected_brand_x = doc.leftMargin + 8.5 * generate_review_pdfs.mm + 3 * generate_review_pdfs.mm
+        self.assertAlmostEqual(brand_x, expected_brand_x)
+
     def test_daily_overview_sections_stop_after_first_review_day(self):
         generate_review_pdfs.register_fonts()
         styles = generate_review_pdfs.build_styles()

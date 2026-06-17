@@ -1249,6 +1249,11 @@ def _resolve_brand_logo(style_config: dict[str, Any]) -> Path | None:
     return path if path.exists() else None
 
 
+def _brand_name(style_config: dict[str, Any]) -> str:
+    brand = style_config.get("brand") if isinstance(style_config.get("brand"), dict) else {}
+    return str(brand.get("name") or "星润教育").strip() or "星润教育"
+
+
 def _page_metric(style_config: dict[str, Any], key: str, fallback_mm: float) -> float:
     page = style_config.get("page") if isinstance(style_config.get("page"), dict) else {}
     value = page.get(key, fallback_mm)
@@ -1544,28 +1549,41 @@ def on_page(styles, variant_key, style_config=None, lesson_title=None):
     footer_title = lesson_title or LESSON["title"]
     style_config = style_config or {}
     logo_path = _resolve_brand_logo(style_config)
+    brand_name = _brand_name(style_config)
 
     def draw(canvas, doc):
         canvas.saveState()
-        top_rule_y = A4[1] - 16 * mm
-        canvas.setStrokeColor(styles["line"])
-        canvas.setLineWidth(0.8)
-        canvas.line(doc.leftMargin, top_rule_y, A4[0] - doc.rightMargin, top_rule_y)
+        brand_logo_size = 8.5 * mm
+        brand_top_y = A4[1] - 8 * mm
+        brand_logo_y = brand_top_y - brand_logo_size
+        brand_left_x = doc.leftMargin
+        brand_text_x = brand_left_x
+        brand_text_y = brand_logo_y + 2.7 * mm
+        top_rule_y = A4[1] - 19 * mm
+
         if logo_path is not None:
             try:
                 logo_reader = ImageReader(str(logo_path))
                 canvas.drawImage(
                     logo_reader,
-                    doc.leftMargin,
-                    A4[1] - 15 * mm,
-                    width=10 * mm,
-                    height=10 * mm,
+                    brand_left_x,
+                    brand_logo_y,
+                    width=brand_logo_size,
+                    height=brand_logo_size,
                     mask="auto",
                     preserveAspectRatio=True,
-                    anchor="nw",
                 )
+                brand_text_x = brand_left_x + brand_logo_size + 3 * mm
             except Exception:
                 pass
+
+        canvas.setFont(ACTIVE_FONT_NAME, 9.2)
+        canvas.setFillColor(styles["accent"])
+        canvas.drawString(brand_text_x, brand_text_y, brand_name)
+
+        canvas.setStrokeColor(styles["line"])
+        canvas.setLineWidth(0.8)
+        canvas.line(doc.leftMargin, top_rule_y, A4[0] - doc.rightMargin, top_rule_y)
         canvas.setFont(ACTIVE_FONT_NAME, 8.5)
         canvas.setFillColor(styles["muted"])
         canvas.drawString(doc.leftMargin, 10 * mm, footer_title)
