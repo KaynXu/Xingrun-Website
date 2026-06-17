@@ -29,6 +29,7 @@ def _user_message(review_input: ReviewPlanInput, prompt_bundle: PromptBundle) ->
             "\n".join(meta_parts),
             "已校验工作流上下文：\n" + str(prompt_bundle.variables),
             "课堂总结：\n" + review_input.summary_text,
+            "硬性选择题契约：所有 choices 必须有完整 question、4 个完整 options 和 answer；options 不能只写 A/B/C/D，必须写成 A. 具体选项内容；answer 只能是 A/B/C/D。",
             "请返回可直接进入现有 PDF 渲染链路的 JSON object，不要输出 Markdown 包裹。",
         ]
     )
@@ -62,6 +63,7 @@ def _repair_message(
         "上一轮复习计划 JSON 未通过结构检查。请只修复 JSON/schema 问题，不扩写未提供的信息。",
         "必须返回完整 JSON object，不要 Markdown，不要解释。",
         "days 必须且只能覆盖 day=1,2,7,14,30；每个 day 必须有可打印的复习任务。",
+        "所有 choices 必须包含完整 question、4 个完整 options 和 answer；禁止 options 只写 A/B/C/D。",
     ]
     if parse_error:
         sections.append("JSON 解析错误：\n" + parse_error)

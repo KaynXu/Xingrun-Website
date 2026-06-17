@@ -72,6 +72,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("不能把作业布置设置成题目本身", math_prompt)
         self.assertIn("不把“方法、入口、边界、条件、过程、动作、提醒”等抽象词作为主要设空答案", math_prompt)
         self.assertIn("老师追问卡片必须有完整题干或同类题背景", math_prompt)
+        self.assertIn("禁止只写 `A`、`B`、`C`、`D`", math_prompt)
         self.assertIn("第14天和第30天只回收第1/2/7天内容", physics_prompt)
         self.assertIn("公式 + 物理量含义 + 常用单位 + 适用条件", physics_prompt)
         self.assertIn("物理里的远方", physics_prompt)
@@ -110,6 +111,64 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(plan.days[0].choices[0]["question"], "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。")
         self.assertIn("解函数不等式时，第一步先判断", plan.days[0].items[-1]["text"])
 
+    def test_validate_final_review_plan_normalizes_wrapped_camel_case_writer_shape(self):
+        wrapped_plan = {
+            "reviewPlan": {
+                "subject": "数学",
+                "grade": "高一",
+                "topic": "不等式与函数复习",
+                "lessonDate": "2026-06-16",
+                "generatedDate": "2026-06-18",
+                "days": [
+                    {
+                        "day": day,
+                        "date": f"2026-06-{18 + index:02d}",
+                        "reviewGoal": "复现定义域与函数不等式的关键步骤。",
+                        "focus": "定义域、单调性、同解转化。",
+                        "fillInBlanks": [
+                            {
+                                "question": f"第{day}天：解 f(2x+1)>f(x-2) 前必须检查两个括号都落在 ________ 内。",
+                                "answer": "定义域",
+                            }
+                        ],
+                        "multipleChoice": [
+                            {
+                                "question": f"第{day}天：下列哪一步最能避免定义域遗漏？",
+                                "options": [
+                                    "A. 先列内层范围限制",
+                                    "B. 只比较两个括号大小",
+                                    "C. 先猜答案再代入",
+                                    "D. 忽略函数是否单调",
+                                ],
+                                "answer": "A",
+                            }
+                        ],
+                        "activeRecall": {
+                            "type": "methodRecall",
+                            "content": ["函数不等式先看 ________，再看定义域限制。"],
+                            "answers": ["单调性"],
+                        },
+                        "completionCriteria": "能独立写出定义域限制并完成同解转化。",
+                    }
+                    for index, day in enumerate([1, 2, 7, 14, 30])
+                ],
+            },
+            "days": [],
+            "weak_points_summary": "计算能力弱，易忽略定义域",
+        }
+
+        plan, errors = validate_final_review_plan(wrapped_plan)
+
+        self.assertIsNotNone(plan)
+        self.assertEqual(errors, [])
+        self.assertEqual(plan.lesson_info.topic, "不等式与函数复习")
+        self.assertEqual(plan.lesson_info.date, "2026-06-16")
+        self.assertEqual([day.day for day in plan.days], [1, 2, 7, 14, 30])
+        self.assertEqual(plan.days[0].goal, "复现定义域与函数不等式的关键步骤。")
+        self.assertEqual(plan.days[0].blanks[0]["answer"], "定义域")
+        self.assertEqual(plan.days[0].choices[0]["options"][0], "A. 先列内层范围限制")
+        self.assertIn("函数不等式先看", plan.days[0].items[-1]["text"])
+
     def test_quality_gate_uses_normalized_day_numbers(self):
         review = review_single_lesson_plan(desktop_writer_single_lesson_plan(), subject="math")
         self.assertTrue(review.passed)
@@ -140,6 +199,23 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertTrue(review.passed, review.model_dump())
         self.assertFalse(any(issue.category == "pdf_readiness" for issue in review.issues))
+
+    def test_quality_gate_rejects_skeletal_choice_options(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
+        for day in plan["days"]:
+            day["choices"] = [
+                {
+                    "question": "已知 f(x) 为增函数，则 f(1-x²)<f(2x) 的关键转化是（ ）",
+                    "options": ["A", "B", "C", "D"],
+                    "answer": "A",
+                }
+            ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(any("空壳" in issue.description for issue in review.issues))
 
     def test_generate_review_plan_json_sets_timeout(self):
         response = type(

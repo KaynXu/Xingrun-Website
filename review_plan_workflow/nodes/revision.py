@@ -32,6 +32,7 @@ def _revision_message(
             "只修复 quality review 指出的问题；保留原计划中已经正确的结构和内容。",
             "不得虚构教材页码、考试日期、学生成绩、老师原话或未提供的题目来源。",
             "必须返回完整 JSON object，且 days 只包含 day=1,2,7,14,30 的复习节点。",
+            "选择题硬修复：逐日检查 choices；任何 options 只写 A/B/C/D、少于 4 个完整选项或 answer 为空时，必须重写为完整 question + A-D 四个具体选项 + 单字母答案。",
             "质量问题：\n" + quality.model_dump_json(indent=2),
             "用户输入：\n"
             + json.dumps(

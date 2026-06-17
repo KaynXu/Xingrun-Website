@@ -144,7 +144,7 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         knowledge_sections = extract_knowledge_sections(plan_data)
 
         self.assertEqual(len(lesson["full_review_topics"]), 17)
-        self.assertEqual(lesson["quotes"], [f"课堂原话{i}" for i in range(1, 13)])
+        self.assertEqual(lesson["quotes"], [f"课堂原话{i}" for i in range(1, 6)])
         self.assertEqual(reminders, ["先标数据", "再求法向量"])
         self.assertEqual(len(days[0]["blanks"]), 7)
         self.assertEqual(len(days[0]["choices"]), 2)
@@ -174,6 +174,29 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertTrue(any("解函数不等式时，第一步先判断" in task for task in days[0]["tasks"]))
         self.assertTrue(reminders)
 
+    def test_generate_single_lesson_pdf_escapes_math_comparison_symbols(self):
+        from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
+
+        plan = components_only_single_lesson_plan()
+        day_one_components = plan["days"][0]["components"]
+        blanks_card = next(item for item in day_one_components if item["type"] == "blanks_card")
+        choices_card = next(item for item in day_one_components if item["type"] == "choices_card")
+        blanks_card["items"][0]["stem"] = "已知 x>0，y>0，且 x+y=1，则 1/x+9/y 的最小值为 ______。"
+        choices_card["items"][0]["stem"] = "已知 f(x) 是定义在 R 上的增函数，则不等式 f(1-x²)<f(2x) 的解集是（ ）"
+        choices_card["items"][0]["options"] = [
+            "A. -1<x<2",
+            "B. x>2",
+            "C. x<1",
+            "D. 无解",
+        ]
+        output_path = self.base / "comparison-symbols.pdf"
+
+        result = generate_single_lesson_pdf(plan, output_path)
+
+        self.assertEqual(Path(result), output_path.resolve())
+        self.assertTrue(output_path.exists())
+        self.assertGreater(output_path.stat().st_size, 0)
+
     def test_quote_replay_text_uses_day_quotes_instead_of_static_copy(self):
         from review_plan_templates.generate_review_pdfs import build_labels, build_quote_replay_text
 
@@ -190,6 +213,28 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertIn("先看图像再判断增减性。", replay_text)
         self.assertIn("定义域先卡住，不要急着代数变形。", replay_text)
         self.assertNotEqual(replay_text, labels["quote_replay_text"])
+
+    def test_collect_plan_quotes_keeps_homepage_quotes_concise(self):
+        from review_plan_templates.single_lesson_pdf import collect_plan_quotes
+
+        plan = {
+            "quotes": ["定义域永远指 x。"],
+            "lesson_info": {"quotes": ["看见 f 一坨优先第一。"]},
+            "days": [
+                {
+                    "quotes": ["脱衣服时，定语别脱丢。"],
+                    "self_test_phrase": "能独立完成换元和方程组两种解析式求法。",
+                    "items": [
+                        {"type": "body", "text": "快速回顾课堂核心，建立定义域和解析式求法的基本框架。"}
+                    ],
+                }
+            ],
+        }
+
+        quotes = collect_plan_quotes(plan)
+
+        self.assertEqual(quotes, ["定义域永远指 x。", "看见 f 一坨优先第一。", "脱衣服时，定语别脱丢。"])
+        self.assertNotIn("能独立完成换元和方程组两种解析式求法。", quotes)
 
     def test_quote_summary_text_uses_numbered_lines_without_bullets(self):
         from review_plan_templates.generate_review_pdfs import build_quote_summary_text

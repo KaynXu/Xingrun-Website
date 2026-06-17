@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .schemas import QualityIssue, QualityReview, normalize_final_review_plan, validate_final_review_plan
@@ -41,6 +42,28 @@ BAD_BLANK_ANSWERS = {
     "提醒",
 }
 VAGUE_STEM_PATTERNS = ("某题", "这个题", "原题中", "题号")
+SKELETAL_OPTION_LABELS = {
+    "A",
+    "B",
+    "C",
+    "D",
+    "A.",
+    "B.",
+    "C.",
+    "D.",
+    "A．",
+    "B．",
+    "C．",
+    "D．",
+    "A、",
+    "B、",
+    "C、",
+    "D、",
+    "A)",
+    "B)",
+    "C)",
+    "D)",
+}
 
 
 def _clean_text(value: object) -> str:
@@ -84,6 +107,20 @@ def _choice_answer_is_valid(choice: dict[str, Any]) -> bool:
     answer_head = answer[:1].upper()
     option_heads = {_clean_text(option)[:1].upper() for option in options if _clean_text(option)}
     return answer_head in option_heads
+
+
+def _choice_options_are_complete(choice: dict[str, Any]) -> bool:
+    options = choice.get("options") if isinstance(choice.get("options"), list) else []
+    if len(options) < 4:
+        return False
+    for option in options:
+        text = _clean_text(option)
+        if text.upper().replace(" ", "") in SKELETAL_OPTION_LABELS:
+            return False
+        body = re.sub(r"^[A-Da-d][\.．、\)]?\s*", "", text).strip()
+        if not body or body.upper().replace(" ", "") in SKELETAL_OPTION_LABELS:
+            return False
+    return True
 
 
 def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> QualityReview:
@@ -174,6 +211,15 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
                         category="question_quality",
                         description=f"第 {day.get('day')} 天选择题答案不在选项中或题目不完整。",
                         suggested_fix="确保 answer 为 A/B/C/D 且对应选项存在。",
+                    )
+                )
+            if isinstance(choice, dict) and not _choice_options_are_complete(choice):
+                issues.append(
+                    QualityIssue(
+                        severity="high",
+                        category="question_quality",
+                        description=f"第 {day.get('day')} 天选择题选项是空壳或少于 4 个完整选项。",
+                        suggested_fix="把每道选择题改成 4 个完整选项字符串，例如 A. 具体表达；禁止只输出 A/B/C/D。",
                     )
                 )
 

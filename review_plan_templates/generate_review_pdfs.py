@@ -1015,6 +1015,18 @@ def localize_lines(values, chinese_only):
     return [localize_text(value, chinese_only) for value in values]
 
 
+def paragraph_safe_text(value):
+    return escape(normalize_portable_text(str(value or "")))
+
+
+def localize_paragraph_text(value, chinese_only):
+    return escape(localize_text(value, chinese_only))
+
+
+def localize_paragraph_lines(values, chinese_only):
+    return [localize_paragraph_text(value, chinese_only) for value in values]
+
+
 def build_labels(chinese_only):
     if chinese_only:
         return {
@@ -1107,7 +1119,7 @@ def build_quote_replay_text(day, labels, chinese_only):
         replay_intro = "先回想老师当时强调过的这几句，再动笔。Replay these class cues before writing:"
 
     replay_lines = [
-        f"{index}. {escape(localize_text(quote, chinese_only))}"
+        f"{index}. {localize_paragraph_text(quote, chinese_only)}"
         for index, quote in enumerate(quotes[:2], start=1)
     ]
     return "<br/>".join([replay_intro, *replay_lines])
@@ -1121,7 +1133,7 @@ def build_quote_summary_text(quotes, chinese_only):
             normalized_quotes.append(normalized_quote)
 
     quote_lines = [
-        f"{index}. “{escape(localize_text(quote, chinese_only))}”"
+        f"{index}. “{localize_paragraph_text(quote, chinese_only)}”"
         for index, quote in enumerate(normalized_quotes, start=1)
     ]
     return "<br/>".join(quote_lines)
@@ -1302,7 +1314,7 @@ def build_styles(style_config: dict[str, Any] | None = None):
 
 
 def bullet_paragraph(items, style):
-    return Paragraph("<br/>".join([f"- {item}" for item in items]), style)
+    return Paragraph("<br/>".join([f"- {paragraph_safe_text(item)}" for item in items]), style)
 
 
 def make_box(title, body, styles, background):
@@ -1332,8 +1344,8 @@ def make_choice_table(choices, styles, chinese_only=False):
     for index, choice in enumerate(choices, start=1):
         rows.append(
             [
-                Paragraph(f"{index}. {localize_text(choice['question'], chinese_only)}", styles["body"]),
-                Paragraph("<br/>".join(localize_lines(choice["options"], chinese_only)), styles["small"]),
+                Paragraph(f"{index}. {localize_paragraph_text(choice['question'], chinese_only)}", styles["body"]),
+                Paragraph("<br/>".join(localize_paragraph_lines(choice["options"], chinese_only)), styles["small"]),
             ]
         )
     table = Table(rows, colWidths=[80 * mm, 78 * mm])
@@ -1357,9 +1369,9 @@ def make_choice_table(choices, styles, chinese_only=False):
 def make_answer_table(day, styles, labels):
     rows = [[Paragraph(labels["answer_type"], styles["small"]), Paragraph(labels["answer_value"], styles["small"])]]
     for index, item in enumerate(day["blanks"], start=1):
-        rows.append([Paragraph(f"{labels['blank_prefix']} {index}", styles["small"]), Paragraph(item[1], styles["small"])])
+        rows.append([Paragraph(f"{labels['blank_prefix']} {index}", styles["small"]), Paragraph(paragraph_safe_text(item[1]), styles["small"])])
     for index, item in enumerate(day["choices"], start=1):
-        rows.append([Paragraph(f"{labels['choice_prefix']} {index}", styles["small"]), Paragraph(item["answer"], styles["small"])])
+        rows.append([Paragraph(f"{labels['choice_prefix']} {index}", styles["small"]), Paragraph(paragraph_safe_text(item["answer"]), styles["small"])])
     table = Table(rows, colWidths=[34 * mm, 136 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -1381,12 +1393,12 @@ def make_answer_table(day, styles, labels):
 def make_knowledge_mixed_table(knowledge_items, styles, chinese_only=False):
     rows = []
     for item in knowledge_items:
-        parts = [f"<b>{localize_text(item['title'], chinese_only)}</b>"]
+        parts = [f"<b>{localize_paragraph_text(item['title'], chinese_only)}</b>"]
         for index, blank in enumerate(item["mixed"]["blanks"], start=1):
-            parts.append(f"填空 {index}. {localize_text(blank[0], chinese_only)}")
+            parts.append(f"填空 {index}. {localize_paragraph_text(blank[0], chinese_only)}")
         for index, choice in enumerate(item["mixed"]["choices"], start=1):
-            option_text = "<br/>".join(localize_lines(choice["options"], chinese_only))
-            parts.append(f"选择 {index}. {localize_text(choice['question'], chinese_only)}<br/>{option_text}")
+            option_text = "<br/>".join(localize_paragraph_lines(choice["options"], chinese_only))
+            parts.append(f"选择 {index}. {localize_paragraph_text(choice['question'], chinese_only)}<br/>{option_text}")
         rows.append([Paragraph("<br/><br/>".join(parts), styles["body"])])
     table = Table(rows, colWidths=[158 * mm])
     table.setStyle(
@@ -1408,9 +1420,9 @@ def make_knowledge_mixed_table(knowledge_items, styles, chinese_only=False):
 def make_knowledge_oral_table(knowledge_items, styles, chinese_only=False):
     rows = []
     for item in knowledge_items:
-        prompt_lines = [f"<b>{localize_text(item['title'], chinese_only)}</b>"]
+        prompt_lines = [f"<b>{localize_paragraph_text(item['title'], chinese_only)}</b>"]
         for index, prompt in enumerate(item["oral"]["prompts"], start=1):
-            prompt_lines.append(f"提问 {index}. {localize_text(prompt, chinese_only)}")
+            prompt_lines.append(f"提问 {index}. {localize_paragraph_text(prompt, chinese_only)}")
         rows.append([Paragraph("<br/><br/>".join(prompt_lines), styles["body"])])
     table = Table(rows, colWidths=[158 * mm])
     table.setStyle(
@@ -1435,12 +1447,12 @@ def make_knowledge_answer_table(knowledge_items, styles, knowledge_mode, labels,
         title = localize_text(item["title"], chinese_only)
         if knowledge_mode == "mixed":
             for index, blank in enumerate(item["mixed"]["blanks"], start=1):
-                rows.append([Paragraph(f"{title} {labels['blank_prefix']} {index}", styles["small"]), Paragraph(blank[1], styles["small"])])
+                rows.append([Paragraph(paragraph_safe_text(f"{title} {labels['blank_prefix']} {index}"), styles["small"]), Paragraph(paragraph_safe_text(blank[1]), styles["small"])])
             for index, choice in enumerate(item["mixed"]["choices"], start=1):
-                rows.append([Paragraph(f"{title} {labels['choice_prefix']} {index}", styles["small"]), Paragraph(choice["answer"], styles["small"])])
+                rows.append([Paragraph(paragraph_safe_text(f"{title} {labels['choice_prefix']} {index}"), styles["small"]), Paragraph(paragraph_safe_text(choice["answer"]), styles["small"])])
         else:
             for index, keypoint in enumerate(item["oral"]["keypoints"], start=1):
-                rows.append([Paragraph(f"{title} {labels['oral_prompt_prefix']} {index}", styles["small"]), Paragraph(localize_text(keypoint, chinese_only), styles["small"])])
+                rows.append([Paragraph(paragraph_safe_text(f"{title} {labels['oral_prompt_prefix']} {index}"), styles["small"]), Paragraph(localize_paragraph_text(keypoint, chinese_only), styles["small"])])
     table = Table(rows, colWidths=[50 * mm, 120 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -1465,9 +1477,9 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
     for day in days:
         day_label = localize_text(day["day"], chinese_only)
         for index, item in enumerate(day["blanks"], start=1):
-            entries.append((day_label, f"{labels['blank_prefix']} {index}", escape(normalize_portable_text(item[1]))))
+            entries.append((day_label, f"{labels['blank_prefix']} {index}", paragraph_safe_text(item[1])))
         for index, item in enumerate(day["choices"], start=1):
-            entries.append((day_label, f"{labels['choice_prefix']} {index}", escape(normalize_portable_text(item["answer"]))))
+            entries.append((day_label, f"{labels['choice_prefix']} {index}", paragraph_safe_text(item["answer"])))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         if not knowledge_items:
@@ -1477,12 +1489,12 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
             title = localize_text(item["title"], chinese_only)
             if knowledge_mode == "mixed":
                 for index, blank in enumerate(item["mixed"]["blanks"], start=1):
-                    entries.append((day_label, escape(f"{title} {labels['blank_prefix']} {index}"), escape(normalize_portable_text(blank[1]))))
+                    entries.append((day_label, paragraph_safe_text(f"{title} {labels['blank_prefix']} {index}"), paragraph_safe_text(blank[1])))
                 for index, choice in enumerate(item["mixed"]["choices"], start=1):
-                    entries.append((day_label, escape(f"{title} {labels['choice_prefix']} {index}"), escape(normalize_portable_text(choice["answer"]))))
+                    entries.append((day_label, paragraph_safe_text(f"{title} {labels['choice_prefix']} {index}"), paragraph_safe_text(choice["answer"])))
             else:
                 for index, keypoint in enumerate(item["oral"]["keypoints"], start=1):
-                    entries.append((day_label, escape(f"{title} {labels['oral_prompt_prefix']} {index}"), escape(localize_text(keypoint, chinese_only))))
+                    entries.append((day_label, paragraph_safe_text(f"{title} {labels['oral_prompt_prefix']} {index}"), localize_paragraph_text(keypoint, chinese_only)))
 
     split_at = (len(entries) + 1) // 2
     left_entries = entries[:split_at]
@@ -1499,11 +1511,11 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
     for index, left_entry in enumerate(left_entries):
         right_entry = right_entries[index] if index < len(right_entries) else blank_cells
         rows.append([
-            Paragraph(left_entry[0], styles["tiny"]),
-            Paragraph(left_entry[1], styles["tiny"]),
+            Paragraph(paragraph_safe_text(left_entry[0]), styles["tiny"]),
+            Paragraph(paragraph_safe_text(left_entry[1]), styles["tiny"]),
             Paragraph(left_entry[2], styles["tiny"]),
-            Paragraph(right_entry[0], styles["tiny"]),
-            Paragraph(right_entry[1], styles["tiny"]),
+            Paragraph(paragraph_safe_text(right_entry[0]), styles["tiny"]),
+            Paragraph(paragraph_safe_text(right_entry[1]), styles["tiny"]),
             Paragraph(right_entry[2], styles["tiny"]),
         ])
 
@@ -1580,10 +1592,10 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
         story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("星润课后复习计划", styles["brand"]))
     story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(lesson["title"], styles["title"]))
+    story.append(Paragraph(paragraph_safe_text(lesson["title"]), styles["title"]))
     subtitle = "" if chinese_only else lesson.get("subtitle", "")
     if subtitle:
-        story.append(Paragraph(subtitle, styles["subtitle"]))
+        story.append(Paragraph(paragraph_safe_text(subtitle), styles["subtitle"]))
     story.append(Spacer(1, 5 * mm))
     story.append(make_box(labels["usage_title"], Paragraph(labels["usage_text"], styles["body"]), styles, styles["soft"]))
     story.append(Spacer(1, 3 * mm))
@@ -1598,14 +1610,14 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
             story.append(PageBreak())
         story.append(Paragraph(build_day_heading(day, base_date, chinese_only), styles["h1"]))
         if index == 0:
-            story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_text(day['goal'], chinese_only)}", styles["body"]))
-            story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_text(day['focus'], chinese_only)}", styles["body"]))
+            story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_paragraph_text(day['goal'], chinese_only)}", styles["body"]))
+            story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_paragraph_text(day['focus'], chinese_only)}", styles["body"]))
             story.append(Spacer(1, 2 * mm))
             story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, styles["soft"]))
             story.append(Spacer(1, 2 * mm))
             story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, styles["card"]))
             story.append(Spacer(1, 2 * mm))
-        blank_body = Paragraph("<br/>".join([f"{index}. {localize_text(item[0], chinese_only)}" for index, item in enumerate(day["blanks"], start=1)]), styles["body"])
+        blank_body = Paragraph("<br/>".join([f"{index}. {localize_paragraph_text(item[0], chinese_only)}" for index, item in enumerate(day["blanks"], start=1)]), styles["body"])
         story.append(make_box(labels["blanks_title"], blank_body, styles, styles["card"]))
         story.append(Spacer(1, 2 * mm))
         story.append(CondPageBreak(60 * mm))
@@ -1630,7 +1642,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
                 story.append(Spacer(1, 2 * mm))
 
         if has_teacher_quote:
-            quote_body = Paragraph("<br/>".join([f"“{quote}”" for quote in day["quotes"]]), styles["quote"])
+            quote_body = Paragraph("<br/>".join([f"“{localize_paragraph_text(quote, chinese_only)}”" for quote in day["quotes"]]), styles["quote"])
             story.append(make_box(labels["teacher_quote_title"], quote_body, styles, styles["quote_bg"]))
             story.append(Spacer(1, 2 * mm))
 

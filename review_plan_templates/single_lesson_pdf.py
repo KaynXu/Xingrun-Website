@@ -29,6 +29,16 @@ def _dedupe_clean_lines(values: object) -> list[str]:
     return lines
 
 
+def _append_blank_once(blanks: list[tuple[str, str]], text: object, answer: object = "") -> None:
+    clean_text = _clean_text(text)
+    if not clean_text:
+        return
+    for existing_text, _existing_answer in blanks:
+        if _clean_text(existing_text) == clean_text:
+            return
+    blanks.append((clean_text, _clean_text(answer, "见课堂笔记")))
+
+
 def collect_plan_quotes(plan_data: dict) -> list[str]:
     quotes: list[str] = []
     for text in _dedupe_clean_lines(plan_data.get("quotes")):
@@ -40,21 +50,7 @@ def collect_plan_quotes(plan_data: dict) -> list[str]:
         for text in _dedupe_clean_lines(day_data.get("quotes")):
             if text not in quotes:
                 quotes.append(text)
-        phrase = _clean_text(day_data.get("self_test_phrase"))
-        if phrase and phrase not in quotes:
-            quotes.append(phrase)
-        for step in day_data.get("steps", []):
-            for item in step.get("items", []):
-                if item.get("type") == "body":
-                    text = _clean_text(item.get("text"))
-                    if text and text not in quotes:
-                        quotes.append(text)
-        for item in day_data.get("items", []):
-            if item.get("type") == "body":
-                text = _clean_text(item.get("text"))
-                if text and text not in quotes:
-                    quotes.append(text)
-    return quotes[:12] or ["每一个复习日都要完整复习整节课内容。"]
+    return quotes[:5] or ["每一个复习日都要完整复习整节课内容。"]
 
 
 def extract_knowledge_sections(plan_data: dict) -> dict:
@@ -125,14 +121,14 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         for item in step.get("items", []):
             text = _clean_text(item.get("text"))
             if item.get("type") == "fill" and text:
-                blanks.append((text, _clean_text(item.get("answer"), "见课堂笔记")))
+                _append_blank_once(blanks, text, item.get("answer"))
             elif item.get("type") == "body" and text:
                 tasks.append(text)
 
     for item in day_data.get("items", []):
         text = _clean_text(item.get("text"))
         if item.get("type") == "fill" and text:
-            blanks.append((text, _clean_text(item.get("answer"), "见课堂笔记")))
+            _append_blank_once(blanks, text, item.get("answer"))
         elif text:
             tasks.append(text)
 
@@ -163,7 +159,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
             text = _clean_text(blank)
             answer = "见课堂笔记"
         if text:
-            blanks.append((text, answer))
+            _append_blank_once(blanks, text, answer)
 
     phrase = _clean_text(day_data.get("self_test_phrase"))
     if phrase:
