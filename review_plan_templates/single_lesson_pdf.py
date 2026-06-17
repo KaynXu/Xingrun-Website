@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from review_plan_workflow.schemas import normalize_final_review_plan
-from review_plan_templates.generate_review_pdfs import build_lesson_filename_part, normalize_portable_text, render_review_plan_pdf
+from review_plan_templates.generate_review_pdfs import build_lesson_filename_part, normalize_portable_text_preserving_latex, render_review_plan_pdf
 
 
 DEFAULT_FINAL_REMINDERS = [
@@ -29,7 +29,7 @@ BAD_QUOTE_PATTERNS = (
 
 
 def _clean_text(value: object, default: str = "") -> str:
-    text = normalize_portable_text(str(value or "").strip())
+    text = normalize_portable_text_preserving_latex(str(value or "").strip())
     return text or default
 
 

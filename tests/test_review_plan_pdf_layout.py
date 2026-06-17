@@ -104,7 +104,7 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
         expected_brand_x = doc.leftMargin + 8.5 * generate_review_pdfs.mm + 3 * generate_review_pdfs.mm
         self.assertAlmostEqual(brand_x, expected_brand_x)
 
-    def test_daily_overview_sections_stop_after_first_review_day(self):
+    def test_daily_overview_keeps_tasks_on_each_review_day_but_not_full_coverage(self):
         generate_review_pdfs.register_fonts()
         styles = generate_review_pdfs.build_styles()
         labels = generate_review_pdfs.build_labels(chinese_only=True)
@@ -126,7 +126,7 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
             )
 
         self.assertEqual(box_titles.count(labels["coverage_title"]), 2)
-        self.assertEqual(box_titles.count(labels["tasks_title"]), 1)
+        self.assertEqual(box_titles.count(labels["tasks_title"]), len(_sample_days()))
 
     def test_answer_key_uses_compact_summary_instead_of_per_day_heading_blocks(self):
         generate_review_pdfs.register_fonts()

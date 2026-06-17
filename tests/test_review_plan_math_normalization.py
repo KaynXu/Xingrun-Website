@@ -1,6 +1,15 @@
 import unittest
 
-from review_plan_templates.generate_review_pdfs import localize_paragraph_text, normalize_portable_text
+from reportlab.platypus import Image as ReportLabImage
+
+from review_plan_templates.generate_review_pdfs import (
+    build_styles,
+    localize_paragraph_text,
+    normalize_portable_text,
+    register_fonts,
+    render_latex_formula_flowable,
+    rich_text_flowables,
+)
 
 
 class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
@@ -54,6 +63,28 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertEqual(normalize_portable_text(r"$\log_2 x$"), "log_2 x")
         self.assertEqual(normalize_portable_text(r"$a_n$"), "a_n")
         self.assertEqual(normalize_portable_text(r"$x_{12}$"), "x_12")
+
+    def test_render_latex_formula_flowable_renders_fraction_as_image(self):
+        flowable = render_latex_formula_flowable(
+            r"\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}",
+            max_width=120,
+        )
+
+        self.assertIsInstance(flowable, ReportLabImage)
+        self.assertLessEqual(flowable.drawWidth, 120)
+        self.assertGreater(flowable.drawHeight, 0)
+
+    def test_rich_text_flowables_embeds_fraction_formula_image(self):
+        register_fonts()
+        styles = build_styles()
+
+        flowables = rich_text_flowables(
+            r"全方和不等式：$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$",
+            styles["body"],
+            True,
+        )
+
+        self.assertTrue(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
 
     def test_normalize_portable_text_normalizes_bare_latex_fragments_like_wrong_question_text(self):
         text = (

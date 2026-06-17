@@ -242,6 +242,18 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertTrue(any("桥梁法" in task for task in days[0]["tasks"]))
         self.assertTrue(any("不能只比较括号大小" in task for task in days[1]["tasks"]))
 
+    def test_adapt_plan_to_review_template_preserves_latex_for_pdf_formula_rendering(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = valid_single_lesson_plan(subject="数学", topic="全方和不等式")
+        formula = r"$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$"
+        plan["days"][0]["steps"][1]["items"][0]["text"] = f"全方和不等式：{formula}"
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertIn(r"\frac{a^2}{x}", days[0]["blanks"][1][0])
+        self.assertNotIn("(a²)/(x)", days[0]["blanks"][1][0])
+
     def test_generate_single_lesson_pdf_escapes_math_comparison_symbols(self):
         from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
 
