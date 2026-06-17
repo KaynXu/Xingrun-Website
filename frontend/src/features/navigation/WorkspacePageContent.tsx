@@ -103,7 +103,7 @@ export function WorkspacePageContent({
 
   const hasReviewFloatingTask = reviewLatestLessons.some((lesson) => {
     const state = getReviewLessonTaskState(lesson);
-    return state === 'pending' || state === 'failed' || state === 'missing-output';
+    return state === 'pending' || state === 'failed';
   });
   const hasReviewPendingTask = reviewLatestLessons.some(isReviewLessonPending);
   const shouldPollReviewTasks = activeReviewTaskIds.size > 0 || hasReviewPendingTask;

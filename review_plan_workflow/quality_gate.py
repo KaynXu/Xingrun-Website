@@ -201,6 +201,50 @@ def _day_renderable_counts(day: dict[str, Any]) -> tuple[int, int, int]:
     return blanks, choices, bodies
 
 
+def _question_signature(value: object) -> str:
+    return _compact_text(_clean_text(value))
+
+
+def _collect_day_unique_question_counts(day: dict[str, Any]) -> tuple[int, int, int]:
+    fill_signatures: set[str] = set()
+    choice_signatures: set[str] = set()
+    raw_fill_count = 0
+
+    def add_fill(value: object) -> None:
+        nonlocal raw_fill_count
+        signature = _question_signature(value)
+        if not signature:
+            return
+        raw_fill_count += 1
+        fill_signatures.add(signature)
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            item_type = _clean_text(value.get("type")).lower()
+            fill_text = value.get("text") or value.get("stem") or value.get("question") or value.get("label")
+            if item_type == "fill" or ("answer" in value and fill_text):
+                add_fill(fill_text)
+            for nested in value.values():
+                walk(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+
+    walk(day.get("blanks", []))
+    walk(day.get("items", []))
+    walk(day.get("steps", []))
+    walk(day.get("active_recall", {}))
+
+    for choice in day.get("choices", []) if isinstance(day.get("choices"), list) else []:
+        if not isinstance(choice, dict):
+            continue
+        signature = _question_signature(choice.get("question") or choice.get("stem"))
+        if signature:
+            choice_signatures.add(signature)
+
+    return len(fill_signatures), len(choice_signatures), raw_fill_count
+
+
 def _choice_answer_is_valid(choice: dict[str, Any]) -> bool:
     answer = _clean_text(choice.get("answer"))
     options = choice.get("options") if isinstance(choice.get("options"), list) else []
@@ -228,6 +272,7 @@ def _choice_options_are_complete(choice: dict[str, Any]) -> bool:
 def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> QualityReview:
     normalized_plan = normalize_final_review_plan(plan)
     issues: list[QualityIssue] = []
+    subject_key = subject.lower()
     _, schema_errors = validate_final_review_plan(normalized_plan)
     if schema_errors:
         issues.append(
@@ -321,6 +366,25 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
                     suggested_fix="补充执行清单、具体填空、选择诊断和主动回忆卡片。",
                 )
             )
+        unique_fills, unique_choices, raw_fills = _collect_day_unique_question_counts(day)
+        if subject_key == "math" and unique_fills < 3 and unique_choices < 2:
+            issues.append(
+                QualityIssue(
+                    severity="high",
+                    category="task_actionability",
+                    description=f"第 {day.get('day')} 天唯一可打印题目不足，容易生成半页空白的低密度 PDF。",
+                    suggested_fix="每个复习日至少提供 3 个不重复填空/口述填空，或 2 道不同选择诊断题；不要只靠重复 items 凑数量。",
+                )
+            )
+        if raw_fills >= 3 and unique_fills <= 1:
+            issues.append(
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description=f"第 {day.get('day')} 天存在重复填空题凑数，唯一可打印题目不足。",
+                    suggested_fix="删除重复题，改写为不同知识点、不同数字条件或不同错因的题目。",
+                )
+            )
         for blank in day.get("blanks", []) if isinstance(day.get("blanks"), list) else []:
             if isinstance(blank, dict) and _clean_text(blank.get("answer")) in BAD_BLANK_ANSWERS:
                 issues.append(
@@ -392,7 +456,6 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
             )
         )
 
-    subject_key = subject.lower()
     if subject_key == "physics" and not _contains_any(text_blob, ("公式", "单位", "实验", "图像", "适用条件")):
         issues.append(
             QualityIssue(

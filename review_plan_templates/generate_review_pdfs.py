@@ -751,18 +751,6 @@ SUPERSCRIPT_LETTER_MAP = {
     "s": "ˢ", "t": "ᵗ", "u": "ᵘ", "v": "ᵛ", "w": "ʷ",
     "x": "ˣ", "y": "ʸ",
 }
-# Unicode subscript letters that are available (limited set)
-SUBSCRIPT_LETTER_MAP = {
-    "a": "ₐ", "e": "ₑ", "o": "ₒ", "x": "ₓ", "h": "ₕ",
-    "k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "p": "ₚ",
-    "s": "ₛ", "t": "ₜ",
-}
-SUBSCRIPT_DIGIT_MAP = {
-    "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
-    "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
-}
-
-
 def _render_superscript(content: str) -> str:
     result = []
     for c in content:
@@ -777,21 +765,21 @@ def _render_superscript(content: str) -> str:
 
 
 def _render_subscript(content: str) -> str:
-    result = []
-    for c in content:
-        if c in SUBSCRIPT_DIGIT_MAP:
-            result.append(SUBSCRIPT_DIGIT_MAP[c])
-        elif c.lower() in SUBSCRIPT_LETTER_MAP:
-            result.append(SUBSCRIPT_LETTER_MAP[c.lower()])
-        else:
-            # No Unicode subscript available – fall back to _(content) notation
-            return f"_({content})"
-    return "".join(result)
+    compact = str(content or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9]+", compact):
+        return f"_{compact}" if len(compact) == 1 else f"_{{{compact}}}"
+
+    # Complex subscripts such as limits are easier to read as an inline condition.
+    return f"_({content})"
 
 
 BROKEN_NEWLINE_LATEX_COMMAND_PATTERN = re.compile(
     r"(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))"
 )
+LATEX_CASES_PATTERN = re.compile(r"\\begin\s*\{\s*cases\s*\}([\s\S]*?)\\end\s*\{\s*cases\s*\}")
+LATEX_UNDERLINED_SPACE_PATTERN = re.compile(r"\\underline\s*\{\s*\\hspace\s*\{[^{}]*\}\s*\}")
+LATEX_UNDERLINED_PHANTOM_PATTERN = re.compile(r"\\underline\s*\{\s*\\phantom\s*\{[^{}]*\}\s*\}")
+LATEX_HSPACE_PATTERN = re.compile(r"\\hspace\s*\{[^{}]*\}")
 
 
 def _repair_latex_transport_controls(text: str) -> str:
@@ -803,8 +791,37 @@ def _repair_latex_transport_controls(text: str) -> str:
     return BROKEN_NEWLINE_LATEX_COMMAND_PATTERN.sub(r"\\n", repaired)
 
 
+def _normalize_latex_cases(text: str) -> str:
+    def replace_cases(match: re.Match[str]) -> str:
+        content = match.group(1)
+        content = content.replace("\\\\", "\n").replace(r"\cr", "\n")
+        rows = []
+        for row in content.splitlines():
+            clean = re.sub(r"\s*&\s*", "，", row).strip(" \t,，;；")
+            if clean:
+                rows.append(clean)
+        return "； ".join(rows)
+
+    return LATEX_CASES_PATTERN.sub(replace_cases, text)
+
+
+def _normalize_latex_placeholders(text: str) -> str:
+    normalized = LATEX_UNDERLINED_SPACE_PATTERN.sub("______", text)
+    normalized = LATEX_UNDERLINED_PHANTOM_PATTERN.sub("______", normalized)
+    normalized = LATEX_HSPACE_PATTERN.sub("______", normalized)
+    normalized = re.sub(r"\\underline\s*\{([^{}]+)\}", r"\1", normalized)
+    return normalized
+
+
+def _normalize_latex_structures(text: str) -> str:
+    normalized = _normalize_latex_placeholders(text)
+    normalized = _normalize_latex_cases(normalized)
+    return normalized
+
+
 def _normalize_bare_latex_text(text: str) -> str:
     normalized = str(text or "").replace(r"\$", "$")
+    normalized = _normalize_latex_structures(normalized)
 
     for _ in range(5):
         next_value = re.sub(
@@ -873,7 +890,9 @@ class TrackingCanvas(Canvas):
 
 def _format_latex_math_segment(text):
     # Some inputs may contain double-escaped latex commands from JSON/text transport.
-    normalized = _repair_latex_transport_controls(text).replace("\\\\", "\\")
+    normalized = _repair_latex_transport_controls(text)
+    normalized = _normalize_latex_structures(normalized)
+    normalized = normalized.replace("\\\\", "\\")
     normalized = _normalize_bare_latex_text(normalized)
     normalized = re.sub(r"\\([A-Za-z]+)", lambda match: match.group(1), normalized)
     normalized = re.sub(r"\\([{}()\[\]])", r"\1", normalized)
@@ -1007,7 +1026,7 @@ def localize_text(value, chinese_only):
         return normalize_portable_text(value)
 
     localized = value.split(" / ", 1)[0].strip()
-    localized = re.sub(r"([。！？：；）】』”])\s*[A-Za-z][\s\S]*$", r"\1", localized)
+    localized = re.sub(r"([。！？）】』”])\s*[A-Za-z][\s\S]*$", r"\1", localized)
     return normalize_portable_text(localized.strip())
 
 
@@ -1025,6 +1044,24 @@ def localize_paragraph_text(value, chinese_only):
 
 def localize_paragraph_lines(values, chinese_only):
     return [localize_paragraph_text(value, chinese_only) for value in values]
+
+
+def localize_choice_option_lines(values, chinese_only):
+    lines = []
+    for value in values:
+        text = localize_paragraph_text(value, chinese_only)
+        lines.append(text.replace("； ", "；<br/>"))
+    return lines
+
+
+def choice_options_need_full_width(options, chinese_only):
+    for option in options:
+        localized = localize_text(option, chinese_only)
+        if "；" in localized or "\\begin{cases}" in str(option):
+            return True
+        if len(re.sub(r"\s+", "", localized)) > 44:
+            return True
+    return False
 
 
 def build_labels(chinese_only):
@@ -1346,17 +1383,26 @@ def make_box(title, body, styles, background):
 
 def make_choice_table(choices, styles, chinese_only=False):
     rows = []
+    spans = []
     for index, choice in enumerate(choices, start=1):
-        rows.append(
-            [
-                Paragraph(f"{index}. {localize_paragraph_text(choice['question'], chinese_only)}", styles["body"]),
-                Paragraph("<br/>".join(localize_paragraph_lines(choice["options"], chinese_only)), styles["small"]),
-            ]
-        )
+        question = f"{index}. {localize_paragraph_text(choice['question'], chinese_only)}"
+        options = "<br/>".join(localize_choice_option_lines(choice["options"], chinese_only))
+        if choice_options_need_full_width(choice["options"], chinese_only):
+            spans.append(len(rows))
+            rows.append([Paragraph(f"{question}<br/>{options}", styles["body"]), ""])
+        else:
+            rows.append(
+                [
+                    Paragraph(question, styles["body"]),
+                    Paragraph(options, styles["small"]),
+                ]
+            )
     table = Table(rows, colWidths=[80 * mm, 78 * mm])
+    span_styles = [("SPAN", (0, row), (1, row)) for row in spans]
     table.setStyle(
         TableStyle(
             [
+                *span_styles,
                 ("BACKGROUND", (0, 0), (-1, -1), styles["card"]),
                 ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
                 ("INNERGRID", (0, 0), (-1, -1), 0.35, styles["line"]),
@@ -1636,6 +1682,15 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
             story.append(Spacer(1, 2 * mm))
             story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, styles["card"]))
             story.append(Spacer(1, 2 * mm))
+        else:
+            if day.get("goal"):
+                story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_paragraph_text(day['goal'], chinese_only)}", styles["body"]))
+            if day.get("focus"):
+                story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_paragraph_text(day['focus'], chinese_only)}", styles["body"]))
+            if day.get("tasks"):
+                story.append(Spacer(1, 2 * mm))
+                story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, styles["card"]))
+                story.append(Spacer(1, 2 * mm))
         blank_body = Paragraph("<br/>".join([f"{index}. {localize_paragraph_text(item[0], chinese_only)}" for index, item in enumerate(day["blanks"], start=1)]), styles["body"])
         story.append(make_box(labels["blanks_title"], blank_body, styles, styles["card"]))
         story.append(Spacer(1, 2 * mm))

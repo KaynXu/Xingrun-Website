@@ -349,7 +349,9 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized["day"] = day_number
 
     if not _clean_text(normalized.get("goal")):
-        normalized["goal"] = _clean_text(normalized.get("reviewGoal"))
+        normalized["goal"] = _clean_text(normalized.get("reviewGoal") or normalized.get("review_goal"))
+    if not _clean_text(normalized.get("focus")):
+        normalized["focus"] = _clean_text(normalized.get("reviewFocus") or normalized.get("review_focus"))
     if not _clean_text(normalized.get("completion_standard")):
         normalized["completion_standard"] = _clean_text(normalized.get("completionCriteria"))
     if "active_recall" not in normalized and isinstance(normalized.get("activeRecall"), (dict, str)):

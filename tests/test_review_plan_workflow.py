@@ -228,6 +228,37 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("quotes 留空", fixes)
         self.assertIn("$...$", fixes)
 
+    def test_quality_gate_rejects_sparse_duplicate_unique_question_content(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
+        plan["full_review_topics"] = [
+            "全方和不等式",
+            "柯西不等式",
+            "抽象函数定义域",
+            "同一函数辨析",
+            "函数不等式同解转化",
+        ]
+        for day in plan["days"]:
+            day["blanks"] = [
+                {"text": "同一函数判断先比较_______。", "answer": "定义域"},
+            ]
+            day["items"] = [
+                {"type": "fill", "text": "同一函数判断先比较_______。", "answer": "定义域"},
+                {"type": "fill", "text": "同一函数判断先比较_______。", "answer": "定义域"},
+            ]
+            day["choices"] = [
+                {
+                    "question": "抽象函数定义域先看什么？",
+                    "options": ["A. 括号整体", "B. 字体", "C. 页码", "D. 颜色"],
+                    "answer": "A",
+                }
+            ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(any("唯一可打印题目" in issue.description for issue in review.issues))
+
     def test_quality_gate_rejects_skeletal_choice_options(self):
         plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
         for day in plan["days"]:

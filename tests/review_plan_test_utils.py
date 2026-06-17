@@ -43,11 +43,17 @@ def writer_style_single_lesson_plan() -> dict:
                 "blanks": [
                     {"text": "分式方程去分母后化为______方程。", "answer": "整式"},
                     {"text": "解完后必须进行______。", "answer": "检验"},
+                    {"text": "去分母前必须先确定最简公分母，并标出可能使分母为 0 的______。", "answer": "限制值"},
                 ],
                 "choices": [
                     {
                         "stem": "下列哪一步最容易产生增根？",
                         "options": ["A. 去分母", "B. 抄题", "C. 排版", "D. 口算"],
+                        "answer": "A",
+                    },
+                    {
+                        "stem": "解分式方程后为什么要代回原分母检验？",
+                        "options": ["A. 排除增根", "B. 增加步骤字数", "C. 改变题意", "D. 跳过答案"],
                         "answer": "A",
                     }
                 ],
@@ -94,11 +100,17 @@ def desktop_writer_single_lesson_plan() -> dict:
                 "blanks": [
                     {"text": "竖直线段长度通常用______。", "answer": "上减下"},
                     {"text": "二次函数顶点横坐标公式是______。", "answer": "-b/(2a)"},
+                    {"text": "将军饮马问题通常先作______点，再转化为直线最短。", "answer": "对称"},
                 ],
                 "choices": [
                     {
                         "question": "将军饮马问题先做什么？",
                         "options": ["A. 作对称点", "B. 背答案", "C. 改颜色", "D. 删条件"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": "用顶点公式求最值前，必须先确认什么？",
+                        "options": ["A. 自变量取值范围", "B. 字体大小", "C. 页码", "D. 题号颜色"],
                         "answer": "A",
                     }
                 ],
@@ -206,6 +218,10 @@ def components_only_single_lesson_plan() -> dict:
                                     "stem": f"第{day}天：柯西不等式常用于处理带系数的______关系。",
                                     "answer": "线性组合",
                                 },
+                                {
+                                    "stem": f"第{day}天：判断两个函数是否相同，必须同时比较解析式和______。",
+                                    "answer": "定义域",
+                                },
                             ],
                         },
                         {
@@ -215,6 +231,11 @@ def components_only_single_lesson_plan() -> dict:
                                 {
                                     "stem": f"第{day}天：求 f(2x-1) 的定义域时，最先检查什么？",
                                     "options": ["A. 复合内层范围", "B. 字体大小", "C. 作业题号", "D. 只看答案"],
+                                    "answer": "A",
+                                },
+                                {
+                                    "stem": f"第{day}天：下列哪一步最能避免函数不等式漏解？",
+                                    "options": ["A. 先列定义域限制", "B. 直接去掉 f", "C. 只看答案", "D. 忽略真数限制"],
                                     "answer": "A",
                                 }
                             ],

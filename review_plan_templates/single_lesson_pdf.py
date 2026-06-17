@@ -65,6 +65,43 @@ def _append_blank_once(blanks: list[tuple[str, str]], text: object, answer: obje
     blanks.append((clean_text, _clean_text(answer, "见课堂笔记")))
 
 
+def _append_task_once(tasks: list[str], text: object) -> None:
+    clean_text = _clean_text(text)
+    if clean_text and clean_text not in tasks:
+        tasks.append(clean_text)
+
+
+def _promote_active_recall(active_recall: object, tasks: list[str], blanks: list[tuple[str, str]]) -> None:
+    if isinstance(active_recall, str):
+        _append_task_once(tasks, active_recall)
+        return
+    if not isinstance(active_recall, dict):
+        return
+
+    for field in ("instructions", "instruction", "question", "prompt", "expected", "content"):
+        value = active_recall.get(field)
+        if isinstance(value, list):
+            for item in value:
+                _append_task_once(tasks, item)
+        else:
+            _append_task_once(tasks, value)
+
+    for blank in active_recall.get("blanks", []) if isinstance(active_recall.get("blanks"), list) else []:
+        if isinstance(blank, dict):
+            _append_blank_once(blanks, blank.get("label") or blank.get("text") or blank.get("stem"), blank.get("answer"))
+
+    for item in active_recall.get("items", []) if isinstance(active_recall.get("items"), list) else []:
+        if not isinstance(item, dict):
+            _append_task_once(tasks, item)
+            continue
+        _append_task_once(tasks, item.get("instruction") or item.get("question") or item.get("prompt") or item.get("stem"))
+        for blank in item.get("blanks", []) if isinstance(item.get("blanks"), list) else []:
+            if not isinstance(blank, dict):
+                _append_blank_once(blanks, blank)
+                continue
+            _append_blank_once(blanks, blank.get("label") or blank.get("text") or blank.get("stem"), blank.get("answer"))
+
+
 def collect_plan_quotes(plan_data: dict) -> list[str]:
     quotes: list[str] = []
     for text in _dedupe_real_quotes(plan_data.get("quotes")):
@@ -164,15 +201,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
             tasks.append(text)
 
     active_recall = day_data.get("active_recall")
-    if isinstance(active_recall, dict):
-        for field in ("instructions", "expected"):
-            text = _clean_text(active_recall.get(field))
-            if text and text not in tasks:
-                tasks.append(text)
-    elif isinstance(active_recall, str):
-        text = _clean_text(active_recall)
-        if text and text not in tasks:
-            tasks.append(text)
+    _promote_active_recall(active_recall, tasks, blanks)
 
     for blank in day_data.get("blanks", []) if isinstance(day_data.get("blanks"), list) else []:
         if isinstance(blank, dict):
@@ -195,7 +224,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         if phrase:
             tasks.append(phrase)
 
-    task_values = tasks[:4] or [f"完整复习{topic or '本课内容'}并复述关键方法。"]
+    task_values = tasks[:5] or [f"完整复习{topic or '本课内容'}并复述关键方法。"]
     blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
 
     explicit_choices: list[dict] = []
@@ -219,8 +248,14 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
     return {
         "offset": day_number,
         "day": f"第{day_number}天",
-        "focus": _clean_text(day_data.get("focus") or day_data.get("theme") or day_data.get("label"), f"聚焦复习{topic or '本课内容'}"),
-        "goal": f"完整回顾{topic or '本课内容'}，并复述关键方法与易错点。",
+        "focus": _clean_text(
+            day_data.get("focus") or day_data.get("review_focus") or day_data.get("theme") or day_data.get("label"),
+            f"聚焦复习{topic or '本课内容'}",
+        ),
+        "goal": _clean_text(
+            day_data.get("goal") or day_data.get("review_goal"),
+            f"完整回顾{topic or '本课内容'}，并复述关键方法与易错点。",
+        ),
         "tasks": task_values,
         "blanks": blank_values,
         "choices": choice_values,

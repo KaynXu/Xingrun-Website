@@ -34,11 +34,14 @@ test('review generation source keeps progress feedback in a bottom-right dock in
   assert.match(reviewGenerationSource, /createPortal\(dock, document\.body\)/);
   assert.match(reviewGenerationSource, /fixed bottom-5 right-5/);
   assert.match(reviewGenerationSource, /复习计划生成/);
+  assert.match(reviewGenerationSource, /dotClassName: 'bg-amber-500'/);
+  assert.match(reviewGenerationSource, /return state === 'pending' \|\| state === 'failed';/);
+  assert.match(workspacePageContentSource, /return state === 'pending' \|\| state === 'failed';/);
   assert.match(workspacePageContentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);
   assert.match(workspacePageContentSource, /setReviewProgressNow\(Date\.now\(\)\);/);
   assert.match(workspacePageContentSource, /activeWorkspacePage === 'review-generation' \? 6000 : 3000/);
   assert.doesNotMatch(reviewGenerationSource, /border-emerald-200 bg-emerald-50/);
-  assert.doesNotMatch(reviewGenerationSource, /bg-amber-50/);
+  assert.doesNotMatch(reviewGenerationSource, /bg-amber-50(?:\s|["'`/])/);
 });
 
 test('review generation source synchronizes member class selection against accessible classes', () => {

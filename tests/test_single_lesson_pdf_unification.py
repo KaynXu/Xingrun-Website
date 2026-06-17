@@ -174,6 +174,74 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertTrue(any("解函数不等式时，第一步先判断" in task for task in days[0]["tasks"]))
         self.assertTrue(reminders)
 
+    def test_adapt_plan_to_review_template_promotes_active_recall_into_printable_day_content(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = {
+            "lesson_info": {
+                "topic": "不等式与函数复习",
+                "key_categories": ["全方和不等式", "抽象函数定义域", "同一函数辨析"],
+            },
+            "days": [
+                {
+                    "day": 1,
+                    "label": "第1天",
+                    "blanks": [
+                        {
+                            "text": "全方和不等式：若 $x,y>0$，则 $\\frac{a^2}{x}+\\frac{b^2}{y}\\ge_______$。",
+                            "answer": "$\\frac{(a+b)^2}{x+y}$",
+                        }
+                    ],
+                    "choices": [
+                        {
+                            "question": "抽象函数定义域先看什么？",
+                            "options": ["A. 括号整体", "B. 字体", "C. 页码", "D. 颜色"],
+                            "answer": "A",
+                        }
+                    ],
+                    "active_recall": {
+                        "type": "课堂方法回溯",
+                        "items": [
+                            {
+                                "instruction": "完成抽象函数定义域桥梁法。",
+                                "blanks": [
+                                    {"label": "已知 $f(2x+3)$ 定义域 $[1,2]$，则 $2x+3$ 的范围是_______。", "answer": "$[5,7]$"},
+                                    {"label": "因此令 $3x+6$ 满足_______。", "answer": "$5\\le3x+6\\le7$"},
+                                ],
+                            }
+                        ],
+                    },
+                },
+                {
+                    "day": 2,
+                    "label": "第2天",
+                    "blanks": [{"text": "同一函数判断先比较_______。", "answer": "定义域"}],
+                    "choices": [
+                        {
+                            "question": "下列哪组函数一定相同？",
+                            "options": ["A. 解析式相同且定义域相同", "B. 只看解析式", "C. 只看图像颜色", "D. 只看题号"],
+                            "answer": "A",
+                        }
+                    ],
+                    "active_recall": {
+                        "type": "老师追问口述卡片",
+                        "items": [
+                            {
+                                "question": "题干：$f(x)=\\lg(x-1)$。问：为什么解 $f(x+2)>f(3x-4)$ 不能只比较括号大小？",
+                                "answer_ref": "两个括号都必须先进入 $f$ 的定义域。",
+                            }
+                        ],
+                    },
+                },
+            ],
+        }
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(len(days[0]["blanks"]), 3)
+        self.assertTrue(any("桥梁法" in task for task in days[0]["tasks"]))
+        self.assertTrue(any("不能只比较括号大小" in task for task in days[1]["tasks"]))
+
     def test_generate_single_lesson_pdf_escapes_math_comparison_symbols(self):
         from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
 

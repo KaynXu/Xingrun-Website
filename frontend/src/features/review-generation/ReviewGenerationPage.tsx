@@ -139,7 +139,7 @@ function getLessonStatusMeta(
   if (lesson.record_status === 'transcribing') {
     return {
       label: '转写中',
-      dotClassName: 'bg-sky-500',
+      dotClassName: 'bg-amber-500',
       message,
       progress,
       state,
@@ -149,7 +149,7 @@ function getLessonStatusMeta(
   if (state === 'pending') {
     return {
       label: '生成中',
-      dotClassName: 'bg-sky-500',
+      dotClassName: 'bg-amber-500',
       message,
       progress,
       state,
@@ -211,7 +211,7 @@ export function ReviewGenerationTaskDock({
   const reduceMotion = useReducedMotion();
   const dockLessons = lessons.filter((lesson) => {
     const state = getReviewLessonTaskState(lesson);
-    return state === 'pending' || state === 'failed' || state === 'missing-output';
+    return state === 'pending' || state === 'failed';
   }).slice(0, 4);
   const activeCount = lessons.filter(isReviewLessonPending).length;
 
@@ -281,7 +281,7 @@ export function ReviewGenerationTaskDock({
                   {status.state === 'pending' && (
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
                       <div
-                        className="h-full rounded-full bg-sky-600 transition-[width] duration-700 ease-out dark:bg-sky-400"
+                        className="h-full rounded-full bg-amber-500 transition-[width] duration-700 ease-out dark:bg-amber-400"
                         style={{ width: `${status.progress}%` }}
                       />
                     </div>
