@@ -227,7 +227,7 @@ def _normalize_choice(choice: dict[str, Any]) -> dict[str, Any]:
 def _normalize_blank(blank: Any) -> dict[str, Any]:
     if isinstance(blank, dict):
         return {
-            "text": _clean_text(blank.get("text")),
+            "text": _clean_text(blank.get("text") or blank.get("stem") or blank.get("question")),
             "answer": _clean_text(blank.get("answer")),
         }
     if isinstance(blank, (list, tuple)) and blank:
@@ -248,6 +248,66 @@ def _append_unique_body(items: list[dict[str, Any]], text: str) -> None:
     items.append({"type": "body", "text": clean})
 
 
+def _append_unique_blank(blanks: list[dict[str, Any]], blank: dict[str, Any]) -> None:
+    text = _clean_text(blank.get("text"))
+    if not text:
+        return
+    answer = _clean_text(blank.get("answer"))
+    for existing in blanks:
+        if _clean_text(existing.get("text")) == text:
+            return
+    blanks.append({"text": text, "answer": answer})
+
+
+def _append_unique_choice(choices: list[dict[str, Any]], choice: dict[str, Any]) -> None:
+    normalized_choice = _normalize_choice(choice)
+    if not normalized_choice.get("question") or not normalized_choice.get("options"):
+        return
+    question = _clean_text(normalized_choice.get("question"))
+    for existing in choices:
+        if _clean_text(existing.get("question")) == question:
+            return
+    choices.append(normalized_choice)
+
+
+def _normalize_component_payload(day: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[str]]:
+    blanks: list[dict[str, Any]] = []
+    choices: list[dict[str, Any]] = []
+    body_items: list[str] = []
+    quotes: list[str] = []
+    components = day.get("components")
+    if not isinstance(components, list):
+        return blanks, choices, body_items, quotes
+
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        component_type = _clean_text(component.get("type")).lower()
+        quote = _clean_text(component.get("quote"))
+        if quote and quote not in quotes:
+            quotes.append(quote)
+        title = _clean_text(component.get("title"))
+        for item in component.get("items", []) if isinstance(component.get("items"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            if component_type == "choices_card":
+                _append_unique_choice(choices, item)
+                continue
+            stem = _clean_text(item.get("text") or item.get("stem") or item.get("question"))
+            answer = _clean_text(item.get("answer"))
+            if not stem:
+                continue
+            if component_type in {"active_recall_card", "teacher_oral_card"}:
+                body_items.append(stem if not title else f"{title}：{stem}")
+                if "______" in stem:
+                    _append_unique_blank(blanks, {"text": stem, "answer": answer})
+            elif component_type == "blanks_card" or "______" in stem:
+                _append_unique_blank(blanks, {"text": stem, "answer": answer})
+            else:
+                body_items.append(stem if not title else f"{title}：{stem}")
+    return blanks, choices, body_items, quotes
+
+
 def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(day)
     try:
@@ -255,6 +315,17 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         day_number = 1
     normalized["day"] = day_number
+
+    day_task_card = normalized.get("day_task_card")
+    if isinstance(day_task_card, dict):
+        if not _clean_text(normalized.get("goal")):
+            normalized["goal"] = _clean_text(day_task_card.get("review_goal") or day_task_card.get("goal"))
+        if not _clean_text(normalized.get("focus")):
+            normalized["focus"] = _clean_text(day_task_card.get("focus"))
+        if not _clean_text(normalized.get("title")):
+            normalized["title"] = _clean_text(day_task_card.get("title"))
+        if not normalized.get("time_minutes") and isinstance(day_task_card.get("target_minutes"), int):
+            normalized["time_minutes"] = day_task_card.get("target_minutes")
 
     if not _clean_text(normalized.get("label")):
         normalized["label"] = (
@@ -270,13 +341,21 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         if not normalized.get("time") and isinstance(time_minutes, int) and time_minutes > 0:
             normalized["time"] = f"{time_minutes}分钟"
 
+    component_blanks, component_choices, component_body_items, component_quotes = _normalize_component_payload(normalized)
     items = [copy.deepcopy(item) for item in normalized.get("items", []) if isinstance(item, dict)]
     _append_unique_body(items, normalized.get("goal", ""))
     _append_unique_body(items, normalized.get("focus", ""))
+    for text in component_body_items:
+        _append_unique_body(items, text)
 
     active_recall = normalized.get("active_recall")
     if isinstance(active_recall, dict):
         _append_unique_body(items, active_recall.get("instructions", ""))
+        for item in active_recall.get("items", []) if isinstance(active_recall.get("items"), list) else []:
+            if isinstance(item, dict):
+                text = _clean_text(item.get("text") or item.get("stem") or item.get("question"))
+                if text:
+                    _append_unique_body(items, text)
         if not _clean_text(normalized.get("self_test_phrase")):
             normalized["self_test_phrase"] = (
                 _clean_text(active_recall.get("expected"))
@@ -291,14 +370,17 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     for blank in normalized.get("blanks", []) if isinstance(normalized.get("blanks"), list) else []:
         normalized_blank = _normalize_blank(blank)
         if normalized_blank.get("text"):
-            normalized_blanks.append(normalized_blank)
-            items.append(
-                {
-                    "type": "fill",
-                    "text": normalized_blank["text"],
-                    "answer": normalized_blank.get("answer", ""),
-                }
-            )
+            _append_unique_blank(normalized_blanks, normalized_blank)
+    for blank in component_blanks:
+        _append_unique_blank(normalized_blanks, blank)
+    for normalized_blank in normalized_blanks:
+        items.append(
+            {
+                "type": "fill",
+                "text": normalized_blank["text"],
+                "answer": normalized_blank.get("answer", ""),
+            }
+        )
     normalized["blanks"] = normalized_blanks
     normalized["items"] = items
 
@@ -306,10 +388,19 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     for choice in normalized.get("choices", []) if isinstance(normalized.get("choices"), list) else []:
         if not isinstance(choice, dict):
             continue
-        normalized_choice = _normalize_choice(choice)
-        if normalized_choice.get("question") and normalized_choice.get("options"):
-            normalized_choices.append(normalized_choice)
+        _append_unique_choice(normalized_choices, choice)
+    for choice in component_choices:
+        _append_unique_choice(normalized_choices, choice)
     normalized["choices"] = normalized_choices
+
+    if component_quotes:
+        day_quotes = normalized.get("quotes")
+        if not isinstance(day_quotes, list):
+            day_quotes = []
+        for quote in component_quotes:
+            if quote not in day_quotes:
+                day_quotes.append(quote)
+        normalized["quotes"] = day_quotes
 
     if not _clean_text(normalized.get("self_test_phrase")):
         normalized["self_test_phrase"] = (
@@ -327,9 +418,10 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
         lesson_info = {}
         normalized["lesson_info"] = lesson_info
 
-    for field in ("subject", "topic"):
-        if not _clean_text(lesson_info.get(field)):
-            lesson_info[field] = _clean_text(normalized.get(field))
+    if not _clean_text(lesson_info.get("subject")):
+        lesson_info["subject"] = _clean_text(normalized.get("subject"))
+    if not _clean_text(lesson_info.get("topic")):
+        lesson_info["topic"] = _clean_text(normalized.get("topic") or normalized.get("lesson_topic"))
 
     grade_value = lesson_info.get("grade")
     if grade_value in (None, ""):
@@ -338,7 +430,7 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
 
     date_value = lesson_info.get("date")
     if not _clean_text(date_value):
-        date_value = normalized.get("lesson_date") or normalized.get("generate_date")
+        date_value = normalized.get("lesson_date") or normalized.get("generate_date") or normalized.get("date_generated")
     lesson_info["date"] = _clean_text(date_value)
 
     key_categories = lesson_info.get("key_categories")
@@ -362,10 +454,15 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
             )
         else:
             normalized["weak_points_summary"] = _clean_text(weak_points)
+    if not _clean_text(normalized.get("weak_points_summary")) and isinstance(normalized.get("home_usage_box"), dict):
+        normalized["weak_points_summary"] = _clean_text(normalized["home_usage_box"].get("content"))
 
     full_review_topics = normalized.get("full_review_topics")
     if not isinstance(full_review_topics, list):
         full_review_topics = []
+    topic_text = _clean_text(lesson_info.get("topic"))
+    if topic_text and not full_review_topics and not key_categories:
+        full_review_topics.append(topic_text)
     for category in lesson_info.get("key_categories", []):
         text = _clean_text(category)
         if text and text not in full_review_topics:
@@ -380,6 +477,10 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
         if golden_quote and golden_quote not in quotes:
             quotes.append(golden_quote)
         home_usage = _clean_text(homepage.get("home_usage_box"))
+        if home_usage and not _dedupe_clean_list(normalized.get("final_reminder_lines")):
+            normalized["final_reminder_lines"] = [home_usage]
+    if isinstance(normalized.get("home_usage_box"), dict):
+        home_usage = _clean_text(normalized["home_usage_box"].get("content"))
         if home_usage and not _dedupe_clean_list(normalized.get("final_reminder_lines")):
             normalized["final_reminder_lines"] = [home_usage]
     normalized["quotes"] = quotes

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from review_plan_workflow.schemas import normalize_final_review_plan
 from review_plan_templates.generate_review_pdfs import build_lesson_filename_part, normalize_portable_text, render_review_plan_pdf
 
 
@@ -36,6 +37,9 @@ def collect_plan_quotes(plan_data: dict) -> list[str]:
         if text not in quotes:
             quotes.append(text)
     for day_data in plan_data.get("days", []):
+        for text in _dedupe_clean_lines(day_data.get("quotes")):
+            if text not in quotes:
+                quotes.append(text)
         phrase = _clean_text(day_data.get("self_test_phrase"))
         if phrase and phrase not in quotes:
             quotes.append(phrase)
@@ -201,6 +205,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 
 
 def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], list[str]]:
+    plan_data = normalize_final_review_plan(plan_data)
     lesson_info = plan_data.get("lesson_info", {})
     topic = _clean_text(lesson_info.get("topic") or plan_data.get("topic"), "课后")
     weak_points = _clean_text(plan_data.get("weak_points_summary"))

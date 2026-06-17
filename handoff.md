@@ -903,3 +903,15 @@
   - `npx tsx -e "Promise.all([import('./src/WorkspaceDashboard.tsx'), import('./src/features/dashboard/dashboardMockData.ts')]).then(() => console.log('Dashboard modules import OK'))"`
   - `rg -n "memberDashboardData|platformDashboardData|organizationDashboardData|weeklyStats = memberDashboardData|platformStats = platformDashboardData\.stats|organizationDashboardData\.pendingItems" src/WorkspaceDashboard.tsx`
   - `rg -n "export const memberDashboardData|export const platformDashboardData|export const organizationDashboardData|export type DashboardQuickAction|export type DashboardTaskItem|export type DashboardStat" src/features/dashboard/dashboardMockData.ts`
+
+## 2026-06-17 review plan prompt contract fix
+- Audited the desktop `星润复习计划工作流` prompt and `数学/崔老师.py`, then migrated the proven structural rules into deterministic code instead of pasting the old prompt back into the model.
+- Fixed review plan normalization so writer outputs that use `lesson_topic`, top-level `home_usage_box`, `day_task_card`, and day-level `components` are converted into the canonical `lesson_info/full_review_topics/blanks/choices/items` shape consumed by the PDF renderer.
+- Updated the single-lesson PDF adapter to normalize plan data before rendering, so CLI/API/test callers cannot bypass the schema contract and fall back to generic `课后` pages.
+- Strengthened the deterministic quality gate to block PDF-readiness failures, generic `课后`/empty coverage output, missing renderable tasks, abstract blank answers, vague original-question references, invalid choice answers, and model self-correction traces such as `答案没有` / `实际正确`.
+- Added regression coverage for the online lesson 76 failure shape: components-only writer output now renders real 不等式与函数内容 instead of `见课堂笔记` fallback text.
+- Runnable proof passed via `/tmp/proof_review_plan_prompt_contract_fix_20260617.sh`:
+  - `python3 -m py_compile review_plan_workflow/schemas.py review_plan_workflow/quality_gate.py review_plan_templates/single_lesson_pdf.py tests/review_plan_test_utils.py tests/test_review_plan_workflow.py tests/test_single_lesson_pdf_unification.py`
+  - `python3 -m unittest tests.test_review_plan_workflow tests.test_single_lesson_pdf_unification tests.test_review_plan_evals tests.test_review_plan_math_normalization`
+  - components-only PDF smoke generated `/tmp/review_plan_components_only_contract_fix.pdf`, 7 pages, 2524 extracted chars, with fallback text blocked
+  - `git diff --check`

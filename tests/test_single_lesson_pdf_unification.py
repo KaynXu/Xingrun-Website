@@ -14,7 +14,7 @@ import config_runtime
 import lesson_manager
 from app import app
 from demo_plan import DEMO_PLAN
-from tests.review_plan_test_utils import valid_single_lesson_plan, writer_style_single_lesson_plan
+from tests.review_plan_test_utils import components_only_single_lesson_plan, valid_single_lesson_plan, writer_style_single_lesson_plan
 
 
 class SingleLessonPdfUnificationTestCase(unittest.TestCase):
@@ -160,6 +160,18 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(days[0]["focus"], "定义、步骤、检验。")
         self.assertEqual(days[0]["blanks"][0], ("分式方程去分母后化为______方程。", "整式"))
         self.assertEqual(days[0]["choices"][0]["question"], "下列哪一步最容易产生增根？")
+        self.assertTrue(reminders)
+
+    def test_adapt_plan_to_review_template_accepts_components_only_plan(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        lesson, days, reminders = adapt_plan_to_review_template(components_only_single_lesson_plan())
+
+        self.assertEqual(lesson["title"], "不等式与函数复习复习计划")
+        self.assertIn("不等式与函数复习", lesson["full_review_topics"])
+        self.assertEqual(days[0]["blanks"][0], ("已知 x>0,y>0，且 1/x+2/y=1，则 x+2y 的最小值是______。", "9"))
+        self.assertEqual(days[0]["choices"][0]["question"], "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。")
+        self.assertTrue(any("解函数不等式时，第一步先判断" in task for task in days[0]["tasks"]))
         self.assertTrue(reminders)
 
     def test_quote_replay_text_uses_day_quotes_instead_of_static_copy(self):

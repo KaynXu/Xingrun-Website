@@ -17,6 +17,7 @@ from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import validate_final_review_plan
 from review_plan_workflow.service import generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
+    components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
     valid_single_lesson_plan,
     writer_style_single_lesson_plan,
@@ -98,10 +99,47 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(plan.lesson_info.grade, "9")
         self.assertEqual([day.day for day in plan.days], [1, 2, 7, 14, 30])
 
+    def test_validate_final_review_plan_normalizes_components_only_writer_shape(self):
+        plan, errors = validate_final_review_plan(components_only_single_lesson_plan())
+        self.assertIsNotNone(plan)
+        self.assertEqual(errors, [])
+        self.assertEqual(plan.lesson_info.topic, "不等式与函数复习")
+        self.assertEqual(plan.weak_points_summary, "每次复习包含填空、选择、口述卡片三个板块。")
+        self.assertIn("不等式与函数复习", plan.full_review_topics)
+        self.assertEqual(plan.days[0].blanks[0]["text"], "已知 x>0,y>0，且 1/x+2/y=1，则 x+2y 的最小值是______。")
+        self.assertEqual(plan.days[0].choices[0]["question"], "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。")
+        self.assertIn("解函数不等式时，第一步先判断", plan.days[0].items[-1]["text"])
+
     def test_quality_gate_uses_normalized_day_numbers(self):
         review = review_single_lesson_plan(desktop_writer_single_lesson_plan(), subject="math")
         self.assertTrue(review.passed)
         self.assertFalse(any(issue.category in {"schema", "completeness"} for issue in review.issues))
+
+    def test_quality_gate_rejects_pdf_fallback_content(self):
+        broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")
+        broken_plan["lesson_info"]["topic"] = ""
+        broken_plan["full_review_topics"] = []
+        broken_plan["weak_points_summary"] = ""
+        for day in broken_plan["days"]:
+            day["steps"] = []
+            day["items"] = []
+            day["blanks"] = []
+            day["choices"] = []
+            day["goal"] = ""
+            day["focus"] = ""
+            day["self_test_phrase"] = "请完成以上填空和选择题，并对照答案自检。"
+
+        review = review_single_lesson_plan(broken_plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(any(issue.category == "pdf_readiness" for issue in review.issues))
+
+    def test_quality_gate_accepts_components_only_writer_shape_after_normalization(self):
+        review = review_single_lesson_plan(components_only_single_lesson_plan(), subject="math")
+
+        self.assertTrue(review.passed, review.model_dump())
+        self.assertFalse(any(issue.category == "pdf_readiness" for issue in review.issues))
 
     def test_generate_review_plan_json_sets_timeout(self):
         response = type(

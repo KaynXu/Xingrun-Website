@@ -106,3 +106,126 @@ def desktop_writer_single_lesson_plan() -> dict:
             for day, date_part in ((1, 16), (2, 17), (7, 22), (14, 29), (30, 15))
         ],
     }
+
+
+def components_only_single_lesson_plan() -> dict:
+    return {
+        "subject": "数学",
+        "grade": "高一",
+        "lesson_topic": "不等式与函数复习",
+        "date_generated": "2026-06-16",
+        "home_usage_box": {
+            "title": "课后复习计划使用说明",
+            "content": "每次复习包含填空、选择、口述卡片三个板块。",
+        },
+        "days": [
+            {
+                "day_number": 1,
+                "date": "2026年6月17日",
+                "label": "第1天复习",
+                "day_task_card": {
+                    "review_goal": "复现不等式方法和函数定义域核心概念。",
+                    "focus": "全方和、柯西、定义域。",
+                },
+                "components": [
+                    {
+                        "type": "golden_quote_box",
+                        "quote": "全方和不等式要把分母加起来。",
+                    },
+                    {
+                        "type": "blanks_card",
+                        "title": "基础填空",
+                        "items": [
+                            {
+                                "stem": "已知 x>0,y>0，且 1/x+2/y=1，则 x+2y 的最小值是______。",
+                                "answer": "9",
+                            },
+                            {
+                                "stem": "若 f(2x+1) 的定义域为 [1,2]，则 f(x) 的定义域为______。",
+                                "answer": "[3,5]",
+                            },
+                        ],
+                    },
+                    {
+                        "type": "choices_card",
+                        "title": "概念辨析",
+                        "items": [
+                            {
+                                "stem": "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。",
+                                "options": ["A. g(x)=x+1", "B. h(x)=x+1 (x≠1)", "C. k(x)=|x+1|", "D. p(x)=x"],
+                                "answer": "B",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "active_recall_card",
+                        "title": "课堂方法回溯",
+                        "items": [
+                            {
+                                "stem": "解函数不等式时，第一步先判断______，第二步再检查______。",
+                                "answer": "单调性, 定义域",
+                            }
+                        ],
+                    },
+                ],
+                "blanks": [],
+                "items": [],
+                "choices": [],
+                "self_test_phrase": "请完成以上填空和选择题，并对照答案自检。",
+                "completion_criteria": "填空题全部正确，选择题能说出错因。",
+            },
+            *[
+                {
+                    "day_number": day,
+                    "date": date_text,
+                    "label": f"第{day}天复习",
+                    "day_task_card": {
+                        "review_goal": "复习不等式与函数定义域。",
+                        "focus": "公式、定义域、解析式。",
+                    },
+                    "components": [
+                        {
+                            "type": "blanks_card",
+                            "title": "基础填空",
+                            "items": [
+                                {
+                                    "stem": f"第{day}天：函数相等必须同时满足解析式相同和______相同。",
+                                    "answer": "定义域",
+                                },
+                                {
+                                    "stem": f"第{day}天：柯西不等式常用于处理带系数的______关系。",
+                                    "answer": "线性组合",
+                                },
+                            ],
+                        },
+                        {
+                            "type": "choices_card",
+                            "title": "概念辨析",
+                            "items": [
+                                {
+                                    "stem": f"第{day}天：求 f(2x-1) 的定义域时，最先检查什么？",
+                                    "options": ["A. 复合内层范围", "B. 字体大小", "C. 作业题号", "D. 只看答案"],
+                                    "answer": "A",
+                                }
+                            ],
+                        },
+                        {
+                            "type": "active_recall_card",
+                            "title": "老师追问口述卡片",
+                            "items": [
+                                {
+                                    "stem": f"题干：已知 f(x) 定义域为 [1,3]。问：求 f(2x-1) 定义域时为什么要令 2x-1 落在原定义域内？",
+                                    "answer": "复合函数的内层必须进入外层函数定义域。",
+                                }
+                            ],
+                        },
+                    ],
+                    "blanks": [],
+                    "items": [],
+                    "choices": [],
+                    "self_test_phrase": "请完成以上填空和选择题，并对照答案自检。",
+                }
+                for day, date_text in ((2, "2026年6月18日"), (7, "2026年6月23日"), (14, "2026年6月30日"), (30, "2026年7月16日"))
+            ],
+        ],
+    }
