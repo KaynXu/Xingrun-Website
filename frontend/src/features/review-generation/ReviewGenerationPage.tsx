@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { CheckCircle2, Download, Eye, FileText, PlusCircle, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Download, Eye, FileText, PlusCircle, RefreshCw, Trash2, X } from 'lucide-react';
 
 import {
   getReviewLessonTaskMessage,
@@ -24,6 +24,7 @@ import {
 
 type ReviewPlanCreateResult = {
   id: number;
+  status?: string;
   duplicate?: boolean;
 };
 
@@ -173,6 +174,8 @@ function ReviewDocumentHistory({
   const [lessons, setLessons] = useState<ReviewLessonRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [historyPage, setHistoryPage] = useState(1);
+  const [regeneratingLessonIds, setRegeneratingLessonIds] = useState<Set<number>>(() => new Set());
+  const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const load = useCallback((quiet = false) => {
     if (!quiet) {
@@ -232,12 +235,60 @@ function ReviewDocumentHistory({
     void load();
   };
 
+  const handleRegenerate = async (lesson: ReviewLessonRecord) => {
+    if (isReviewLessonPending(lesson) || regeneratingLessonIds.has(lesson.id)) {
+      return;
+    }
+    if (!window.confirm(`确定重新生成《${getLessonTitle(lesson)}》吗？这会重新消耗一次复习计划生成额度。`)) {
+      return;
+    }
+
+    setActionNotice(null);
+    setRegeneratingLessonIds((current) => new Set(current).add(lesson.id));
+    try {
+      const payload = await apiFetch<ReviewPlanCreateResult>(`/api/review-plans/${lesson.id}/regenerate`, {
+        method: 'POST',
+      });
+      const nextStatus = payload.status || 'generating';
+      setLessons((current) => current.map((item) => (
+        item.id === lesson.id
+          ? { ...item, record_status: nextStatus, generation_error: '' }
+          : item
+      )));
+      setActionNotice({ type: 'success', text: `《${getLessonTitle(lesson)}》已开始重新生成。` });
+      void load(true);
+    } catch (error) {
+      setActionNotice({
+        type: 'error',
+        text: error instanceof Error ? error.message : '重新生成失败，请稍后重试',
+      });
+    } finally {
+      setRegeneratingLessonIds((current) => {
+        const next = new Set(current);
+        next.delete(lesson.id);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className={reviewHistoryPanelClass}>
       <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 sm:px-6">
         <h3 className={workspaceSectionTitleClass}>历史文档</h3>
         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">共 {lessons.length} 份</span>
       </div>
+      {actionNotice && (
+        <div
+          className={cn(
+            'mx-5 mt-4 rounded-2xl border px-4 py-3 text-sm sm:mx-6',
+            actionNotice.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+              : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200',
+          )}
+        >
+          {actionNotice.text}
+        </div>
+      )}
       {loading ? (
         <ReviewHistorySkeleton />
       ) : lessons.length === 0 ? (
@@ -249,7 +300,7 @@ function ReviewDocumentHistory({
         </div>
       ) : (
         <div className="p-4 sm:p-5">
-          <div className="hidden border-b border-slate-200/70 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_132px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
+          <div className="hidden border-b border-slate-200/70 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_176px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
             <span>文档</span>
             <span>生成人</span>
             <span>时间</span>
@@ -269,7 +320,7 @@ function ReviewDocumentHistory({
                     highlightedLessonId === lesson.id && 'bg-emerald-50/80 dark:bg-emerald-500/10',
                   )}
                 >
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_132px] lg:items-start lg:gap-4">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_176px] lg:items-start lg:gap-4">
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center text-slate-500 dark:text-slate-300">
@@ -340,6 +391,16 @@ function ReviewDocumentHistory({
                           </a>
                         </>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => void handleRegenerate(lesson)}
+                        disabled={status.state === 'pending' || regeneratingLessonIds.has(lesson.id)}
+                        className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-sky-200 hover:text-sky-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-sky-500/10 dark:hover:text-sky-200"
+                        title="重新生成"
+                        aria-label="重新生成"
+                      >
+                        <RefreshCw size={16} className={cn(regeneratingLessonIds.has(lesson.id) && 'animate-spin')} />
+                      </button>
                       <button
                         type="button"
                         onClick={() => void handleDelete(lesson.id)}

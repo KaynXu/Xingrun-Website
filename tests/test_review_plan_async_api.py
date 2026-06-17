@@ -278,6 +278,156 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIn("【同一节课补充材料 2】", lesson["summary"])
         self.assertIn("第三段：高考题条件翻译和例题1到5。", lesson["summary"])
 
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app._current_ai_request_key", return_value="header:regenerate-review-plan")
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_regenerate_review_plan_requeues_existing_lesson(
+        self,
+        _mock_has_api_key,
+        _mock_request_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        config_runtime.write_file_config({
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+        })
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            plan={"lesson_info": {"topic": "旧计划"}, "days": []},
+            pdf_path="/tmp/old-review.pdf",
+            record_status="ready",
+            created_by_user_id=1,
+            review_same_lesson_materials=["补充材料"],
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/regenerate",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["id"], lesson_id)
+        self.assertEqual(payload["status"], "generating")
+
+        lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(lesson["record_status"], "generating")
+        self.assertEqual(lesson["generation_error"], "")
+        self.assertEqual(lesson["pdf_path"], "/tmp/old-review.pdf")
+        self.assertEqual(lesson["plan"]["lesson_info"]["topic"], "旧计划")
+        self.assertEqual(lesson["review_chat_provider"], "openai")
+        self.assertEqual(lesson["review_chat_model"], "gpt-5.4")
+        self.assertTrue(lesson["review_request_id"])
+
+        mock_start_thread.assert_called_once()
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["lesson_id"], lesson_id)
+        self.assertEqual(thread_kwargs["user"], {"id": 1, "organization_id": 1})
+        self.assertEqual(thread_kwargs["chat_provider"], "openai")
+        self.assertEqual(thread_kwargs["chat_model"], "gpt-5.4")
+        self.assertEqual(thread_kwargs["request_key"], "header:regenerate-review-plan")
+        self.assertEqual(thread_kwargs["request_id"], lesson["review_request_id"])
+        self.assertEqual(thread_kwargs["same_lesson_materials"], ["补充材料"])
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_regenerate_review_plan_rejects_in_progress_lesson(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            record_status="generating",
+            created_by_user_id=1,
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/regenerate",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("正在生成中", response.get_json()["error"])
+        mock_start_thread.assert_not_called()
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_regenerate_review_plan_requires_existing_summary(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="",
+            weak_points="斜率判断",
+            record_status="failed",
+            created_by_user_id=1,
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/regenerate",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("缺少课堂内容", response.get_json()["error"])
+        mock_start_thread.assert_not_called()
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_regenerate_review_plan_keeps_old_status_when_credits_are_insufficient(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            pdf_path="/tmp/old-review.pdf",
+            record_status="ready",
+            created_by_user_id=1,
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/regenerate",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 402)
+        self.assertEqual(response.get_json()["error"], "积分不足，请先充值")
+        lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(lesson["record_status"], "ready")
+        self.assertEqual(lesson["pdf_path"], "/tmp/old-review.pdf")
+        mock_start_thread.assert_not_called()
+
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("app._start_review_plan_generation_thread")

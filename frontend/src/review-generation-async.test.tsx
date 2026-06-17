@@ -18,6 +18,13 @@ test('review history source normalizes malformed task polling responses', () => 
   assert.match(reviewGenerationSource, /\.then\(\(payload\) => setLessons\(normalizeReviewLessonsResponse\(payload\)\)\)/);
 });
 
+test('review history source exposes regenerate action and immediate progress feedback', () => {
+  assert.match(reviewGenerationSource, /\/api\/review-plans\/\$\{lesson\.id\}\/regenerate/);
+  assert.match(reviewGenerationSource, /确定重新生成《\$\{getLessonTitle\(lesson\)\}》吗/);
+  assert.match(reviewGenerationSource, /record_status: nextStatus, generation_error: ''/);
+  assert.match(reviewGenerationSource, /title="重新生成"/);
+});
+
 test('review generation source synchronizes member class selection against accessible classes', () => {
   assert.match(lessonInputSource, /function syncMemberScopedClassSelection\(/);
   assert.match(lessonInputSource, /if \(role !== 'member'\) \{\s*return selectedClassId;/);
