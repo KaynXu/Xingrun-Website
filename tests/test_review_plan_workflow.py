@@ -245,12 +245,15 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                 user_message="user",
                 provider="deepseek",
                 model="deepseek-v4-pro",
+                temperature=0.17,
+                stage="unit_test_stage",
             )
 
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(usage["input_tokens"], 11)
         self.assertEqual(usage["output_tokens"], 22)
         self.assertEqual(create_mock.call_args.kwargs["timeout"], llm_client_module.REVIEW_PLAN_LLM_TIMEOUT_SECONDS)
+        self.assertEqual(create_mock.call_args.kwargs["temperature"], 0.17)
 
     def test_generate_review_plan_json_passes_openai_reasoning_effort(self):
         response = type(
@@ -286,6 +289,192 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(usage["model"], "gpt-5.4")
         self.assertEqual(create_mock.call_args.kwargs["reasoning_effort"], "high")
+
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_service_runs_parent_planner_writer_and_llm_reviewer(self, mock_parent_plan, mock_generate_plan, mock_llm_review):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_reasoning_effort": "high",
+            "review_plan_temperature": 0.21,
+            "review_plan_writer_temperature": 0.36,
+            "review_plan_reviewer_temperature": 0.08,
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "先拆定义域，再做函数不等式同解转化。",
+                "student_diagnosis": ["忽略定义域"],
+                "knowledge_map": [{"name": "定义域", "role": "函数不等式前置条件", "evidence": "课堂主题"}],
+                "day_strategies": [
+                    {
+                        "day": day,
+                        "objective": "复现定义域检查",
+                        "retrieval_focus": ["定义域", "单调性"],
+                        "question_design": ["填空题检查定义域"],
+                        "review_loop": ["错因复盘"],
+                        "risk_controls": ["不要只写看条件"],
+                    }
+                    for day in [1, 2, 7, 14, 30]
+                ],
+                "writer_instructions": ["每天都要绑定定义域遗漏这个错因。"],
+                "quality_risks": ["题目可能结构完整但不可做。"],
+                "success_criteria": ["每道题可独立作答。"],
+                "assumptions": [],
+                "confidence": 0.86,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 100, "output_tokens": 40},
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 200, "output_tokens": 80},
+        )
+        mock_llm_review.return_value = (
+            {"score": 96, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 120, "output_tokens": 20},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-18",
+            subject="数学",
+            grade="高一",
+            topic="不等式与函数复习",
+            summary="课堂总结文本",
+            weak_points="忽略定义域",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="高一",
+            topic="不等式与函数复习",
+            weak_points="忽略定义域",
+            lesson_date="2026-06-18",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "不等式与函数复习")
+        self.assertEqual(usage["input_tokens"], 420)
+        self.assertEqual(usage["output_tokens"], 140)
+        parent_kwargs = mock_parent_plan.call_args.kwargs
+        self.assertEqual(parent_kwargs["provider"], "openai")
+        self.assertEqual(parent_kwargs["model"], "gpt-5.4")
+        self.assertEqual(parent_kwargs["reasoning_effort"], "high")
+        self.assertEqual(parent_kwargs["temperature"], 0.21)
+        self.assertEqual(parent_kwargs["stage"], "parent_planner")
+        writer_kwargs = mock_generate_plan.call_args.kwargs
+        self.assertEqual(writer_kwargs["provider"], "deepseek")
+        self.assertEqual(writer_kwargs["model"], "deepseek-v4-pro")
+        self.assertEqual(writer_kwargs["temperature"], 0.36)
+        self.assertEqual(writer_kwargs["stage"], "plan_generator")
+        self.assertIn("父模型教学蓝图", writer_kwargs["user_message"])
+        self.assertIn("定义域", writer_kwargs["user_message"])
+        reviewer_kwargs = mock_llm_review.call_args.kwargs
+        self.assertEqual(reviewer_kwargs["provider"], "openai")
+        self.assertEqual(reviewer_kwargs["temperature"], 0.08)
+        self.assertEqual(reviewer_kwargs["stage"], "quality_reviewer_llm")
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertIn("parent_planner", run["node_outputs"])
+        self.assertIn("quality_reviewer_llm", run["node_outputs"])
+        self.assertEqual(run["node_outputs"]["plan_generator_model_config"]["temperature"], 0.36)
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_llm_reviewer_can_trigger_targeted_revision(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_reasoning_effort": "high",
+            "review_plan_temperature": 0.22,
+            "review_plan_writer_temperature": 0.37,
+            "review_plan_reviewer_temperature": 0.09,
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "围绕定义域遗漏做定向复习。",
+                "student_diagnosis": ["定义域遗漏"],
+                "knowledge_map": [{"name": "定义域", "role": "函数题前置检查", "evidence": "课堂"}],
+                "day_strategies": [
+                    {"day": day, "objective": "定义域检查", "retrieval_focus": ["定义域"]}
+                    for day in [1, 2, 7, 14, 30]
+                ],
+                "writer_instructions": ["修订时不要脱离定义域遗漏。"],
+                "quality_risks": ["选择题可能只是结构完整。"],
+                "success_criteria": ["题目必须可独立作答。"],
+                "assumptions": [],
+                "confidence": 0.84,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 10, "output_tokens": 5},
+        )
+        initial_plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
+        revised_plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
+        revised_plan["weak_points_summary"] = "已围绕定义域遗漏重写题目。"
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 20, "output_tokens": 10},
+        )
+        mock_llm_review.side_effect = [
+            (
+                {
+                    "score": 70,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [
+                        {
+                            "severity": "high",
+                            "category": "question_quality",
+                            "description": "第1天选择题结构完整但没有检查定义域遗漏。",
+                            "suggested_fix": "重写第1天选择题，绑定定义域遗漏错因。",
+                        }
+                    ],
+                    "revision_instructions": ["只重写第1天选择题和主动回忆。"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 8, "output_tokens": 4},
+            ),
+            (
+                {"score": 92, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 7, "output_tokens": 3},
+            ),
+        ]
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 30, "output_tokens": 12},
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="高一",
+            topic="不等式与函数复习",
+            weak_points="定义域遗漏",
+            lesson_date="2026-06-18",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], "已围绕定义域遗漏重写题目。")
+        self.assertEqual(mock_revise_plan.call_count, 1)
+        revise_kwargs = mock_revise_plan.call_args.kwargs
+        self.assertEqual(revise_kwargs["stage"], "targeted_revision")
+        self.assertEqual(revise_kwargs["temperature"], 0.22)
+        self.assertIn("父模型教学蓝图", revise_kwargs["user_message"])
+        self.assertIn("定义域遗漏", revise_kwargs["user_message"])
+        self.assertEqual(usage["input_tokens"], 75)
+        self.assertEqual(usage["output_tokens"], 34)
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):

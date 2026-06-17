@@ -18,21 +18,23 @@
 3. The backend creates a pending lesson and starts a background worker.
 4. The worker optionally transcribes audio, then calls `review_plan_workflow.service`.
 5. The workflow runs deterministic intake/source/scope/time/task/prompt-bundle nodes.
-6. The workflow-native `plan_generator` makes one structured JSON LLM call and performs one schema repair retry when needed.
-7. The deterministic quality gate records schema/quality review; if the plan fails, `revision` can run up to two LLM revision attempts and re-score each result.
-8. The PDF adapter maps the returned JSON into the ReportLab review-plan template.
-9. The lesson row stores final `plan_json`, `pdf_path`, status, error fields, and run trace metadata.
+6. The chain-level `parent_planner` LLM node diagnoses the source material and writes a compact teaching blueprint.
+7. The workflow-native `plan_generator` writer node makes one structured JSON LLM call using the parent blueprint and performs one schema repair retry when needed.
+8. The deterministic quality gate records schema/quality review, then the chain-level `quality_reviewer_llm` node performs a second rubric pass.
+9. If quality fails, `revision` can run up to two targeted LLM revision attempts and re-score each result.
+10. The PDF adapter maps the returned JSON into the ReportLab review-plan template.
+11. The lesson row stores final `plan_json`, `pdf_path`, status, error fields, and run trace metadata.
 
 ### Single API / Workflow Assessment
 
-The product entry is asynchronous. Generation now has persisted node outputs and trace metadata. The final student-facing plan is still produced by one primary LLM plan-generation node, but schema repair and quality revision are now bounded workflow steps controlled by code.
+The product entry is asynchronous. Generation now has persisted node outputs and trace metadata. The final student-facing plan is still produced by one primary writer node, but source diagnosis, blueprint design, schema repair, LLM quality review, and targeted revision are bounded workflow steps controlled by code.
 
 ### Controls And Remaining Gaps
 
 - Schema validation: final plan and node context now have Pydantic boundaries; `plan_generator` performs one schema repair retry.
 - Intermediate state: node outputs are now persisted in `review_plan_runs`; node replay is still pending.
 - Retry and revision: task-level retry remains in the worker; schema repair and quality revision now happen inside the workflow.
-- Quality gate: deterministic quality review now exists and can trigger up to two LLM revision attempts.
+- Quality gate: deterministic quality review and an LLM rubric review now exist; either can trigger up to two targeted LLM revision attempts.
 - Trace: review-plan traceId, node logs, prompt version, style version, and schema version now exist.
 - Eval: existing tests cover async API and PDF basics, but not subject quality fixtures.
 - Style separation: PDF style values were hard-coded in the renderer.
@@ -75,7 +77,7 @@ The review-plan flow has a known order and should be controlled by code. Code sh
 - `state.py`: traceId, versions, warnings, logs, and node outputs.
 - `schemas.py`: Pydantic schemas for inputs, node outputs, quality review, and final plan.
 - `service.py`: single-lesson workflow entry used by the Flask worker.
-- `nodes/`: intake normalizer, subject router, source analyzer, scope planner, time allocator, task blueprint, prompt bundle builder, native plan generator, and revision node.
+- `nodes/`: intake normalizer, subject router, source analyzer, scope planner, time allocator, task blueprint, parent planner, prompt bundle builder, native plan generator, deterministic and LLM quality reviewers, and revision node.
 - `llm/`: prompt registry, renderer, JSON parsing, OpenAI-compatible chat client, and usage extraction.
 - `prompts/subjects/`: common, math, physics, IELTS subject packs.
 - `prompts/styles/review_plan_style.yaml`: one unified visual system using physics as the master style.
@@ -92,6 +94,20 @@ Review-plan generation uses its own optional chat model override:
 - `XR_REVIEW_PLAN_WRITER_MODEL`: model for the `plan_generator` content-writing node. Defaults to `deepseek-v4-pro` when the writer provider is DeepSeek.
 
 If the chain-level values are unset, the workflow falls back to the existing general chat configuration (`XR_PROVIDER` and provider default model such as `XR_DEEPSEEK_MODEL`). The `plan_generator` node is intentionally routed separately so the plan-writing step can stay on DeepSeek V4 Pro even when the rest of the review-plan workflow uses another model. Other nodes, including `revision`, still use the chain-level provider/model.
+
+Review-plan generation also has node-level temperature controls:
+
+- `XR_REVIEW_PLAN_TEMPERATURE`: chain-level parent planner and targeted revision temperature. Default `0.25`.
+- `XR_REVIEW_PLAN_WRITER_TEMPERATURE`: `plan_generator` writing temperature. Default `0.35`.
+- `XR_REVIEW_PLAN_REPAIR_TEMPERATURE`: schema repair temperature. Default `0.1`.
+- `XR_REVIEW_PLAN_REVIEWER_TEMPERATURE`: LLM quality reviewer temperature. Default `0.1`.
+
+The intended production split is:
+
+- Chain/parent/reviewer/revision model: `XR_REVIEW_PLAN_PROVIDER=openai`, `XR_REVIEW_PLAN_MODEL=gpt-5.4`, `XR_REVIEW_PLAN_REASONING_EFFORT=high`.
+- Writing model: `XR_REVIEW_PLAN_WRITER_PROVIDER=deepseek`, `XR_REVIEW_PLAN_WRITER_MODEL=deepseek-v4-pro`.
+
+This gives the workflow a Codex-like division of labor: a stronger parent model does diagnosis, task decomposition, risk finding, and revision direction, while the writer model focuses on producing the concrete student-facing plan.
 
 ## Prompt Layering
 
@@ -144,10 +160,27 @@ The current single-lesson service executes this ordered chain:
 4. `scope_planner`: build review days, module sequence, review loop, warnings, and assumptions.
 5. `time_allocator`: map the review scope to day-level workload and buffer strategy.
 6. `task_blueprint`: produce subject-aware task blocks, required components, output contract, and risk controls.
-7. `prompt_bundle_builder`: render the next LLM prompt bundle and version it.
-8. `plan_generator`: calls the workflow-native OpenAI-compatible JSON generator using the rendered prompt bundle; performs one schema repair retry if the generated plan is invalid.
-9. `quality_reviewer`: deterministic schema and quality gate.
-10. `revision`: if quality fails, revises the plan up to two times, re-running quality review after each attempt and returning the highest-scoring result with warnings if it still fails.
+7. `parent_planner`: uses the chain-level model to produce a teaching blueprint with diagnosis, knowledge map, day strategies, writer instructions, quality risks, and success criteria.
+8. `prompt_bundle_builder`: render the next LLM prompt bundle and version it, including the parent blueprint.
+9. `plan_generator`: calls the writer OpenAI-compatible JSON generator using the rendered prompt bundle and parent blueprint; performs one schema repair retry if the generated plan is invalid.
+10. `quality_reviewer`: deterministic schema and quality gate.
+11. `quality_reviewer_llm`: uses the chain-level model to review whether the generated plan follows the parent blueprint and avoids template-like low-quality output.
+12. `revision`: if either reviewer fails the plan, revises it up to two times, re-running deterministic and LLM quality review after each attempt and returning the highest-scoring result with warnings if it still fails.
+
+```mermaid
+flowchart LR
+    A["Intake + source analysis"] --> B["Scope/time/task blueprint"]
+    B --> C["Parent planner<br/>chain model"]
+    C --> D["Prompt bundle"]
+    D --> E["Plan generator<br/>writer model"]
+    E --> F["Schema repair<br/>writer/repair temp"]
+    F --> G["Local quality gate"]
+    G --> H["LLM quality reviewer<br/>chain model"]
+    H --> I{"Score >= 85<br/>and no high issue?"}
+    I -- yes --> J["PDF renderer"]
+    I -- no --> K["Targeted revision<br/>chain model"]
+    K --> G
+```
 
 ## Adding a New Subject
 

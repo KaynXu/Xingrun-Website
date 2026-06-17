@@ -15,8 +15,12 @@ ENV_VAR_MAP = {
     "review_plan_provider": "XR_REVIEW_PLAN_PROVIDER",
     "review_plan_model": "XR_REVIEW_PLAN_MODEL",
     "review_plan_reasoning_effort": "XR_REVIEW_PLAN_REASONING_EFFORT",
+    "review_plan_temperature": "XR_REVIEW_PLAN_TEMPERATURE",
     "review_plan_writer_provider": "XR_REVIEW_PLAN_WRITER_PROVIDER",
     "review_plan_writer_model": "XR_REVIEW_PLAN_WRITER_MODEL",
+    "review_plan_writer_temperature": "XR_REVIEW_PLAN_WRITER_TEMPERATURE",
+    "review_plan_repair_temperature": "XR_REVIEW_PLAN_REPAIR_TEMPERATURE",
+    "review_plan_reviewer_temperature": "XR_REVIEW_PLAN_REVIEWER_TEMPERATURE",
     "review_plan_langfuse_enabled": "XR_REVIEW_PLAN_LANGFUSE_ENABLED",
     "langfuse_public_key": "LANGFUSE_PUBLIC_KEY",
     "langfuse_secret_key": "LANGFUSE_SECRET_KEY",
@@ -44,8 +48,12 @@ DEFAULTS = {
     "review_plan_provider": "",
     "review_plan_model": "",
     "review_plan_reasoning_effort": "",
+    "review_plan_temperature": 0.25,
     "review_plan_writer_provider": "deepseek",
     "review_plan_writer_model": "",
+    "review_plan_writer_temperature": 0.35,
+    "review_plan_repair_temperature": 0.1,
+    "review_plan_reviewer_temperature": 0.1,
     "review_plan_langfuse_enabled": False,
     "langfuse_public_key": "",
     "langfuse_secret_key": "",
@@ -120,6 +128,18 @@ def normalize_bool_flag(value: object) -> bool:
     return flag in {"1", "true", "yes", "on", "enabled"}
 
 
+def normalize_temperature(value: object, default: float = 0.3) -> float:
+    try:
+        temperature = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if temperature < 0:
+        return 0.0
+    if temperature > 2:
+        return 2.0
+    return temperature
+
+
 def normalize_vision_provider(value: object) -> str:
     provider = str(value or "").strip().lower()
     if provider == "openai":
@@ -135,8 +155,12 @@ def get_runtime_config() -> dict:
     cfg["review_plan_provider"] = normalize_optional_chat_provider(cfg.get("review_plan_provider"))
     cfg["review_plan_model"] = str(cfg.get("review_plan_model") or "").strip()
     cfg["review_plan_reasoning_effort"] = normalize_reasoning_effort(cfg.get("review_plan_reasoning_effort"))
+    cfg["review_plan_temperature"] = normalize_temperature(cfg.get("review_plan_temperature"), 0.25)
     cfg["review_plan_writer_provider"] = normalize_chat_provider(cfg.get("review_plan_writer_provider") or "deepseek")
     cfg["review_plan_writer_model"] = str(cfg.get("review_plan_writer_model") or "").strip()
+    cfg["review_plan_writer_temperature"] = normalize_temperature(cfg.get("review_plan_writer_temperature"), 0.35)
+    cfg["review_plan_repair_temperature"] = normalize_temperature(cfg.get("review_plan_repair_temperature"), 0.1)
+    cfg["review_plan_reviewer_temperature"] = normalize_temperature(cfg.get("review_plan_reviewer_temperature"), 0.1)
     cfg["review_plan_langfuse_enabled"] = normalize_bool_flag(cfg.get("review_plan_langfuse_enabled"))
     cfg["langfuse_public_key"] = str(cfg.get("langfuse_public_key") or "").strip()
     cfg["langfuse_secret_key"] = str(cfg.get("langfuse_secret_key") or "").strip()
@@ -191,3 +215,23 @@ def resolve_review_plan_reasoning_effort(cfg: Optional[dict] = None, provider: o
     if provider_name != "openai":
         return ""
     return normalize_reasoning_effort(runtime.get("review_plan_reasoning_effort"))
+
+
+def resolve_review_plan_temperature(cfg: Optional[dict] = None) -> float:
+    runtime = cfg or get_runtime_config()
+    return normalize_temperature(runtime.get("review_plan_temperature"), 0.25)
+
+
+def resolve_review_plan_writer_temperature(cfg: Optional[dict] = None) -> float:
+    runtime = cfg or get_runtime_config()
+    return normalize_temperature(runtime.get("review_plan_writer_temperature"), 0.35)
+
+
+def resolve_review_plan_repair_temperature(cfg: Optional[dict] = None) -> float:
+    runtime = cfg or get_runtime_config()
+    return normalize_temperature(runtime.get("review_plan_repair_temperature"), 0.1)
+
+
+def resolve_review_plan_reviewer_temperature(cfg: Optional[dict] = None) -> float:
+    runtime = cfg or get_runtime_config()
+    return normalize_temperature(runtime.get("review_plan_reviewer_temperature"), 0.1)

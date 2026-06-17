@@ -34,6 +34,7 @@ from config_runtime import (
     load_file_config,
     normalize_chat_provider,
     normalize_reasoning_effort,
+    normalize_temperature,
     resolve_review_plan_model,
     resolve_review_plan_provider,
     resolve_review_plan_reasoning_effort,
@@ -8161,8 +8162,12 @@ def api_settings_get():
         "review_plan_provider": cfg.get("review_plan_provider", ""),
         "review_plan_model": cfg.get("review_plan_model", ""),
         "review_plan_reasoning_effort": cfg.get("review_plan_reasoning_effort", ""),
+        "review_plan_temperature": cfg.get("review_plan_temperature", 0.25),
         "review_plan_writer_provider": cfg.get("review_plan_writer_provider", "deepseek"),
         "review_plan_writer_model": cfg.get("review_plan_writer_model", ""),
+        "review_plan_writer_temperature": cfg.get("review_plan_writer_temperature", 0.35),
+        "review_plan_repair_temperature": cfg.get("review_plan_repair_temperature", 0.1),
+        "review_plan_reviewer_temperature": cfg.get("review_plan_reviewer_temperature", 0.1),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
         "openai_model": cfg.get("openai_model", "gpt-4o"),
@@ -8192,10 +8197,18 @@ def api_settings_save():
         cfg["review_plan_model"] = str(data["review_plan_model"] or "").strip()
     if "review_plan_reasoning_effort" in data and "review_plan_reasoning_effort" not in controlled_keys:
         cfg["review_plan_reasoning_effort"] = normalize_reasoning_effort(data["review_plan_reasoning_effort"])
+    if "review_plan_temperature" in data and "review_plan_temperature" not in controlled_keys:
+        cfg["review_plan_temperature"] = normalize_temperature(data["review_plan_temperature"], 0.25)
     if "review_plan_writer_provider" in data and "review_plan_writer_provider" not in controlled_keys:
         cfg["review_plan_writer_provider"] = normalize_chat_provider(data["review_plan_writer_provider"] or "deepseek")
     if "review_plan_writer_model" in data and "review_plan_writer_model" not in controlled_keys:
         cfg["review_plan_writer_model"] = str(data["review_plan_writer_model"] or "").strip()
+    if "review_plan_writer_temperature" in data and "review_plan_writer_temperature" not in controlled_keys:
+        cfg["review_plan_writer_temperature"] = normalize_temperature(data["review_plan_writer_temperature"], 0.35)
+    if "review_plan_repair_temperature" in data and "review_plan_repair_temperature" not in controlled_keys:
+        cfg["review_plan_repair_temperature"] = normalize_temperature(data["review_plan_repair_temperature"], 0.1)
+    if "review_plan_reviewer_temperature" in data and "review_plan_reviewer_temperature" not in controlled_keys:
+        cfg["review_plan_reviewer_temperature"] = normalize_temperature(data["review_plan_reviewer_temperature"], 0.1)
     for key in ("openai_api_key", "openai_model", "openai_base_url", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()

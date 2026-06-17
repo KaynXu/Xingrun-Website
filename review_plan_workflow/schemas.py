@@ -91,6 +91,38 @@ class TaskBlueprint(BaseModel):
     risk_controls: list[str] = Field(default_factory=list)
 
 
+class AgenticDayStrategy(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    day: int
+    objective: str = ""
+    retrieval_focus: list[str] = Field(default_factory=list)
+    question_design: list[str] = Field(default_factory=list)
+    review_loop: list[str] = Field(default_factory=list)
+    risk_controls: list[str] = Field(default_factory=list)
+
+    @field_validator("day")
+    @classmethod
+    def validate_review_day(cls, value: int) -> int:
+        if value not in {1, 2, 7, 14, 30}:
+            raise ValueError("agentic day strategy must target day 1, 2, 7, 14, or 30")
+        return value
+
+
+class AgenticPlanBlueprint(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    strategy_summary: str = ""
+    student_diagnosis: list[str] = Field(default_factory=list)
+    knowledge_map: list[dict[str, Any]] = Field(default_factory=list)
+    day_strategies: list[AgenticDayStrategy] = Field(default_factory=list)
+    writer_instructions: list[str] = Field(default_factory=list)
+    quality_risks: list[str] = Field(default_factory=list)
+    success_criteria: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
 class PromptBundle(BaseModel):
     model_config = ConfigDict(extra="allow")
 

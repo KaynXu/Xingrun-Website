@@ -344,7 +344,18 @@ def llm_generation(
     system_prompt: str,
     user_message: str,
     reasoning_effort: str = "",
+    stage: str = "generate_json",
+    temperature: float | None = None,
 ) -> Iterator[ObservationHandle]:
+    metadata = {
+        "provider": provider,
+        "model": model,
+        "reasoning_effort": reasoning_effort,
+        "response_format": "json_object",
+        "stage": stage,
+    }
+    if temperature is not None:
+        metadata["temperature"] = float(temperature)
     with _start_observation(
         as_type="generation",
         name="review_plan.llm.generate_json",
@@ -352,12 +363,7 @@ def llm_generation(
             "system_prompt": _text_summary(system_prompt),
             "user_message": _text_summary(user_message),
         },
-        metadata={
-            "provider": provider,
-            "model": model,
-            "reasoning_effort": reasoning_effort,
-            "response_format": "json_object",
-        },
+        metadata=metadata,
     ) as handle:
         yield handle
 

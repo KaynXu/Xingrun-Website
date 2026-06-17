@@ -171,8 +171,12 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
                 "review_plan_provider": "openai",
                 "review_plan_model": "gpt-5.4",
                 "review_plan_reasoning_effort": "high",
+                "review_plan_temperature": 0.22,
                 "openai_model": "gpt-5.4",
                 "openai_base_url": "https://api.iiiiitoken.com/v1",
+                "review_plan_writer_temperature": 0.36,
+                "review_plan_repair_temperature": 0.1,
+                "review_plan_reviewer_temperature": 0.08,
             }
         )
 
@@ -186,8 +190,41 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(payload["review_plan_provider"], "openai")
         self.assertEqual(payload["review_plan_model"], "gpt-5.4")
         self.assertEqual(payload["review_plan_reasoning_effort"], "high")
+        self.assertEqual(payload["review_plan_temperature"], 0.22)
+        self.assertEqual(payload["review_plan_writer_temperature"], 0.36)
+        self.assertEqual(payload["review_plan_repair_temperature"], 0.1)
+        self.assertEqual(payload["review_plan_reviewer_temperature"], 0.08)
         self.assertEqual(payload["openai_model"], "gpt-5.4")
         self.assertEqual(payload["openai_base_url"], "https://api.iiiiitoken.com/v1")
+
+    def test_settings_api_saves_review_plan_node_temperatures(self):
+        response = self.client.post(
+            "/api/settings",
+            headers=self._auth_headers(self.owner_token),
+            json={
+                "review_plan_provider": "openai",
+                "review_plan_model": "gpt-5.4",
+                "review_plan_reasoning_effort": "high",
+                "review_plan_temperature": "0.24",
+                "review_plan_writer_provider": "deepseek",
+                "review_plan_writer_model": "deepseek-v4-pro",
+                "review_plan_writer_temperature": "0.37",
+                "review_plan_repair_temperature": "-1",
+                "review_plan_reviewer_temperature": "2.5",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        cfg = config_runtime.get_runtime_config()
+        self.assertEqual(cfg["review_plan_provider"], "openai")
+        self.assertEqual(cfg["review_plan_model"], "gpt-5.4")
+        self.assertEqual(cfg["review_plan_reasoning_effort"], "high")
+        self.assertEqual(cfg["review_plan_temperature"], 0.24)
+        self.assertEqual(cfg["review_plan_writer_provider"], "deepseek")
+        self.assertEqual(cfg["review_plan_writer_model"], "deepseek-v4-pro")
+        self.assertEqual(cfg["review_plan_writer_temperature"], 0.37)
+        self.assertEqual(cfg["review_plan_repair_temperature"], 0.0)
+        self.assertEqual(cfg["review_plan_reviewer_temperature"], 2.0)
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
