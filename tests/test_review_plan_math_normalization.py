@@ -85,22 +85,36 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertLess(small_formula.drawHeight, body_formula.drawHeight)
         self.assertLess(small_formula.drawWidth, body_formula.drawWidth)
 
-    def test_rich_text_flowables_embeds_fraction_formula_image(self):
+    def test_rich_text_flowables_embeds_standalone_fraction_formula_image(self):
         register_fonts()
         styles = build_styles()
 
         flowables = rich_text_flowables(
-            r"全方和不等式：$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$",
+            r"$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$",
             styles["body"],
             True,
         )
 
         self.assertTrue(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
 
+    def test_rich_text_flowables_keeps_inline_fraction_formula_compact(self):
+        register_fonts()
+        styles = build_styles()
+
+        flowables = rich_text_flowables(
+            r"全方和不等式：$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$ 的结构识别",
+            styles["body"],
+            True,
+        )
+
+        self.assertEqual(len(flowables), 1)
+        self.assertFalse(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
+        self.assertIn("全方和不等式", flowables[0].getPlainText())
+
     def test_rich_text_flowables_formula_size_follows_paragraph_style(self):
         register_fonts()
         styles = build_styles()
-        text = r"公式：$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$"
+        text = r"$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$"
 
         body_images = [
             flowable

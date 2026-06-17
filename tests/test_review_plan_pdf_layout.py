@@ -107,7 +107,7 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
         expected_brand_x = doc.leftMargin + 8.5 * generate_review_pdfs.mm + 3 * generate_review_pdfs.mm
         self.assertAlmostEqual(brand_x, expected_brand_x)
 
-    def test_daily_overview_keeps_tasks_on_each_review_day_but_not_full_coverage(self):
+    def test_daily_overview_keeps_tasks_without_repeating_full_coverage(self):
         generate_review_pdfs.register_fonts()
         styles = generate_review_pdfs.build_styles()
         labels = generate_review_pdfs.build_labels(chinese_only=True)
@@ -128,7 +128,7 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
                 knowledge_sections={},
             )
 
-        self.assertEqual(box_titles.count(labels["coverage_title"]), 2)
+        self.assertEqual(box_titles.count(labels["coverage_title"]), 1)
         self.assertEqual(box_titles.count(labels["tasks_title"]), len(_sample_days()))
 
     def test_answer_key_uses_compact_summary_instead_of_per_day_heading_blocks(self):
@@ -194,6 +194,23 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
             doc.build([generate_review_pdfs.make_box("长卡片", body, styles, styles["card"])])
 
             self.assertGreater(output_path.stat().st_size, 0)
+
+    def test_make_box_does_not_turn_legacy_spacers_into_blank_rows(self):
+        generate_review_pdfs.register_fonts()
+        styles = generate_review_pdfs.build_styles()
+
+        box = generate_review_pdfs.make_box(
+            "测试卡片",
+            [
+                generate_review_pdfs.Paragraph("第一句", styles["body"]),
+                generate_review_pdfs.Spacer(1, 12),
+                generate_review_pdfs.Paragraph("第二句", styles["body"]),
+            ],
+            styles,
+            styles["card"],
+        )
+
+        self.assertEqual(box._nrows, 3)
 
     def test_cli_output_filename_uses_lesson_knowledge_points(self):
         output_dir = Path("/tmp/review-plan-layout-test")
