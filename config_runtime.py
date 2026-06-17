@@ -17,6 +17,10 @@ ENV_VAR_MAP = {
     "review_plan_reasoning_effort": "XR_REVIEW_PLAN_REASONING_EFFORT",
     "review_plan_writer_provider": "XR_REVIEW_PLAN_WRITER_PROVIDER",
     "review_plan_writer_model": "XR_REVIEW_PLAN_WRITER_MODEL",
+    "review_plan_langfuse_enabled": "XR_REVIEW_PLAN_LANGFUSE_ENABLED",
+    "langfuse_public_key": "LANGFUSE_PUBLIC_KEY",
+    "langfuse_secret_key": "LANGFUSE_SECRET_KEY",
+    "langfuse_base_url": "LANGFUSE_BASE_URL",
     "openai_api_key": "OPENAI_API_KEY",
     "openai_model": "XR_OPENAI_MODEL",
     "openai_base_url": "XR_OPENAI_BASE_URL",
@@ -42,6 +46,10 @@ DEFAULTS = {
     "review_plan_reasoning_effort": "",
     "review_plan_writer_provider": "deepseek",
     "review_plan_writer_model": "",
+    "review_plan_langfuse_enabled": False,
+    "langfuse_public_key": "",
+    "langfuse_secret_key": "",
+    "langfuse_base_url": "",
     "openai_model": "gpt-4o",
     "openai_base_url": "",
     "xhs_base_url": "https://ark.xiaohongshu.com",
@@ -105,6 +113,13 @@ def normalize_reasoning_effort(value: object) -> str:
     return ""
 
 
+def normalize_bool_flag(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    flag = str(value or "").strip().lower()
+    return flag in {"1", "true", "yes", "on", "enabled"}
+
+
 def normalize_vision_provider(value: object) -> str:
     provider = str(value or "").strip().lower()
     if provider == "openai":
@@ -122,6 +137,10 @@ def get_runtime_config() -> dict:
     cfg["review_plan_reasoning_effort"] = normalize_reasoning_effort(cfg.get("review_plan_reasoning_effort"))
     cfg["review_plan_writer_provider"] = normalize_chat_provider(cfg.get("review_plan_writer_provider") or "deepseek")
     cfg["review_plan_writer_model"] = str(cfg.get("review_plan_writer_model") or "").strip()
+    cfg["review_plan_langfuse_enabled"] = normalize_bool_flag(cfg.get("review_plan_langfuse_enabled"))
+    cfg["langfuse_public_key"] = str(cfg.get("langfuse_public_key") or "").strip()
+    cfg["langfuse_secret_key"] = str(cfg.get("langfuse_secret_key") or "").strip()
+    cfg["langfuse_base_url"] = str(cfg.get("langfuse_base_url") or "").strip()
     cfg["openai_model"] = str(cfg.get("openai_model") or "gpt-4o").strip() or "gpt-4o"
     cfg["openai_base_url"] = str(cfg.get("openai_base_url") or "").strip()
     cfg["vision_provider"] = normalize_vision_provider(cfg.get("vision_provider"))

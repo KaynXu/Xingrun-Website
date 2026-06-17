@@ -14,6 +14,7 @@ from config_runtime import (
     resolve_review_plan_provider,
 )
 from pydantic import BaseModel
+from review_plan_workflow.observability import llm_generation, summarize_for_observability
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -184,9 +185,34 @@ def generate_review_plan_json(
     normalized_effort = normalize_reasoning_effort(reasoning_effort)
     if provider_name == "openai" and normalized_effort:
         request_kwargs["reasoning_effort"] = normalized_effort
-    response = client.chat.completions.create(**request_kwargs)
-    raw = response.choices[0].message.content
-    return loads_model_json(raw), usage_dict(response, provider=provider_name, model_fallback=model_name)
+    with llm_generation(
+        provider=provider_name,
+        model=model_name,
+        system_prompt=system_prompt,
+        user_message=user_message,
+        reasoning_effort=normalized_effort,
+    ) as generation:
+        try:
+            response = client.chat.completions.create(**request_kwargs)
+            raw = response.choices[0].message.content
+            payload = loads_model_json(raw)
+            usage = usage_dict(response, provider=provider_name, model_fallback=model_name)
+            generation.record_success(
+                output={
+                    "json": summarize_for_observability(payload),
+                    "usage": usage,
+                },
+                metadata={
+                    "provider": provider_name,
+                    "model": model_name,
+                    "input_tokens": usage["input_tokens"],
+                    "output_tokens": usage["output_tokens"],
+                },
+            )
+            return payload, usage
+        except Exception as exc:
+            generation.record_failure(error=exc)
+            raise
 
 
 def generate_structured(

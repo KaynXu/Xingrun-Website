@@ -22,6 +22,13 @@ from .nodes import (
 )
 from .quality_gate import review_single_lesson_plan
 from .llm.client import merge_usage
+from .observability import (
+    flush,
+    record_quality_score,
+    record_workflow_failure,
+    record_workflow_result,
+    workflow_trace,
+)
 from .schemas import QualityReview, ReviewPlanInput, normalize_final_review_plan
 from .state import WorkflowContext
 
@@ -169,78 +176,89 @@ def generate_single_lesson_review_plan(
     _record_run(lesson_id=lesson_id, organization_id=organization_id, context=context, status="running")
 
     try:
-        normalized = run_workflow_node(intake_normalizer_node, review_input, context)
-        route = run_workflow_node(subject_router_node, normalized, context)
-        source = run_workflow_node(source_analyzer_node, normalized, context)
-        scope = run_workflow_node(
-            scope_planner_node,
-            {"input": review_input, "normalized": normalized, "route": route, "source": source},
-            context,
-        )
-        time_allocation = run_workflow_node(
-            time_allocator_node,
-            {"normalized": normalized, "scope": scope},
-            context,
-        )
-        task_blueprint = run_workflow_node(
-            task_blueprint_node,
-            {
-                "normalized": normalized,
-                "route": route,
-                "source": source,
-                "scope": scope,
-                "time_allocation": time_allocation,
-            },
-            context,
-        )
-        prompt_bundle = run_workflow_node(
-            prompt_bundle_builder_node,
-            {
-                "route": route,
-                "source": source,
-                "scope": scope,
-                "time_allocation": time_allocation,
-                "task_blueprint": task_blueprint,
-            },
-            context,
-        )
-        plan, usage = run_workflow_node(
-            plan_generator_node,
-            {
-                "input": review_input,
-                "normalized": normalized,
-                "route": route,
-                "source": source,
-                "scope": scope,
-                "time_allocation": time_allocation,
-                "task_blueprint": task_blueprint,
-                "prompt_bundle": prompt_bundle,
-            },
-            context,
-        )
-        plan = _normalize_output_plan(plan, review_input)
-        quality = _score_quality(plan, subject=route.selected_subject, context=context, node_key="quality_reviewer_initial")
-        plan, quality, usage = _maybe_revise_plan(
-            plan=plan,
-            quality=quality,
-            usage=usage,
-            review_input=review_input,
-            prompt_bundle=prompt_bundle,
-            subject=route.selected_subject,
+        with workflow_trace(
             context=context,
-        )
-        plan = _normalize_output_plan(plan, review_input)
-
-        _record_run(
+            review_input=review_input,
             lesson_id=lesson_id,
             organization_id=organization_id,
-            context=context,
-            status="succeeded",
-            quality_review=quality.model_dump(),
-        )
-        if include_usage:
-            return plan, usage
-        return plan
-    except Exception:
+        ):
+            normalized = run_workflow_node(intake_normalizer_node, review_input, context)
+            route = run_workflow_node(subject_router_node, normalized, context)
+            source = run_workflow_node(source_analyzer_node, normalized, context)
+            scope = run_workflow_node(
+                scope_planner_node,
+                {"input": review_input, "normalized": normalized, "route": route, "source": source},
+                context,
+            )
+            time_allocation = run_workflow_node(
+                time_allocator_node,
+                {"normalized": normalized, "scope": scope},
+                context,
+            )
+            task_blueprint = run_workflow_node(
+                task_blueprint_node,
+                {
+                    "normalized": normalized,
+                    "route": route,
+                    "source": source,
+                    "scope": scope,
+                    "time_allocation": time_allocation,
+                },
+                context,
+            )
+            prompt_bundle = run_workflow_node(
+                prompt_bundle_builder_node,
+                {
+                    "route": route,
+                    "source": source,
+                    "scope": scope,
+                    "time_allocation": time_allocation,
+                    "task_blueprint": task_blueprint,
+                },
+                context,
+            )
+            plan, usage = run_workflow_node(
+                plan_generator_node,
+                {
+                    "input": review_input,
+                    "normalized": normalized,
+                    "route": route,
+                    "source": source,
+                    "scope": scope,
+                    "time_allocation": time_allocation,
+                    "task_blueprint": task_blueprint,
+                    "prompt_bundle": prompt_bundle,
+                },
+                context,
+            )
+            plan = _normalize_output_plan(plan, review_input)
+            quality = _score_quality(plan, subject=route.selected_subject, context=context, node_key="quality_reviewer_initial")
+            plan, quality, usage = _maybe_revise_plan(
+                plan=plan,
+                quality=quality,
+                usage=usage,
+                review_input=review_input,
+                prompt_bundle=prompt_bundle,
+                subject=route.selected_subject,
+                context=context,
+            )
+            plan = _normalize_output_plan(plan, review_input)
+            record_quality_score(context=context, quality=quality)
+            record_workflow_result(context=context, plan=plan, quality=quality, usage=usage, status="succeeded")
+
+            _record_run(
+                lesson_id=lesson_id,
+                organization_id=organization_id,
+                context=context,
+                status="succeeded",
+                quality_review=quality.model_dump(),
+            )
+            if include_usage:
+                return plan, usage
+            return plan
+    except Exception as exc:
+        record_workflow_failure(context=context, error=exc)
         _record_run(lesson_id=lesson_id, organization_id=organization_id, context=context, status="failed")
         raise
+    finally:
+        flush()
