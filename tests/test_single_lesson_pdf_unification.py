@@ -254,6 +254,47 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertIn(r"\frac{a^2}{x}", days[0]["blanks"][1][0])
         self.assertNotIn("(a²)/(x)", days[0]["blanks"][1][0])
 
+    def test_adapt_plan_to_review_template_does_not_fabricate_multiple_choice_options(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = valid_single_lesson_plan(subject="数学", topic="全方和不等式")
+        for day in plan["days"]:
+            day["choices"] = []
+        plan["questions"] = [
+            {
+                "question": r"写出全方和不等式：$\frac{a^2}{x}+\frac{b^2}{y}\ge ?$",
+                "answer": r"$\frac{(a+b)^2}{x+y}$",
+            }
+        ]
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(days[0]["choices"], [])
+
+    def test_adapt_plan_to_review_template_accepts_global_questions_only_with_real_options(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = valid_single_lesson_plan(subject="数学", topic="全方和不等式")
+        for day in plan["days"]:
+            day["choices"] = []
+        plan["questions"] = [
+            {
+                "question": "下列哪一个是全方和不等式的标准形式？",
+                "options": [
+                    r"A. $\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$",
+                    r"B. $\frac{a+b}{x+y}\ge a^2+b^2$",
+                    "C. a²+b²≥2ab",
+                    "D. x+y≥a+b",
+                ],
+                "answer": "A",
+            }
+        ]
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(days[0]["choices"][0]["question"], "下列哪一个是全方和不等式的标准形式？")
+        self.assertIn(r"\frac{a^2}{x}", days[0]["choices"][0]["options"][0])
+
     def test_generate_single_lesson_pdf_escapes_math_comparison_symbols(self):
         from review_plan_templates.single_lesson_pdf import generate_single_lesson_pdf
 

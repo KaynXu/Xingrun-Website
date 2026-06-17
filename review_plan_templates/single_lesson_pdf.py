@@ -134,41 +134,20 @@ def extract_knowledge_sections(plan_data: dict) -> dict:
     return normalized
 
 
-def _default_choice(topic: str, day_number: int) -> dict:
-    return {
-        "question": f"第{day_number}天关于{topic or '本课内容'}的自测题，最该先复述哪一步？",
-        "options": [
-            "A. 先回忆整节课的核心方法",
-            "B. 直接跳到最后一道题",
-            "C. 只看答案不复盘过程",
-            "D. 只记零散结论不看结构",
-        ],
-        "answer": "A",
-    }
-
-
 def _question_pool(plan_data: dict) -> list[dict]:
-    topic = _clean_text(plan_data.get("lesson_info", {}).get("topic"), "本课内容")
     pool: list[dict] = []
     for question in plan_data.get("questions", []):
         question_text = _clean_text(question.get("question"))
-        answer_text = _clean_text(question.get("answer"), "先完整复述本课方法，再回到题目。")
-        if not question_text:
+        options = _dedupe_clean_lines(question.get("options"))
+        if not question_text or len(options) < 2:
             continue
         pool.append(
             {
                 "question": question_text,
-                "options": [
-                    f"A. {answer_text}",
-                    "B. 只看结果不看过程",
-                    "C. 跳过课堂原话直接猜",
-                    "D. 只做最后一题",
-                ],
-                "answer": "A",
+                "options": options,
+                "answer": _clean_text(question.get("answer"), "A"),
             }
         )
-    if not pool:
-        pool.append(_default_choice(topic, 1))
     return pool
 
 
@@ -239,8 +218,10 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 
     if explicit_choices:
         choice_values = explicit_choices[:2]
-    else:
+    elif question_pool:
         choice_values = [question_pool[(day_number - 1) % len(question_pool)]]
+    else:
+        choice_values = []
     quote_values = _dedupe_real_quotes(day_data.get("quotes"))
     if phrase and _is_real_class_quote(phrase) and phrase not in quote_values:
         quote_values.append(phrase)

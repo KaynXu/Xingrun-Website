@@ -932,7 +932,7 @@ def _render_latex_formula_png_bytes(prepared: str, dpi: int, font_size: float) -
     return buffer.getvalue(), width_px, height_px
 
 
-def render_latex_formula_flowable(latex: str, max_width: float = 150 * mm, *, dpi: int = 240, font_size: float = 18.0) -> Image | None:
+def render_latex_formula_flowable(latex: str, max_width: float = 150 * mm, *, dpi: int = 240, font_size: float = 14.8) -> Image | None:
     if not _latex_needs_visual_render(latex):
         return None
 
@@ -1958,8 +1958,9 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
         blank_body = rich_numbered_flowables([item[0] for item in day["blanks"]], styles["body"], chinese_only)
         story.append(make_box(labels["blanks_title"], blank_body, styles, styles["card"]))
         story.append(Spacer(1, 2 * mm))
-        story.append(CondPageBreak(60 * mm))
-        story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, styles["paper"]))
+        if day.get("choices"):
+            story.append(CondPageBreak(60 * mm))
+            story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, styles["paper"]))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         has_teacher_quote = index == 0 and day["quotes"]
