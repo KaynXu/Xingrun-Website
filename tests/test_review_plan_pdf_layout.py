@@ -1,7 +1,10 @@
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
+
+from reportlab.lib.pagesizes import A4
 
 from review_plan_templates import generate_review_pdfs
 
@@ -165,6 +168,32 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
         )
 
         self.assertEqual(table._ncols, 6)
+
+    def test_make_box_splits_long_flowable_lists_across_pages(self):
+        generate_review_pdfs.register_fonts()
+        styles = generate_review_pdfs.build_styles()
+        body = [
+            generate_review_pdfs.Paragraph(
+                f"{index}. 这是一条很长的复习任务，用来撑高卡片并验证表格是否能跨页。",
+                styles["body"],
+            )
+            for index in range(90)
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "long-box.pdf"
+            doc = generate_review_pdfs.SimpleDocTemplate(
+                str(output_path),
+                pagesize=A4,
+                leftMargin=18 * generate_review_pdfs.mm,
+                rightMargin=18 * generate_review_pdfs.mm,
+                topMargin=24 * generate_review_pdfs.mm,
+                bottomMargin=16 * generate_review_pdfs.mm,
+            )
+
+            doc.build([generate_review_pdfs.make_box("长卡片", body, styles, styles["card"])])
+
+            self.assertGreater(output_path.stat().st_size, 0)
 
     def test_cli_output_filename_uses_lesson_knowledge_points(self):
         output_dir = Path("/tmp/review-plan-layout-test")

@@ -1641,8 +1641,22 @@ def bullet_paragraph(items, style):
     return Paragraph("<br/>".join([f"- {paragraph_safe_text(item)}" for item in items]), style)
 
 
+def _box_body_rows(body, body_style):
+    if isinstance(body, (list, tuple)):
+        rows = []
+        for item in body:
+            if isinstance(item, Flowable):
+                rows.append([item])
+            else:
+                rows.append([Paragraph(paragraph_safe_text(item), body_style)])
+        return rows or [[Paragraph("", body_style)]]
+    return [[body]]
+
+
 def make_box(title, body, styles, background):
-    box = Table([[Paragraph(f"<b>{title}</b>", styles["h2"])], [body]], colWidths=[170 * mm])
+    rows = [[Paragraph(f"<b>{title}</b>", styles["h2"])]]
+    rows.extend(_box_body_rows(body, styles["body"]))
+    box = Table(rows, colWidths=[170 * mm], repeatRows=1)
     box.setStyle(
         TableStyle(
             [
