@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle2, Download, Eye, FileText, PlusCircle, RefreshCw, Trash2, X } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import {
   getReviewLessonTaskMessage,
@@ -31,11 +33,30 @@ type ReviewPlanCreateResult = {
 type ReviewGenerationPageProps = {
   onSuccess: () => void;
   renderLessonInput: (onSuccess: (result: ReviewPlanCreateResult) => void) => ReactNode;
+  taskControls: ReviewGenerationTaskControls;
 };
 
 type ReviewDocumentHistoryProps = {
   refreshToken?: number;
   highlightedLessonId?: number | null;
+  progressNow: number;
+  taskStartedAtById: Record<number, number>;
+  onLessonsChange: (lessons: ReviewLessonRecord[]) => void;
+  onTaskStarted: (lessonId: number, startedAtMs: number) => void;
+  onFloatingNotice: (notice: ReviewGenerationFloatingNotice) => void;
+};
+
+export type ReviewGenerationFloatingNotice = {
+  type: 'info' | 'error';
+  text: string;
+};
+
+export type ReviewGenerationTaskControls = {
+  progressNow: number;
+  taskStartedAtById: Record<number, number>;
+  onLessonsChange: (lessons: ReviewLessonRecord[]) => void;
+  onTaskStarted: (lessonId: number, startedAtMs: number) => void;
+  onFloatingNotice: (notice: ReviewGenerationFloatingNotice) => void;
 };
 
 const REVIEW_HISTORY_PAGE_SIZE = 12;
@@ -97,7 +118,11 @@ function getLessonDateTimeLabel(lesson: ReviewLessonRecord): string {
   return [dateLabel, timeLabel].filter(Boolean).join(' ');
 }
 
-function getLessonStatusMeta(lesson: ReviewLessonRecord): {
+function getLessonStatusMeta(
+  lesson: ReviewLessonRecord,
+  progressNow?: number,
+  startedAtMs?: number,
+): {
   label: string;
   dotClassName: string;
   message: string;
@@ -106,12 +131,15 @@ function getLessonStatusMeta(lesson: ReviewLessonRecord): {
 } {
   const state = getReviewLessonTaskState(lesson);
   const message = getReviewLessonTaskMessage(lesson);
-  const progress = getReviewLessonTaskProgress(lesson);
+  const progress = getReviewLessonTaskProgress(
+    lesson,
+    progressNow === undefined ? undefined : { nowMs: progressNow, startedAtMs },
+  );
 
   if (lesson.record_status === 'transcribing') {
     return {
       label: '转写中',
-      dotClassName: 'bg-amber-500',
+      dotClassName: 'bg-sky-500',
       message,
       progress,
       state,
@@ -121,7 +149,7 @@ function getLessonStatusMeta(lesson: ReviewLessonRecord): {
   if (state === 'pending') {
     return {
       label: '生成中',
-      dotClassName: 'bg-amber-500',
+      dotClassName: 'bg-sky-500',
       message,
       progress,
       state,
@@ -151,7 +179,7 @@ function getLessonStatusMeta(lesson: ReviewLessonRecord): {
   if (hasReviewLessonOutput(lesson)) {
     return {
       label: '已生成',
-      dotClassName: 'bg-emerald-500',
+      dotClassName: 'bg-sky-500',
       message: '',
       progress: 100,
       state,
@@ -167,15 +195,122 @@ function getLessonStatusMeta(lesson: ReviewLessonRecord): {
   };
 }
 
+export function ReviewGenerationTaskDock({
+  lessons,
+  notice,
+  onDismissNotice,
+  progressNow,
+  taskStartedAtById,
+}: {
+  lessons: ReviewLessonRecord[];
+  notice: ReviewGenerationFloatingNotice | null;
+  onDismissNotice: () => void;
+  progressNow: number;
+  taskStartedAtById: Record<number, number>;
+}) {
+  const reduceMotion = useReducedMotion();
+  const dockLessons = lessons.filter((lesson) => {
+    const state = getReviewLessonTaskState(lesson);
+    return state === 'pending' || state === 'failed' || state === 'missing-output';
+  }).slice(0, 4);
+  const activeCount = lessons.filter(isReviewLessonPending).length;
+
+  if (typeof document === 'undefined' || (!notice && dockLessons.length === 0)) {
+    return null;
+  }
+
+  const dock = (
+    <AnimatePresence>
+      <motion.aside
+        key="review-generation-task-dock"
+        initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 10, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
+        transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
+        className="fixed bottom-5 right-5 z-[65] w-[calc(100vw-2.5rem)] max-w-[24rem] rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100"
+        aria-live="polite"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">复习计划生成</p>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {activeCount > 0 ? `${activeCount} 个任务进行中，可先去处理其他页面` : '任务状态会在这里更新'}
+            </p>
+          </div>
+          {notice && (
+            <button
+              type="button"
+              onClick={onDismissNotice}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200"
+              aria-label="关闭提示"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+
+        {notice && (
+          <div
+            className={cn(
+              'mt-3 flex gap-2 rounded-xl border px-3 py-2 text-sm',
+              notice.type === 'error'
+                ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200'
+                : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200',
+            )}
+          >
+            <CheckCircle2 size={16} className={cn('mt-0.5 shrink-0', notice.type === 'error' ? 'text-rose-500' : 'text-sky-600 dark:text-sky-300')} />
+            <span>{notice.text}</span>
+          </div>
+        )}
+
+        {dockLessons.length > 0 && (
+          <div className="mt-3 space-y-3">
+            {dockLessons.map((lesson) => {
+              const status = getLessonStatusMeta(lesson, progressNow, taskStartedAtById[lesson.id]);
+              return (
+                <div key={lesson.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getLessonTitle(lesson)}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{status.message || status.label}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-200">
+                      {status.state === 'pending' ? `${status.progress}%` : status.label}
+                    </span>
+                  </div>
+                  {status.state === 'pending' && (
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-sky-600 transition-[width] duration-700 ease-out dark:bg-sky-400"
+                        style={{ width: `${status.progress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </motion.aside>
+    </AnimatePresence>
+  );
+
+  return createPortal(dock, document.body);
+}
+
 function ReviewDocumentHistory({
   refreshToken = 0,
   highlightedLessonId = null,
+  progressNow,
+  taskStartedAtById,
+  onLessonsChange,
+  onTaskStarted,
+  onFloatingNotice,
 }: ReviewDocumentHistoryProps) {
   const [lessons, setLessons] = useState<ReviewLessonRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [historyPage, setHistoryPage] = useState(1);
   const [regeneratingLessonIds, setRegeneratingLessonIds] = useState<Set<number>>(() => new Set());
-  const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const load = useCallback((quiet = false) => {
     if (!quiet) {
@@ -183,14 +318,18 @@ function ReviewDocumentHistory({
     }
 
     return apiFetch<unknown>('/api/review-plans')
-      .then((payload) => setLessons(normalizeReviewLessonsResponse(payload)))
+      .then((payload) => {
+        const nextLessons = normalizeReviewLessonsResponse(payload);
+        setLessons(nextLessons);
+        onLessonsChange(nextLessons);
+      })
       .catch(console.error)
       .finally(() => {
         if (!quiet) {
           setLoading(false);
         }
       });
-  }, []);
+  }, [onLessonsChange]);
 
   useEffect(() => {
     void load();
@@ -243,22 +382,23 @@ function ReviewDocumentHistory({
       return;
     }
 
-    setActionNotice(null);
+    const startedAtMs = Date.now();
     setRegeneratingLessonIds((current) => new Set(current).add(lesson.id));
     try {
       const payload = await apiFetch<ReviewPlanCreateResult>(`/api/review-plans/${lesson.id}/regenerate`, {
         method: 'POST',
       });
       const nextStatus = payload.status || 'generating';
+      onTaskStarted(lesson.id, startedAtMs);
       setLessons((current) => current.map((item) => (
         item.id === lesson.id
           ? { ...item, record_status: nextStatus, generation_error: '' }
           : item
       )));
-      setActionNotice({ type: 'success', text: `《${getLessonTitle(lesson)}》已开始重新生成。` });
+      onFloatingNotice({ type: 'info', text: `《${getLessonTitle(lesson)}》已开始重新生成。` });
       void load(true);
     } catch (error) {
-      setActionNotice({
+      onFloatingNotice({
         type: 'error',
         text: error instanceof Error ? error.message : '重新生成失败，请稍后重试',
       });
@@ -277,18 +417,6 @@ function ReviewDocumentHistory({
         <h3 className={workspaceSectionTitleClass}>历史文档</h3>
         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">共 {lessons.length} 份</span>
       </div>
-      {actionNotice && (
-        <div
-          className={cn(
-            'mx-5 mt-4 rounded-2xl border px-4 py-3 text-sm sm:mx-6',
-            actionNotice.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
-              : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200',
-          )}
-        >
-          {actionNotice.text}
-        </div>
-      )}
       {loading ? (
         <ReviewHistorySkeleton />
       ) : lessons.length === 0 ? (
@@ -310,14 +438,14 @@ function ReviewDocumentHistory({
 
           <ul className="divide-y divide-slate-200/70 dark:divide-white/10">
             {paginatedLessons.map((lesson) => {
-              const status = getLessonStatusMeta(lesson);
+              const status = getLessonStatusMeta(lesson, progressNow, taskStartedAtById[lesson.id]);
 
               return (
                 <li
                   key={lesson.id}
                   className={cn(
                     'rounded-2xl px-2 py-4 transition-colors hover:bg-slate-50/90 dark:hover:bg-white/5',
-                    highlightedLessonId === lesson.id && 'bg-emerald-50/80 dark:bg-emerald-500/10',
+                    highlightedLessonId === lesson.id && 'bg-sky-50/70 dark:bg-sky-500/10',
                   )}
                 >
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_176px] lg:items-start lg:gap-4">
@@ -410,26 +538,6 @@ function ReviewDocumentHistory({
                         <Trash2 size={16} />
                       </button>
                     </div>
-
-                    {(status.state === 'pending' || status.state === 'failed' || status.state === 'missing-output') && (
-                      <div className="lg:col-span-5">
-                        <div
-                          className={cn(
-                            'rounded-2xl px-3 py-2 text-sm',
-                            status.state === 'pending' && 'border border-amber-200 bg-amber-50/90 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200',
-                            status.state === 'failed' && 'border border-rose-200 bg-rose-50/90 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200',
-                            status.state === 'missing-output' && 'border border-amber-200 bg-amber-50/90 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200',
-                          )}
-                        >
-                          <div>{status.message || '生成状态更新中'}</div>
-                          {status.state === 'pending' && (
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-amber-100 dark:bg-white/10">
-                              <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${status.progress}%` }} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </li>
               );
@@ -465,10 +573,9 @@ function ReviewDocumentHistory({
   );
 }
 
-export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGenerationPageProps) {
+export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControls }: ReviewGenerationPageProps) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
-  const [reviewNotice, setReviewNotice] = useState('');
   const [highlightedLessonId, setHighlightedLessonId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -496,9 +603,10 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
     setComposerOpen(false);
     setHighlightedLessonId(result.id);
     if (result.duplicate) {
-      setReviewNotice(`这份录音已处理过，已复用已有复习文档 #${result.id}。`);
+      taskControls.onFloatingNotice({ type: 'info', text: `这份录音已处理过，已复用已有复习文档 #${result.id}。` });
     } else {
-      setReviewNotice('');
+      taskControls.onTaskStarted(result.id, Date.now());
+      taskControls.onFloatingNotice({ type: 'info', text: '复习计划已开始生成，可先去处理其他页面。' });
     }
     setHistoryRefreshToken((current) => current + 1);
     onSuccess();
@@ -526,14 +634,15 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput }: ReviewGen
         </button>
       </div>
 
-      {reviewNotice && (
-        <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200">
-          <CheckCircle2 size={18} />
-          <span className="text-sm">{reviewNotice}</span>
-        </div>
-      )}
-
-      <ReviewDocumentHistory refreshToken={historyRefreshToken} highlightedLessonId={highlightedLessonId} />
+      <ReviewDocumentHistory
+        refreshToken={historyRefreshToken}
+        highlightedLessonId={highlightedLessonId}
+        progressNow={taskControls.progressNow}
+        taskStartedAtById={taskControls.taskStartedAtById}
+        onLessonsChange={taskControls.onLessonsChange}
+        onTaskStarted={taskControls.onTaskStarted}
+        onFloatingNotice={taskControls.onFloatingNotice}
+      />
 
       {composerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm sm:p-6">
