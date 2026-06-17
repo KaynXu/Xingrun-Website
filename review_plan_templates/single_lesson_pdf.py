@@ -11,6 +11,21 @@ DEFAULT_FINAL_REMINDERS = [
     "先回忆课堂原话，再完成当天填空与选择。",
     "遇到不会的题先回看课堂总结，再补做口头复述。",
 ]
+BAD_QUOTE_PATTERNS = (
+    "每一个复习日",
+    "完整复习整节课内容",
+    "请完成以上",
+    "对照答案自检",
+    "完成当天",
+    "完成以上填空",
+    "完成标准",
+    "使用说明",
+    "复习计划",
+    "正确率≥",
+    "正确率>=",
+    "填空题全部正确",
+    "能独立",
+)
 
 
 def _clean_text(value: object, default: str = "") -> str:
@@ -29,6 +44,17 @@ def _dedupe_clean_lines(values: object) -> list[str]:
     return lines
 
 
+def _is_real_class_quote(value: object) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    return not any(pattern in text for pattern in BAD_QUOTE_PATTERNS)
+
+
+def _dedupe_real_quotes(values: object) -> list[str]:
+    return [text for text in _dedupe_clean_lines(values) if _is_real_class_quote(text)]
+
+
 def _append_blank_once(blanks: list[tuple[str, str]], text: object, answer: object = "") -> None:
     clean_text = _clean_text(text)
     if not clean_text:
@@ -41,16 +67,16 @@ def _append_blank_once(blanks: list[tuple[str, str]], text: object, answer: obje
 
 def collect_plan_quotes(plan_data: dict) -> list[str]:
     quotes: list[str] = []
-    for text in _dedupe_clean_lines(plan_data.get("quotes")):
+    for text in _dedupe_real_quotes(plan_data.get("quotes")):
         quotes.append(text)
-    for text in _dedupe_clean_lines(plan_data.get("lesson_info", {}).get("quotes")):
+    for text in _dedupe_real_quotes(plan_data.get("lesson_info", {}).get("quotes")):
         if text not in quotes:
             quotes.append(text)
     for day_data in plan_data.get("days", []):
-        for text in _dedupe_clean_lines(day_data.get("quotes")):
+        for text in _dedupe_real_quotes(day_data.get("quotes")):
             if text not in quotes:
                 quotes.append(text)
-    return quotes[:5] or ["每一个复习日都要完整复习整节课内容。"]
+    return quotes[:5]
 
 
 def extract_knowledge_sections(plan_data: dict) -> dict:
@@ -186,7 +212,9 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         choice_values = explicit_choices[:2]
     else:
         choice_values = [question_pool[(day_number - 1) % len(question_pool)]]
-    quote_values = [phrase] if phrase else [task_values[0]]
+    quote_values = _dedupe_real_quotes(day_data.get("quotes"))
+    if phrase and _is_real_class_quote(phrase) and phrase not in quote_values:
+        quote_values.append(phrase)
 
     return {
         "offset": day_number,

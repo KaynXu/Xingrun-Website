@@ -30,6 +30,7 @@ def writer_style_single_lesson_plan() -> dict:
             "topic": "分式方程入门",
             "grade": "九年级",
             "weak_points": ["基础计算", "步骤表达"],
+            "key_categories": ["分式方程定义", "去分母转化", "增根检验", "四步解法"],
         },
         "days": [
             {
@@ -114,6 +115,15 @@ def components_only_single_lesson_plan() -> dict:
         "grade": "高一",
         "lesson_topic": "不等式与函数复习",
         "date_generated": "2026-06-16",
+        "full_review_topics": [
+            "不等式与函数复习",
+            "全方和不等式",
+            "柯西不等式",
+            "函数定义域限制",
+            "同一函数辨析",
+            "函数不等式同解转化",
+            "分段函数分类讨论",
+        ],
         "home_usage_box": {
             "title": "课后复习计划使用说明",
             "content": "每次复习包含填空、选择、口述卡片三个板块。",

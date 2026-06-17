@@ -1620,7 +1620,8 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
     story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, styles["card"]))
     story.append(Spacer(1, 3 * mm))
     golden_quotes = build_quote_summary_text(lesson.get("quotes", []), chinese_only)
-    story.append(make_box(labels["quotes_title"], Paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
+    if golden_quotes:
+        story.append(make_box(labels["quotes_title"], Paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
     story.append(PageBreak())
 
     for index, day in enumerate(days):
@@ -1643,7 +1644,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         has_teacher_quote = index == 0 and day["quotes"]
-        has_replay_block = index == 0
+        has_replay_block = index == 0 and bool(day["quotes"])
         if knowledge_items or has_teacher_quote or has_replay_block:
             story.append(Spacer(1, 2 * mm))
         if knowledge_items:

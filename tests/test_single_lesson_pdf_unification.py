@@ -236,6 +236,36 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(quotes, ["定义域永远指 x。", "看见 f 一坨优先第一。", "脱衣服时，定语别脱丢。"])
         self.assertNotIn("能独立完成换元和方程组两种解析式求法。", quotes)
 
+    def test_collect_plan_quotes_filters_instruction_fallback_text(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template, collect_plan_quotes
+
+        plan = {
+            "lesson_info": {"topic": "不等式与函数复习", "key_categories": ["定义域限制", "函数不等式"]},
+            "quotes": ["每一个复习日都要完整复习整节课内容。"],
+            "days": [
+                {
+                    "day": 1,
+                    "label": "第1天",
+                    "goal": "复现定义域限制。",
+                    "focus": "定义域。",
+                    "blanks": [{"text": "函数不等式先判断______。", "answer": "定义域"}],
+                    "choices": [
+                        {
+                            "question": "解函数不等式最先检查什么？",
+                            "options": ["A. 定义域", "B. 字号", "C. 页码", "D. 颜色"],
+                            "answer": "A",
+                        }
+                    ],
+                    "self_test_phrase": "请完成以上填空和选择题，并对照答案自检。",
+                }
+            ],
+        }
+
+        self.assertEqual(collect_plan_quotes(plan), [])
+        lesson, days, _reminders = adapt_plan_to_review_template(plan)
+        self.assertEqual(lesson["quotes"], [])
+        self.assertEqual(days[0]["quotes"], [])
+
     def test_quote_summary_text_uses_numbered_lines_without_bullets(self):
         from review_plan_templates.generate_review_pdfs import build_quote_summary_text
 

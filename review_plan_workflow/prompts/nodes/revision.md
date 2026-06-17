@@ -8,6 +8,10 @@
 
 ## Hard Repair Rules
 
+- 如果 quality issue 指向全课覆盖清单，必须重写 `full_review_topics` 为 5-10 条颗粒化条目；不能只写课题名，不能只写“本节课内容/综合复习”。优先从 parent planner 的 knowledge_map、day_strategies、课堂总结、当前题干中抽取知识点、方法链和错因。
+- 如果 quality issue 指向课堂金句/课堂原话，删除所有使用说明、完成标准、正确率要求和系统兜底文本；只有课堂文本中有证据的老师方法句才能放进 `quotes`，没有证据就保留 `quotes: []`。
+- 如果 quality issue 指向数学公式或 LaTeX 传输，必须把相关题干、选项、答案、解析里的分式、根式、对数、分段函数、不等式链改写为 `$...$` 包裹且 JSON 反斜杠正确转义的 LaTeX。
+- 禁止保留 `begincases/endcases`、`sqrt[3]x`、`log_(...)`、控制字符、乱码公式或被转义吃坏的文本。
 - 如果 quality issue 指向选择题质量，逐日检查所有 `choices`。
 - 任何选项只写 `A`、`B`、`C`、`D`，或少于 4 个完整选项，必须重写成完整选择题。
 - 每道选择题必须包含 `question`、4 个完整 `options`、`answer`；`options` 写成 `A. 具体选项内容` 到 `D. 具体选项内容`。

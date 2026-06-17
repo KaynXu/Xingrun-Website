@@ -525,10 +525,11 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
     if isinstance(homepage, dict):
         coverage_box = homepage.get("full_coverage_box")
         if isinstance(coverage_box, dict):
-            for category in coverage_box.get("topics", []):
-                text = _clean_text(category)
-                if text and text not in key_categories:
-                    key_categories.append(text)
+            for field in ("topics", "methods", "error_patterns", "question_types"):
+                for category in coverage_box.get(field, []):
+                    text = _clean_text(category)
+                    if text and text not in key_categories:
+                        key_categories.append(text)
     lesson_info["key_categories"] = key_categories
 
     if not _clean_text(normalized.get("weak_points_summary")):

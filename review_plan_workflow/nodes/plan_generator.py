@@ -52,6 +52,9 @@ def _user_message(
         [
             "课堂总结：\n" + review_input.summary_text,
             "硬性选择题契约：所有 choices 必须有完整 question、4 个完整 options 和 answer；options 不能只写 A/B/C/D，必须写成 A. 具体选项内容；answer 只能是 A/B/C/D。",
+            "硬性覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；不能只写本节课标题，不能只写“本节课内容/综合复习”。",
+            "硬性课堂金句契约：quotes 只保留课堂文本中老师真实强调过的方法句；没有证据就返回空数组，禁止把使用说明、完成标准、正确率要求或“每一个复习日都要完整复习整节课内容”写成金句。",
+            "硬性数学公式契约：数学公式、分式、根式、对数、分段函数、区间和不等式链必须写成 `$...$` LaTeX；JSON 反斜杠要正确转义，禁止 begincases/endcases/sqrt[/log_( 等坏文本。",
             "请返回可直接进入现有 PDF 渲染链路的 JSON object，不要输出 Markdown 包裹。",
         ]
     )

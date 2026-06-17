@@ -80,6 +80,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("雅思阅读复习不是背文章内容", ielts_prompt)
         self.assertIn("False、Not Given", ielts_prompt)
         self.assertIn("词汇、定位、逻辑三类归因", ielts_prompt)
+        self.assertIn("full_review_topics` 是首页“全课覆盖清单”，必须输出 5-10 条颗粒化条目", math_prompt)
+        self.assertIn("JSON 字符串中的 LaTeX 反斜杠必须转义", math_prompt)
+        self.assertIn("禁止把使用说明、完成标准、正确率要求、系统兜底句写进 `quotes`", math_prompt)
 
     def test_quality_gate_flags_invalid_single_lesson_shape(self):
         review = review_single_lesson_plan({"lesson_info": {"topic": "一次函数"}, "days": []}, subject="math")
@@ -199,6 +202,31 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertTrue(review.passed, review.model_dump())
         self.assertFalse(any(issue.category == "pdf_readiness" for issue in review.issues))
+
+    def test_quality_gate_rejects_generic_coverage_instruction_quote_and_bad_math_text(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
+        plan["full_review_topics"] = ["不等式与函数复习"]
+        plan["lesson_info"]["key_categories"] = []
+        plan["quotes"] = ["每一个复习日都要完整复习整节课内容。"]
+        plan["days"][0]["blanks"] = [
+            {
+                "text": "已知 f(x)=begincases 2\\x00, & x≤0 log_(2)x, & x>0 endcases，则定义域为______。",
+                "answer": "x≤0 或 x>0",
+            }
+        ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        descriptions = "\n".join(issue.description for issue in review.issues)
+        fixes = "\n".join(review.revision_instructions)
+        self.assertIn("全课覆盖清单", descriptions)
+        self.assertIn("课堂金句", descriptions)
+        self.assertIn("公式", descriptions)
+        self.assertIn("5-10", fixes)
+        self.assertIn("quotes 留空", fixes)
+        self.assertIn("$...$", fixes)
 
     def test_quality_gate_rejects_skeletal_choice_options(self):
         plan = valid_single_lesson_plan(subject="数学", topic="不等式与函数复习")
@@ -698,7 +726,10 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(generated["lesson_info"]["topic"], "二次函数最值与将军饮马综合复习")
         self.assertEqual(generated["lesson_info"]["grade"], "9")
         self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
-        self.assertEqual(generated["full_review_topics"], ["二次函数最值", "将军饮马最短路径"])
+        self.assertEqual(
+            generated["full_review_topics"],
+            ["二次函数最值", "将军饮马最短路径", "上减下/右减左", "设参数表达坐标", "轴对称转化", "顶点公式求最值"],
+        )
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertEqual(run["warnings"], [])
         self.assertTrue(run["quality_review"]["passed"])

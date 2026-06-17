@@ -10,7 +10,34 @@ def _contains_any(text: str, candidates: tuple[str, ...]) -> bool:
     return any(candidate in text for candidate in candidates)
 
 
-GENERIC_TOPICS = {"", "课后", "本课内容"}
+GENERIC_TOPICS = {"", "课后", "本课内容", "本节课", "课堂内容", "复习计划"}
+GENERIC_TOPIC_SUFFIXES = ("复习计划", "综合复习", "专题复习", "复习", "专题", "课程")
+BAD_QUOTE_PATTERNS = (
+    "每一个复习日",
+    "完整复习整节课内容",
+    "请完成以上",
+    "对照答案自检",
+    "完成当天",
+    "完成以上填空",
+    "完成标准",
+    "使用说明",
+    "复习计划",
+    "正确率≥",
+    "正确率>=",
+    "填空题全部正确",
+    "能独立",
+)
+BAD_MATH_TEXT_PATTERNS = (
+    "begincases",
+    "endcases",
+    "sqrtlog_",
+    "log_(",
+)
+BAD_MATH_REGEXES = (
+    re.compile(r"(?<!\\)sqrt\["),
+    re.compile(r"\\x0[0-8a-fA-F]"),
+    re.compile(r"\\u000[0-9a-fA-F]"),
+)
 PLACEHOLDER_PATTERNS = (
     "（具体题目）",
     "按实际填写",
@@ -68,6 +95,81 @@ SKELETAL_OPTION_LABELS = {
 
 def _clean_text(value: object) -> str:
     return str(value or "").strip()
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"[\s,，。.!！?？、:：;；《》「」“”\"'`（）()\[\]【】\-_/]+", "", value)
+
+
+def _strip_topic_suffixes(value: str) -> str:
+    stripped = value
+    changed = True
+    while changed:
+        changed = False
+        for suffix in GENERIC_TOPIC_SUFFIXES:
+            if stripped.endswith(suffix) and len(stripped) > len(suffix):
+                stripped = stripped[: -len(suffix)]
+                changed = True
+    return stripped
+
+
+def _is_generic_coverage_topic(value: object, lesson_topic: str) -> bool:
+    text = _clean_text(value)
+    if text in GENERIC_TOPICS:
+        return True
+    compact = _compact_text(text)
+    topic_compact = _compact_text(lesson_topic)
+    if not compact:
+        return True
+    if topic_compact and compact == topic_compact:
+        return True
+    if topic_compact and _strip_topic_suffixes(compact) == _strip_topic_suffixes(topic_compact):
+        return True
+    return compact in {_compact_text(item) for item in GENERIC_TOPICS}
+
+
+def _iter_strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        strings: list[str] = []
+        for item in value.values():
+            strings.extend(_iter_strings(item))
+        return strings
+    if isinstance(value, list):
+        strings = []
+        for item in value:
+            strings.extend(_iter_strings(item))
+        return strings
+    return []
+
+
+def _collect_quotes(plan: dict[str, Any]) -> list[str]:
+    quotes: list[str] = []
+    for source in (plan.get("quotes"), plan.get("lesson_info", {}).get("quotes")):
+        if isinstance(source, list):
+            for quote in source:
+                text = _clean_text(quote)
+                if text and text not in quotes:
+                    quotes.append(text)
+    for day in plan.get("days", []) if isinstance(plan.get("days"), list) else []:
+        if not isinstance(day, dict) or not isinstance(day.get("quotes"), list):
+            continue
+        for quote in day["quotes"]:
+            text = _clean_text(quote)
+            if text and text not in quotes:
+                quotes.append(text)
+    return quotes
+
+
+def _quote_is_bad(text: str) -> bool:
+    return _contains_any(text, BAD_QUOTE_PATTERNS)
+
+
+def _has_bad_math_transport(text: str) -> bool:
+    if _contains_any(text, BAD_MATH_TEXT_PATTERNS):
+        return True
+    return any(pattern.search(text) for pattern in BAD_MATH_REGEXES)
 
 
 def _day_renderable_counts(day: dict[str, Any]) -> tuple[int, int, int]:
@@ -161,13 +263,39 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
                 suggested_fix="把用户主题或 lesson_topic 映射为 lesson_info.topic。",
             )
         )
-    if not [item for item in full_review_topics if _clean_text(item) not in GENERIC_TOPICS]:
+    granular_topics = [
+        _clean_text(item)
+        for item in full_review_topics
+        if not _is_generic_coverage_topic(item, topic)
+    ]
+    if not granular_topics:
         issues.append(
             QualityIssue(
                 severity="high",
                 category="pdf_readiness",
-                description="全课覆盖清单为空或只有通用“课后”，首页会缺少真实复习范围。",
-                suggested_fix="补齐 full_review_topics 或 lesson_info.key_categories。",
+                description="全课覆盖清单为空、只有通用词，或只重复课题名，首页会缺少真实复习范围。",
+                suggested_fix="把 full_review_topics 拆成 5-10 个可复习知识点、方法链或错因，例如定义域限制、同一函数辨析、函数不等式同解转化。",
+            )
+        )
+    elif len(granular_topics) < 3:
+        issues.append(
+            QualityIssue(
+                severity="high",
+                category="pdf_readiness",
+                description=f"全课覆盖清单只有 {len(granular_topics)} 个颗粒化条目，容易退化成空壳复习范围。",
+                suggested_fix="至少补到 5-10 个颗粒化条目；宽主题不能只写课题名或一两个大类。",
+            )
+        )
+
+    quotes = _collect_quotes(normalized_plan)
+    bad_quotes = [quote for quote in quotes if _quote_is_bad(quote)]
+    if bad_quotes:
+        issues.append(
+            QualityIssue(
+                severity="high",
+                category="factuality",
+                description="课堂金句/课堂原话中混入使用说明、完成标准或系统兜底文本。",
+                suggested_fix="只保留课堂文本中老师真实强调过的方法句；没有证据时 quotes 留空，不能把“每一个复习日…”或正确率标准当金句。",
             )
         )
 
@@ -222,6 +350,18 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
                         suggested_fix="把每道选择题改成 4 个完整选项字符串，例如 A. 具体表达；禁止只输出 A/B/C/D。",
                     )
                 )
+
+    plan_strings = _iter_strings(normalized_plan)
+    bad_math_strings = [text for text in plan_strings if _has_bad_math_transport(text)]
+    if bad_math_strings:
+        issues.append(
+            QualityIssue(
+                severity="high",
+                category="question_quality",
+                description="数学公式文本出现 LaTeX 传输损坏或不可打印控制片段。",
+                suggested_fix="把分式、根式、对数、分段函数等改成 `$...$` 包裹的 LaTeX；JSON 中反斜杠要转义，禁止 begincases/endcases/sqrt[/log_( 这类坏文本。",
+            )
+        )
 
     text_blob = str(normalized_plan)
     if _contains_any(text_blob, (*PLACEHOLDER_PATTERNS, "正确答案")):
