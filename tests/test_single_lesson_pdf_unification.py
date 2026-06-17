@@ -167,7 +167,7 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
 
         lesson, days, reminders = adapt_plan_to_review_template(components_only_single_lesson_plan())
 
-        self.assertEqual(lesson["title"], "不等式与函数复习复习计划")
+        self.assertEqual(lesson["title"], "不等式与函数复习计划")
         self.assertIn("不等式与函数复习", lesson["full_review_topics"])
         self.assertEqual(days[0]["blanks"][0], ("已知 x>0,y>0，且 1/x+2/y=1，则 x+2y 的最小值是______。", "9"))
         self.assertEqual(days[0]["choices"][0]["question"], "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。")
@@ -238,9 +238,10 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
 
         _lesson, days, _reminders = adapt_plan_to_review_template(plan)
 
-        self.assertEqual(len(days[0]["blanks"]), 3)
-        self.assertTrue(any("桥梁法" in task for task in days[0]["tasks"]))
-        self.assertTrue(any("不能只比较括号大小" in task for task in days[1]["tasks"]))
+        self.assertEqual(len(days[0]["blanks"]), 1)
+        self.assertTrue(any("桥梁法" in card for card in days[0]["method_cards"]))
+        self.assertTrue(any("不能只比较括号大小" in card for card in days[1]["method_cards"]))
+        self.assertTrue(any("课堂方法复盘卡片" in task for task in days[0]["tasks"]))
 
     def test_adapt_plan_to_review_template_preserves_latex_for_pdf_formula_rendering(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template

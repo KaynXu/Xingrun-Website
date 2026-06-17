@@ -1265,62 +1265,142 @@ def _split_latex_segments(value: str):
         yield "text", value[position:]
 
 
-def rich_text_flowables(value, style, chinese_only=False, *, max_width: float = 150 * mm) -> list[Flowable]:
+def _split_latex_segments_with_spans(value: str):
+    position = 0
+    for match in LATEX_SEGMENT_PATTERN.finditer(value):
+        if match.start() > position:
+            yield "text", value[position:match.start()], position, match.start()
+        latex = next((group for group in match.groups() if group is not None), "")
+        yield "latex", latex, match.start(), match.end()
+        position = match.end()
+    if position < len(value):
+        yield "text", value[position:], position, len(value)
+
+
+def _latex_is_display_context(raw: str, start: int, end: int) -> bool:
+    before = raw[:start]
+    after = raw[end:]
+    before = re.sub(r"^\s*(?:[-•]\s*)?(?:\d+\.\s*)?(?:[A-D][.．]\s*)?", "", before).strip()
+    after = after.strip()
+    return not before and bool(re.fullmatch(r"[。！？.!?，,；;：:、）】』”]*", after))
+
+
+def _paragraph_from_text(value: str, style) -> Paragraph | None:
+    text = value.strip()
+    if not text:
+        return None
+    return Paragraph(escape(text), style)
+
+
+def rich_text_flowables(
+    value,
+    style,
+    chinese_only=False,
+    *,
+    max_width: float = 150 * mm,
+    render_display_formulas: bool = True,
+) -> list[Flowable]:
     raw = _localize_raw_text(str(value or ""), chinese_only).strip()
     if not raw:
         return [Paragraph("", style)]
 
-    flowables: list[Flowable] = []
+    parts: list[tuple[str, str | Flowable]] = []
     saw_rendered_formula = False
     formula_font_size = _style_formula_font_size(style)
     formula_color = getattr(style, "textColor", FORMULA_DEFAULT_COLOR)
-    for kind, segment in _split_latex_segments(raw):
+    for kind, segment, start, end in _split_latex_segments_with_spans(raw):
         if kind == "latex":
-            formula = render_latex_formula_flowable(
-                segment,
-                max_width=max_width,
-                font_size=formula_font_size,
-                color=formula_color,
-            )
-            if formula is not None:
-                if flowables:
-                    flowables.append(Spacer(1, 0.6 * mm))
-                flowables.append(formula)
-                flowables.append(Spacer(1, 0.8 * mm))
-                saw_rendered_formula = True
-                continue
-            text = _format_latex_math_segment(segment)
+            if render_display_formulas and _latex_is_display_context(raw, start, end):
+                formula = render_latex_formula_flowable(
+                    segment,
+                    max_width=max_width,
+                    font_size=formula_font_size,
+                    color=formula_color,
+                )
+                if formula is not None:
+                    parts.append(("formula", formula))
+                    parts.append(("spacer", Spacer(1, 0.45 * mm)))
+                    saw_rendered_formula = True
+                    continue
+            parts.append(("text", _format_latex_math_segment(segment)))
         else:
-            text = normalize_portable_text(segment)
+            parts.append(("text", normalize_portable_text(segment)))
 
-        text = text.strip()
-        if saw_rendered_formula and re.fullmatch(r"[。！？.!?，,；;：:、]+", text):
+    if not saw_rendered_formula:
+        combined = "".join(str(part) for kind, part in parts if kind == "text").strip()
+        return [_paragraph_from_text(combined, style) or Paragraph("", style)]
+
+    flowables: list[Flowable] = []
+    pending_text = ""
+    for kind, part in parts:
+        if kind == "text":
+            text = str(part)
+            if re.fullmatch(r"[。！？.!?，,；;：:、]+", text.strip()):
+                continue
+            pending_text += text
             continue
-        if text:
-            flowables.append(Paragraph(escape(text), style))
+        paragraph = _paragraph_from_text(pending_text, style)
+        if paragraph is not None:
+            flowables.append(paragraph)
+            pending_text = ""
+        if kind == "formula":
+            if flowables:
+                flowables.append(Spacer(1, 0.4 * mm))
+            flowables.append(part)  # type: ignore[arg-type]
+        elif kind == "spacer":
+            flowables.append(part)  # type: ignore[arg-type]
+    paragraph = _paragraph_from_text(pending_text, style)
+    if paragraph is not None:
+        flowables.append(paragraph)
 
-    if not flowables:
-        return [Paragraph(localize_paragraph_text(value, chinese_only), style)]
-    if not saw_rendered_formula and len(flowables) == 1:
-        return flowables
-    return flowables
+    return flowables or [Paragraph(localize_paragraph_text(value, chinese_only), style)]
 
 
-def rich_bullet_flowables(items, style, chinese_only=False, *, max_width: float = 150 * mm) -> list[Flowable]:
+def rich_bullet_flowables(
+    items,
+    style,
+    chinese_only=False,
+    *,
+    max_width: float = 150 * mm,
+    render_display_formulas: bool = True,
+) -> list[Flowable]:
     flowables: list[Flowable] = []
     for item in items:
         if flowables:
             flowables.append(Spacer(1, 0.6 * mm))
-        flowables.extend(rich_text_flowables(f"- {item}", style, chinese_only, max_width=max_width))
+        flowables.extend(
+            rich_text_flowables(
+                f"- {item}",
+                style,
+                chinese_only,
+                max_width=max_width,
+                render_display_formulas=render_display_formulas,
+            )
+        )
     return flowables or [Paragraph("", style)]
 
 
-def rich_numbered_flowables(items, style, chinese_only=False, *, max_width: float = 150 * mm) -> list[Flowable]:
+def rich_numbered_flowables(
+    items,
+    style,
+    chinese_only=False,
+    *,
+    max_width: float = 150 * mm,
+    render_display_formulas: bool = False,
+) -> list[Flowable]:
     flowables: list[Flowable] = []
     for index, item in enumerate(items, start=1):
         if flowables:
             flowables.append(Spacer(1, 0.8 * mm))
-        flowables.extend(rich_text_flowables(f"{index}. {item}", style, chinese_only, max_width=max_width))
+        flowables.extend(
+            rich_text_flowables(
+                f"{index}. {item}",
+                style,
+                chinese_only,
+                max_width=max_width,
+                render_display_formulas=render_display_formulas,
+            )
+        )
     return flowables or [Paragraph("", style)]
 
 
@@ -1645,6 +1725,8 @@ def _box_body_rows(body, body_style):
     if isinstance(body, (list, tuple)):
         rows = []
         for item in body:
+            if isinstance(item, Spacer):
+                continue
             if isinstance(item, Flowable):
                 rows.append([item])
             else:
@@ -1669,8 +1751,10 @@ def make_box(title, body, styles, background):
                 ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                 ("TOPPADDING", (0, 0), (-1, 0), 6),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
-                ("TOPPADDING", (0, 1), (-1, -1), 7),
-                ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+                ("TOPPADDING", (0, 1), (-1, -1), 1.6),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 1.6),
+                ("TOPPADDING", (0, 1), (-1, 1), 6),
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 7),
             ]
         )
     )
@@ -2010,29 +2094,28 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
         if index > 0:
             story.append(PageBreak())
         story.append(Paragraph(build_day_heading(day, base_date, chinese_only), styles["h1"]))
-        if index == 0:
+        if day.get("goal"):
             story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_paragraph_text(day['goal'], chinese_only)}", styles["body"]))
+        if day.get("focus"):
             story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_paragraph_text(day['focus'], chinese_only)}", styles["body"]))
-            story.append(Spacer(1, 2 * mm))
-            story.append(make_box(labels["coverage_title"], rich_bullet_flowables(lesson["full_review_topics"], styles["body"], chinese_only), styles, styles["soft"]))
+        if day.get("tasks"):
             story.append(Spacer(1, 2 * mm))
             story.append(make_box(labels["tasks_title"], rich_bullet_flowables(day["tasks"], styles["body"], chinese_only), styles, styles["card"]))
             story.append(Spacer(1, 2 * mm))
-        else:
-            if day.get("goal"):
-                story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_paragraph_text(day['goal'], chinese_only)}", styles["body"]))
-            if day.get("focus"):
-                story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_paragraph_text(day['focus'], chinese_only)}", styles["body"]))
-            if day.get("tasks"):
-                story.append(Spacer(1, 2 * mm))
-                story.append(make_box(labels["tasks_title"], rich_bullet_flowables(day["tasks"], styles["body"], chinese_only), styles, styles["card"]))
-                story.append(Spacer(1, 2 * mm))
         blank_body = rich_numbered_flowables([item[0] for item in day["blanks"]], styles["body"], chinese_only)
         story.append(make_box(labels["blanks_title"], blank_body, styles, styles["card"]))
         story.append(Spacer(1, 2 * mm))
         if day.get("choices"):
             story.append(CondPageBreak(60 * mm))
             story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, styles["paper"]))
+        if day.get("method_cards"):
+            story.append(Spacer(1, 2 * mm))
+            story.append(make_box(
+                labels["knowledge_mixed_title"],
+                rich_bullet_flowables(day["method_cards"], styles["body"], chinese_only),
+                styles,
+                styles["paper"],
+            ))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         has_teacher_quote = index == 0 and day["quotes"]
