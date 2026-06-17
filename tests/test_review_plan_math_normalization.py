@@ -74,6 +74,17 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertLessEqual(flowable.drawWidth, 120)
         self.assertGreater(flowable.drawHeight, 0)
 
+    def test_render_latex_formula_flowable_respects_requested_font_size(self):
+        latex = r"\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}"
+
+        body_formula = render_latex_formula_flowable(latex, max_width=180, font_size=10.3)
+        small_formula = render_latex_formula_flowable(latex, max_width=180, font_size=8.6)
+
+        self.assertIsInstance(body_formula, ReportLabImage)
+        self.assertIsInstance(small_formula, ReportLabImage)
+        self.assertLess(small_formula.drawHeight, body_formula.drawHeight)
+        self.assertLess(small_formula.drawWidth, body_formula.drawWidth)
+
     def test_rich_text_flowables_embeds_fraction_formula_image(self):
         register_fonts()
         styles = build_styles()
@@ -85,6 +96,26 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         )
 
         self.assertTrue(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
+
+    def test_rich_text_flowables_formula_size_follows_paragraph_style(self):
+        register_fonts()
+        styles = build_styles()
+        text = r"公式：$\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}$"
+
+        body_images = [
+            flowable
+            for flowable in rich_text_flowables(text, styles["body"], True)
+            if isinstance(flowable, ReportLabImage)
+        ]
+        small_images = [
+            flowable
+            for flowable in rich_text_flowables(text, styles["small"], True)
+            if isinstance(flowable, ReportLabImage)
+        ]
+
+        self.assertTrue(body_images)
+        self.assertTrue(small_images)
+        self.assertLess(small_images[0].drawHeight, body_images[0].drawHeight)
 
     def test_normalize_portable_text_normalizes_bare_latex_fragments_like_wrong_question_text(self):
         text = (
