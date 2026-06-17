@@ -29,6 +29,9 @@ from reportlab.platypus import CondPageBreak, Flowable, Image, PageBreak, Paragr
 ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "pdf_output"
 OUTPUT_NAME = "review-plan-bilingual-quotes-10-15-quote-replay-layout.pdf"
+FORMULA_DPI = 240
+FORMULA_DEFAULT_FONT_SIZE = 10.3
+FORMULA_DEFAULT_COLOR = "#5A4034"
 
 
 LESSON = {
@@ -876,19 +879,59 @@ def _prepare_latex_for_mathtext(latex: str) -> str:
     return prepared
 
 
-def _make_formula_png_transparent(buffer: BytesIO) -> tuple[BytesIO, int, int]:
+def _normalize_formula_color_hex(value: Any) -> str:
+    if value is None:
+        return FORMULA_DEFAULT_COLOR
+    if isinstance(value, str):
+        text = value.strip()
+        if re.fullmatch(r"#[0-9A-Fa-f]{6}", text):
+            return text.upper()
+        try:
+            value = colors.toColor(text)
+        except Exception:
+            return FORMULA_DEFAULT_COLOR
+
+    red = getattr(value, "red", None)
+    green = getattr(value, "green", None)
+    blue = getattr(value, "blue", None)
+    if red is None or green is None or blue is None:
+        return FORMULA_DEFAULT_COLOR
+    return "#{:02X}{:02X}{:02X}".format(
+        max(0, min(255, round(float(red) * 255))),
+        max(0, min(255, round(float(green) * 255))),
+        max(0, min(255, round(float(blue) * 255))),
+    )
+
+
+def _style_formula_font_size(style) -> float:
+    font_size = getattr(style, "fontSize", FORMULA_DEFAULT_FONT_SIZE)
+    try:
+        return max(1.0, float(font_size))
+    except (TypeError, ValueError):
+        return FORMULA_DEFAULT_FONT_SIZE
+
+
+def _make_formula_png_transparent(buffer: BytesIO, color_hex: str) -> tuple[BytesIO, int, int]:
     from PIL import Image as PILImage
 
     buffer.seek(0)
     with PILImage.open(buffer) as image:
         rgba = image.convert("RGBA")
 
+    target = colors.HexColor(color_hex)
+    target_rgb = (
+        max(0, min(255, round(float(target.red) * 255))),
+        max(0, min(255, round(float(target.green) * 255))),
+        max(0, min(255, round(float(target.blue) * 255))),
+    )
     pixels = []
     for red, green, blue, alpha in rgba.getdata():
-        if red > 246 and green > 246 and blue > 246:
-            pixels.append((red, green, blue, 0))
+        luminance = int(red * 0.299 + green * 0.587 + blue * 0.114)
+        ink_alpha = max(0, min(255, 255 - luminance))
+        if ink_alpha < 9 or alpha == 0:
+            pixels.append((target_rgb[0], target_rgb[1], target_rgb[2], 0))
         else:
-            pixels.append((red, green, blue, alpha))
+            pixels.append((target_rgb[0], target_rgb[1], target_rgb[2], min(alpha, ink_alpha)))
     rgba.putdata(pixels)
 
     bbox = rgba.getbbox()
@@ -908,7 +951,7 @@ def _make_formula_png_transparent(buffer: BytesIO) -> tuple[BytesIO, int, int]:
 
 
 @lru_cache(maxsize=512)
-def _render_latex_formula_png_bytes(prepared: str, dpi: int, font_size: float) -> tuple[bytes, int, int] | None:
+def _render_latex_formula_png_bytes(prepared: str, dpi: int, font_size: float, color_hex: str) -> tuple[bytes, int, int] | None:
     mathtext = _get_mathtext_module()
     if mathtext is None:
         return None
@@ -926,18 +969,26 @@ def _render_latex_formula_png_bytes(prepared: str, dpi: int, font_size: float) -
                 format="png",
                 prop=FontProperties(size=font_size),
             )
-        buffer, width_px, height_px = _make_formula_png_transparent(buffer)
+        buffer, width_px, height_px = _make_formula_png_transparent(buffer, color_hex)
     except Exception:
         return None
     return buffer.getvalue(), width_px, height_px
 
 
-def render_latex_formula_flowable(latex: str, max_width: float = 150 * mm, *, dpi: int = 240, font_size: float = 14.8) -> Image | None:
+def render_latex_formula_flowable(
+    latex: str,
+    max_width: float = 150 * mm,
+    *,
+    dpi: int = FORMULA_DPI,
+    font_size: float = FORMULA_DEFAULT_FONT_SIZE,
+    color: Any = FORMULA_DEFAULT_COLOR,
+) -> Image | None:
     if not _latex_needs_visual_render(latex):
         return None
 
     prepared = _prepare_latex_for_mathtext(latex)
-    rendered = _render_latex_formula_png_bytes(prepared, dpi, font_size)
+    color_hex = _normalize_formula_color_hex(color)
+    rendered = _render_latex_formula_png_bytes(prepared, dpi, font_size, color_hex)
     if rendered is None:
         return None
     png_bytes, width_px, height_px = rendered
@@ -1221,9 +1272,16 @@ def rich_text_flowables(value, style, chinese_only=False, *, max_width: float = 
 
     flowables: list[Flowable] = []
     saw_rendered_formula = False
+    formula_font_size = _style_formula_font_size(style)
+    formula_color = getattr(style, "textColor", FORMULA_DEFAULT_COLOR)
     for kind, segment in _split_latex_segments(raw):
         if kind == "latex":
-            formula = render_latex_formula_flowable(segment, max_width=max_width)
+            formula = render_latex_formula_flowable(
+                segment,
+                max_width=max_width,
+                font_size=formula_font_size,
+                color=formula_color,
+            )
             if formula is not None:
                 if flowables:
                     flowables.append(Spacer(1, 0.6 * mm))
