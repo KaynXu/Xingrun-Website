@@ -46,8 +46,13 @@ test('consultation modal recommends a real teacher id for enter-class filtering'
 
 test('consultation modal only prefilters success classes when teacher user id is reliable', () => {
   assert.match(modalSource, /const successClassOptions = consultationEnterClassTeacherUserId != null/);
+  assert.match(modalSource, /localClasses\.filter\(\(item\) => item\.teacher_user_id === consultationEnterClassTeacherUserId\)/);
   assert.match(modalSource, /\? teachingTeacherMatchedClasses/);
-  assert.match(modalSource, /: assignableClassOptions/);
+  assert.match(modalSource, /: localClasses/);
+  assert.doesNotMatch(
+    modalSource,
+    /const successClassOptions = consultationEnterClassTeacherUserId != null[\s\S]*?: assignableClassOptions;/,
+  );
   assert.doesNotMatch(modalSource, /const successClassOptions = selectedTeachingTeacher \? teachingTeacherMatchedClasses : assignableClassOptions/);
 });
 

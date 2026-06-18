@@ -1085,10 +1085,10 @@ const ConsultationModal = ({
   const consultationEnterClassTeacherUserId = form.teaching_teacher_user_id ?? null;
   const teachingTeacherMatchedClasses = consultationEnterClassTeacherUserId == null
     ? []
-    : assignableClassOptions.filter((item) => item.teacher_user_id === consultationEnterClassTeacherUserId);
+    : localClasses.filter((item) => item.teacher_user_id === consultationEnterClassTeacherUserId);
   const successClassOptions = consultationEnterClassTeacherUserId != null
     ? teachingTeacherMatchedClasses
-    : assignableClassOptions;
+    : localClasses;
   const consultationEnterClassUsers = consultationEnterClassTeacherUserId == null ? [] : [
     buildConsultationEnterClassUserOption({
       id: consultationEnterClassTeacherUserId,
