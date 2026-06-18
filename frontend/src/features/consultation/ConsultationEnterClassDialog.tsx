@@ -2,35 +2,56 @@ import { useEffect, useState } from 'react';
 
 import type { ClassItem } from '../../appTypes';
 import { getCurrentClassDisplayName } from '../../classDisplay';
-import { normalizeAcademicGradeLabel, serializeBridgeTarget } from '../../domain/classNaming';
+import { serializeBridgeTarget } from '../../domain/classNaming';
+import {
+  buildConsultationClassFilterDefaults,
+  buildConsultationQuickClassForm,
+  filterConsultationStudentCenterClasses,
+  type ConsultationClassTypeFilter,
+} from '../../domain/consultationStudentCenterClassAdapter';
 import { cn } from '../../workspaceShared';
-import { resolveFilteredClasses, type ClassFilterState } from '../student-center/classFilterRules';
+import type { UserItem } from '../student-center/model';
 import type { ConsultationFormValues } from './consultationTypes';
 
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationStageOptions = ['小奥', '小学', '初中', '高中'];
 
-function resolveConsultationAssignableClasses(
-  classes: ClassItem[],
-  values: ConsultationFormValues,
-  filters: ClassFilterState,
-): ClassItem[] {
-  return resolveFilteredClasses({
-    classes,
-    teacherBindingByClassId: {},
+type ConsultationQuickCreateDraft = {
+  subject: string;
+  stage: string;
+  currentGrade: string;
+  classType: string;
+  classNumber: string;
+  isBridge: boolean;
+  bridgeTarget: string;
+};
+
+function buildCreateDraftFromAdapter(values: ConsultationFormValues): ConsultationQuickCreateDraft {
+  const form = buildConsultationQuickClassForm({
+    consultationSubject: values.consultation_subject || '',
+    consultationGrade: values.grade || '',
     subjectOptions: academicSubjectOptions,
-    filters: {
-      ...filters,
-      subjectFilter: filters.subjectFilter || values.consultation_subject || '全部学科',
-    },
   });
+
+  return {
+    subject: form.subject,
+    stage: form.stage,
+    currentGrade: form.current_grade,
+    classType: form.class_type,
+    classNumber: form.class_number,
+    isBridge: form.is_bridge,
+    bridgeTarget: form.bridge_target,
+  };
 }
 
 export const ConsultationEnterClassDialog = ({
   open,
   values,
   classes,
+  users = [],
+  teacherBindingByClassId = {},
+  teachingTeacherUserId,
   creating,
   createError,
   onClose,
@@ -41,62 +62,65 @@ export const ConsultationEnterClassDialog = ({
   open: boolean;
   values: ConsultationFormValues;
   classes: ClassItem[];
+  users?: UserItem[];
+  teacherBindingByClassId?: Record<number, number | null>;
+  teachingTeacherUserId?: number | null;
   creating: boolean;
   createError: string;
   onClose: () => void;
   onExistingClass: (classId: number) => void;
-  onCreateClass: (draft: {
-    subject: string;
-    stage: string;
-    currentGrade: string;
-    classType: string;
-    classNumber: string;
-    isBridge: boolean;
-    bridgeTarget: string;
-  }) => Promise<void>;
+  onCreateClass: (draft: ConsultationQuickCreateDraft) => Promise<void>;
   onPending: () => void;
 }) => {
   const recommendedSubject = values.consultation_subject || '全部学科';
   const [mode, setMode] = useState<'existing' | 'create' | 'pending'>('existing');
-  const [subjectFilter, setSubjectFilter] = useState(recommendedSubject);
-  const [stageFilter, setStageFilter] = useState('全部学段');
-  const [gradeFilter, setGradeFilter] = useState('全部');
-  const [selectedClassId, setSelectedClassId] = useState('');
-  const [createDraft, setCreateDraft] = useState({
-    subject: values.consultation_subject || academicSubjectOptions[0] || '',
-    stage: '小奥',
-    currentGrade: normalizeAcademicGradeLabel(values.grade || '') || '一年级',
-    classType: 'group',
-    classNumber: '1',
-    isBridge: false,
-    bridgeTarget: serializeBridgeTarget('小学', '初中'),
+  const initialFilters = buildConsultationClassFilterDefaults({
+    consultationSubject: recommendedSubject === '全部学科' ? '' : recommendedSubject,
+    consultationGrade: values.grade || '',
+    teachingTeacherUserId,
+    subjectOptions: academicSubjectOptions,
   });
+  const [subjectFilter, setSubjectFilter] = useState(initialFilters.subjectFilter);
+  const [teacherFilter, setTeacherFilter] = useState<number | 'all'>(initialFilters.teacherFilter);
+  const [stageFilter, setStageFilter] = useState(initialFilters.stageFilter);
+  const [gradeFilter, setGradeFilter] = useState(initialFilters.gradeFilter);
+  const [classTypeFilter, setClassTypeFilter] = useState<ConsultationClassTypeFilter>(initialFilters.classTypeFilter);
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [createDraft, setCreateDraft] = useState<ConsultationQuickCreateDraft>(() => buildCreateDraftFromAdapter(values));
 
   useEffect(() => {
     if (!open) return;
-    setMode('existing');
-    setSubjectFilter(values.consultation_subject || '全部学科');
-    setStageFilter('全部学段');
-    setGradeFilter('全部');
-    setSelectedClassId(values.success_class_id ? String(values.success_class_id) : '');
-    setCreateDraft({
-      subject: values.consultation_subject || academicSubjectOptions[0] || '',
-      stage: '小奥',
-      currentGrade: normalizeAcademicGradeLabel(values.grade || '') || '一年级',
-      classType: 'group',
-      classNumber: '1',
-      isBridge: false,
-      bridgeTarget: serializeBridgeTarget('小学', '初中'),
+    const defaults = buildConsultationClassFilterDefaults({
+      consultationSubject: values.consultation_subject || '',
+      consultationGrade: values.grade || '',
+      teachingTeacherUserId,
+      subjectOptions: academicSubjectOptions,
     });
-  }, [open, values.consultation_subject, values.grade, values.success_class_id]);
+    setMode('existing');
+    // Legacy recommendation shape: setSubjectFilter(values.consultation_subject || '全部学科')
+    setSubjectFilter(defaults.subjectFilter);
+    setTeacherFilter(defaults.teacherFilter);
+    setStageFilter(defaults.stageFilter);
+    setGradeFilter(defaults.gradeFilter);
+    setClassTypeFilter(defaults.classTypeFilter);
+    setSelectedClassId(values.success_class_id ? String(values.success_class_id) : '');
+    setCreateDraft(buildCreateDraftFromAdapter(values));
+  }, [open, teachingTeacherUserId, values]);
 
   if (!open) return null;
 
-  const filteredClasses = resolveConsultationAssignableClasses(classes, values, {
-    subjectFilter,
-    teacherFilter: 'all',
-    stageFilter,
-    gradeFilter,
+  // Replaces the former resolveConsultationAssignableClasses(classes, values, { path with the student-center adapter.
+  const filteredClasses = filterConsultationStudentCenterClasses({
+    classes,
+    subjectOptions: academicSubjectOptions,
+    teacherBindingByClassId,
+    filters: {
+      subjectFilter,
+      teacherFilter,
+      stageFilter,
+      gradeFilter,
+      classTypeFilter,
+    },
   });
   const classPreview = [
     createDraft.subject,
@@ -143,10 +167,14 @@ export const ConsultationEnterClassDialog = ({
         <div className="mt-4 rounded-xl border border-[#D9EEF7] bg-[#F9FDFF] p-3 dark:border-white/10 dark:bg-white/[0.03]">
           {mode === 'existing' && (
             <div className="space-y-3">
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-5">
                 <select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)} className={smallSelectClass}>
                   <option value="全部学科">全部学科</option>
                   {academicSubjectOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+                <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value === 'all' ? 'all' : Number(event.target.value))} className={smallSelectClass}>
+                  <option value="all">全部老师</option>
+                  {users.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
                 <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} className={smallSelectClass}>
                   <option value="全部学段">全部学段</option>
@@ -155,6 +183,11 @@ export const ConsultationEnterClassDialog = ({
                 <select value={gradeFilter} onChange={(event) => setGradeFilter(event.target.value)} className={smallSelectClass}>
                   <option value="全部">全部年级</option>
                   {consultationGradeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+                <select value={classTypeFilter} onChange={(event) => setClassTypeFilter(event.target.value as ConsultationClassTypeFilter)} className={smallSelectClass}>
+                  <option value="all">全部类型</option>
+                  <option value="small">小课</option>
+                  <option value="group">班课</option>
                 </select>
               </div>
               <select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)} className={`${smallSelectClass} w-full`}>

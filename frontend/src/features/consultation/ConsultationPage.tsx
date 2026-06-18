@@ -968,6 +968,9 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             open={Boolean(inlineEnterClassRecord)}
             values={toConsultationFormValues(inlineEnterClassRecord)}
             classes={classes}
+            users={[]}
+            teacherBindingByClassId={{}}
+            teachingTeacherUserId={(inlineEnterClassRecord as ConsultationRecord & { teaching_teacher_user_id?: number | null }).teaching_teacher_user_id ?? null}
             creating={inlineEnterClassCreating}
             createError={inlineEnterClassError}
             onClose={() => setInlineEnterClassRecord(null)}

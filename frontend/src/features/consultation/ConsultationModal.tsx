@@ -1059,6 +1059,9 @@ const ConsultationModal = ({
   const selectedTeachingTeacher = teacherOptions.find((option) => option.display_name === form.teaching_teacher);
   const teachingTeacherMatchedClasses = localClasses.filter((item) => classMatchesAssignedTeacher(item, selectedTeachingTeacher, currentUser));
   const successClassOptions = selectedTeachingTeacher ? teachingTeacherMatchedClasses : assignableClassOptions;
+  const consultationEnterClassUsers = [
+    buildConsultationClassUser(currentUser, currentUser.display_name || currentUser.username),
+  ];
   const trialUsesManualClass = trialManualClassActive || Boolean(form.trial_class_manual.trim() && !form.trial_class_id);
   const baseInfoHighlighted = highlightedJumpStage === '已加小客服微信' || highlightedJumpStage === '已加对应教师微信';
   const communicationHighlighted = highlightedJumpStage === '正在沟通细节';
@@ -1591,6 +1594,9 @@ const ConsultationModal = ({
             open={enterClassDialogOpen}
             values={form}
             classes={successClassOptions}
+            users={consultationEnterClassUsers}
+            teacherBindingByClassId={{}}
+            teachingTeacherUserId={null}
             creating={creatingSuccessClass}
             createError={successClassCreateError}
             onClose={() => setEnterClassDialogOpen(false)}

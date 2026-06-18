@@ -16,7 +16,6 @@ test('consultation enter class dialog restores the three card actions', () => {
 });
 
 test('consultation enter class dialog filters class select and uses student center create payload', () => {
-  assert.match(enterClassDialogSource, /resolveConsultationAssignableClasses/);
   assert.match(enterClassDialogSource, /consultation_subject/);
   assert.match(enterClassDialogSource, /subjectFilter/);
   assert.match(enterClassDialogSource, /stageFilter/);
@@ -24,6 +23,17 @@ test('consultation enter class dialog filters class select and uses student cent
   assert.match(modalSource, /buildClassSavePayload/);
   assert.match(modalSource, /apiFetch<ClassItem>\('\/api\/classes'/);
   assert.match(modalSource, /setLocalClasses\(\(current\) => \[/);
+});
+
+test('consultation enter class dialog exposes student-center style filters for existing classes', () => {
+  assert.match(enterClassDialogSource, /buildConsultationClassFilterDefaults/);
+  assert.match(enterClassDialogSource, /filterConsultationStudentCenterClasses/);
+  assert.match(enterClassDialogSource, /teacherFilter/);
+  assert.match(enterClassDialogSource, /classTypeFilter/);
+  assert.match(enterClassDialogSource, /全部老师/);
+  assert.match(enterClassDialogSource, /全部类型/);
+  assert.match(enterClassDialogSource, /小课/);
+  assert.match(enterClassDialogSource, /班课/);
 });
 
 test('consultation enter class success writes selected or created class into form and over result', () => {
