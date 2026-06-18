@@ -4,6 +4,7 @@ import {
   normalizeAcademicGradeLabel,
 } from './classNaming';
 import { resolveFilteredClasses, type ClassFilterState } from '../features/student-center/classFilterRules';
+import type { ClassItem as StudentCenterClassItem } from '../features/student-center/model';
 
 export type ConsultationEnterClassMode = 'existing' | 'quick-create' | 'pending';
 
@@ -41,18 +42,7 @@ export type ConsultationEnterClassPayload =
     }
   | { mode: 'converted_without_class'; teaching_teacher_id?: string; teaching_teacher?: string; teaching_teacher_user_id?: number };
 
-type ClassFilterItem = {
-  id: number;
-  name: string;
-  class_type?: string;
-  subject?: string;
-  grade?: string;
-  stage?: string;
-  current_grade?: string;
-  class_number?: string;
-  teacher_user_id?: number | null;
-  teacher_name?: string;
-};
+type ClassFilterItem = Pick<StudentCenterClassItem, 'id' | 'name' | 'subject' | 'grade'> & Partial<StudentCenterClassItem>;
 
 export function buildConsultationEnterClassPayload(args:
   | { mode: 'existing'; existingClassId: string | number; consultationSubject?: string; grade?: string; teachingTeacherId?: string; teachingTeacherName?: string; teachingTeacherUserId?: number }

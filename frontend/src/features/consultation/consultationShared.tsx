@@ -871,7 +871,7 @@ export const ConsultationFlowBar = ({
   const currentStage = stage || consultationFlowStages[0];
   const ended = isConsultationEnded(currentStage);
   const compact = mode === 'list';
-  const longPressTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const completedResultStage = (completedStages || []).find(isConsultationResultStage) || '';
   const resultStage = isConsultationResultStage(currentStage) ? currentStage : completedResultStage;

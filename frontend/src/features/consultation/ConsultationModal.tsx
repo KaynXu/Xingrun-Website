@@ -37,6 +37,7 @@ import {
   getConsultationFlowLightColor,
   isConsultationEnded,
   isConsultationResultStage,
+  moveConsultationStage,
   normalizeConsultationRecord,
   restoreConsultationValues,
   setConsultationResultStage,
