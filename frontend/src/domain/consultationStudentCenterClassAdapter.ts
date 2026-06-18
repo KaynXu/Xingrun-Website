@@ -6,6 +6,7 @@ import {
 import {
   buildClassSavePayload,
   type ClassSavePayload,
+  validateClassSaveDraft,
 } from '../features/student-center/classSaveRules';
 import {
   createEmptyClassForm,
@@ -109,5 +110,30 @@ export function buildConsultationQuickClassSavePayload({
     form,
     selectedTeacher,
     selectedTeacherUserId,
+  });
+}
+
+export function validateConsultationQuickClassForm({
+  form,
+  selectedTeacher,
+  selectedTeacherUserId,
+  gradeOptions,
+}: {
+  form: ClassFormValues;
+  selectedTeacher?: UserItem;
+  selectedTeacherUserId: number | null;
+  gradeOptions: string[];
+}): string | null {
+  const payload = buildConsultationQuickClassSavePayload({
+    form,
+    selectedTeacher,
+    selectedTeacherUserId,
+  });
+
+  return validateClassSaveDraft({
+    classId: 'new',
+    selectedTeacherUserId,
+    payload,
+    gradeOptions,
   });
 }
