@@ -384,6 +384,24 @@ function buildConsultationClassUser(currentUser: CurrentUser, teacherName: strin
   };
 }
 
+function buildConsultationEnterClassUserOption({
+  id,
+  name,
+  currentUser,
+}: {
+  id: number;
+  name: string;
+  currentUser: CurrentUser;
+}): UserItem {
+  return {
+    id,
+    name: name || currentUser.display_name || currentUser.username,
+    org: currentUser.organization_name,
+    role: currentUser.role,
+    username: id === currentUser.id ? currentUser.username : undefined,
+  };
+}
+
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSubjectOptions = [...academicSubjectOptions];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
@@ -1059,8 +1077,28 @@ const ConsultationModal = ({
   const selectedTeachingTeacher = teacherOptions.find((option) => option.display_name === form.teaching_teacher);
   const teachingTeacherMatchedClasses = localClasses.filter((item) => classMatchesAssignedTeacher(item, selectedTeachingTeacher, currentUser));
   const successClassOptions = selectedTeachingTeacher ? teachingTeacherMatchedClasses : assignableClassOptions;
+  const formTeachingTeacherUserId = (form as ConsultationFormValues & { teaching_teacher_user_id?: unknown }).teaching_teacher_user_id;
+  const selectedTeachingTeacherUserId = (selectedTeachingTeacher as (ConsultationTeacherOption & { id?: unknown }) | undefined)?.id;
+  const consultationEnterClassTeacherUserId = typeof formTeachingTeacherUserId === 'number'
+    ? formTeachingTeacherUserId
+    : typeof selectedTeachingTeacherUserId === 'number'
+      ? selectedTeachingTeacherUserId
+      : currentUser.id;
   const consultationEnterClassUsers = [
-    buildConsultationClassUser(currentUser, currentUser.display_name || currentUser.username),
+    buildConsultationEnterClassUserOption({
+      id: consultationEnterClassTeacherUserId,
+      name: consultationEnterClassTeacherUserId === currentUser.id
+        ? currentUser.display_name || currentUser.username
+        : selectedTeachingTeacher?.display_name || form.teaching_teacher,
+      currentUser,
+    }),
+    ...(consultationEnterClassTeacherUserId === currentUser.id ? [] : [
+      buildConsultationEnterClassUserOption({
+        id: currentUser.id,
+        name: currentUser.display_name || currentUser.username,
+        currentUser,
+      }),
+    ]),
   ];
   const trialUsesManualClass = trialManualClassActive || Boolean(form.trial_class_manual.trim() && !form.trial_class_id);
   const baseInfoHighlighted = highlightedJumpStage === '已加小客服微信' || highlightedJumpStage === '已加对应教师微信';
@@ -1596,7 +1634,7 @@ const ConsultationModal = ({
             classes={successClassOptions}
             users={consultationEnterClassUsers}
             teacherBindingByClassId={{}}
-            teachingTeacherUserId={null}
+            teachingTeacherUserId={consultationEnterClassTeacherUserId}
             creating={creatingSuccessClass}
             createError={successClassCreateError}
             onClose={() => setEnterClassDialogOpen(false)}

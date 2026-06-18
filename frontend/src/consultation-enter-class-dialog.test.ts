@@ -36,6 +36,12 @@ test('consultation enter class dialog exposes student-center style filters for e
   assert.match(enterClassDialogSource, /班课/);
 });
 
+test('consultation modal recommends a real teacher id for enter-class filtering', () => {
+  assert.match(modalSource, /consultationEnterClassTeacherUserId/);
+  assert.match(modalSource, /teachingTeacherUserId=\{consultationEnterClassTeacherUserId\}/);
+  assert.doesNotMatch(modalSource, /teachingTeacherUserId=\{null\}/);
+});
+
 test('consultation enter class success writes selected or created class into form and over result', () => {
   assert.match(modalSource, /handleConfirmExistingClass/);
   assert.match(modalSource, /handleCreateSuccessClass/);
