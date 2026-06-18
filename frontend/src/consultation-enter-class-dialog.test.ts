@@ -39,7 +39,22 @@ test('consultation enter class dialog exposes student-center style filters for e
 test('consultation modal recommends a real teacher id for enter-class filtering', () => {
   assert.match(modalSource, /consultationEnterClassTeacherUserId/);
   assert.match(modalSource, /teachingTeacherUserId=\{consultationEnterClassTeacherUserId\}/);
-  assert.doesNotMatch(modalSource, /teachingTeacherUserId=\{null\}/);
+  assert.match(modalSource, /form\.teaching_teacher_user_id \?\? null/);
+  assert.doesNotMatch(modalSource, /selectedTeachingTeacherUserId/);
+  assert.doesNotMatch(modalSource, /consultationEnterClassTeacherUserId = [^;]*currentUser\.id/);
+});
+
+test('consultation modal keeps quick-created class teacher id and name consistent', () => {
+  assert.match(modalSource, /quickClassTeacherUserId/);
+  assert.match(modalSource, /selectedTeacherUserId: quickClassTeacherUserId/);
+  assert.doesNotMatch(modalSource, /buildConsultationClassUser\(currentUser, form\.teaching_teacher \|\| form\.trial_teacher \|\| form\.receiving_teacher\)/);
+});
+
+test('consultation enter class dialog reset depends on stable value fields', () => {
+  assert.match(enterClassDialogSource, /values\.consultation_subject,\s*values\.grade,\s*values\.success_class_id/s);
+  assert.doesNotMatch(enterClassDialogSource, /\[open, teachingTeacherUserId, values\]/);
+  assert.doesNotMatch(enterClassDialogSource, /Legacy recommendation shape/);
+  assert.doesNotMatch(enterClassDialogSource, /former resolveConsultationAssignableClasses/);
 });
 
 test('consultation enter class success writes selected or created class into form and over result', () => {

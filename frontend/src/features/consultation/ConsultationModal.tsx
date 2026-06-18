@@ -1022,7 +1022,14 @@ const ConsultationModal = ({
     setCreatingSuccessClass(true);
     setSuccessClassCreateError('');
     try {
-      const selectedTeacher = buildConsultationClassUser(currentUser, form.teaching_teacher || form.trial_teacher || form.receiving_teacher);
+      const quickClassTeacherUserId = form.teaching_teacher_user_id ?? currentUser.id;
+      const selectedTeacher = form.teaching_teacher_user_id != null
+        ? buildConsultationEnterClassUserOption({
+          id: form.teaching_teacher_user_id,
+          name: form.teaching_teacher || form.trial_teacher || form.receiving_teacher,
+          currentUser,
+        })
+        : buildConsultationClassUser(currentUser, currentUser.display_name || currentUser.username);
       const classForm = {
         ...createEmptyClassForm(),
         subject: draft.subject,
@@ -1038,7 +1045,7 @@ const ConsultationModal = ({
         classId: 'new',
         form: classForm,
         selectedTeacher,
-        selectedTeacherUserId: currentUser.id,
+        selectedTeacherUserId: quickClassTeacherUserId,
       });
       const createdClass = await apiFetch<ClassItem>('/api/classes', {
         method: 'POST',
@@ -1077,14 +1084,8 @@ const ConsultationModal = ({
   const selectedTeachingTeacher = teacherOptions.find((option) => option.display_name === form.teaching_teacher);
   const teachingTeacherMatchedClasses = localClasses.filter((item) => classMatchesAssignedTeacher(item, selectedTeachingTeacher, currentUser));
   const successClassOptions = selectedTeachingTeacher ? teachingTeacherMatchedClasses : assignableClassOptions;
-  const formTeachingTeacherUserId = (form as ConsultationFormValues & { teaching_teacher_user_id?: unknown }).teaching_teacher_user_id;
-  const selectedTeachingTeacherUserId = (selectedTeachingTeacher as (ConsultationTeacherOption & { id?: unknown }) | undefined)?.id;
-  const consultationEnterClassTeacherUserId = typeof formTeachingTeacherUserId === 'number'
-    ? formTeachingTeacherUserId
-    : typeof selectedTeachingTeacherUserId === 'number'
-      ? selectedTeachingTeacherUserId
-      : currentUser.id;
-  const consultationEnterClassUsers = [
+  const consultationEnterClassTeacherUserId = form.teaching_teacher_user_id ?? null;
+  const consultationEnterClassUsers = consultationEnterClassTeacherUserId == null ? [] : [
     buildConsultationEnterClassUserOption({
       id: consultationEnterClassTeacherUserId,
       name: consultationEnterClassTeacherUserId === currentUser.id
@@ -1092,13 +1093,6 @@ const ConsultationModal = ({
         : selectedTeachingTeacher?.display_name || form.teaching_teacher,
       currentUser,
     }),
-    ...(consultationEnterClassTeacherUserId === currentUser.id ? [] : [
-      buildConsultationEnterClassUserOption({
-        id: currentUser.id,
-        name: currentUser.display_name || currentUser.username,
-        currentUser,
-      }),
-    ]),
   ];
   const trialUsesManualClass = trialManualClassActive || Boolean(form.trial_class_manual.trim() && !form.trial_class_id);
   const baseInfoHighlighted = highlightedJumpStage === '已加小客服微信' || highlightedJumpStage === '已加对应教师微信';

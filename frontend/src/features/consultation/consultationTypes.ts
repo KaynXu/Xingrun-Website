@@ -43,6 +43,7 @@ export interface ConsultationRecord {
   success_class_id: number | null;
   teaching_teacher_added: string;
   teaching_teacher: string;
+  teaching_teacher_user_id?: number | null;
   teaching_teacher_note: string;
   success_class_manual: string;
   closing_result: string;
