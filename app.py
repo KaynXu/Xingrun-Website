@@ -76,7 +76,8 @@ from lesson_manager import (
     actor_can_manage_user,
     attach_student_library_pdf_path,
     build_wrong_question_practice_pack_schedule,
-    append_consultation_test_image,
+    append_consultation_test_image_for_actor,
+    remove_consultation_test_image_for_actor,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -6418,16 +6419,29 @@ def api_consultation_test_image_upload(consultation_id):
         "url": f"/api/consultation-test-images/{filename}",
         "filename": original_filename,
     }
-    item = append_consultation_test_image(
-        consultation_id,
-        image_payload,
-        None if user.get("role") == "super_owner" else user.get("organization_id"),
-        user["id"] if user.get("role") == "member" else None,
-    )
+    try:
+        item = append_consultation_test_image_for_actor(user, consultation_id, image_payload)
+    except PermissionError as exc:
+        save_path.unlink(missing_ok=True)
+        return jsonify({"error": str(exc)}), 403
     if not item:
         save_path.unlink(missing_ok=True)
         return jsonify({"error": "not found"}), 404
     return jsonify({"image": image_payload, "item": item}), 201
+
+
+@app.route("/api/consultations/<int:consultation_id>/test-images/<int:image_index>", methods=["DELETE"])
+def api_consultation_test_image_delete(consultation_id, image_index):
+    user, error = _require_auth()
+    if error:
+        return error
+    try:
+        item = remove_consultation_test_image_for_actor(user, consultation_id, image_index)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    if not item:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"item": item})
 
 
 @app.route("/api/consultation-test-images/<path:filename>", methods=["GET"])

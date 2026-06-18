@@ -2179,6 +2179,54 @@ def append_consultation_test_image(
     return get_consultation(consultation_id, organization_id)
 
 
+def append_consultation_test_image_for_actor(actor_user: dict, consultation_id: int, image: dict) -> Optional[dict]:
+    current = get_consultation_for_actor(actor_user, consultation_id)
+    if not current:
+        return None
+    images = [*(_json_list(current.get("test_images"))), image]
+    return update_consultation_for_actor(actor_user, consultation_id, {"test_images": images})
+
+
+def remove_consultation_test_image(
+    consultation_id: int,
+    image_index: int,
+    organization_id: Optional[int] = None,
+    assigned_user_id: Optional[int] = None,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        query_sql = "SELECT * FROM consultations WHERE id=?"
+        params: list[object] = [consultation_id]
+        if organization_id is not None:
+            query_sql += " AND organization_id=?"
+            params.append(organization_id)
+        if assigned_user_id is not None:
+            query_sql += " AND assigned_user_id=?"
+            params.append(assigned_user_id)
+        row = conn.execute(query_sql, params).fetchone()
+        if not row:
+            return None
+        images = _json_list(row["test_images_json"])
+        if image_index < 0 or image_index >= len(images):
+            return None
+        images.pop(image_index)
+        conn.execute(
+            "UPDATE consultations SET test_images_json=?, updated_at=datetime('now','localtime') WHERE id=?",
+            (json.dumps(images, ensure_ascii=False), consultation_id),
+        )
+    return get_consultation(consultation_id, organization_id)
+
+
+def remove_consultation_test_image_for_actor(actor_user: dict, consultation_id: int, image_index: int) -> Optional[dict]:
+    current = get_consultation_for_actor(actor_user, consultation_id)
+    if not current:
+        return None
+    images = _json_list(current.get("test_images"))
+    if image_index < 0 or image_index >= len(images):
+        return None
+    next_images = [image for index, image in enumerate(images) if index != image_index]
+    return update_consultation_for_actor(actor_user, consultation_id, {"test_images": next_images})
+
+
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
 class _ManagedConnection(sqlite3.Connection):
     def __exit__(self, exc_type, exc_val, exc_tb):

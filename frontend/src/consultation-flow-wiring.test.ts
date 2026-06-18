@@ -3,161 +3,129 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-const source = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
-const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
-const consultationPageBlock = source.match(/const ConsultationPage = \([\s\S]*?\n};/);
-const modalBlock = source.match(/const ConsultationModal = \([\s\S]*?\n};/);
+const sharedSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/consultationShared.tsx'), 'utf8');
+const pageSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationPage.tsx'), 'utf8');
+const modalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
 
-test('consultation flow UI imports and uses pure flow transition helpers', () => {
-  assert.match(source, /from '\.\/domain\/consultationFlow'/);
-  assert.match(source, /completeConsultationStage as completeConsultationFlowStage/);
-  assert.match(source, /cancelConsultationStage as cancelConsultationFlowStage/);
-  assert.match(source, /setConsultationCurrentStage as setConsultationFlowCurrentStage/);
-  assert.match(source, /function toggleConsultationFlowStageWithRules\(values: ConsultationFormValues, stage: string\): ConsultationFormValues/);
-  assert.match(source, /function setConsultationFlowCurrentStageWithRules\(values: ConsultationFormValues, stage: string\): ConsultationFormValues/);
+test('modular consultation flow UI imports and uses pure flow transition helpers', () => {
+  assert.match(sharedSource, /from '\.\.\/\.\.\/domain\/consultationFlow'/);
+  assert.match(sharedSource, /completeConsultationStage as completeConsultationFlowStage/);
+  assert.match(sharedSource, /cancelConsultationStage as cancelConsultationFlowStage/);
+  assert.match(sharedSource, /setConsultationCurrentStage as setConsultationFlowCurrentStage/);
+  assert.match(sharedSource, /calculateConsultationFlowLights/);
 });
 
-test('consultation flow bar distinguishes left click from right click and long press', () => {
-  assert.ok(flowBarBlock);
-  assert.match(flowBarBlock[0], /editableFromStage/);
-  assert.match(flowBarBlock[0], /editableFromStageIndex/);
-  assert.match(flowBarBlock[0], /stageIndex < editableFromStageIndex/);
-  assert.match(flowBarBlock[0], /onStageContextMenu/);
-  assert.match(flowBarBlock[0], /onStageLongPress/);
-  assert.match(flowBarBlock[0], /const longPressTimerRef = useRef<ReturnType<typeof window\.setTimeout> \| null>\(null\);/);
-  assert.match(flowBarBlock[0], /const longPressTriggeredRef = useRef\(false\);/);
-  assert.match(flowBarBlock[0], /onContextMenu=\{\(event\) => \{/);
-  assert.match(flowBarBlock[0], /event\.preventDefault\(\);/);
-  assert.match(flowBarBlock[0], /onStageContextMenu\?\.\(node\.key\);/);
-  assert.match(flowBarBlock[0], /window\.setTimeout\(\(\) => \{/);
-  assert.match(flowBarBlock[0], /longPressTriggeredRef\.current = true;/);
-  assert.match(flowBarBlock[0], /if \(longPressTriggeredRef\.current\) \{/);
-  assert.match(flowBarBlock[0], /onStageLongPress\?\.\(node\.key\);/);
-  assert.match(flowBarBlock[0], /onTouchStart=/);
-  assert.match(flowBarBlock[0], /onTouchEnd=/);
-  assert.doesNotMatch(flowBarBlock[0], /onStageDoubleClick/);
-  assert.doesNotMatch(flowBarBlock[0], /onDoubleClick/);
+test('modular consultation flow bar uses right click and long press instead of double click', () => {
+  assert.match(sharedSource, /onStageContextMenu/);
+  assert.match(sharedSource, /onStageLongPress/);
+  assert.match(sharedSource, /longPressTimerRef/);
+  assert.match(sharedSource, /longPressTriggeredRef/);
+  assert.match(sharedSource, /onContextMenu=\{handlePrimaryContextMenu\}/);
+  assert.match(sharedSource, /onTouchStart=\{handlePrimaryTouchStart\}/);
+  assert.match(sharedSource, /onTouchEnd=\{handlePrimaryTouchEnd\}/);
+  assert.match(sharedSource, /onTouchCancel=\{clearLongPressTimer\}/);
+  assert.doesNotMatch(sharedSource, /onStageDoubleClick/);
+  assert.doesNotMatch(sharedSource, /onDoubleClick=\{handlePrimaryDoubleClick\}/);
 });
 
-test('consultation flow bar treats result-stage transfer as after all process nodes', () => {
-  assert.ok(flowBarBlock);
-  assert.match(flowBarBlock[0], /const editableFromStageIndex = editableFromStage/);
-  assert.match(flowBarBlock[0], /isConsultationResultStage\(editableFromStage\)\s*\?\s*consultationProcessStages\.length/);
+test('consultation list cards wire stage click, right click, long press, and over handlers', () => {
+  assert.match(pageSource, /handleInlineStageClick/);
+  assert.match(pageSource, /handleInlineStageCurrent/);
+  assert.match(pageSource, /onStageClick=\{\(stage\) => handleInlineStageClick\(record, stage\)\}/);
+  assert.match(pageSource, /onStageContextMenu=\{\(stage\) => handleInlineStageCurrent\(record, stage\)\}/);
+  assert.match(pageSource, /onStageLongPress=\{\(stage\) => handleInlineStageCurrent\(record, stage\)\}/);
+  assert.match(pageSource, /onOverClick=\{\(\) => handleInlineEndConsultation\(record\)\}/);
+  assert.doesNotMatch(pageSource, /onStageDoubleClick/);
 });
 
-test('consultation cards wire stage and over click handlers', () => {
-  assert.ok(consultationPageBlock);
-  assert.match(consultationPageBlock[0], /handleInlineStageClick/);
-  assert.match(consultationPageBlock[0], /handleInlineStageCurrent/);
-  assert.match(consultationPageBlock[0], /handleInlineEndConsultation/);
-  assert.match(consultationPageBlock[0], /onStageClick=\{\(stage\) => handleInlineStageClick\(record, stage\)\}/);
-  assert.match(consultationPageBlock[0], /onStageContextMenu=\{\(stage\) => handleInlineStageCurrent\(record, stage\)\}/);
-  assert.match(consultationPageBlock[0], /onStageLongPress=\{\(stage\) => handleInlineStageCurrent\(record, stage\)\}/);
-  assert.match(consultationPageBlock[0], /showOver/);
-  assert.match(consultationPageBlock[0], /onOverClick=\{\(\) => handleInlineEndConsultation\(record\)\}/);
-  assert.match(consultationPageBlock[0], /overResultDialogRecord/);
-  assert.match(consultationPageBlock[0], /editableFromStage=\{record\.is_transferred_consultation \? record\.assigned_stage : ''\}/);
-  assert.doesNotMatch(consultationPageBlock[0], /flowNodeActionRecord/);
+test('consultation edit modal wires stage click, right click, and long press without double click', () => {
+  assert.match(modalSource, /onStageClick=\{\(nextStage\) => openFlowNodeDialog\(nextStage, false\)\}/);
+  assert.match(modalSource, /onStageContextMenu=\{\(nextStage\) => openFlowNodeDialog\(nextStage, true\)\}/);
+  assert.match(modalSource, /onStageLongPress=\{\(nextStage\) => openFlowNodeDialog\(nextStage, true\)\}/);
+  assert.match(modalSource, /getConsultationFlowLightColor\(form, stage\)/);
+  assert.match(modalSource, /clearConsultationFlowNodeContent\(current, stage\)/);
+  assert.doesNotMatch(modalSource, /onStageDoubleClick/);
 });
 
-test('consultation edit modal also limits transferred records to current responsibility stage onward', () => {
-  assert.ok(modalBlock);
-  assert.match(modalBlock[0], /const transferredEditableFromStage = record\?\.is_transferred_consultation && currentUser\.role === 'member' \? record\.assigned_stage : '';/);
-  assert.match(modalBlock[0], /const transferredLimitedEdit = Boolean\(transferredEditableFromStage\);/);
-  assert.match(modalBlock[0], /const transferredEditableFromStageIndex = transferredEditableFromStage/);
-  assert.match(modalBlock[0], /isConsultationResultStage\(transferredEditableFromStage\)\s*\?\s*consultationProcessStages\.length/);
-  assert.match(modalBlock[0], /const isTransferredStageLockedBefore = \(stageName: string\) =>/);
-  assert.match(modalBlock[0], /const canEditConsultationStageFields = \(stageName: string\) => !readOnly && !stageFrozen && !isTransferredStageLockedBefore\(stageName\);/);
-  assert.match(modalBlock[0], /const baseFieldsDisabled = readOnly \|\| transferredLimitedEdit;/);
-  assert.match(modalBlock[0], /const communicationFieldsDisabled = readOnly \|\| isTransferredStageLockedBefore\('正在沟通细节'\);/);
-  assert.match(modalBlock[0], /const testFieldsDisabled = !canEditConsultationStageFields\('待测试'\);/);
-  assert.match(modalBlock[0], /const trialFieldsDisabled = !canEditConsultationStageFields\('待试听'\);/);
-  assert.match(modalBlock[0], /const successFieldsDisabled = !canEditConsultationStageFields\('成功进班'\);/);
-  assert.match(modalBlock[0], /disabled=\{baseFieldsDisabled\}/);
-  assert.match(modalBlock[0], /disabled=\{communicationFieldsDisabled\}/);
-  assert.match(modalBlock[0], /disabled=\{testFieldsDisabled\}/);
-  assert.match(modalBlock[0], /disabled=\{trialFieldsDisabled\}/);
-  assert.match(modalBlock[0], /disabled=\{successFieldsDisabled\}/);
-  assert.match(modalBlock[0], /editableFromStage=\{transferredEditableFromStage\}/);
+test('consultation flow bar derives green, blue, red, and white from pure light colors', () => {
+  assert.match(sharedSource, /const flowState = createConsultationFlowState/);
+  assert.match(sharedSource, /calculateConsultationFlowLights\(flowState\)/);
+  assert.match(sharedSource, /lightByStage/);
+  assert.match(sharedSource, /lightColor === 'blue'/);
+  assert.match(sharedSource, /lightColor === 'green'/);
+  assert.match(sharedSource, /lightColor === 'red'/);
+  assert.match(sharedSource, /return 'border-\[#C7DDEA\] bg-white text-transparent/);
 });
 
-test('consultation flow bar colors over from closing result', () => {
-  assert.ok(flowBarBlock);
-  assert.match(flowBarBlock[0], /closingResult/);
-  assert.match(flowBarBlock[0], /closingResult: closingResult === 'failed' \? 'failed' : ended \? 'success' : ''/);
-  assert.match(flowBarBlock[0], /node\.type === 'over' && closingResult === 'failed'/);
-  assert.match(flowBarBlock[0], /border-\[#0EA5E9\] bg-\[#0EA5E9\]/);
+test('consultation page list cards let the flow bar be the only status light source', () => {
+  assert.doesNotMatch(pageSource, /ConsultationStatusLamp/);
+  assert.doesNotMatch(pageSource, /grid-cols-\[0\.875rem_minmax\(0,1fr\)\]/);
+  assert.match(pageSource, /renderB3FlowStrip\(record, busy\)/);
+  assert.match(pageSource, /renderB3FlowStrip\(record, busy, true\)/);
 });
 
-test('consultation flow bar can render light teacher initials inside process lamps', () => {
-  assert.ok(flowBarBlock);
-  assert.match(flowBarBlock[0], /stageTeacherMarkers/);
-  assert.match(source, /function getConsultationTeacherInitial\(value: string\): string/);
-  assert.match(flowBarBlock[0], /node\.teacherInitial/);
-  assert.match(flowBarBlock[0], /const circleText = node\.type === 'process' \? node\.teacherInitial : node\.type === 'over' \? ''/);
-  assert.match(flowBarBlock[0], /\(lightColor === 'green' \|\| lightColor === 'blue'\) \? stageTeacherMarkers\[item\]\?\.initial \|\| '' : ''/);
-  assert.doesNotMatch(flowBarBlock[0], /node\.active\s*\?\s*node\.shortLabel/);
-  assert.match(flowBarBlock[0], /border-emerald-200 bg-emerald-50 text-emerald-700/);
-  assert.match(flowBarBlock[0], /border-dashed border-teal-300 bg-white text-teal-700/);
-  assert.doesNotMatch(flowBarBlock[0], /if \(node\.type === 'process' && node\.teacherInitial\) return 'border-slate-200 bg-white text-slate-500/);
-  assert.match(consultationPageBlock?.[0] || '', /stageTeacherMarkers=\{buildConsultationStageTeacherMarkers\(record, teacherDirectory\)\}/);
+test('consultation flow connector only paints blue into the current stage from the completed left side', () => {
+  assert.match(sharedSource, /if \(node\.completed && next\.active\) return 'bg-\[#0EA5E9\]';/);
+  assert.doesNotMatch(sharedSource, /node\.active \|\| next\.active/);
 });
 
-test('consultation teacher initials use teacher directory and saved stage teacher names', () => {
-  assert.match(source, /function buildConsultationTeacherDirectory\(\s*records: ConsultationRecord\[],\s*teacherOptions: ConsultationTeacherOption\[] = \[],/);
-  assert.match(source, /for \(const option of teacherOptions\)/);
-  assert.match(consultationPageBlock?.[0] || '', /const teacherDirectory = buildConsultationTeacherDirectory\(records, consultationTeachers\);/);
-  assert.match(source, /function getConsultationStageTeacherName\(record: ConsultationRecord, stage: string\): string/);
-  assert.match(source, /if \(stage === '待测试'\) return record\.test_teacher\?\.trim\(\) \|\| '';/);
-  assert.match(source, /function getDefaultConsultationCustomerServiceTeacherName\(teacherDirectory: Record<string, string>\): string/);
-  assert.match(source, /stage === '已加小客服微信'[\s\S]*getDefaultConsultationCustomerServiceTeacherName\(teacherDirectory\)/);
-  assert.match(source, /for \(const stage of consultationProcessStages\)/);
-  assert.match(source, /const teacherName = teacherDirectory\[normalizeTeacherLookupKey\(normalizedTeacherId\)\][\s\S]*\|\| stageTeacherName[\s\S]*\|\| normalizedTeacherId;/);
+test('consultation flow lamps use saved teacher initials instead of stage short labels', () => {
+  assert.match(sharedSource, /buildConsultationFlowStageTeacherLabels/);
+  assert.match(sharedSource, /getConsultationTeacherInitial/);
+  assert.match(sharedSource, /stageTeacherLabels\?: Record<string, string>/);
+  assert.match(sharedSource, /teacherLabel: stageTeacherLabels\?\.\[item\] \|\| ''/);
+  assert.match(sharedSource, /const circleText = node\.type === 'over'/);
+  assert.match(sharedSource, /node\.teacherLabel/);
+  assert.doesNotMatch(sharedSource, /node\.active\s*\?\s*node\.shortLabel\s*:\s*node\.completed\s*\?\s*'✓'/);
+  assert.match(pageSource, /stageTeacherLabels=\{buildConsultationFlowStageTeacherLabels\(toConsultationFormValues\(record\)\)\}/);
+  assert.match(modalSource, /stageTeacherLabels=\{buildConsultationFlowStageTeacherLabels\(form\)\}/);
 });
 
-test('consultation customer-service initials keep temporary Lei fallback without teacher directory data', () => {
-  assert.match(source, /function getDefaultConsultationCustomerServiceTeacherName\(teacherDirectory: Record<string, string>\): string/);
-  assert.match(source, /teacherDirectory\[normalizeTeacherLookupKey\('雷老师'\)\][\s\S]*\|\| teacherDirectory\[normalizeTeacherLookupKey\('雷文浩'\)\][\s\S]*\|\| '雷老师'/);
+test('consultation flow surfaces explain card immediate save and modal draft save semantics', () => {
+  assert.match(pageSource, /主页卡片：流程操作会立即保存/);
+  assert.match(pageSource, /hidden xl:inline/);
+  assert.match(pageSource, /左键编辑阶段状态，右键标记为当前阶段/);
+  assert.match(pageSource, /xl:hidden/);
+  assert.match(pageSource, /轻点编辑阶段状态，长按标记为当前阶段/);
+  assert.doesNotMatch(pageSource, /电脑右键、Pad\/手机长按/);
+  assert.match(pageSource, /saveInlineConsultationUpdate\(record, values, '更新咨询流程失败'\)/);
+  assert.match(modalSource, /编辑弹窗：流程操作先进入草稿/);
+  assert.match(modalSource, /setForm\(\(current\) => applyConsultationFlowNodeDraft\(current, flowNodeDialog\.stage, draft, flowNodeDialog\.setAsCurrent\)\)/);
+  assert.match(modalSource, /formScrollRef\.current\?\.requestSubmit\(\)/);
 });
 
-test('consultation page shows device-specific flow usage reminder with centered icon', () => {
-  assert.match(source, /使用提醒/);
-  assert.match(source, /电脑端：左键编辑阶段状态，右键标记为当前阶段。/);
-  assert.match(source, /Pad\/手机：轻点编辑阶段状态，长按标记为当前阶段。/);
-  assert.match(source, /hidden md:inline/);
-  assert.match(source, /md:hidden/);
-  assert.match(source, /items-center gap-2/);
-  assert.doesNotMatch(source, /使用提醒：点击卡片右侧图标查看或编辑咨询记录。/);
+test('consultation cards use the shared flow bar instead of legacy mobile timeline rendering', () => {
+  assert.doesNotMatch(pageSource, /renderB3MobileTimeline/);
+  assert.doesNotMatch(pageSource, /item\.active \? \(item\.key === 'consultation-result' \? '☀' : item\.label\) : item\.completed \? '✓' : ''/);
+  assert.match(pageSource, /const renderB3FlowStrip = \(record: ConsultationRecord, busy: boolean, mobile = false\) =>/);
+  assert.match(pageSource, /return renderInlineFlow\(record, busy\);/);
+  assert.match(pageSource, /renderB3FlowStrip\(record, busy, true\)/);
 });
 
-test('consultation filter group keys stay unique when group titles are hidden', () => {
-  assert.match(source, /consultationFilterGroups\.map\(\(group, groupIndex\) =>/);
-  assert.match(source, /key=\{group\.title \|\| `consultation-filter-group-\$\{groupIndex\}`\}/);
-  assert.doesNotMatch(source, /key=\{group\.title\}/);
+test('consultation page defaults to pending consultations when no specific filter is selected', () => {
+  assert.match(pageSource, /const \[activeFilter, setActiveFilter\] = useState<ConsultationFilterKey \| null>\(null\)/);
+  assert.match(pageSource, /if \(!activeFilter\) \{\s*return sortConsultationsForFilter\(\s*records\.filter\(\(record\) => getConsultationFilterKey\(record, consultationTodayIso\)\.startsWith\('pending-'\)\),\s*'pending-7',\s*\);\s*\}/);
 });
 
-test('consultation page has optional self-created and transferred source filters', () => {
-  assert.match(source, /type ConsultationSourceFilterKey = 'self' \| 'transferred';/);
-  assert.match(source, /const consultationSourceFilterOptions: Array<\{ key: ConsultationSourceFilterKey; label: string \}>/);
-  assert.match(source, /\{ key: 'self', label: '自建咨询' \}/);
-  assert.match(source, /\{ key: 'transferred', label: '转接咨询' \}/);
-  assert.match(consultationPageBlock?.[0] || '', /const \[activeSourceFilter, setActiveSourceFilter\] = useState<ConsultationSourceFilterKey \| ''>\(''\);/);
-  assert.match(source, /function consultationMatchesSourceFilter\(record: ConsultationRecord, sourceFilter: ConsultationSourceFilterKey \| ''\): boolean/);
-  assert.match(source, /if \(sourceFilter === 'self'\) return !record\.is_transferred_consultation;/);
-  assert.match(source, /if \(sourceFilter === 'transferred'\) return record\.is_transferred_consultation;/);
-  assert.match(consultationPageBlock?.[0] || '', /consultationMatchesSourceFilter\(record, activeSourceFilter\)/);
-  assert.match(consultationPageBlock?.[0] || '', /setActiveSourceFilter\(\(current\) => current === item\.key \? '' : item\.key\)/);
+test('consultation over actions are explicit success or failure choices instead of silent close', () => {
+  assert.match(sharedSource, /closing_result/);
+  assert.match(sharedSource, /completeConsultationOver/);
+  assert.match(sharedSource, /cancelConsultationOver/);
+  assert.match(pageSource, /overResultDialogRecord/);
+  assert.match(pageSource, /handleInlineOverSuccess/);
+  assert.match(pageSource, /handleInlineOverFailure/);
+  assert.match(modalSource, /overResultDialogOpen/);
+  assert.match(modalSource, /咨询成功/);
+  assert.match(modalSource, /咨询失败/);
+  assert.doesNotMatch(modalSource, /setForm\(\(current\) => endConsultationValues\(current\)\)/);
 });
 
-test('consultation list cards render saved stage teacher status chips', () => {
-  assert.match(source, /function getConsultationCardStageStatusItems\(record: ConsultationRecord\)/);
-  assert.match(source, /客服微信：已添加/);
-  assert.match(source, /沟通教师：\$\{record\.communication_teacher_added\}/);
-  assert.match(source, /测试教师：\$\{record\.test_teacher\}/);
-  assert.match(source, /试听教师：\$\{record\.trial_teacher\}/);
-  assert.match(source, /带课教师：\$\{record\.teaching_teacher\}/);
-  assert.match(source, /const renderConsultationStageStatusChips = \(record: ConsultationRecord\)/);
-  assert.match(source, /getConsultationCardStageStatusItems\(record\)/);
-  assert.match(source, /<CheckCircle2 size=\{12\}/);
-  assert.match(source, /renderConsultationStageStatusChips\(record\)/);
+test('consultation flow bar never renders two blue lights across process result and over nodes', () => {
+  assert.match(sharedSource, /const flowStateStage = ended\s*\?\s*consultationOverStage/);
+  assert.match(sharedSource, /resultActive\s*\?\s*consultationOverStage/);
+  assert.match(sharedSource, /currentStage === '试听失败'[\s\S]*\? 'failed'/);
+  assert.match(sharedSource, /lightColor === 'blue'[\s\S]*border-\[#0EA5E9\] bg-\[#0EA5E9\] text-white/);
+  assert.match(sharedSource, /lightColor === 'red'[\s\S]*border-\[#E11D48\] bg-\[#E11D48\] text-white/);
+  assert.match(sharedSource, /ring-2 ring-rose-100/);
+  assert.doesNotMatch(sharedSource, /if \(lightColor === 'red'\) \{\s*return 'border-\[#F43F5E\] bg-white text-transparent/);
 });

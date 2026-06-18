@@ -14,34 +14,36 @@ import {
   normalizeConsultationTeacherOption,
   toConsultationFormValues,
 } from './ConsultationModal';
+import { ConsultationEnterClassDialog } from './ConsultationEnterClassDialog';
+import { buildConsultationEnterClassPayload } from '../../domain/consultationEnterClass';
 import { ConsultationBatchModal } from './ConsultationBatchModal';
 import {
   ConsultationCardExpandableText,
   ConsultationFlowBar,
-  ConsultationStatusLamp,
+  ConsultationFlowNodeDialog,
+  applyConsultationFlowNodeDraft,
+  buildConsultationFlowStageTeacherLabels,
   buildConsultationTeacherDirectory,
+  clearConsultationFlowNodeContent,
   clearConsultationResultStage,
+  completeConsultationOverValues,
   consultationFilterGroups,
   consultationFilterLabels,
-  consultationFlowStages,
   consultationProcessStages,
-  consultationResultShortLabel,
-  consultationStageShortLabel,
-  endConsultationValues,
   getConsultationFilterKey,
+  getConsultationFlowLightColor,
   getConsultationOver30SectionLabel,
   getConsultationSourceLabel,
   getConsultationTeacherName,
   isConsultationEnded,
   isConsultationResultStage,
-  moveConsultationStage,
   normalizeConsultationRecord,
   restoreConsultationValues,
   setConsultationResultStage,
   sortConsultationsForFilter,
-  toggleConsultationStageLight,
+  type ConsultationFlowNodeDraft,
 } from './consultationShared';
-import { workspaceCardClass, workspaceFieldClass, workspacePageClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSectionTextClass, workspaceSectionTitleClass, apiFetch, getTodayIsoDate } from '../../workspaceShared';
+import { workspaceCardClass, workspaceFieldClass, workspacePageClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSectionTextClass, workspaceSectionTitleClass, apiFetch, cn, getTodayIsoDate } from '../../workspaceShared';
 import { hasStaffAccess } from '../navigation/workspaceAccess';
 
 export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) {
@@ -61,6 +63,11 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [restoreConfirmRecord, setRestoreConfirmRecord] = useState<ConsultationRecord | null>(null);
+  const [overResultDialogRecord, setOverResultDialogRecord] = useState<ConsultationRecord | null>(null);
+  const [inlineEnterClassRecord, setInlineEnterClassRecord] = useState<ConsultationRecord | null>(null);
+  const [inlineEnterClassCreating, setInlineEnterClassCreating] = useState(false);
+  const [inlineEnterClassError, setInlineEnterClassError] = useState('');
+  const [flowNodeDialog, setFlowNodeDialog] = useState<{ record: ConsultationRecord; stage: string; setAsCurrent: boolean } | null>(null);
   const loadRequestId = useRef(0);
   const teacherDirectory = buildConsultationTeacherDirectory(records);
 
@@ -150,6 +157,9 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   };
 
   const openEditModal = (record: ConsultationRecord) => {
+    if (!canEditConsultationRecord(record)) {
+      return;
+    }
     setSelectedRecord(record);
     setModalMode('edit');
     setModalOpen(true);
@@ -223,7 +233,10 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   }, [records, consultationTodayIso]);
   const visibleRecords = useMemo(() => {
     if (!activeFilter) {
-      return records;
+      return sortConsultationsForFilter(
+        records.filter((record) => getConsultationFilterKey(record, consultationTodayIso).startsWith('pending-')),
+        'pending-7',
+      );
     }
     return sortConsultationsForFilter(
       records.filter((record) => getConsultationFilterKey(record, consultationTodayIso) === activeFilter),
@@ -242,30 +255,74 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     return getConsultationOver30SectionLabel(previousRecord, consultationTodayIso) === label ? null : label;
   };
 
-  const handleInlineStageToggle = async (record: ConsultationRecord, stage: string) => {
-    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
-      return;
-    }
-    setError('');
-    const values = toggleConsultationStageLight(toConsultationFormValues(record), stage);
-    await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
+  const canEditConsultationRecord = (record: ConsultationRecord): boolean => (
+    canManage || (canEditConsultations && record.can_edit_consultation)
+  );
+
+  const canEditConsultationStage = (record: ConsultationRecord, stage: string): boolean => {
+    if (!canEditConsultationRecord(record)) return false;
+    if (canManage || !record.is_transferred_consultation || !record.assigned_stage) return true;
+    const assignedIndex = consultationProcessStages.indexOf(record.assigned_stage);
+    const stageIndex = consultationProcessStages.indexOf(stage);
+    return assignedIndex < 0 || stageIndex < 0 || stageIndex >= assignedIndex;
   };
 
-  const handleInlineStageMove = async (record: ConsultationRecord, stage: string) => {
-    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+  const openInlineFlowNodeDialog = (record: ConsultationRecord, stage: string, setAsCurrent: boolean) => {
+    if (!consultationProcessStages.includes(stage)) return;
+    setFlowNodeDialog({ record, stage, setAsCurrent });
+  };
+
+  const openInlineEnterClassDialog = (record: ConsultationRecord) => {
+    setOverResultDialogRecord(null);
+    setInlineEnterClassError('');
+    setError('');
+    setInlineEnterClassRecord(record);
+  };
+
+  const handleInlineStageClick = async (record: ConsultationRecord, stage: string) => {
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    if (!canEditConsultationStage(record, stage)) {
+      setError('转接咨询只能编辑当前转接阶段及之后的流程。');
       return;
     }
     setError('');
-    const values = moveConsultationStage(toConsultationFormValues(record), stage);
+    const lightColor = getConsultationFlowLightColor(toConsultationFormValues(record), stage);
+    if (lightColor === 'green' || lightColor === 'blue') {
+      const values = clearConsultationFlowNodeContent(toConsultationFormValues(record), stage);
+      await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
+      return;
+    }
+    openInlineFlowNodeDialog(record, stage, false);
+  };
+
+  const handleInlineStageCurrent = async (record: ConsultationRecord, stage: string) => {
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
+      return;
+    }
+    if (!canEditConsultationStage(record, stage)) {
+      setError('转接咨询只能编辑当前转接阶段及之后的流程。');
+      return;
+    }
+    setError('');
+    openInlineFlowNodeDialog(record, stage, true);
+  };
+
+  const handleSaveInlineFlowNodeDialog = async (draft: ConsultationFlowNodeDraft) => {
+    if (!flowNodeDialog) return;
+    const { record, stage, setAsCurrent } = flowNodeDialog;
+    const values = applyConsultationFlowNodeDraft(toConsultationFormValues(record), stage, draft, setAsCurrent);
+    setFlowNodeDialog(null);
     await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
   };
 
   const handleInlineResultChange = async (record: ConsultationRecord, resultStage: ConsultationResultStage) => {
-    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
       return;
     }
     if (resultStage === '成功进班' && !record.success_class_id && !record.success_class_manual.trim()) {
-      setError('成功进班必须先选择或填写班级。');
+      openInlineEnterClassDialog(record);
       return;
     }
     setError('');
@@ -274,11 +331,11 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   };
 
   const handleInlineResultClick = async (record: ConsultationRecord) => {
-    if (!canEditConsultations || isBusy || isConsultationEnded(record.flow_stage)) {
+    if (!canEditConsultationRecord(record) || isBusy || isConsultationEnded(record.flow_stage)) {
       return;
     }
     if (!isConsultationResultStage(record.flow_stage) && !record.success_class_id && !record.success_class_manual.trim()) {
-      setError('成功进班必须先选择或填写班级。');
+      openInlineEnterClassDialog(record);
       return;
     }
     setError('');
@@ -290,7 +347,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   };
 
   const handleInlineEndConsultation = async (record: ConsultationRecord) => {
-    if (!canEditConsultations || isBusy) {
+    if (!canEditConsultationRecord(record) || isBusy) {
       return;
     }
     if (isConsultationEnded(record.flow_stage)) {
@@ -298,8 +355,121 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
       return;
     }
     setError('');
-    const values = endConsultationValues(toConsultationFormValues(record));
+    setOverResultDialogRecord(record);
+  };
+
+  const handleInlineOverSuccess = async () => {
+    if (!overResultDialogRecord) {
+      return;
+    }
+    const record = overResultDialogRecord;
+    if (!record.success_class_id && !record.success_class_manual.trim()) {
+      openInlineEnterClassDialog(record);
+      return;
+    }
+    setOverResultDialogRecord(null);
+    setError('');
+    const values = completeConsultationOverValues(
+      setConsultationResultStage(toConsultationFormValues(record), '成功进班'),
+      'success',
+    );
     await saveInlineConsultationUpdate(record, values, '结束咨询失败');
+  };
+
+  const handleInlineOverFailure = async () => {
+    if (!overResultDialogRecord) {
+      return;
+    }
+    const record = overResultDialogRecord;
+    setOverResultDialogRecord(null);
+    setError('');
+    const values = completeConsultationOverValues(toConsultationFormValues(record), 'failed');
+    await saveInlineConsultationUpdate(record, values, '结束咨询失败');
+  };
+
+  const refreshClasses = async () => {
+    try {
+      const updatedClasses = await apiFetch<ClassItem[]>('/api/classes');
+      setClasses(updatedClasses);
+    } catch {
+      // The consultation was already updated; class refresh can recover on the next page load.
+    }
+  };
+
+  const applyInlineEnterClassResult = async (result: { item?: ConsultationRecord; class_id?: number }) => {
+    if (result.item) {
+      const normalized = normalizeConsultationRecord(result.item);
+      setRecords((current) => current.map((item) => (item.id === normalized.id ? normalized : item)));
+      if (selectedRecord?.id === normalized.id) {
+        setSelectedRecord(normalized);
+      }
+    }
+    if (result.class_id) {
+      await refreshClasses();
+    }
+    setInlineEnterClassRecord(null);
+    setOverResultDialogRecord(null);
+  };
+
+  const postInlineEnterClass = async (payload: object) => {
+    if (!inlineEnterClassRecord) return;
+    setInlineEnterClassCreating(true);
+    setInlineEnterClassError('');
+    setError('');
+    try {
+      const result = await apiFetch<{ item?: ConsultationRecord; class_id?: number }>(
+        `/api/consultations/${inlineEnterClassRecord.id}/enter-class`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+      );
+      await applyInlineEnterClassResult(result);
+    } catch (err) {
+      setInlineEnterClassError(err instanceof Error ? err.message : '进班处理失败');
+    } finally {
+      setInlineEnterClassCreating(false);
+    }
+  };
+
+  const handleInlineEnterExistingClass = (classId: number) => {
+    if (!inlineEnterClassRecord) return;
+    const selectedClass = classes.find((item) => item.id === classId);
+    void postInlineEnterClass(buildConsultationEnterClassPayload({
+      mode: 'existing',
+      existingClassId: classId,
+      consultationSubject: selectedClass?.subject || inlineEnterClassRecord.consultation_subject,
+      grade: selectedClass?.current_grade || selectedClass?.grade || inlineEnterClassRecord.grade,
+    }));
+  };
+
+  const handleInlineEnterCreateClass = async (draft: {
+    subject: string;
+    stage: string;
+    currentGrade: string;
+    classType: string;
+    classNumber: string;
+    isBridge: boolean;
+    bridgeTarget: string;
+  }) => {
+    await postInlineEnterClass(buildConsultationEnterClassPayload({
+      mode: 'quick-create',
+      quickClassDraft: {
+        subject: draft.subject,
+        stage: draft.stage,
+        current_grade: draft.currentGrade,
+        class_type: draft.classType,
+        class_number: draft.classType === 'group' ? draft.classNumber : '',
+        cohort_year: '',
+        show_cohort_year: false,
+        is_bridge: draft.isBridge,
+        bridge_target: draft.bridgeTarget,
+      },
+    }));
+  };
+
+  const handleInlineEnterPendingClass = () => {
+    void postInlineEnterClass(buildConsultationEnterClassPayload({ mode: 'pending' }));
   };
 
   const handleConfirmRestoreConsultation = async () => {
@@ -330,6 +500,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
 
   const renderConsultationIconActions = (record: ConsultationRecord, busy: boolean, compact = false) => {
     const frozen = isConsultationEnded(record.flow_stage);
+    const canEditRecord = canEditConsultationRecord(record);
     const sizeClass = compact ? 'h-7 w-7' : 'h-8 w-8';
     const iconSize = compact ? 12 : 13;
     return (
@@ -343,7 +514,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
         >
           <Eye size={iconSize} />
         </button>
-        {canEditConsultations && (
+        {canEditRecord && (
           <button
             type="button"
             onClick={() => openEditModal(record)}
@@ -361,16 +532,20 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
 
   const renderInlineFlow = (record: ConsultationRecord, busy: boolean) => {
     const frozen = isConsultationEnded(record.flow_stage);
+    const canEditRecord = canEditConsultationRecord(record);
     return (
       <ConsultationFlowBar
         mode="list"
         stage={record.flow_stage}
         completedStages={record.completed_stages}
-        editable={canEditConsultations && !busy && !frozen}
+        closingResult={record.closing_result}
+        stageTeacherLabels={buildConsultationFlowStageTeacherLabels(toConsultationFormValues(record))}
+        editable={canEditRecord && !busy && !frozen}
         showOver
-        overDisabled={!canEditConsultations || busy}
-        onStageClick={(stage) => handleInlineStageToggle(record, stage)}
-        onStageDoubleClick={(stage) => handleInlineStageMove(record, stage)}
+        overDisabled={!canEditRecord || busy}
+        onStageClick={(stage) => handleInlineStageClick(record, stage)}
+        onStageContextMenu={(stage) => handleInlineStageCurrent(record, stage)}
+        onStageLongPress={(stage) => handleInlineStageCurrent(record, stage)}
         onResultChange={(stage) => handleInlineResultChange(record, stage)}
         onResultClick={() => handleInlineResultClick(record)}
         onResultDoubleClick={() => handleInlineResultChange(record, '成功进班')}
@@ -379,88 +554,26 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     );
   };
 
-  const renderB3MobileTimeline = (record: ConsultationRecord, busy: boolean) => {
-    const currentStage = record.flow_stage || consultationFlowStages[0];
-    const frozen = isConsultationEnded(currentStage);
-    const completedSet = new Set(record.completed_stages || []);
-    if (!frozen && consultationProcessStages.includes(currentStage)) {
-      completedSet.add(currentStage);
-    }
-    const currentProcessIndex = consultationProcessStages.indexOf(currentStage);
-    const resultStage = isConsultationResultStage(currentStage)
-      ? currentStage
-      : (record.completed_stages || []).find(isConsultationResultStage) || '';
-    const resultActive = isConsultationResultStage(currentStage);
-    const resultCompleted = Boolean(resultStage) && currentProcessIndex < 0;
-    const timelineItems = [
-      ...consultationProcessStages.map((stageItem) => {
-        const stageIndex = consultationProcessStages.indexOf(stageItem);
-        const isCurrent = stageItem === currentStage;
-        const isAfterCurrentProcess = currentProcessIndex >= 0 && stageIndex > currentProcessIndex;
-        return {
-          key: stageItem,
-          label: consultationStageShortLabel(stageItem),
-          active: isCurrent,
-          completed: completedSet.has(stageItem) && !isAfterCurrentProcess,
-          disabled: frozen || busy || !canEditConsultations,
-          onClick: () => handleInlineStageToggle(record, stageItem),
-          onDoubleClick: () => handleInlineStageMove(record, stageItem),
-        };
-      }),
-      {
-        key: 'consultation-result',
-        label: consultationResultShortLabel(resultStage) || '进',
-        active: resultActive,
-        completed: resultCompleted,
-        disabled: frozen || busy || !canEditConsultations,
-        onClick: () => handleInlineResultClick(record),
-        onDoubleClick: () => handleInlineResultChange(record, '成功进班'),
-      },
-    ];
-
+  const renderB3FlowStrip = (record: ConsultationRecord, busy: boolean, mobile = false) => {
+    if (mobile) return renderInlineFlow(record, busy);
+    const frozen = isConsultationEnded(record.flow_stage);
     return (
-      <div className="min-w-0 pb-0.5">
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(2.9rem,3.75rem)] items-center gap-1.5">
-          <div className="relative grid min-w-0 grid-cols-6 items-start gap-1 px-1 pt-1">
-            <span className="absolute left-3 right-3 top-[0.68rem] h-px bg-[#D9EEF7]" aria-hidden="true" />
-            {timelineItems.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                disabled={item.disabled}
-                onClick={item.onClick}
-                onDoubleClick={item.onDoubleClick}
-                className="relative z-10 flex min-w-0 flex-col items-center gap-0.5 disabled:cursor-default"
-                title={item.key === 'consultation-result' ? resultStage || '成功进班' : item.key}
-              >
-                <span
-                  className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border text-[10px] font-extrabold leading-none transition ${
-                    item.active
-                      ? 'border-[#0EA5E9] bg-[#0EA5E9] text-white'
-                      : item.completed
-                        ? 'border-[#22B981] bg-[#22B981] text-white'
-                        : 'border-slate-300 bg-white text-transparent'
-                  }`}
-                >
-                  {item.active ? (item.key === 'consultation-result' ? '☀' : item.label) : item.completed ? '✓' : ''}
-                </span>
-                <span className={`truncate text-[10px] font-bold leading-4 ${item.active ? 'text-[#0EA5E9]' : item.completed ? 'text-[#0A8F65]' : 'text-[#7188A6]'}`}>
-                  {item.label}
-                </span>
-              </button>
-            ))}
-          </div>
-          {renderOverButton(record, busy, 'h-8 px-1.5 text-[10px]')}
-        </div>
+      <div className={`min-w-0 overflow-visible ${frozen ? 'opacity-75' : ''}`}>
+        {renderInlineFlow(record, busy)}
       </div>
     );
   };
 
-  const renderB3FlowStrip = (record: ConsultationRecord, busy: boolean, mobile = false) => {
-    const frozen = isConsultationEnded(record.flow_stage);
+  const getConsultationTransferBadge = (record: ConsultationRecord) => {
+    if (!record.is_transferred_consultation) return null;
     return (
-      <div className={`min-w-0 overflow-visible ${frozen ? 'opacity-75' : ''}`}>
-        {mobile ? renderB3MobileTimeline(record, busy) : renderInlineFlow(record, busy)}
+      <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-2 text-xs font-bold text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+        <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-amber-700 shadow-sm dark:bg-white/10 dark:text-amber-100">
+          {record.transfer_marker || '咨询转接'}
+        </span>
+        {record.current_responsibility ? <span className="min-w-0 truncate">{record.current_responsibility}</span> : null}
+        {record.assignment_note ? <span className="min-w-0 truncate text-amber-600/80 dark:text-amber-100/80">备注：{record.assignment_note}</span> : null}
+        {!record.can_edit_consultation ? <span className="shrink-0 text-slate-400">仅查看</span> : null}
       </div>
     );
   };
@@ -520,7 +633,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
       type="button"
       onClick={() => handleInlineEndConsultation(record)}
       className={`inline-flex min-w-0 items-center justify-center whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 font-extrabold text-[#F45B7A] transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
-      disabled={!canEditConsultations || busy}
+      disabled={!canEditConsultationRecord(record) || busy}
     >
       OVER
     </button>
@@ -559,7 +672,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70">
+        <article className={cn('overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70', record.is_transferred_consultation && 'bg-amber-50/30 dark:bg-amber-500/5')}>
           <div className="grid grid-cols-[96px_88px_112px_minmax(120px,160px)_120px_132px_72px] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-[#D9EEF7] pl-3 dark:border-white/10')}
@@ -570,11 +683,11 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             <div className="border-l border-[#D9EEF7] pl-3 dark:border-white/10">{renderConsultationIconActions(record, busy, true)}</div>
           </div>
           <div className="space-y-2 px-4 py-2.5">
+            {getConsultationTransferBadge(record)}
             {renderConsultationDetail(needDetail, followUpNote)}
             {renderTimeRow(record)}
           </div>
-          <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2.5 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
-            <ConsultationStatusLamp stage={record.flow_stage} />
+          <div className="border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
             {renderB3FlowStrip(record, busy)}
           </div>
         </article>
@@ -590,7 +703,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 pt-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70">
+        <article className={cn('overflow-hidden rounded-[14px] border border-[#D9EEF7] bg-white dark:border-white/10 dark:bg-slate-950/70', record.is_transferred_consultation && 'bg-amber-50/30 dark:bg-amber-500/5')}>
           <div className="grid grid-cols-[0.82fr_1fr_1fr_3.6rem] items-center border-b border-[#EEF7FC] px-4 py-3 text-sm dark:border-white/10">
             {renderInfoCell('日期', record.date || '—')}
             {renderInfoCell('咨询老师', getConsultationTeacherName(record, teacherDirectory), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
@@ -603,11 +716,11 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             {renderInfoCell('来源', getConsultationSourceLabel(record), 'border-l border-sky-100/80 pl-3 dark:border-white/10')}
           </div>
           <div className="space-y-2 px-4 py-2.5">
+            {getConsultationTransferBadge(record)}
             {renderConsultationDetail(needDetail, followUpNote)}
             {renderTimeRow(record)}
           </div>
-          <div className="grid grid-cols-[0.875rem_minmax(0,1fr)] items-center gap-2 border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
-            <ConsultationStatusLamp stage={record.flow_stage} />
+          <div className="border-t border-[#EEF7FC] bg-[#F9FDFF] px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
             {renderB3FlowStrip(record, busy)}
           </div>
         </article>
@@ -617,6 +730,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
 
   const renderMobileConsultationCard = (record: ConsultationRecord, index: number) => {
     const busy = isBusy && selectedRecord?.id === record.id;
+    const canEditRecord = canEditConsultationRecord(record);
     const needDetail = record.need_detail?.trim();
     const followUpNote = record.follow_up_note?.trim();
     const sectionLabel = getVisibleRecordSectionLabel(record, index);
@@ -628,7 +742,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     return (
       <React.Fragment key={record.id}>
         {sectionLabel && <div className="px-1 text-[11px] font-bold tracking-[0.16em] text-slate-400">{sectionLabel}</div>}
-        <article className="relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 dark:border-white/10 dark:bg-slate-950/70">
+        <article className={cn('relative space-y-3 rounded-[14px] border border-[#D9EEF7] bg-white p-3.5 dark:border-white/10 dark:bg-slate-950/70', record.is_transferred_consultation && 'bg-amber-50/30 dark:bg-amber-500/5')}>
           <div className="flex items-center justify-between gap-2 border-b border-sky-50 pb-2.5 dark:border-white/10">
             <p className="whitespace-nowrap font-mono text-sm font-semibold text-slate-900 dark:text-white">{record.date || '—'}</p>
             <div className="flex min-w-0 items-center gap-2">
@@ -639,7 +753,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
                     <ChevronDown size={12} className="pointer-events-none" />
                     <select
                       value={mobileResultStage}
-                      disabled={!canEditConsultations || busy || isConsultationEnded(record.flow_stage)}
+                      disabled={!canEditRecord || busy || isConsultationEnded(record.flow_stage)}
                       onClick={(event) => event.stopPropagation()}
                       onChange={(event) => {
                         const value = event.target.value as ConsultationResultStage | '';
@@ -666,14 +780,12 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             {renderInfoCell('学生姓名', record.child_name?.trim() || '待补充')}
             {renderInfoCell('来源', getConsultationSourceLabel(record), 'col-span-2')}
           </div>
+          {getConsultationTransferBadge(record)}
           {renderConsultationDetail(needDetail, followUpNote, true)}
           {renderTimeRow(record, true)}
           <div className="space-y-2.5">
-            <div className="grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-2">
-              <ConsultationStatusLamp stage={record.flow_stage} />
-              <div className="min-w-0 overflow-visible">{renderB3FlowStrip(record, busy, true)}</div>
-            </div>
-            {canEditConsultations && (
+            <div className="min-w-0 overflow-visible">{renderB3FlowStrip(record, busy, true)}</div>
+            {canEditRecord && (
               <div className={canManage ? 'grid grid-cols-1 gap-2.5' : 'hidden'}>
                 {renderDeleteButton(record, busy)}
               </div>
@@ -775,6 +887,11 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             </div>
           ))}
         </div>
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-sky-50/70 px-3 py-2 text-[11px] font-semibold leading-5 text-[#55708D] dark:bg-sky-400/10 dark:text-sky-100">
+          <AlertCircle size={14} className="shrink-0 text-[#0EA5E9]" />
+          <span className="hidden xl:inline">主页卡片：流程操作会立即保存；左键编辑阶段状态，右键标记为当前阶段。</span>
+          <span className="xl:hidden">主页卡片：流程操作会立即保存；轻点编辑阶段状态，长按标记为当前阶段。</span>
+        </div>
       </div>
 
       <div className={`${workspaceCardClass} overflow-hidden`}>
@@ -832,7 +949,31 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             onClose={closeModal}
             onSubmit={handleSubmit}
             onDelete={canManage ? handleDelete : undefined}
-            onRequestEdit={selectedRecord ? () => openEditModal(selectedRecord) : undefined}
+            onRequestEdit={selectedRecord && canEditConsultationRecord(selectedRecord) ? () => openEditModal(selectedRecord) : undefined}
+          />
+        )}
+        {flowNodeDialog && (
+          <ConsultationFlowNodeDialog
+            open={Boolean(flowNodeDialog)}
+            stage={flowNodeDialog.stage}
+            values={toConsultationFormValues(flowNodeDialog.record)}
+            teacherOptions={consultationTeachers}
+            setAsCurrent={flowNodeDialog.setAsCurrent}
+            onClose={() => setFlowNodeDialog(null)}
+            onSave={handleSaveInlineFlowNodeDialog}
+          />
+        )}
+        {inlineEnterClassRecord && (
+          <ConsultationEnterClassDialog
+            open={Boolean(inlineEnterClassRecord)}
+            values={toConsultationFormValues(inlineEnterClassRecord)}
+            classes={classes}
+            creating={inlineEnterClassCreating}
+            createError={inlineEnterClassError}
+            onClose={() => setInlineEnterClassRecord(null)}
+            onExistingClass={handleInlineEnterExistingClass}
+            onCreateClass={handleInlineEnterCreateClass}
+            onPending={handleInlineEnterPendingClass}
           />
         )}
         {restoreConfirmRecord && (
@@ -853,6 +994,45 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
                   否
                 </button>
               </div>
+            </div>
+          </motion.div>
+        )}
+        {overResultDialogRecord && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4"
+            onClick={(event) => event.target === event.currentTarget && setOverResultDialogRecord(null)}
+          >
+            <div className="w-full max-w-md rounded-3xl border border-sky-100 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-slate-900">
+              <p className="text-base font-bold text-slate-900 dark:text-white">结束咨询</p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
+                请选择这条咨询的结束结果。咨询成功需要先有进班班级或待进班记录。
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={handleInlineOverSuccess}
+                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-left text-sm font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200"
+                >
+                  咨询成功
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInlineOverFailure}
+                  className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-left text-sm font-bold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-200"
+                >
+                  咨询失败
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOverResultDialogRecord(null)}
+                className={cn(workspaceSecondaryButtonClass, 'mt-4 w-full')}
+              >
+                取消
+              </button>
             </div>
           </motion.div>
         )}

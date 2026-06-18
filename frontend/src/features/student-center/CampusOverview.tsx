@@ -27,6 +27,8 @@ type CampusOverviewProps = {
   currentUser: CurrentUser;
   classBindingTarget?: ClassBindingTarget | null;
   onClearClassBindingTarget?: () => void;
+  overviewTitle: string;
+  overviewScopeLabel: string;
   activeHelpKey: 'overview' | null;
   onHelpEnter: () => void;
   onHelpLeave: () => void;
@@ -52,6 +54,8 @@ export function CampusOverview({
   currentUser,
   classBindingTarget,
   onClearClassBindingTarget,
+  overviewTitle,
+  overviewScopeLabel,
   activeHelpKey,
   onHelpEnter,
   onHelpLeave,

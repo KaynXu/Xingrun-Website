@@ -25,6 +25,8 @@ type ClassManagementTabProps = {
   classCardInteractionLocked: boolean;
   pageRefreshLocked: boolean;
   canCreateClass: boolean;
+  canEditClassCards: boolean;
+  classCardActionLabel: string;
   classScopeLabel: string;
   classFilterItems: Array<FloatingFilterItem<ClassManagementFilterLayer>>;
   activeClassFilterLayer: ClassManagementFilterLayer | null;
@@ -58,6 +60,8 @@ export function ClassManagementTab({
   classCardInteractionLocked,
   pageRefreshLocked,
   canCreateClass,
+  canEditClassCards,
+  classCardActionLabel,
   classScopeLabel,
   classFilterItems,
   activeClassFilterLayer,

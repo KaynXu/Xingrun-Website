@@ -179,7 +179,7 @@ Run:
 
 ```bash
 cd frontend
-node --test src/domain/consultationEnterClass.test.ts
+npx tsx --test src/domain/consultationEnterClass.test.ts
 ```
 
 Expected:
@@ -317,7 +317,7 @@ Run:
 
 ```bash
 cd frontend
-node --test src/domain/consultationEnterClass.test.ts
+npx tsx --test src/domain/consultationEnterClass.test.ts
 ```
 
 Expected:
@@ -364,7 +364,7 @@ Run:
 
 ```bash
 cd frontend
-node --test src/consultation-enter-class-dialog.test.ts
+npx tsx --test src/consultation-enter-class-dialog.test.ts
 ```
 
 Expected: FAIL because adapter functions and new filters are not referenced in the dialog yet.
@@ -491,7 +491,7 @@ Run:
 
 ```bash
 cd frontend
-node --test src/consultation-enter-class-dialog.test.ts src/domain/consultationEnterClass.test.ts
+npx tsx --test src/consultation-enter-class-dialog.test.ts src/domain/consultationEnterClass.test.ts
 ```
 
 Expected: PASS.
@@ -548,7 +548,7 @@ Run:
 
 ```bash
 cd frontend
-node --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts
+npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts
 ```
 
 Expected: FAIL because the dialog still uses `currentGrade`, `classType`, and `classNumber`, and `consultationEnterClass.ts` still imports `buildClassDisplayName`.
@@ -661,7 +661,7 @@ Run:
 
 ```bash
 cd frontend
-node --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts
+npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts
 ```
 
 Expected: PASS.
@@ -696,7 +696,7 @@ Run:
 
 ```bash
 cd frontend
-node --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts src/consultation-flow-wiring.test.ts
+npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts src/consultation-flow-wiring.test.ts
 ```
 
 Expected: PASS.

@@ -9,7 +9,8 @@ import {
   type ConsultationEnterClassDraft,
 } from './consultationEnterClass';
 
-const appSource = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+const modalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
+const enterClassDialogSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationEnterClassDialog.tsx'), 'utf8');
 
 const quickDraft: ConsultationEnterClassDraft = {
   class_type: 'group',
@@ -123,9 +124,12 @@ test('filterConsultationEnterClassOptions can loosen recommended subject and gra
   assert.deepEqual(filtered.map((item) => item.id), [2]);
 });
 
-test('existing class submit treats consultation subject and grade as recommendations, not locks', () => {
-  assert.match(appSource, /consultationSubject: selectedExistingClass\?\.subject \|\| \(existingClassFilters\.subjectFilter !== '全部学科' \? existingClassFilters\.subjectFilter : ''\) \|\| values\.consultation_subject/);
-  assert.match(appSource, /grade: selectedExistingClass\?\.current_grade \|\| selectedExistingClass\?\.grade \|\| \(existingClassFilters\.gradeFilter !== '全部' \? existingClassFilters\.gradeFilter : ''\) \|\| values\.grade/);
-  assert.doesNotMatch(appSource, /consultationSubject: values\.consultation_subject \|\| selectedExistingClass\?\.subject/);
-  assert.doesNotMatch(appSource, /grade: values\.grade \|\| selectedExistingClass\?\.current_grade/);
+test('existing class dialog treats consultation subject and grade as editable recommendations, not locks', () => {
+  assert.match(enterClassDialogSource, /const recommendedSubject = values\.consultation_subject \|\| '全部学科'/);
+  assert.match(enterClassDialogSource, /setSubjectFilter\(values\.consultation_subject \|\| '全部学科'\)/);
+  assert.match(enterClassDialogSource, /<select value=\{subjectFilter\} onChange=\{\(event\) => setSubjectFilter\(event\.target\.value\)\}/);
+  assert.match(enterClassDialogSource, /<select value=\{gradeFilter\} onChange=\{\(event\) => setGradeFilter\(event\.target\.value\)\}/);
+  assert.match(enterClassDialogSource, /resolveConsultationAssignableClasses\(classes, values, \{/);
+  assert.doesNotMatch(enterClassDialogSource, /disabled=\{true\}[^>]*value=\{subjectFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /disabled=\{true\}[^>]*value=\{gradeFilter\}/);
 });

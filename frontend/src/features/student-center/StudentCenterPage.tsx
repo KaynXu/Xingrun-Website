@@ -14,11 +14,6 @@ import {
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
 import {
-  createClassStudent,
-  deleteClassStudent,
-  listClassStudents,
-} from '../../classFeedbackGeneration';
-import {
   createEmptyClassForm,
   toClassFormValues,
   type ClassBindingTarget,
@@ -268,6 +263,23 @@ export function StudentCenterPage({
   const pageRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
   const assignmentRefreshLocked = loading || classInteractionLocked || hasTeacherBindingSavingRows;
   const studentCenterPermissions = getStudentCenterPermissions(currentUser);
+  const studentCenterApiFetch = useCallback(<T,>(path: string, options?: RequestInit) => (
+    apiFetch<T>(path, { ...options, reloadOnUnauthorized: false })
+  ), []);
+  const listClassStudentsForStudentCenter = useCallback((classId: number) => (
+    studentCenterApiFetch<{ students: Array<{ id: number; name: string }> }>(`/api/classes/${classId}/students`)
+  ), [studentCenterApiFetch]);
+  const createClassStudentForStudentCenter = useCallback((classId: number, studentId: number) => (
+    studentCenterApiFetch<{ student: { id: number; name: string }; deduplicated: boolean }>(`/api/classes/${classId}/students`, {
+      method: 'POST',
+      body: JSON.stringify({ student_id: studentId }),
+    })
+  ), [studentCenterApiFetch]);
+  const deleteClassStudentForStudentCenter = useCallback((classId: number, studentId: number) => (
+    studentCenterApiFetch<{ ok: boolean; removed: boolean }>(`/api/classes/${classId}/students/${studentId}`, {
+      method: 'DELETE',
+    })
+  ), [studentCenterApiFetch]);
 
   const getClassStateKey = (classId: number | 'new') => String(classId);
 
@@ -288,7 +300,7 @@ export function StudentCenterPage({
     setPageError(loadStartState.pageError);
     try {
       const { classItems, userItems, teacherBindingData, allStudents: loadedStudents } = await executeStudentCenterLoadRequest(
-        apiFetch,
+        studentCenterApiFetch,
         {
           canLoadStaffMembers: studentCenterPermissions.canLoadStaffMembers,
           canLoadStudentProfiles: studentCenterPermissions.canLoadStudentProfiles,
@@ -340,7 +352,7 @@ export function StudentCenterPage({
         setLoading(false);
       }
     }
-  }, [studentCenterPermissions.canLoadStaffMembers, studentCenterPermissions.canLoadStudentProfiles]);
+  }, [studentCenterApiFetch, studentCenterPermissions.canLoadStaffMembers, studentCenterPermissions.canLoadStudentProfiles]);
 
   useEffect(() => {
     loadPage().catch(() => undefined);
@@ -424,7 +436,7 @@ export function StudentCenterPage({
     setStudentErrorByClassId((current) => ({ ...current, [classId]: '' }));
 
     try {
-      const payload = await executeClassStudentListRequest(classId, listClassStudents);
+      const payload = await executeClassStudentListRequest(classId, listClassStudentsForStudentCenter);
       setStudentsByClassId((current) => resolveClassStudentsAfterLoad(current, classId, payload.students));
       setSavedStudentsByClassId((current) => resolveClassStudentsAfterLoad(current, classId, payload.students));
     } catch (err) {
@@ -435,7 +447,7 @@ export function StudentCenterPage({
     } finally {
       setStudentsLoadingByClassId((current) => resolveClassStudentSavingEndState(current, classId));
     }
-  }, []);
+  }, [listClassStudentsForStudentCenter]);
 
   useEffect(() => {
     if (typeof expandedClassId !== 'number' || inviteByClassId[expandedClassId]) {
@@ -636,10 +648,10 @@ export function StudentCenterPage({
         if (studentsToAdd.length || studentsToDelete.length) {
           setStudentSavingByClassId((current) => resolveClassStudentSavingStartState(current, classId));
           for (const student of studentsToAdd) {
-            await executeClassStudentCreateRequest(classId, student.id, createClassStudent);
+            await executeClassStudentCreateRequest(classId, student.id, createClassStudentForStudentCenter);
           }
           for (const student of studentsToDelete) {
-            await executeClassStudentDeleteRequest(classId, student.id, deleteClassStudent);
+            await executeClassStudentDeleteRequest(classId, student.id, deleteClassStudentForStudentCenter);
           }
           setSavedStudentsByClassId((current) => resolveClassStudentsAfterLoad(current, classId, currentStudents));
         }

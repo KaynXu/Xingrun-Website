@@ -934,6 +934,32 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertTrue(images[0]["url"].startswith("/api/consultation-test-images/"))
         self.assertEqual(images[0]["filename"], "first.png")
 
+    def test_owner_deletes_consultation_test_image_by_index(self):
+        created = self.create_consultation_record()
+        for filename in ("first.png", "second.jpg", "third.webp"):
+            response = self.client.post(
+                f"/api/consultations/{created['id']}/test-images",
+                headers=self.auth_headers(self.owner_token),
+                data={"image": (io.BytesIO(filename.encode("utf-8")), filename)},
+                content_type="multipart/form-data",
+            )
+            self.assertEqual(response.status_code, 201)
+
+        deleted = self.client.delete(
+            f"/api/consultations/{created['id']}/test-images/1",
+            headers=self.auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(deleted.status_code, 200)
+        images = deleted.get_json()["item"]["test_images"]
+        self.assertEqual([image["filename"] for image in images], ["first.png", "third.webp"])
+
+        missing = self.client.delete(
+            f"/api/consultations/{created['id']}/test-images/5",
+            headers=self.auth_headers(self.owner_token),
+        )
+        self.assertEqual(missing.status_code, 404)
+
     def test_members_can_view_and_create_but_not_edit_or_delete(self):
         member_token = self.create_member_token()
         member_user = self.user_for_token(member_token)
@@ -1214,6 +1240,55 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload["test_note"], "测试完成，建议试听七年级班")
         self.assertEqual(payload["trial_teacher_note"], "已和家长约试听")
         self.assertEqual(payload["teaching_teacher_note"], "如果进班，提醒带课老师关注计算细节")
+
+        uploaded = self.client.post(
+            f"/api/consultations/{consultation_id}/test-images",
+            headers=self.auth_headers(self.owner_token),
+            data={"image": (io.BytesIO(b"test-image"), "test.png")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(uploaded.status_code, 201)
+
+        deleted = self.client.delete(
+            f"/api/consultations/{consultation_id}/test-images/0",
+            headers=self.auth_headers(teacher_token),
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.get_json()["item"]["test_images"], [])
+
+    def test_member_transferred_after_test_cannot_delete_test_images(self):
+        teacher_token = self.create_member_token(username="trial_teacher_after_test", display_name="试听老师")
+        self.user_for_token(teacher_token)
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "试听转接家长",
+                "孩子姓名": "试听转接学生",
+                "年级": "六年级",
+                "接待老师": "前台老师",
+                "咨询科目": "数学",
+                "具体需求": "测试后试听",
+                "flow_stage": "待试听",
+                "completed_stages": ["已加小客服微信", "待测试", "待试听"],
+                "stage_teacher_ids": {"待试听": "trial_teacher_after_test"},
+            },
+        )
+        consultation_id = created.get_json()["id"]
+        uploaded = self.client.post(
+            f"/api/consultations/{consultation_id}/test-images",
+            headers=self.auth_headers(self.owner_token),
+            data={"image": (io.BytesIO(b"test-image"), "test.png")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(uploaded.status_code, 201)
+
+        deleted = self.client.delete(
+            f"/api/consultations/{consultation_id}/test-images/0",
+            headers=self.auth_headers(teacher_token),
+        )
+        self.assertEqual(deleted.status_code, 403)
 
     def test_previous_stage_teacher_can_view_after_same_stage_transfer_but_cannot_edit(self):
         first_token = self.create_member_token(username="trial_teacher_a", display_name="试听甲")

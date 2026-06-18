@@ -14,6 +14,7 @@ import {
   ConsultationCardExpandableText,
   ConsultationFlowBar,
   ConsultationStatusLamp,
+  buildConsultationFlowStageTeacherLabels,
   buildConsultationTeacherDirectory,
   consultationInputClass,
   consultationMeetingVersion,
@@ -293,6 +294,8 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
       mode="list"
       stage={record.flow_stage}
       completedStages={record.completed_stages}
+      closingResult={record.closing_result}
+      stageTeacherLabels={buildConsultationFlowStageTeacherLabels(toConsultationFormValues(record))}
       editable={false}
       showOver
       overDisabled={false}

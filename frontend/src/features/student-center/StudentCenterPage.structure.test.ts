@@ -24,6 +24,16 @@ test('student center page is extracted from App shell', () => {
   const studentCenterSource = readFileSync(studentCenterPageUrl, 'utf8');
   assert.match(studentCenterSource, /export function StudentCenterPage/);
   assert.match(studentCenterSource, /const studentCenterPermissions = getStudentCenterPermissions\(currentUser\);/);
+  assert.match(studentCenterSource, /const studentCenterApiFetch = useCallback/);
+  assert.match(studentCenterSource, /reloadOnUnauthorized: false/);
+  assert.match(studentCenterSource, /executeStudentCenterLoadRequest\(\s*studentCenterApiFetch,/);
+  assert.doesNotMatch(studentCenterSource, /from '\.\.\/\.\.\/classFeedbackGeneration';/);
+  assert.match(studentCenterSource, /const listClassStudentsForStudentCenter = useCallback/);
+  assert.match(studentCenterSource, /const createClassStudentForStudentCenter = useCallback/);
+  assert.match(studentCenterSource, /const deleteClassStudentForStudentCenter = useCallback/);
+  assert.match(studentCenterSource, /executeClassStudentListRequest\(classId, listClassStudentsForStudentCenter\)/);
+  assert.match(studentCenterSource, /executeClassStudentCreateRequest\(classId, student\.id, createClassStudentForStudentCenter\)/);
+  assert.match(studentCenterSource, /executeClassStudentDeleteRequest\(classId, student\.id, deleteClassStudentForStudentCenter\)/);
 });
 
 test('campus overview is extracted from the student center page', () => {
@@ -60,11 +70,17 @@ test('student center passes member overview labels and read-only class copy into
 
   assert.match(campusOverviewSource, /overviewTitle/);
   assert.match(campusOverviewSource, /overviewScopeLabel/);
+  assert.match(campusOverviewSource, /overviewTitle: string;/);
+  assert.match(campusOverviewSource, /overviewScopeLabel: string;/);
+  assert.match(campusOverviewSource, /\s+overviewTitle,\n\s+overviewScopeLabel,/);
   assert.doesNotMatch(campusOverviewSource, /<h3 className="text-2xl font-bold text-slate-900 dark:text-white">校区总览<\/h3>/);
   assert.doesNotMatch(campusOverviewSource, /label="全校区"/);
 
   assert.match(classManagementTabSource, /classCardActionLabel/);
   assert.match(classManagementTabSource, /canEditClassCards/);
+  assert.match(classManagementTabSource, /canEditClassCards: boolean;/);
+  assert.match(classManagementTabSource, /classCardActionLabel: string;/);
+  assert.match(classManagementTabSource, /\s+canEditClassCards,\n\s+classCardActionLabel,/);
 });
 
 test('class management tab display is extracted from the student center page', () => {

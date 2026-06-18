@@ -29,6 +29,34 @@ Rebuild the consultation flow interaction layer in small, recoverable steps. The
 - Right click/long press opens the node dialog and treats the saved node as the current stage.
 - A recommended teacher is only a form suggestion. It does not light the node, complete the node, or create assignment until saved.
 
+## 2026-06-16 Stabilization Baseline
+
+The current stabilization pass is named `更新咨询节点构建`. Its purpose is to make the local preview understandable again before adding more consultation features.
+
+Use this single rule table as the source of truth:
+
+- Left click/tap on a white process stage opens the node dialog; saving the dialog lights that stage.
+- Left click/tap on a green or blue process stage cancels that stage directly, deletes that stage's mapped content, and turns the stage white.
+- Right click/long press on a process stage opens the node dialog; saving the dialog makes that stage current and deletes later stage content.
+- Green means a saved completed stage before the current stage.
+- Blue means the current stage, normally the last completed visible stage.
+- White means not saved, or hidden because it is after the current stage.
+- Red means failed Over.
+- Successful Over is blue, and skipped process stages are not auto-completed.
+
+Save semantics are intentionally different by surface:
+
+- Consultation list cards are immediate-action surfaces. A flow action on a card saves to the backend immediately.
+- The consultation edit modal is a draft-editing surface. A flow action in the modal updates the form draft first; it is persisted when the modal Save action submits.
+- The UI must make this distinction clear enough that teachers do not expect a modal flow click to be saved after closing without saving.
+
+Deferred from this stabilization pass:
+
+- Real push notifications.
+- Large redesign of the view/edit modal layout.
+- Full historical assignment timeline.
+- Deleting real created classes or student profiles when canceling Over.
+
 ## Flow Light Rules
 
 The flow graph is not a strict required sequence. It visualizes saved work and the current responsibility stage.
