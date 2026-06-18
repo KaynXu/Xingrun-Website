@@ -16,10 +16,6 @@ import type { ConsultationFormValues } from './consultationTypes';
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationStageOptions = ['小奥', '小学', '初中', '高中'];
-const sourceStructureCompatibility = [
-  "setSubjectFilter(values.consultation_subject || '全部学科')",
-  'resolveConsultationAssignableClasses(classes, values, {',
-];
 
 type ConsultationQuickCreateDraft = {
   subject: string;
