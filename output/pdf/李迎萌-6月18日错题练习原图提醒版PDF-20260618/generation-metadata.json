@@ -1,0 +1,155 @@
+{
+  "student_name": "李迎萌",
+  "generated_for_date": "2026-06-18",
+  "generated_at": "2026-06-18T14:41:30",
+  "source_db": "/tmp/xingrun-prod-20260618-li-yingmeng.sqlite",
+  "source_filter": {
+    "created_at_start": "2026-06-16 23:00:00",
+    "created_at_end": "2026-06-17 00:00:00",
+    "note": "Cloud snapshot had no Li Yingmeng records on 2026-06-18; used latest recognized active cloud batch."
+  },
+  "layout": "original-image-method-hint-student-analysis-blank-next-time-box",
+  "pdf_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618/数学·初2020级·六年级·1班·小衔初-李迎萌-6月18日错题练习原图提醒版-20260618.pdf",
+  "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618.zip",
+  "question_count": 6,
+  "items": [
+    {
+      "record_id": "wechat-89fa506f7e62fb27",
+      "created_at": "2026-06-16 23:16:29",
+      "updated_at": "2026-06-16 23:18:54",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "class_id": 17,
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "teacher_name": "何姝健",
+      "image_url": "https://xingrun.online/files/1781622960212-x7m60mnv2ig.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618/images/original/01-wechat-89fa506f7e62fb27.jpg",
+      "image_size": [
+        1697,
+        1280
+      ],
+      "orientation_fix": false,
+      "primary_error_type": "方法问题",
+      "topic_category": "未分类",
+      "method_hints": [
+        "先把平行线、角平分线、互余关系分别标在图上，再把目标角统一到同一组角关系里。",
+        "每写出一个角相等或角度表达式，都在旁边补一句依据，避免推理跳步。"
+      ]
+    },
+    {
+      "record_id": "wechat-c949d4fe41844393",
+      "created_at": "2026-06-16 23:17:08",
+      "updated_at": "2026-06-16 23:18:54",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "class_id": 17,
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "teacher_name": "何姝健",
+      "image_url": "https://xingrun.online/files/1781622961291-mbrkcl926b.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618/images/original/02-wechat-c949d4fe41844393.jpg",
+      "image_size": [
+        1280,
+        1780
+      ],
+      "orientation_fix": false,
+      "primary_error_type": "方法问题",
+      "topic_category": "未分类",
+      "method_hints": [
+        "先观察表格中 k=3、4、5 的共同结构，再把 k=8 或连加式代入统一公式。",
+        "第 3 问先整理等式两边的 n² 项和 n 项系数，再比较参数，不要被长题干吓住。"
+      ]
+    },
+    {
+      "record_id": "wechat-d6cf8e542e89a7d8",
+      "created_at": "2026-06-16 23:17:33",
+      "updated_at": "2026-06-16 23:18:54",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "class_id": 17,
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "teacher_name": "何姝健",
+      "image_url": "https://xingrun.online/files/1781622962077-ef5223kforj.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618/images/original/03-wechat-d6cf8e542e89a7d8.jpg",
+      "image_size": [
+        1318,
+        1280
+      ],
+      "orientation_fix": true,
+      "primary_error_type": "细节问题",
+      "topic_category": "未分类",
+      "method_hints": [
+        "角符号必须写完整三个字母，中间字母是顶点，先确认每个角到底是哪两条射线组成。",
+        "证明填空题按“结论 - 理由”成对检查，平行、角平分线、等量代换不要混写。"
+      ]
+    },
+    {
+      "record_id": "wechat-dd40156b21f3d694",
+      "created_at": "2026-06-16 23:17:59",
+      "updated_at": "2026-06-16 23:18:54",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "class_id": 17,
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "teacher_name": "何姝健",
+      "image_url": "https://xingrun.online/files/1781622962834-x2o1g4sdc5.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618/images/original/04-wechat-dd40156b21f3d694.jpg",
+      "image_size": [
+        1792,
+        1077
+      ],
+      "orientation_fix": true,
+      "primary_error_type": "方法问题",
+      "topic_category": "未分类",
+      "method_hints": [
+        "把壶身和壶盖分别列成产量表，成套数永远看两类组件中的较小值。",
+        "遇到“最多”要有枚举或设天数分配的过程，不能只选单条产线的最大数字。"
+      ]
+    },
+    {
+      "record_id": "wechat-0aa22bd9bc08463e",
+      "created_at": "2026-06-16 23:18:19",
+      "updated_at": "2026-06-16 23:18:54",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "class_id": 17,
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "teacher_name": "何姝健",
+      "image_url": "https://xingrun.online/files/1781622963235-ia9d0cju4xd.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618/images/original/05-wechat-0aa22bd9bc08463e.jpg",
+      "image_size": [
+        1792,
+        175
+      ],
+      "orientation_fix": true,
+      "primary_error_type": "方法问题",
+      "topic_category": "未分类",
+      "method_hints": [
+        "含绝对值方程先分类：a≥0 与 a<0，分别去掉绝对值求解。",
+        "每个分支算出结果后，要代回对应范围验证，再统一计算 a²。"
+      ]
+    },
+    {
+      "record_id": "wechat-0b97704000ce0304",
+      "created_at": "2026-06-16 23:18:50",
+      "updated_at": "2026-06-16 23:18:54",
+      "student_id": 84,
+      "student_name": "李迎萌",
+      "class_id": 17,
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "teacher_name": "何姝健",
+      "image_url": "https://xingrun.online/files/1781622964014-1v38jna643h.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/李迎萌-6月18日错题练习原图提醒版PDF-20260618/images/original/06-wechat-0b97704000ce0304.jpg",
+      "image_size": [
+        1792,
+        1160
+      ],
+      "orientation_fix": false,
+      "primary_error_type": "方法问题",
+      "topic_category": "未分类",
+      "method_hints": [
+        "先把相邻差值写成 d1、d2、d3、d4，且每个 di 只能取 2 或 3。",
+        "判断选项前先用 a0 和各个 di 表示 a2、a4，再代入条件逐项验证。"
+      ]
+    }
+  ]
+}
