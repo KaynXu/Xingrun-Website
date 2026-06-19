@@ -452,10 +452,16 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
 
   const handleInlineEnterCreateClass = async (draft: ClassFormValues) => {
     if (!inlineEnterClassRecord) return;
-    const quickClassTeacherUserId = inlineEnterClassRecord.teaching_teacher_user_id ?? currentUser.id;
+    const hasReliableQuickClassTeacher = inlineEnterClassRecord.teaching_teacher_user_id != null;
+    const quickClassTeacherUserId = hasReliableQuickClassTeacher
+      ? inlineEnterClassRecord.teaching_teacher_user_id
+      : currentUser.id;
+    const quickClassTeacherName = hasReliableQuickClassTeacher
+      ? inlineEnterClassRecord.teaching_teacher || inlineEnterClassRecord.trial_teacher || inlineEnterClassRecord.receiving_teacher || currentUser.display_name || currentUser.username
+      : currentUser.display_name || currentUser.username;
     const selectedTeacher: UserItem = {
       id: quickClassTeacherUserId,
-      name: inlineEnterClassRecord.teaching_teacher || inlineEnterClassRecord.trial_teacher || inlineEnterClassRecord.receiving_teacher || currentUser.display_name || currentUser.username,
+      name: quickClassTeacherName,
       org: currentUser.organization_name,
       role: currentUser.role,
       username: quickClassTeacherUserId === currentUser.id ? currentUser.username : undefined,

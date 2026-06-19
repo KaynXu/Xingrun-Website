@@ -65,15 +65,11 @@ test('consultation modal recommends a real teacher id for enter-class filtering'
   assert.doesNotMatch(modalSource, /consultationEnterClassTeacherUserId = [^;]*currentUser\.id/);
 });
 
-test('consultation modal only prefilters success classes when teacher user id is reliable', () => {
-  assert.match(modalSource, /const successClassOptions = consultationEnterClassTeacherUserId != null/);
-  assert.match(modalSource, /localClasses\.filter\(\(item\) => item\.teacher_user_id === consultationEnterClassTeacherUserId\)/);
-  assert.match(modalSource, /\? teachingTeacherMatchedClasses/);
-  assert.match(modalSource, /: localClasses/);
-  assert.doesNotMatch(
-    modalSource,
-    /const successClassOptions = consultationEnterClassTeacherUserId != null[\s\S]*?: assignableClassOptions;/,
-  );
+test('consultation modal passes the full class pool and only recommends teacher filtering', () => {
+  assert.match(modalSource, /const successClassOptions = localClasses;/);
+  assert.doesNotMatch(modalSource, /teachingTeacherMatchedClasses/);
+  assert.doesNotMatch(modalSource, /localClasses\.filter\(\(item\) => item\.teacher_user_id === consultationEnterClassTeacherUserId\)/);
+  assert.doesNotMatch(modalSource, /classes=\{teachingTeacherMatchedClasses\}/);
   assert.doesNotMatch(modalSource, /const successClassOptions = selectedTeachingTeacher \? teachingTeacherMatchedClasses : assignableClassOptions/);
 });
 
@@ -104,6 +100,18 @@ test('consultation page inline quick-create creates a class through class API be
   assert.match(pageCreateHandlerSource, /buildConsultationEnterClassPayload\(\{\s*mode: 'existing'/);
   assert.doesNotMatch(pageCreateHandlerSource, /mode: 'quick-create'/);
   assert.doesNotMatch(pageCreateHandlerSource, /quickClassDraft/);
+});
+
+test('consultation page inline quick-create keeps fallback teacher id and name paired', () => {
+  const pageCreateHandlerSource = extractConstHandler(pageSource, 'handleInlineEnterCreateClass');
+
+  assert.match(pageCreateHandlerSource, /inlineEnterClassRecord\.teaching_teacher_user_id != null/);
+  assert.match(pageCreateHandlerSource, /inlineEnterClassRecord\.teaching_teacher \|\| inlineEnterClassRecord\.trial_teacher \|\| inlineEnterClassRecord\.receiving_teacher/);
+  assert.match(pageCreateHandlerSource, /currentUser\.display_name \|\| currentUser\.username/);
+  assert.doesNotMatch(
+    pageCreateHandlerSource,
+    /name: inlineEnterClassRecord\.teaching_teacher \|\| inlineEnterClassRecord\.trial_teacher \|\| inlineEnterClassRecord\.receiving_teacher \|\| currentUser\.display_name \|\| currentUser\.username/,
+  );
 });
 
 test('consultation enter class dialog reset depends on stable value fields', () => {

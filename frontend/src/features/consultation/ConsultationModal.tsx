@@ -1085,12 +1085,7 @@ const ConsultationModal = ({
   const assignableClassOptions = selectedTeacher && teacherMatchedClasses.length > 0 ? teacherMatchedClasses : localClasses;
   const selectedTeachingTeacher = teacherOptions.find((option) => option.display_name === form.teaching_teacher);
   const consultationEnterClassTeacherUserId = form.teaching_teacher_user_id ?? null;
-  const teachingTeacherMatchedClasses = consultationEnterClassTeacherUserId == null
-    ? []
-    : localClasses.filter((item) => item.teacher_user_id === consultationEnterClassTeacherUserId);
-  const successClassOptions = consultationEnterClassTeacherUserId != null
-    ? teachingTeacherMatchedClasses
-    : localClasses;
+  const successClassOptions = localClasses;
   const consultationEnterClassUsers = consultationEnterClassTeacherUserId == null ? [] : [
     buildConsultationEnterClassUserOption({
       id: consultationEnterClassTeacherUserId,
