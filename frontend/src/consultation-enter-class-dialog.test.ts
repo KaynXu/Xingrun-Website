@@ -33,15 +33,24 @@ test('consultation enter class dialog filters class select and uses student cent
   assert.match(modalSource, /setLocalClasses\(\(current\) => \[/);
 });
 
-test('consultation enter class dialog exposes student-center style filters for existing classes', () => {
+test('consultation enter class dialog uses student-center floating filters for existing classes', () => {
   assert.match(enterClassDialogSource, /buildConsultationClassFilterDefaults/);
   assert.match(enterClassDialogSource, /filterConsultationStudentCenterClasses/);
+  assert.match(enterClassDialogSource, /FloatingFilterBar/);
+  assert.match(enterClassDialogSource, /buildClassFilterItems/);
+  assert.match(enterClassDialogSource, /resolveActiveClassFilterOptions/);
+  assert.match(enterClassDialogSource, /existingClassFilterItems/);
+  assert.match(enterClassDialogSource, /existingClassFilterSummary/);
   assert.match(enterClassDialogSource, /teacherFilter/);
   assert.match(enterClassDialogSource, /classTypeFilter/);
-  assert.match(enterClassDialogSource, /全部老师/);
-  assert.match(enterClassDialogSource, /全部类型/);
+  assert.match(enterClassDialogSource, /类型：/);
   assert.match(enterClassDialogSource, /小课/);
   assert.match(enterClassDialogSource, /班课/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{subjectFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{teacherFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{stageFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{gradeFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{classTypeFilter\}/);
 });
 
 test('consultation existing class picker uses a hoverable custom list only for class selection', () => {

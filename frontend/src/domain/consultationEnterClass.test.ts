@@ -323,13 +323,20 @@ test('consultation quick class validation reuses student-center class number req
 test('existing class dialog treats consultation subject and grade as editable recommendations, not locks', () => {
   assert.match(enterClassDialogSource, /buildConsultationClassFilterDefaults/);
   assert.match(enterClassDialogSource, /filterConsultationStudentCenterClasses/);
+  assert.match(enterClassDialogSource, /FloatingFilterBar/);
+  assert.match(enterClassDialogSource, /existingClassFilterItems/);
+  assert.match(enterClassDialogSource, /existingClassFilterSummary/);
   assert.match(enterClassDialogSource, /subjectFilter/);
   assert.match(enterClassDialogSource, /teacherFilter/);
   assert.match(enterClassDialogSource, /classTypeFilter/);
-  assert.match(enterClassDialogSource, /<select value=\{subjectFilter\} onChange=\{\(event\) => setSubjectFilter\(event\.target\.value\)\}/);
-  assert.match(enterClassDialogSource, /<select value=\{teacherFilter\} onChange=\{\(event\) => setTeacherFilter/);
-  assert.match(enterClassDialogSource, /<select value=\{gradeFilter\} onChange=\{\(event\) => setGradeFilter\(event\.target\.value\)\}/);
-  assert.match(enterClassDialogSource, /<select value=\{classTypeFilter\} onChange=\{\(event\) => setClassTypeFilter/);
+  assert.match(enterClassDialogSource, /setSubjectFilter\(String\(value\)\)/);
+  assert.match(enterClassDialogSource, /setTeacherFilter\(Number\(value\)\)/);
+  assert.match(enterClassDialogSource, /setGradeFilter\(String\(value\)\)/);
+  assert.match(enterClassDialogSource, /setClassTypeFilter\(value as ConsultationClassTypeFilter\)/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{subjectFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{teacherFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{gradeFilter\}/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{classTypeFilter\}/);
   assert.doesNotMatch(enterClassDialogSource, /resolveConsultationAssignableClasses/);
   assert.doesNotMatch(enterClassDialogSource, /sourceStructureCompatibility/);
   assert.doesNotMatch(enterClassDialogSource, /disabled=\{true\}[^>]*value=\{subjectFilter\}/);

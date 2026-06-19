@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 
 import type { ClassItem } from '../../appTypes';
 import { getCurrentClassDisplayName } from '../../classDisplay';
+import {
+  FloatingFilterBar,
+  type FloatingFilterItem,
+  type FloatingFilterOption,
+} from '../../components/FloatingFilterBar';
 import { serializeBridgeTarget } from '../../domain/classNaming';
 import {
   buildConsultationClassFilterDefaults,
@@ -10,12 +15,26 @@ import {
   type ConsultationClassTypeFilter,
 } from '../../domain/consultationStudentCenterClassAdapter';
 import { cn } from '../../workspaceShared';
+import type { ClassManagementFilterLayer } from '../student-center/ClassManagementTab';
+import {
+  buildClassFilterItems,
+  buildClassFilterSummary,
+  resolveActiveClassFilterOptions,
+  resolveClassFilterOptions,
+} from '../student-center/classFilterRules';
 import type { ClassFormValues, UserItem } from '../student-center/model';
 import type { ConsultationFormValues } from './consultationTypes';
 
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationStageOptions = ['小奥', '小学', '初中', '高中'];
+const consultationGradeGroups: Record<string, string[]> = {
+  小奥: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
+  小学: ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级'],
+  初中: ['初一', '初二', '初三'],
+  高中: ['高一', '高二', '高三'],
+};
+type ConsultationExistingClassFilterLayer = ClassManagementFilterLayer | 'classType';
 
 function buildCreateDraftFromAdapter(values: ConsultationFormValues): ClassFormValues {
   return buildConsultationQuickClassForm({
@@ -65,6 +84,7 @@ export const ConsultationEnterClassDialog = ({
   const [stageFilter, setStageFilter] = useState(initialFilters.stageFilter);
   const [gradeFilter, setGradeFilter] = useState(initialFilters.gradeFilter);
   const [classTypeFilter, setClassTypeFilter] = useState<ConsultationClassTypeFilter>(initialFilters.classTypeFilter);
+  const [activeExistingClassFilterLayer, setActiveExistingClassFilterLayer] = useState<ConsultationExistingClassFilterLayer | null>(null);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<ClassFormValues>(() => buildCreateDraftFromAdapter(values));
@@ -83,12 +103,54 @@ export const ConsultationEnterClassDialog = ({
     setStageFilter(defaults.stageFilter);
     setGradeFilter(defaults.gradeFilter);
     setClassTypeFilter(defaults.classTypeFilter);
+    setActiveExistingClassFilterLayer(null);
     setSelectedClassId(values.success_class_id ? String(values.success_class_id) : '');
     setClassPickerOpen(false);
     setCreateDraft(buildCreateDraftFromAdapter(values));
   }, [open, teachingTeacherUserId, values.consultation_subject, values.grade, values.success_class_id]);
 
   if (!open) return null;
+
+  const existingClassFilters = {
+    subjectFilter,
+    teacherFilter,
+    stageFilter,
+    gradeFilter,
+  };
+  const existingClassFilterOptions = resolveClassFilterOptions({
+    classes,
+    teacherBindingByClassId,
+    subjectOptions: academicSubjectOptions,
+    users,
+    stageOptions: consultationStageOptions,
+    gradeOptions: consultationGradeOptions,
+    gradeGroups: consultationGradeGroups,
+    filters: existingClassFilters,
+  });
+  const studentCenterFilterItems = buildClassFilterItems(existingClassFilters, users);
+  const classTypeFilterItem: FloatingFilterItem<ConsultationExistingClassFilterLayer> = {
+    key: 'classType',
+    defaultLabel: '类型',
+    label: classTypeFilter === 'all' ? '类型' : `类型：${classTypeFilter === 'small' ? '小课' : '班课'}`,
+    selected: classTypeFilter !== 'all',
+  };
+  const existingClassFilterItems: Array<FloatingFilterItem<ConsultationExistingClassFilterLayer>> = [
+    ...studentCenterFilterItems,
+    classTypeFilterItem,
+  ];
+  const activeStudentCenterFilterLayer = activeExistingClassFilterLayer === 'classType' ? null : activeExistingClassFilterLayer;
+  const activeExistingClassFilterOptions: FloatingFilterOption[] = activeExistingClassFilterLayer === 'classType'
+    ? [
+      { id: 'small', label: '小课', selected: classTypeFilter === 'small' },
+      { id: 'group', label: '班课', selected: classTypeFilter === 'group' },
+    ]
+    : resolveActiveClassFilterOptions(activeStudentCenterFilterLayer, existingClassFilters, existingClassFilterOptions);
+  const classTypeFilterSummary = classTypeFilter === 'all' ? '' : classTypeFilter === 'small' ? '小课' : '班课';
+  const existingClassBaseFilterSummary = buildClassFilterSummary(existingClassFilters, users);
+  const existingClassFilterSummary = [
+    existingClassBaseFilterSummary === '全部' ? '' : existingClassBaseFilterSummary,
+    classTypeFilterSummary,
+  ].filter(Boolean).join(' / ') || '全部';
 
   const filteredClasses = filterConsultationStudentCenterClasses({
     classes,
@@ -118,6 +180,24 @@ export const ConsultationEnterClassDialog = ({
     active && tone === 'amber' ? 'border-amber-300 bg-amber-50 text-amber-800' : '',
     !active ? 'border-[#D9EEF7] bg-white text-[#1F2A44] hover:bg-sky-50 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-white/5' : '',
   );
+  const clearExistingClassFilter = (key: ConsultationExistingClassFilterLayer) => {
+    if (key === 'subject') setSubjectFilter('全部学科');
+    if (key === 'teacher') setTeacherFilter('all');
+    if (key === 'stage') setStageFilter('全部学段');
+    if (key === 'grade') setGradeFilter('全部');
+    if (key === 'classType') setClassTypeFilter('all');
+    setSelectedClassId('');
+    setClassPickerOpen(false);
+  };
+  const selectExistingClassFilterOption = (value: string | number) => {
+    if (activeExistingClassFilterLayer === 'subject') setSubjectFilter(String(value));
+    if (activeExistingClassFilterLayer === 'teacher') setTeacherFilter(Number(value));
+    if (activeExistingClassFilterLayer === 'stage') setStageFilter(String(value));
+    if (activeExistingClassFilterLayer === 'grade') setGradeFilter(String(value));
+    if (activeExistingClassFilterLayer === 'classType') setClassTypeFilter(value as ConsultationClassTypeFilter);
+    setSelectedClassId('');
+    setClassPickerOpen(false);
+  };
 
   return (
     <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/35 px-4" onClick={(event) => event.target === event.currentTarget && onClose()}>
@@ -148,29 +228,22 @@ export const ConsultationEnterClassDialog = ({
         <div className="mt-4 rounded-xl border border-[#D9EEF7] bg-[#F9FDFF] p-3 dark:border-white/10 dark:bg-white/[0.03]">
           {mode === 'existing' && (
             <div className="space-y-3">
-              <div className="grid gap-2 sm:grid-cols-5">
-                <select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)} className={smallSelectClass}>
-                  <option value="全部学科">全部学科</option>
-                  {academicSubjectOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-                <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value === 'all' ? 'all' : Number(event.target.value))} className={smallSelectClass}>
-                  <option value="all">全部老师</option>
-                  {users.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-                <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} className={smallSelectClass}>
-                  <option value="全部学段">全部学段</option>
-                  {consultationStageOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-                <select value={gradeFilter} onChange={(event) => setGradeFilter(event.target.value)} className={smallSelectClass}>
-                  <option value="全部">全部年级</option>
-                  {consultationGradeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-                <select value={classTypeFilter} onChange={(event) => setClassTypeFilter(event.target.value as ConsultationClassTypeFilter)} className={smallSelectClass}>
-                  <option value="all">全部类型</option>
-                  <option value="small">小课</option>
-                  <option value="group">班课</option>
-                </select>
-              </div>
+              <FloatingFilterBar<ConsultationExistingClassFilterLayer>
+                items={existingClassFilterItems}
+                activeKey={activeExistingClassFilterLayer}
+                options={activeExistingClassFilterOptions}
+                summary={existingClassFilterSummary}
+                summaryText="先筛选，再从下方班级列表选择"
+                emptyText="当前条件下暂无可选项。"
+                floatingOptions
+                compact
+                tone="sky"
+                onAreaEnter={() => undefined}
+                onAreaLeave={() => setActiveExistingClassFilterLayer(null)}
+                onActivate={setActiveExistingClassFilterLayer}
+                onClear={clearExistingClassFilter}
+                onSelect={selectExistingClassFilterOption}
+              />
               <div className="relative">
                 <button
                   type="button"
