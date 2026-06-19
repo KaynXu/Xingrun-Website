@@ -1,5 +1,4 @@
 import {
-  buildClassDisplayName,
   getAcademicStageFromGrade,
   normalizeAcademicGradeLabel,
 } from './classNaming';
@@ -71,18 +70,7 @@ export function buildConsultationEnterClassPayload(args:
   const cohortYear = draft.cohort_year === '' ? null : Number(draft.cohort_year);
   return {
     mode: 'quick_new_class',
-    class_name: buildClassDisplayName({
-      subject: draft.subject,
-      class_type: draft.class_type,
-      stage: draft.stage,
-      current_grade: draft.current_grade,
-      grade: draft.current_grade,
-      class_number: draft.class_number,
-      cohort_year: draft.cohort_year,
-      show_cohort_year: draft.show_cohort_year,
-      is_bridge: draft.is_bridge,
-      bridge_target: draft.bridge_target,
-    }),
+    class_name: '',
     subject: draft.subject,
     grade: draft.current_grade,
     class_type: draft.class_type,

@@ -10,39 +10,19 @@ import {
   type ConsultationClassTypeFilter,
 } from '../../domain/consultationStudentCenterClassAdapter';
 import { cn } from '../../workspaceShared';
-import type { UserItem } from '../student-center/model';
+import type { ClassFormValues, UserItem } from '../student-center/model';
 import type { ConsultationFormValues } from './consultationTypes';
 
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationStageOptions = ['小奥', '小学', '初中', '高中'];
 
-type ConsultationQuickCreateDraft = {
-  subject: string;
-  stage: string;
-  currentGrade: string;
-  classType: string;
-  classNumber: string;
-  isBridge: boolean;
-  bridgeTarget: string;
-};
-
-function buildCreateDraftFromAdapter(values: ConsultationFormValues): ConsultationQuickCreateDraft {
-  const form = buildConsultationQuickClassForm({
+function buildCreateDraftFromAdapter(values: ConsultationFormValues): ClassFormValues {
+  return buildConsultationQuickClassForm({
     consultationSubject: values.consultation_subject || '',
     consultationGrade: values.grade || '',
     subjectOptions: academicSubjectOptions,
   });
-
-  return {
-    subject: form.subject,
-    stage: form.stage,
-    currentGrade: form.current_grade,
-    classType: form.class_type,
-    classNumber: form.class_number,
-    isBridge: form.is_bridge,
-    bridgeTarget: form.bridge_target,
-  };
 }
 
 export const ConsultationEnterClassDialog = ({
@@ -69,7 +49,7 @@ export const ConsultationEnterClassDialog = ({
   createError: string;
   onClose: () => void;
   onExistingClass: (classId: number) => void;
-  onCreateClass: (draft: ConsultationQuickCreateDraft) => Promise<void>;
+  onCreateClass: (form: ClassFormValues) => Promise<void>;
   onPending: () => void;
 }) => {
   const recommendedSubject = values.consultation_subject || '全部学科';
@@ -86,7 +66,7 @@ export const ConsultationEnterClassDialog = ({
   const [gradeFilter, setGradeFilter] = useState(initialFilters.gradeFilter);
   const [classTypeFilter, setClassTypeFilter] = useState<ConsultationClassTypeFilter>(initialFilters.classTypeFilter);
   const [selectedClassId, setSelectedClassId] = useState('');
-  const [createDraft, setCreateDraft] = useState<ConsultationQuickCreateDraft>(() => buildCreateDraftFromAdapter(values));
+  const [createDraft, setCreateDraft] = useState<ClassFormValues>(() => buildCreateDraftFromAdapter(values));
 
   useEffect(() => {
     if (!open) return;
@@ -123,9 +103,9 @@ export const ConsultationEnterClassDialog = ({
   const classPreview = [
     createDraft.subject,
     createDraft.stage,
-    createDraft.currentGrade,
-    createDraft.classType === 'group' ? `${createDraft.classNumber}班` : createDraft.classType,
-    createDraft.isBridge ? '衔接' : '',
+    createDraft.current_grade,
+    createDraft.class_type === 'group' ? `${createDraft.class_number}班` : createDraft.class_type,
+    createDraft.is_bridge ? '衔接' : '',
   ].filter(Boolean).join(' / ');
   const smallSelectClass = 'h-10 rounded-lg border border-[#BFE5F8] bg-white px-3 text-sm font-semibold text-[#1F2A44] outline-none focus:border-[#0EA5E9] dark:border-white/10 dark:bg-slate-900 dark:text-white';
   const cardClass = (active: boolean, tone: 'sky' | 'emerald' | 'amber') => cn(
@@ -204,25 +184,25 @@ export const ConsultationEnterClassDialog = ({
                 <select value={createDraft.stage} onChange={(event) => setCreateDraft((current) => ({ ...current, stage: event.target.value }))} className={smallSelectClass}>
                   {consultationStageOptions.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
-                <select value={createDraft.currentGrade} onChange={(event) => setCreateDraft((current) => ({ ...current, currentGrade: event.target.value }))} className={smallSelectClass}>
+                <select value={createDraft.current_grade} onChange={(event) => setCreateDraft((current) => ({ ...current, current_grade: event.target.value, grade: event.target.value }))} className={smallSelectClass}>
                   {consultationGradeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
-                <select value={createDraft.classType} onChange={(event) => setCreateDraft((current) => ({ ...current, classType: event.target.value }))} className={smallSelectClass}>
+                <select value={createDraft.class_type} onChange={(event) => setCreateDraft((current) => ({ ...current, class_type: event.target.value, class_number: event.target.value === 'group' ? current.class_number : '' }))} className={smallSelectClass}>
                   <option value="group">班课</option>
                   <option value="1v1">1v1</option>
                   <option value="1v2">1v2</option>
                   <option value="1v3">1v3</option>
                 </select>
-                <select value={createDraft.classNumber} onChange={(event) => setCreateDraft((current) => ({ ...current, classNumber: event.target.value }))} className={smallSelectClass} disabled={createDraft.classType !== 'group'}>
+                <select value={createDraft.class_number} onChange={(event) => setCreateDraft((current) => ({ ...current, class_number: event.target.value }))} className={smallSelectClass} disabled={createDraft.class_type !== 'group'}>
                   {['1', '2', '3', '4', '5', '6'].map((item) => <option key={item} value={item}>{item}班</option>)}
                 </select>
               </div>
               <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
                 <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-extrabold text-emerald-700">
-                  <input type="checkbox" checked={createDraft.isBridge} onChange={(event) => setCreateDraft((current) => ({ ...current, isBridge: event.target.checked }))} />
+                  <input type="checkbox" checked={createDraft.is_bridge} onChange={(event) => setCreateDraft((current) => ({ ...current, is_bridge: event.target.checked }))} />
                   衔接班
                 </label>
-                <select value={createDraft.bridgeTarget} onChange={(event) => setCreateDraft((current) => ({ ...current, bridgeTarget: event.target.value }))} className={smallSelectClass} disabled={!createDraft.isBridge}>
+                <select value={createDraft.bridge_target} onChange={(event) => setCreateDraft((current) => ({ ...current, bridge_target: event.target.value }))} className={smallSelectClass} disabled={!createDraft.is_bridge}>
                   <option value={serializeBridgeTarget('小学', '初中')}>小学衔接初中</option>
                   <option value={serializeBridgeTarget('初中', '高中')}>初中衔接高中</option>
                 </select>

@@ -54,11 +54,11 @@ test('buildConsultationEnterClassPayload includes teaching teacher handoff field
   });
 });
 
-test('buildConsultationEnterClassPayload builds quick class payload from class naming fields', () => {
+test('buildConsultationEnterClassPayload keeps quick_new_class API compatibility without owning naming', () => {
   const payload = buildConsultationEnterClassPayload({ mode: 'quick-create', quickClassDraft: quickDraft });
 
   assert.equal(payload.mode, 'quick_new_class');
-  assert.equal(payload.class_name, '数学·高2026级·七年级·2班·初衔高');
+  assert.equal(payload.class_name, '');
   assert.equal(payload.subject, '数学');
   assert.equal(payload.grade, '七年级');
   assert.equal(payload.stage, '初中');
@@ -68,6 +68,12 @@ test('buildConsultationEnterClassPayload builds quick class payload from class n
   assert.equal(payload.show_cohort_year, true);
   assert.equal(payload.is_bridge, true);
   assert.equal(payload.bridge_target, '初中->高中');
+});
+
+test('quick-create payload no longer owns student-center class naming rules', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/domain/consultationEnterClass.ts'), 'utf8');
+  assert.doesNotMatch(source, /buildClassDisplayName/);
+  assert.match(source, /mode: 'quick_new_class'/);
 });
 
 test('buildConsultationEnterClassPayload builds converted pending payload', () => {

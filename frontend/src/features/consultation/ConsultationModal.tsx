@@ -15,8 +15,10 @@ import type {
 } from './consultationTypes';
 import { apiFetch, cn, getTodayIsoDate, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
 import { hasStaffAccess } from '../navigation/workspaceAccess';
-import { buildClassSavePayload } from '../student-center/classSaveRules';
-import { createEmptyClassForm, type UserItem } from '../student-center/model';
+import {
+  buildConsultationQuickClassSavePayload,
+} from '../../domain/consultationStudentCenterClassAdapter';
+import type { ClassFormValues, UserItem } from '../student-center/model';
 import { ConsultationEnterClassDialog } from './ConsultationEnterClassDialog';
 import { ConsultationStageStatusCards } from './ConsultationStageStatusCards';
 import {
@@ -1011,15 +1013,7 @@ const ConsultationModal = ({
     setEnterClassDialogOpen(false);
   };
 
-  const handleCreateSuccessClass = async (draft: {
-    subject: string;
-    stage: string;
-    currentGrade: string;
-    classType: string;
-    classNumber: string;
-    isBridge: boolean;
-    bridgeTarget: string;
-  }) => {
+  const handleCreateSuccessClass = async (draft: ClassFormValues) => {
     setCreatingSuccessClass(true);
     setSuccessClassCreateError('');
     try {
@@ -1031,20 +1025,12 @@ const ConsultationModal = ({
           currentUser,
         })
         : buildConsultationClassUser(currentUser, currentUser.display_name || currentUser.username);
-      const classForm = {
-        ...createEmptyClassForm(),
-        subject: draft.subject,
-        stage: draft.stage,
-        current_grade: draft.currentGrade,
-        grade: draft.currentGrade,
-        class_type: draft.classType,
-        class_number: draft.classType === 'group' ? draft.classNumber : '',
-        is_bridge: draft.isBridge,
-        bridge_target: draft.bridgeTarget,
-      };
-      const payload = buildClassSavePayload({
-        classId: 'new',
-        form: classForm,
+      const payload = buildConsultationQuickClassSavePayload({
+        form: {
+          ...draft,
+          grade: draft.current_grade,
+          class_number: draft.class_type === 'group' ? draft.class_number : '',
+        },
         selectedTeacher,
         selectedTeacherUserId: quickClassTeacherUserId,
       });

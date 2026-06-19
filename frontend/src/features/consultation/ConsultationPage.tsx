@@ -16,6 +16,7 @@ import {
 } from './ConsultationModal';
 import { ConsultationEnterClassDialog } from './ConsultationEnterClassDialog';
 import { buildConsultationEnterClassPayload } from '../../domain/consultationEnterClass';
+import type { ClassFormValues } from '../student-center/model';
 import { ConsultationBatchModal } from './ConsultationBatchModal';
 import {
   ConsultationCardExpandableText,
@@ -443,27 +444,19 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     }));
   };
 
-  const handleInlineEnterCreateClass = async (draft: {
-    subject: string;
-    stage: string;
-    currentGrade: string;
-    classType: string;
-    classNumber: string;
-    isBridge: boolean;
-    bridgeTarget: string;
-  }) => {
+  const handleInlineEnterCreateClass = async (draft: ClassFormValues) => {
     await postInlineEnterClass(buildConsultationEnterClassPayload({
       mode: 'quick-create',
       quickClassDraft: {
         subject: draft.subject,
         stage: draft.stage,
-        current_grade: draft.currentGrade,
-        class_type: draft.classType,
-        class_number: draft.classType === 'group' ? draft.classNumber : '',
-        cohort_year: '',
-        show_cohort_year: false,
-        is_bridge: draft.isBridge,
-        bridge_target: draft.bridgeTarget,
+        current_grade: draft.current_grade,
+        class_type: draft.class_type,
+        class_number: draft.class_type === 'group' ? draft.class_number : '',
+        cohort_year: draft.cohort_year,
+        show_cohort_year: draft.show_cohort_year,
+        is_bridge: draft.is_bridge,
+        bridge_target: draft.bridge_target,
       },
     }));
   };

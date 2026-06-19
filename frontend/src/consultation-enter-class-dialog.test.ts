@@ -20,7 +20,8 @@ test('consultation enter class dialog filters class select and uses student cent
   assert.match(enterClassDialogSource, /subjectFilter/);
   assert.match(enterClassDialogSource, /stageFilter/);
   assert.match(enterClassDialogSource, /gradeFilter/);
-  assert.match(modalSource, /buildClassSavePayload/);
+  assert.match(modalSource, /buildConsultationQuickClassSavePayload/);
+  assert.doesNotMatch(modalSource, /buildClassSavePayload/);
   assert.match(modalSource, /apiFetch<ClassItem>\('\/api\/classes'/);
   assert.match(modalSource, /setLocalClasses\(\(current\) => \[/);
 });
@@ -34,6 +35,19 @@ test('consultation enter class dialog exposes student-center style filters for e
   assert.match(enterClassDialogSource, /全部类型/);
   assert.match(enterClassDialogSource, /小课/);
   assert.match(enterClassDialogSource, /班课/);
+});
+
+test('consultation quick-create UI uses student-center class form field names', () => {
+  assert.match(enterClassDialogSource, /createDraft\.class_type/);
+  assert.match(enterClassDialogSource, /createDraft\.current_grade/);
+  assert.match(enterClassDialogSource, /createDraft\.class_number/);
+  assert.match(enterClassDialogSource, /createDraft\.is_bridge/);
+  assert.match(enterClassDialogSource, /createDraft\.bridge_target/);
+  assert.doesNotMatch(enterClassDialogSource, /createDraft\.currentGrade/);
+  assert.doesNotMatch(enterClassDialogSource, /createDraft\.classType/);
+  assert.doesNotMatch(enterClassDialogSource, /createDraft\.classNumber/);
+  assert.doesNotMatch(enterClassDialogSource, /createDraft\.isBridge/);
+  assert.doesNotMatch(enterClassDialogSource, /createDraft\.bridgeTarget/);
 });
 
 test('consultation modal recommends a real teacher id for enter-class filtering', () => {
