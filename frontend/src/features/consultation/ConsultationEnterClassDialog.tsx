@@ -66,6 +66,7 @@ export const ConsultationEnterClassDialog = ({
   const [gradeFilter, setGradeFilter] = useState(initialFilters.gradeFilter);
   const [classTypeFilter, setClassTypeFilter] = useState<ConsultationClassTypeFilter>(initialFilters.classTypeFilter);
   const [selectedClassId, setSelectedClassId] = useState('');
+  const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<ClassFormValues>(() => buildCreateDraftFromAdapter(values));
 
   useEffect(() => {
@@ -83,6 +84,7 @@ export const ConsultationEnterClassDialog = ({
     setGradeFilter(defaults.gradeFilter);
     setClassTypeFilter(defaults.classTypeFilter);
     setSelectedClassId(values.success_class_id ? String(values.success_class_id) : '');
+    setClassPickerOpen(false);
     setCreateDraft(buildCreateDraftFromAdapter(values));
   }, [open, teachingTeacherUserId, values.consultation_subject, values.grade, values.success_class_id]);
 
@@ -100,6 +102,7 @@ export const ConsultationEnterClassDialog = ({
       classTypeFilter,
     },
   });
+  const selectedClass = filteredClasses.find((item) => String(item.id) === selectedClassId);
   const classPreview = [
     createDraft.subject,
     createDraft.stage,
@@ -168,10 +171,54 @@ export const ConsultationEnterClassDialog = ({
                   <option value="group">班课</option>
                 </select>
               </div>
-              <select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)} className={`${smallSelectClass} w-full`}>
-                <option value="">请选择班级</option>
-                {filteredClasses.map((item) => <option key={item.id} value={item.id}>{getCurrentClassDisplayName(item)}</option>)}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={classPickerOpen}
+                  onClick={() => setClassPickerOpen((current) => !current)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setClassPickerOpen(false);
+                  }}
+                  className="flex h-10 w-full items-center justify-between gap-3 rounded-lg border border-[#BFE5F8] bg-white px-3 text-left text-sm font-semibold text-[#1F2A44] outline-none transition hover:border-sky-300 hover:bg-sky-50 focus:border-[#0EA5E9] dark:border-white/10 dark:bg-slate-900 dark:text-white dark:hover:bg-white/5"
+                >
+                  <span className={selectedClass ? 'truncate' : 'truncate text-[#8AA0BA]'}>{selectedClass ? getCurrentClassDisplayName(selectedClass) : '请选择班级'}</span>
+                  <span className={cn('text-xs text-[#7188A6] transition', classPickerOpen && 'rotate-180')}>⌄</span>
+                </button>
+                {classPickerOpen && (
+                  <div
+                    role="listbox"
+                    className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-10 max-h-60 overflow-y-auto rounded-xl border border-[#BFE5F8] bg-white p-1 shadow-[0_16px_40px_rgba(31,42,68,0.14)] dark:border-white/10 dark:bg-slate-950"
+                  >
+                    {filteredClasses.length === 0 ? (
+                      <div className="rounded-lg px-3 py-3 text-sm font-semibold text-[#8AA0BA]">没有匹配的班级</div>
+                    ) : (
+                      filteredClasses.map((item) => {
+                        const active = String(item.id) === selectedClassId;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            role="option"
+                            aria-selected={active}
+                            onClick={() => {
+                              setSelectedClassId(String(item.id));
+                              setClassPickerOpen(false);
+                            }}
+                            className={cn(
+                              'flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-400/10 dark:hover:text-sky-200',
+                              active ? 'bg-sky-100 text-sky-800 dark:bg-sky-400/15 dark:text-sky-100' : 'text-[#1F2A44] dark:text-slate-100',
+                            )}
+                          >
+                            <span className="truncate">{getCurrentClassDisplayName(item)}</span>
+                            {active ? <span className="text-xs text-sky-600 dark:text-sky-200">已选</span> : null}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -223,7 +270,7 @@ export const ConsultationEnterClassDialog = ({
             type="button"
             disabled={creating}
             onClick={() => {
-              if (mode === 'existing' && selectedClassId) onExistingClass(Number(selectedClassId));
+              if (mode === 'existing' && selectedClass) onExistingClass(selectedClass.id);
               if (mode === 'create') void onCreateClass(createDraft);
               if (mode === 'pending') onPending();
             }}

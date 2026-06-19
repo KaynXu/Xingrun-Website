@@ -44,6 +44,16 @@ test('consultation enter class dialog exposes student-center style filters for e
   assert.match(enterClassDialogSource, /班课/);
 });
 
+test('consultation existing class picker uses a hoverable custom list only for class selection', () => {
+  assert.match(enterClassDialogSource, /classPickerOpen/);
+  assert.match(enterClassDialogSource, /role="listbox"/);
+  assert.match(enterClassDialogSource, /hover:bg-sky-50/);
+  assert.match(enterClassDialogSource, /没有匹配的班级/);
+  assert.doesNotMatch(enterClassDialogSource, /<select value=\{selectedClassId\}/);
+  assert.match(enterClassDialogSource, /if \(mode === 'create'\) void onCreateClass\(createDraft\);/);
+  assert.match(enterClassDialogSource, /if \(mode === 'pending'\) onPending\(\);/);
+});
+
 test('consultation quick-create UI uses student-center class form field names', () => {
   assert.match(enterClassDialogSource, /createDraft\.class_type/);
   assert.match(enterClassDialogSource, /createDraft\.current_grade/);
