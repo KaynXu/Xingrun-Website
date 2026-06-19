@@ -49,8 +49,8 @@
 | R3 | 流程交互：左键/轻点编辑，右键/长按设当前，保存才亮，推荐老师不自动确认 | 已完成 | `ConsultationPage.tsx:handleInlineStageClick/handleInlineStageCurrent/handleSaveInlineFlowNodeDialog`；`ConsultationModal.tsx:openFlowNodeDialog/handleSaveFlowNodeDialog`；`consultationShared.tsx:ConsultationFlowNodeDialog/applyConsultationFlowNodeDraft`；`consultationTeacherSelection.ts` | Tests：`cd frontend && npx tsx --test src/consultation-flow-node-dialog.test.ts src/consultation-flow-wiring.test.ts src/domain/consultationFlow.test.ts` 通过；`cd frontend && npx tsx --test src/domain/consultationTeacherSelection.test.ts` 通过；本地预览：右键打开设当前弹窗后取消，灯状态不变，console error 为空 | 无需功能收纳。当前逻辑为：已亮节点左键会立即取消并清内容；未亮节点左键开弹窗，保存才点亮；右键/长按开设当前弹窗，保存才变蓝；推荐老师只在弹窗中预填，保存后才确认 |
 | R4 | 唯一当前灯：不能双蓝；失败 Over 红灯明显 | 已完成 | `consultationShared.tsx:ConsultationFlowBar`；`consultationFlow.ts:calculateConsultationFlowLights` | Tests：`cd frontend && npx tsx --test src/consultation-flow-wiring.test.ts src/domain/consultationFlow.test.ts` 通过；本地预览：待咨询前 8 张卡每张流程图 1 个蓝灯；咨询失败前 8 张卡每张 0 蓝 + 1 个实心红 Over；console error 为空 | 已收纳：FlowBar 统一通过 domain light 计算终点状态；旧失败结束记录做只读显示兼容，不自动改库 |
 | R5 | 节点弹窗：客服、沟通、测试、试听、带课教师可选老师并保存备注 | 已完成 | 普通节点：`consultationShared.tsx:getConsultationFlowNodeDraft/applyConsultationFlowNodeDraft/clearConsultationFlowNodeContent/ConsultationFlowNodeDialog`；老师推荐：`consultationTeacherSelection.ts`；带课教师：`consultationEnterClass.ts` + 后端 `/api/consultations/<id>/enter-class` | Tests：`cd frontend && npx tsx --test src/consultation-flow-node-dialog.test.ts src/domain/consultationTeacherSelection.test.ts` 通过；后端带课教师进班测试：`python3 -m unittest tests.test_consultation_flow.ConsultationFlowTestCase.test_consultation_enter_quick_new_class_uses_structured_class_fields -v` 通过；本地预览：右键待测试节点弹窗，老师筛选/下拉/阶段备注/保存/取消存在，取消后未写业务数据 | 普通流程节点已覆盖客服、沟通教师、沟通情况、测试、试听。带课教师不作为普通流程节点处理，而是在进班三卡片/enter-class 闭环里保存到 `teaching_teacher*` 和 `stage_teacher_ids["成功进班"]`；R6/R8 继续核对进班 UI |
-| R6 | 进班三卡片：已有班级、快速建班、转化待进班 | 已完成 | 前端弹窗：`ConsultationModal.tsx:ConsultationEnterClassDialog`；进班 payload/filter 规则：`consultationEnterClass.ts`；后端闭环：`/api/consultations/<id>/enter-class` | Tests：`cd frontend && npx tsx --test src/domain/consultationEnterClass.test.ts` 通过；后端三种进班测试通过：existing class / converted without class / quick new class | 编辑弹窗里的三卡片已恢复：已有班级、快速建班、转化待进班。快速建班会创建班级，后端测试确认创建后能在 `/api/classes` 找到。主页卡片直接点“成功进班”仍只提示必须先选班，未打开三卡片，归 R8 继续补 |
-| R7 | 学科/年级推荐不锁死；已有班级筛选接近学员中心筛选逻辑1，下拉选择 | 已完成 | 推荐/筛选规则：`consultationEnterClass.ts:buildRecommendedConsultationClassFilters/filterConsultationEnterClassOptions`；三卡片 UI：`ConsultationEnterClassDialog.tsx:subjectFilter/stageFilter/gradeFilter/resolveConsultationAssignableClasses`；主页已有班级回填：`ConsultationPage.tsx:handleInlineEnterExistingClass` | Tests：`cd frontend && npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts` 通过；本地预览：打开主页进班三卡片，已有班级筛选里学科/学段/年级/班级下拉均可用，学科按咨询科目推荐，年级不锁死，console error 为空 | 已接轨当前版本。学科作为推荐值预填但可改；年级/学段保持可调整；选择已有班级后用所选班级科目/年级回填，避免咨询填 6 年级但实际进 7/8 年级时被锁死 |
+| R6 | 进班三卡片：已有班级、快速建班、转化待进班 | 已完成 | 前端弹窗：`ConsultationModal.tsx:ConsultationEnterClassDialog`；进班 payload/filter 规则：`consultationEnterClass.ts`；后端闭环：`/api/consultations/<id>/enter-class` | Tests：`cd frontend && npx tsx --test src/domain/consultationEnterClass.test.ts` 通过；后端三种进班测试通过：existing class / converted without class / quick new class | 编辑弹窗和主页入口均复用三卡片：已有班级、快速建班、转化待进班。快速建班先按结构化班级字段创建班级，再走 existing enter-class 进班；转化待进班保持原闭环不动 |
+| R7 | 学科/老师/学段/年级/类型筛选接近学管中心；推荐不锁死，下拉选择 | 已完成 | 推荐/筛选规则：`consultationEnterClass.ts:buildRecommendedConsultationClassFilters/filterConsultationEnterClassOptions`；三卡片 UI：`ConsultationEnterClassDialog.tsx:subjectFilter/teacherFilter/stageFilter/gradeFilter/typeFilter/resolveConsultationAssignableClasses`；主页已有班级回填：`ConsultationPage.tsx:handleInlineEnterExistingClass` | Tests：`cd frontend && npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts` 通过；本地预览：打开主页进班三卡片，已有班级筛选里学科/老师/学段/年级/类型/班级下拉均可用，学科按咨询科目推荐，年级不锁死，console error 为空 | 已接轨当前版本。候选班级从完整 class pool 起步；无可靠 teacher id 时不隐藏过滤；选择已有班级后用所选班级科目/年级回填，避免咨询填 6 年级但实际进 7/8 年级时被锁死 |
 | R8 | Over：手动先问成功/失败；成功走进班；失败红；成功进班自动 Over | 已完成 | 主页入口：`ConsultationPage.tsx:handleInlineResultChange/handleInlineResultClick/handleInlineOverSuccess/ConsultationEnterClassDialog`；共享弹窗：`ConsultationModal.tsx:ConsultationEnterClassDialog`；业务 payload：`consultationEnterClass.ts:buildConsultationEnterClassPayload`；后端闭环：`/api/consultations/<id>/enter-class` | Frontend：`cd frontend && npx tsx --test src/consultation-enter-class-dialog.test.ts src/domain/consultationEnterClass.test.ts src/consultation-flow-wiring.test.ts` 通过；Backend：existing class / converted without class / quick new class 三条 unittest 通过；本地预览：主页点可见进班入口出现三卡片，旧错误不出现，console error 为空 | 已补主页闭环。直接点成功进班或 Over 成功时，如未选班级，打开已有班级 / 快速建班 / 转化待进班三卡片；三种确认均走 `enter-class` 业务接口 |
 | R9 | 转接替代推送：教师看到自建 + 转接咨询，卡片标咨询转接和当前责任 | 已完成 | 后端可见性：`lesson_manager.py:list_consultations_for_actor/_consultation_assignment_context_for_actor/_annotate_consultation_for_actor`；后端编辑限制：`lesson_manager.py:update_consultation_for_actor/_transferred_consultation_update_touches_prior_stage`；前端卡片：`ConsultationPage.tsx:getConsultationTransferBadge/canEditConsultationRecord/canEditConsultationStage`；前端守护：`consultation-transfer-scope.test.ts` | Frontend：`cd frontend && npx tsx --test src/consultation-transfer-scope.test.ts` 通过；Backend：自建可见、自建不标转接、转接标记/备注、企微别名转接、当前阶段编辑、前任可见不可编辑、同阶段转交等测试通过；本地预览：何姝健账号能看到自建/转接咨询，卡片有 `咨询转接` 和当前责任，console error 为空 | 已接轨。这里仍是“替代推送”：没有真实消息通知，但被选择为对应阶段老师后，该老师账号的咨询中心可见；转接卡片用浅黄色背景和 `咨询转接` 标记区分 |
 | R10 | 查看/编辑阶段状态卡：`xx教师：x老师 ✓`、`客服微信：已添加 ✓` | 已完成 | 状态卡组件：`ConsultationStageStatusCards.tsx`；查看态接入：`ConsultationModal.tsx:ConsultationReadOnlyReport`；编辑态接入：`ConsultationModal.tsx` 基础信息/沟通与测试/试听/结果四区块；守护测试：`consultation-stage-status-cards.test.ts` | Tests：`cd frontend && npx tsx --test src/consultation-stage-status-cards.test.ts src/consultation-flow-node-dialog.test.ts src/consultation-enter-class-dialog.test.ts src/consultation-flow-wiring.test.ts` 通过；本地预览：查看弹窗和编辑弹窗均出现 `客服微信/客服老师/接待教师/沟通教师/测试教师/试听教师/带课教师/进班班级` 状态卡，console error 为空 | 已接轨。状态卡只做展示，不改变原输入控件和保存逻辑；后续若继续瘦身 Modal，可把 read-only report 或编辑分区继续拆出 |
@@ -93,7 +93,7 @@
 | --- | --- | --- |
 | 双蓝灯 | 已修复 | FlowBar 统一通过 domain light 计算终点状态；source test 覆盖 |
 | 失败 Over 不明显 | 已修复 | 失败 Over 改为实心红灯并显示 `!`；旧失败结束记录只读兼容 |
-| 主页 Over 成功不进三卡片 | 已发现 | 抽共享 enter-class dialog 或在页面接入同一闭环 |
+| 主页 Over 成功不进三卡片 | 已修复 | 主页已接入同一 enter-class 闭环；Over 成功仍先进入已有班级 / 快速建班 / 转化待进班 |
 | `ConsultationModal.tsx` 继续膨胀 | 高风险 | 新大块 UI 拆文件 |
 | `consultationShared.tsx` 职责混杂 | 高风险 | 规则/helper/UI 分批拆出 |
 | 远端同步不稳定 | 中风险 | 大节点前 fetch；不在大量未提交改动下硬 pull |
@@ -110,8 +110,8 @@
 | R3 | 管理员 | 咨询主页流程节点交互：右键节点打开设当前弹窗后取消 | 通过。弹窗包含后续阶段清空提示、阶段备注、保存/取消；取消后流程灯状态不变；console error 为空。预览时误点一次已绿节点，已用本地 API 恢复 id=2 的客服节点 |
 | R4 | 管理员 | 咨询主页流程灯；切换到咨询失败分类检查 Over 红灯 | 通过。待咨询抽样每张卡仅 1 个蓝灯；咨询失败抽样每张卡 1 个实心红 Over 且无蓝灯；console error 为空 |
 | R5 | 管理员 | 咨询主页右键待测试节点，检查节点弹窗字段 | 通过。弹窗提供老师筛选、老师下拉、阶段备注、保存/取消；取消后未写业务数据；console error 为空 |
-| R6 | 管理员 | 尝试从咨询主页进入进班三卡片 | 部分预览。源码和测试确认编辑弹窗三卡片存在；主页卡片直接点“进班/成功进班”仍显示“成功进班必须先选择或填写班级”，未打开三卡片。该入口归 R8 补 |
-| R7 | 管理员 | 打开主页进班三卡片，检查已有班级筛选 | 通过。三卡片可见；已有班级区域的学科/学段/年级/班级下拉均 enabled；学科按咨询科目推荐到 `数学`；年级为可调整的 `全部`；console error 为空 |
+| R6 | 管理员 | 尝试从咨询主页进入进班三卡片 | 已由 R8 预览补齐。主页卡片直接点“进班/成功进班”可打开 `已有班级 / 快速建班 / 转化待进班` 三卡片；旧错误不再出现 |
+| R7 | 管理员 | 打开主页进班三卡片，检查已有班级筛选 | 通过。三卡片可见；已有班级区域的学科/老师/学段/年级/类型/班级下拉均 enabled；学科按咨询科目推荐到 `数学`；年级为可调整的 `全部`；console error 为空 |
 | R8 | 管理员 | 咨询主页直接点可见的进班 / 成功进班入口 | 通过。主页能打开；顶部 7 个标签存在；可见进班入口数量 35；点击后出现 `已有班级 / 快速建班 / 转化待进班` 三卡片；旧错误 `必须先选择或填写班级` 不出现；console error 为空 |
 | R9 | 何姝健 | 以何姝健本地 session 打开咨询页，检查自建/转接可见性和卡片标记 | 通过。咨询页可打开；能看到 `咨询转接`；能看到 `带课教师：何姝健`、`试听教师：何姝健`、`测试教师：何姝健` 等当前责任；转接预览卡片存在；console error 为空 |
 | R10 | 管理员 | 打开咨询查看弹窗和编辑弹窗，检查阶段状态卡 | 通过。查看态和编辑态均可见 `客服微信：`、`客服老师：`、`接待教师：`、`沟通教师：`、`测试教师：`、`试听教师：`、`带课教师：`、`进班班级：`；未保存任何表单；console error 为空 |
@@ -136,3 +136,27 @@
 | R10 | 补齐查看/编辑阶段状态卡 | 小收纳完成：新增 `ConsultationStageStatusCards.tsx`，查看态和编辑态共用同一套状态展示；Modal 仅增加调用点，不承载状态卡内部逻辑 |
 | R11 | 设备化使用提醒 | 小收纳完成：咨询主页提醒拆成桌面版和移动版两段响应式文本，避免同时提示电脑和 Pad/手机操作 |
 | R12 | 历史数据兼容对账 | 无需功能收纳；现有前后端兼容和测试已覆盖，不做自动迁移、不要求老师返工 |
+
+## 2026-06-18 咨询进班接轨学管中心规则
+
+### 完成情况
+
+- Task 1：新增 `consultationStudentCenterClassAdapter`，接轨学员中心 class filter/form/payload/validation。
+- Task 2：已有班级弹窗补齐五筛选：学科、老师、学段、年级、类型；候选班级从完整 class pool 起步，无可靠 teacher id 时不隐藏过滤。
+- Task 3：快速建班改为结构化闭环。Dialog 使用 `ClassFormValues`；Modal 和 Page 都先 `validateConsultationQuickClassForm`，再 `buildConsultationQuickClassSavePayload`，POST `/api/classes` 创建班级，再按 existing enter-class 进班。Page 不再走 `quick_new_class` + 空 `class_name`。
+- 保持不动：转化待进班、Over 成功/失败、流程图蓝绿灯。
+
+### 验证记录
+
+| 命令 | 结果 |
+| --- | --- |
+| `cd frontend && npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts` | `31/31 pass` |
+| `python3 -m unittest tests.test_consultation_flow.ConsultationFlowTestCase.test_consultation_enter_quick_new_class_uses_structured_class_fields -v` | OK |
+| `cd frontend && npm run lint` | pass |
+| `cd frontend && npm run build` | pass；仅保留既有 Vite chunk warning |
+
+### 剩余缺口
+
+- `data/xingrun.db` 是后端测试初始化出来的未跟踪文件，不提交。
+- `quick_new_class` 兼容 builder 还存在；Page 已不再使用。
+- 后续 Task 4 仍需要人工本地预览确认 UI。
