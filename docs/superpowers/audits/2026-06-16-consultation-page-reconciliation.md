@@ -150,7 +150,7 @@
 
 | 命令 | 结果 |
 | --- | --- |
-| `cd frontend && npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts` | `31/31 pass` |
+| `cd frontend && npx tsx --test src/domain/consultationEnterClass.test.ts src/consultation-enter-class-dialog.test.ts` | `32/32 pass` |
 | `python3 -m unittest tests.test_consultation_flow.ConsultationFlowTestCase.test_consultation_enter_quick_new_class_uses_structured_class_fields -v` | OK |
 | `cd frontend && npm run lint` | pass |
 | `cd frontend && npm run build` | pass；仅保留既有 Vite chunk warning |
@@ -159,4 +159,4 @@
 
 - `data/xingrun.db` 是后端测试初始化出来的未跟踪文件，不提交。
 - `quick_new_class` 兼容 builder 还存在；Page 已不再使用。
-- 后续 Task 4 仍需要人工本地预览确认 UI。
+- 后续 Task 4 仍需要人工本地预览确认 UI；2026-06-19 本地服务 `http://localhost:3001/workspace/consultation` 可访问，但当前 Codex 浏览器控制接口不可用，未做自动点击预览。
