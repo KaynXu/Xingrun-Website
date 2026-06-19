@@ -16,7 +16,11 @@ import {
 } from './ConsultationModal';
 import { ConsultationEnterClassDialog } from './ConsultationEnterClassDialog';
 import { buildConsultationEnterClassPayload } from '../../domain/consultationEnterClass';
-import type { ClassFormValues } from '../student-center/model';
+import {
+  buildConsultationQuickClassSavePayload,
+  validateConsultationQuickClassForm,
+} from '../../domain/consultationStudentCenterClassAdapter';
+import type { ClassFormValues, UserItem } from '../student-center/model';
 import { ConsultationBatchModal } from './ConsultationBatchModal';
 import {
   ConsultationCardExpandableText,
@@ -46,6 +50,8 @@ import {
 } from './consultationShared';
 import { workspaceCardClass, workspaceFieldClass, workspacePageClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSectionTextClass, workspaceSectionTitleClass, apiFetch, cn, getTodayIsoDate } from '../../workspaceShared';
 import { hasStaffAccess } from '../navigation/workspaceAccess';
+
+const consultationQuickClassGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 
 export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) {
   const canManage = hasStaffAccess(currentUser.role);
@@ -445,20 +451,56 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   };
 
   const handleInlineEnterCreateClass = async (draft: ClassFormValues) => {
-    await postInlineEnterClass(buildConsultationEnterClassPayload({
-      mode: 'quick-create',
-      quickClassDraft: {
-        subject: draft.subject,
-        stage: draft.stage,
-        current_grade: draft.current_grade,
-        class_type: draft.class_type,
-        class_number: draft.class_type === 'group' ? draft.class_number : '',
-        cohort_year: draft.cohort_year,
-        show_cohort_year: draft.show_cohort_year,
-        is_bridge: draft.is_bridge,
-        bridge_target: draft.bridge_target,
-      },
-    }));
+    if (!inlineEnterClassRecord) return;
+    const quickClassTeacherUserId = inlineEnterClassRecord.teaching_teacher_user_id ?? currentUser.id;
+    const selectedTeacher: UserItem = {
+      id: quickClassTeacherUserId,
+      name: inlineEnterClassRecord.teaching_teacher || inlineEnterClassRecord.trial_teacher || inlineEnterClassRecord.receiving_teacher || currentUser.display_name || currentUser.username,
+      org: currentUser.organization_name,
+      role: currentUser.role,
+      username: quickClassTeacherUserId === currentUser.id ? currentUser.username : undefined,
+    };
+    const quickClassForm = {
+      ...draft,
+      grade: draft.current_grade,
+      class_number: draft.class_type === 'group' ? draft.class_number : '',
+    };
+    const validationError = validateConsultationQuickClassForm({
+      form: quickClassForm,
+      selectedTeacher,
+      selectedTeacherUserId: quickClassTeacherUserId,
+      gradeOptions: consultationQuickClassGradeOptions,
+    });
+    if (validationError) {
+      setInlineEnterClassError(validationError);
+      return;
+    }
+
+    setInlineEnterClassCreating(true);
+    setInlineEnterClassError('');
+    setError('');
+    try {
+      const payload = buildConsultationQuickClassSavePayload({
+        form: quickClassForm,
+        selectedTeacher,
+        selectedTeacherUserId: quickClassTeacherUserId,
+      });
+      const createdClass = await apiFetch<ClassItem>('/api/classes', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setClasses((current) => [createdClass, ...current.filter((item) => item.id !== createdClass.id)]);
+      await postInlineEnterClass(buildConsultationEnterClassPayload({
+        mode: 'existing',
+        existingClassId: createdClass.id,
+        consultationSubject: createdClass.subject,
+        grade: createdClass.current_grade || createdClass.grade,
+      }));
+    } catch (err) {
+      setInlineEnterClassError(err instanceof Error ? err.message : '快速建班失败');
+    } finally {
+      setInlineEnterClassCreating(false);
+    }
   };
 
   const handleInlineEnterPendingClass = () => {

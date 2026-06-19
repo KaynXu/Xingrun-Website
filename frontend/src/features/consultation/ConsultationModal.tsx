@@ -17,6 +17,7 @@ import { apiFetch, cn, getTodayIsoDate, workspacePrimaryButtonClass, workspaceSe
 import { hasStaffAccess } from '../navigation/workspaceAccess';
 import {
   buildConsultationQuickClassSavePayload,
+  validateConsultationQuickClassForm,
 } from '../../domain/consultationStudentCenterClassAdapter';
 import type { ClassFormValues, UserItem } from '../student-center/model';
 import { ConsultationEnterClassDialog } from './ConsultationEnterClassDialog';
@@ -1025,6 +1026,20 @@ const ConsultationModal = ({
           currentUser,
         })
         : buildConsultationClassUser(currentUser, currentUser.display_name || currentUser.username);
+      const validationError = validateConsultationQuickClassForm({
+        form: {
+          ...draft,
+          grade: draft.current_grade,
+          class_number: draft.class_type === 'group' ? draft.class_number : '',
+        },
+        selectedTeacher,
+        selectedTeacherUserId: quickClassTeacherUserId,
+        gradeOptions: consultationGradeOptions,
+      });
+      if (validationError) {
+        setSuccessClassCreateError(validationError);
+        return;
+      }
       const payload = buildConsultationQuickClassSavePayload({
         form: {
           ...draft,

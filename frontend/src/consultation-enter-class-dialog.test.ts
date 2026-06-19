@@ -7,6 +7,13 @@ const modalSource = readFileSync(resolve(process.cwd(), 'src/features/consultati
 const pageSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationPage.tsx'), 'utf8');
 const enterClassDialogSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationEnterClassDialog.tsx'), 'utf8');
 
+function extractConstHandler(source: string, handlerName: string): string {
+  const start = source.indexOf(`const ${handlerName} =`);
+  assert.notEqual(start, -1, `${handlerName} should exist`);
+  const nextHandler = source.indexOf('\n\n  const ', start + 1);
+  return source.slice(start, nextHandler === -1 ? undefined : nextHandler);
+}
+
 test('consultation enter class dialog restores the three card actions', () => {
   assert.match(enterClassDialogSource, /ConsultationEnterClassDialog/);
   assert.match(enterClassDialogSource, /已有班级/);
@@ -74,6 +81,29 @@ test('consultation modal keeps quick-created class teacher id and name consisten
   assert.match(modalSource, /quickClassTeacherUserId/);
   assert.match(modalSource, /selectedTeacherUserId: quickClassTeacherUserId/);
   assert.doesNotMatch(modalSource, /buildConsultationClassUser\(currentUser, form\.teaching_teacher \|\| form\.trial_teacher \|\| form\.receiving_teacher\)/);
+});
+
+test('consultation quick-create validates through student-center adapter before posting classes', () => {
+  const modalCreateHandlerSource = extractConstHandler(modalSource, 'handleCreateSuccessClass');
+  const pageCreateHandlerSource = extractConstHandler(pageSource, 'handleInlineEnterCreateClass');
+
+  assert.match(modalSource, /validateConsultationQuickClassForm/);
+  assert.match(pageSource, /validateConsultationQuickClassForm/);
+  assert.match(modalCreateHandlerSource, /validateConsultationQuickClassForm/);
+  assert.match(modalCreateHandlerSource, /setSuccessClassCreateError\(validationError\)/);
+  assert.match(pageCreateHandlerSource, /validateConsultationQuickClassForm/);
+  assert.match(pageCreateHandlerSource, /setInlineEnterClassError\(validationError\)/);
+});
+
+test('consultation page inline quick-create creates a class through class API before entering existing class', () => {
+  const pageCreateHandlerSource = extractConstHandler(pageSource, 'handleInlineEnterCreateClass');
+
+  assert.match(pageSource, /buildConsultationQuickClassSavePayload/);
+  assert.match(pageCreateHandlerSource, /apiFetch<ClassItem>\('\/api\/classes'/);
+  assert.match(pageCreateHandlerSource, /setClasses\(\(current\) => \[createdClass/);
+  assert.match(pageCreateHandlerSource, /buildConsultationEnterClassPayload\(\{\s*mode: 'existing'/);
+  assert.doesNotMatch(pageCreateHandlerSource, /mode: 'quick-create'/);
+  assert.doesNotMatch(pageCreateHandlerSource, /quickClassDraft/);
 });
 
 test('consultation enter class dialog reset depends on stable value fields', () => {
