@@ -229,7 +229,9 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
   assert.match(workbenchBlock[0], /const processedRecords = /);
   assert.match(workbenchBlock[0], /const \[workbenchTab, setWorkbenchTab\] = useState<'pending' \| 'processed'>\('pending'\);/);
   assert.match(workbenchBlock[0], /const \[endedRangeMode, setEndedRangeMode\] = useState<'week' \| 'custom'>\('week'\);/);
-  assert.match(workbenchBlock[0], /const pendingVisibleRecords = \[\.\.\.pendingActiveRecords, \.\.\.pendingEndedRecords\.filter\(isMeetingEndedInSelectedRange\)\]/);
+  assert.match(workbenchBlock[0], /const \[meetingStatusFilter, setMeetingStatusFilter\] = useState<'all' \| 'active' \| 'ended'>\('all'\);/);
+  assert.match(workbenchBlock[0], /const pendingRangeRecords = \[\.\.\.pendingActiveRecords, \.\.\.pendingEndedRecords\.filter\(isMeetingEndedInSelectedRange\)\];/);
+  assert.match(workbenchBlock[0], /const pendingVisibleRecords = meetingStatusFilter === 'active'/);
   assert.match(workbenchBlock[0], /const processedVisibleRecords = processedRecords;/);
   assert.match(workbenchBlock[0], /const isTerminal = isConsultationEnded\(values\.flow_stage\) \|\| isConsultationResultStage\(values\.flow_stage\);/);
   assert.match(workbenchBlock[0], /ended_at: isTerminal \? values\.ended_at \|\| new Date\(\)\.toISOString\(\) : ''/);
@@ -252,8 +254,11 @@ test('consultation meeting workbench shows all active consultations plus ended r
   assert.match(workbenchBlock[0], /const \[customEndedStart, setCustomEndedStart\] = useState/);
   assert.match(workbenchBlock[0], /const \[customEndedEnd, setCustomEndedEnd\] = useState/);
   assert.match(workbenchBlock[0], /const isMeetingEndedInSelectedRange = \(record: ConsultationRecord\) =>/);
-  assert.match(workbenchBlock[0], /pendingActiveRecords, \.\.\.pendingEndedRecords\.filter\(isMeetingEndedInSelectedRange\)/);
+  assert.match(workbenchBlock[0], /const pendingRangeRecords = \[\.\.\.pendingActiveRecords, \.\.\.pendingEndedRecords\.filter\(isMeetingEndedInSelectedRange\)\];/);
+  assert.match(workbenchBlock[0], /meetingStatusFilter === 'active'/);
+  assert.match(workbenchBlock[0], /meetingStatusFilter === 'ended'/);
   assert.match(workbenchBlock[0], /近1周/);
+  assert.match(workbenchBlock[0], /全部/);
   assert.match(workbenchBlock[0], /自定义日期/);
   assert.doesNotMatch(workbenchBlock[0], /一月内/);
   assert.doesNotMatch(workbenchBlock[0], /30天\+/);

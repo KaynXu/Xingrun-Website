@@ -67,6 +67,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<'pending' | 'processed'>('pending');
   const [endedRangeMode, setEndedRangeMode] = useState<'week' | 'custom'>('week');
+  const [meetingStatusFilter, setMeetingStatusFilter] = useState<'all' | 'active' | 'ended'>('all');
   const [customEndedStart, setCustomEndedStart] = useState(() => shiftMeetingIsoDate(getTodayIsoDate(), -7));
   const [customEndedEnd, setCustomEndedEnd] = useState(() => getTodayIsoDate());
   const teacherDirectory = buildConsultationTeacherDirectory(records);
@@ -164,7 +165,12 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
   const processedRecords = filteredRecords.filter((record) => processedIds.has(record.id));
   const pendingEndedRecords = pendingRecords.filter(isMeetingEndedRecord);
   const pendingActiveRecords = pendingRecords.filter((record) => !isMeetingEndedRecord(record));
-  const pendingVisibleRecords = [...pendingActiveRecords, ...pendingEndedRecords.filter(isMeetingEndedInSelectedRange)];
+  const pendingRangeRecords = [...pendingActiveRecords, ...pendingEndedRecords.filter(isMeetingEndedInSelectedRange)];
+  const pendingVisibleRecords = meetingStatusFilter === 'active'
+    ? pendingActiveRecords
+    : meetingStatusFilter === 'ended'
+      ? pendingEndedRecords.filter(isMeetingEndedInSelectedRange)
+      : pendingRangeRecords;
   const processedVisibleRecords = processedRecords;
   const pendingRangeCounts = {
     active: pendingActiveRecords.length,
@@ -418,17 +424,34 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
   const renderMeetingRangeFilter = () => (
     <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-[#D9EEF7] bg-[#F9FDFF] px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex h-8 items-center rounded-full border border-sky-100 bg-white px-3 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-          待咨询
-          <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-white/10 dark:text-slate-300">
-            全部 {pendingRangeCounts.active}
-          </span>
-        </span>
-        <span className="inline-flex h-8 items-center rounded-full border border-sky-100 bg-white px-3 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-          已结束
-          <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-white/10 dark:text-slate-300">
-            {pendingRangeCounts.endedInRange}/{pendingRangeCounts.endedTotal}
-          </span>
+        {[
+          { key: 'all' as const, label: '全部', count: pendingRangeRecords.length },
+          { key: 'active' as const, label: '待咨询', count: pendingRangeCounts.active },
+          { key: 'ended' as const, label: '已结束', count: pendingRangeCounts.endedInRange },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setMeetingStatusFilter(item.key)}
+            className={cn(
+              'inline-flex h-8 items-center rounded-full border px-3 text-xs font-bold transition',
+              meetingStatusFilter === item.key
+                ? 'border-sky-200 bg-sky-500 text-white'
+                : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+            )}
+          >
+            {item.label}
+            <span className={cn(
+              'ml-1 rounded-full px-1.5 py-0.5 text-[10px]',
+              meetingStatusFilter === item.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300',
+            )}
+            >
+              {item.count}
+            </span>
+          </button>
+        ))}
+        <span className="inline-flex h-8 items-center rounded-full border border-slate-100 bg-white px-3 text-[11px] font-bold text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+          已结束总数 {pendingRangeCounts.endedTotal}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-2">
