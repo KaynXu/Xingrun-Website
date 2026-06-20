@@ -916,3 +916,17 @@
   - `python3 -m unittest tests.test_review_plan_workflow tests.test_single_lesson_pdf_unification tests.test_review_plan_evals tests.test_review_plan_math_normalization`
   - components-only PDF smoke generated `/tmp/review_plan_components_only_contract_fix.pdf`, 7 pages, 2524 extracted chars, with fallback text blocked
   - `git diff --check`
+
+## 2026-06-20 6.20 audio review plan
+- Confirmed local `develop` and `origin/develop` were synchronized at `94128b38bba9d591a2888e24ddcc3c9655b7256d` before starting, then worked on short branch `codex/review-plan-620-audio`.
+- Transcribed `lingshiwenjian/6.20.1.m4a` and `lingshiwenjian/6.20.2.m4a` as one lesson with local `faster-whisper-base`; temporary transcript was written to `tmp/20260620-620-audio-transcript.txt`.
+- Generated the 6月20日七下期末综合讲评 review plan using the fixed review-plan workflow rules: five spaced review days, whole-lesson coverage each day, fill-in-first tasks, limited class quote replay, and mixed/oral knowledge practice by day.
+- Created source and PDF files:
+  - `lingshiwenjian/20260620-6月20日七下期末综合讲评-复习计划源文件-20260620-193237.md`
+  - `lingshiwenjian/20260620-6月20日七下期末综合讲评-课后复习计划-20260620-193237.pdf`
+  - `lingshiwenjian/generate_620_review_plan_20260620.py`
+- Runnable proof passed via `/tmp/xingrun_620_review_plan_proof.sh`:
+  - file existence and PDF header checks
+  - `py_compile` for the generation script
+  - `pypdf` extraction confirmed 12 pages and 7862 extracted characters
+  - content checks confirmed the lesson title, core topics, all five review dates, and same-lesson source note
