@@ -77,6 +77,31 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   const [flowNodeDialog, setFlowNodeDialog] = useState<{ record: ConsultationRecord; stage: string; setAsCurrent: boolean } | null>(null);
   const loadRequestId = useRef(0);
   const teacherDirectory = buildConsultationTeacherDirectory(records);
+  const inlineEnterClassUsers = useMemo<UserItem[]>(() => {
+    const usersById = new Map<number, UserItem>();
+    const addUser = (id: number | null | undefined, name: string | null | undefined) => {
+      if (id == null || usersById.has(id)) {
+        return;
+      }
+      usersById.set(id, {
+        id,
+        name: name?.trim() || (id === currentUser.id ? currentUser.display_name || currentUser.username : '未命名老师'),
+        org: currentUser.organization_name,
+        role: id === currentUser.id ? currentUser.role as UserItem['role'] : 'member',
+        username: id === currentUser.id ? currentUser.username : undefined,
+      });
+    };
+
+    classes.forEach((item) => addUser(item.teacher_user_id, item.teacher_name));
+    if (inlineEnterClassRecord) {
+      addUser(
+        (inlineEnterClassRecord as ConsultationRecord & { teaching_teacher_user_id?: number | null }).teaching_teacher_user_id,
+        inlineEnterClassRecord.teaching_teacher || inlineEnterClassRecord.trial_teacher || inlineEnterClassRecord.receiving_teacher,
+      );
+    }
+
+    return Array.from(usersById.values());
+  }, [classes, currentUser.display_name, currentUser.id, currentUser.organization_name, currentUser.role, currentUser.username, inlineEnterClassRecord]);
 
   const load = useCallback(async (keyword: string) => {
     const requestId = ++loadRequestId.current;
@@ -1009,7 +1034,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             open={Boolean(inlineEnterClassRecord)}
             values={toConsultationFormValues(inlineEnterClassRecord)}
             classes={classes}
-            users={[]}
+            users={inlineEnterClassUsers}
             teacherBindingByClassId={{}}
             teachingTeacherUserId={(inlineEnterClassRecord as ConsultationRecord & { teaching_teacher_user_id?: number | null }).teaching_teacher_user_id ?? null}
             creating={inlineEnterClassCreating}

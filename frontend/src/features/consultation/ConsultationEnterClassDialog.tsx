@@ -187,7 +187,8 @@ export const ConsultationEnterClassDialog = ({
     if (key === 'grade') setGradeFilter('全部');
     if (key === 'classType') setClassTypeFilter('all');
     setSelectedClassId('');
-    setClassPickerOpen(false);
+    setActiveExistingClassFilterLayer(null);
+    setClassPickerOpen(true);
   };
   const selectExistingClassFilterOption = (value: string | number) => {
     if (activeExistingClassFilterLayer === 'subject') setSubjectFilter(String(value));
@@ -196,7 +197,8 @@ export const ConsultationEnterClassDialog = ({
     if (activeExistingClassFilterLayer === 'grade') setGradeFilter(String(value));
     if (activeExistingClassFilterLayer === 'classType') setClassTypeFilter(value as ConsultationClassTypeFilter);
     setSelectedClassId('');
-    setClassPickerOpen(false);
+    setActiveExistingClassFilterLayer(null);
+    setClassPickerOpen(true);
   };
 
   return (

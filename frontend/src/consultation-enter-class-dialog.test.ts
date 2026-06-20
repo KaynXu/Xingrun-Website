@@ -63,6 +63,21 @@ test('consultation existing class picker uses a hoverable custom list only for c
   assert.match(enterClassDialogSource, /if \(mode === 'pending'\) onPending\(\);/);
 });
 
+test('consultation existing class filters reveal the linked class list after filter changes', () => {
+  const handlerStart = enterClassDialogSource.indexOf('const selectExistingClassFilterOption =');
+  const renderStart = enterClassDialogSource.indexOf('\n\n  return (', handlerStart);
+  const handlerSource = enterClassDialogSource.slice(handlerStart, renderStart);
+  assert.match(handlerSource, /setActiveExistingClassFilterLayer\(null\)/);
+  assert.match(handlerSource, /setClassPickerOpen\(true\)/);
+  assert.doesNotMatch(handlerSource, /setClassPickerOpen\(false\)/);
+});
+
+test('consultation page inline enter-class dialog passes class teacher options instead of an empty pool', () => {
+  assert.match(pageSource, /inlineEnterClassUsers/);
+  assert.match(pageSource, /users=\{inlineEnterClassUsers\}/);
+  assert.doesNotMatch(pageSource, /users=\{\[\]\}/);
+});
+
 test('consultation quick-create UI uses student-center class form field names', () => {
   assert.match(enterClassDialogSource, /createDraft\.class_type/);
   assert.match(enterClassDialogSource, /createDraft\.current_grade/);
