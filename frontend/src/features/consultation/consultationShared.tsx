@@ -1020,6 +1020,11 @@ export const ConsultationFlowBar = ({
         const handlePrimaryTouchEnd = () => {
           clearLongPressTimer();
         };
+        const handlePrimaryDoubleClick = () => {
+          if (node.disabled) return;
+          if (node.type === 'result') onResultDoubleClick?.();
+          if (node.type === 'over') onOverDoubleClick?.();
+        };
         return (
           <div key={node.key} className="group relative min-w-0">
             {nextNode && (
@@ -1036,6 +1041,7 @@ export const ConsultationFlowBar = ({
               onTouchStart={handlePrimaryTouchStart}
               onTouchEnd={handlePrimaryTouchEnd}
               onTouchCancel={clearLongPressTimer}
+              onDoubleClick={handlePrimaryDoubleClick}
               title={node.title}
               className={`relative z-10 flex w-full min-w-0 flex-col items-center gap-0.5 rounded-lg ${compact ? 'min-h-9 py-0.5' : 'min-h-11 py-1'} text-center transition ${node.disabled ? 'cursor-default' : 'hover:bg-sky-50/70 dark:hover:bg-white/5'}`}
             >

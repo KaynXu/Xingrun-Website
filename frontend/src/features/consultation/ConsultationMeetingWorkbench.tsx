@@ -37,6 +37,20 @@ import {
   writeLocalStorageItem,
 } from '../../workspaceShared';
 
+const meetingDayMs = 86_400_000;
+
+function shiftMeetingIsoDate(isoDate: string, deltaDays: number): string {
+  const time = Date.parse(`${isoDate}T12:00:00`);
+  if (!Number.isFinite(time)) {
+    return isoDate;
+  }
+  return new Date(time + deltaDays * meetingDayMs).toISOString().slice(0, 10);
+}
+
+function getMeetingRecordEndedDate(record: ConsultationRecord): string {
+  return (record.ended_at || '').slice(0, 10);
+}
+
 export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: CurrentUser }) => {
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
@@ -52,10 +66,9 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
   const [modalMode, setModalMode] = useState<'view' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<'pending' | 'processed'>('pending');
-  const [pendingStatusFilter, setPendingStatusFilter] = useState<'active' | 'ended'>('active');
-  const [pendingEndedAgeFilter, setPendingEndedAgeFilter] = useState<'7' | '30' | 'over30'>('over30');
-  const [processedStatusFilter, setProcessedStatusFilter] = useState<'active' | 'ended'>('active');
-  const [processedEndedAgeFilter, setProcessedEndedAgeFilter] = useState<'7' | '30' | 'over30'>('over30');
+  const [endedRangeMode, setEndedRangeMode] = useState<'week' | 'custom'>('week');
+  const [customEndedStart, setCustomEndedStart] = useState(() => shiftMeetingIsoDate(getTodayIsoDate(), -7));
+  const [customEndedEnd, setCustomEndedEnd] = useState(() => getTodayIsoDate());
   const teacherDirectory = buildConsultationTeacherDirectory(records);
   const hasUncommittedChanges = Object.keys(draftsById).length > 0;
   const meetingTodayIso = getTodayIsoDate();
@@ -130,41 +143,34 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
     }), [getDraftRecord, records, teacherDirectory, teacherFilter]);
 
   const isMeetingEndedRecord = (record: ConsultationRecord) => isConsultationEnded(record.flow_stage) || isConsultationResultStage(record.flow_stage);
-  const getMeetingEndedAgeBucket = (record: ConsultationRecord): '7' | '30' | 'over30' => {
-    const endedAt = (record.ended_at || '').trim();
-    if (!endedAt) return 'over30';
-    const endedDate = endedAt.slice(0, 10);
+  const getMeetingEndedAgeDays = (record: ConsultationRecord): number => {
+    const endedDate = getMeetingRecordEndedDate(record);
+    if (!endedDate) return Number.POSITIVE_INFINITY;
     const endedTime = Date.parse(`${endedDate}T12:00:00`);
     const todayTime = Date.parse(`${meetingTodayIso}T12:00:00`);
-    if (!Number.isFinite(endedTime) || !Number.isFinite(todayTime)) return 'over30';
-    const ageDays = Math.max(0, Math.floor((todayTime - endedTime) / 86_400_000));
-    if (ageDays <= 7) return '7';
-    if (ageDays <= 30) return '30';
-    return 'over30';
+    if (!Number.isFinite(endedTime) || !Number.isFinite(todayTime)) return Number.POSITIVE_INFINITY;
+    return Math.max(0, Math.floor((todayTime - endedTime) / meetingDayMs));
+  };
+  const isMeetingEndedInSelectedRange = (record: ConsultationRecord) => {
+    const endedDate = getMeetingRecordEndedDate(record);
+    if (!endedDate) return false;
+    if (endedRangeMode === 'week') {
+      return getMeetingEndedAgeDays(record) <= 7;
+    }
+    return (!customEndedStart || endedDate >= customEndedStart) && (!customEndedEnd || endedDate <= customEndedEnd);
   };
 
   const pendingRecords = filteredRecords.filter((record) => !processedIds.has(record.id));
   const processedRecords = filteredRecords.filter((record) => processedIds.has(record.id));
   const pendingEndedRecords = pendingRecords.filter(isMeetingEndedRecord);
   const pendingActiveRecords = pendingRecords.filter((record) => !isMeetingEndedRecord(record));
-  const processedEndedRecords = processedRecords.filter(isMeetingEndedRecord);
-  const processedActiveRecords = processedRecords.filter((record) => !isMeetingEndedRecord(record));
-  const pendingVisibleRecords = pendingStatusFilter === 'active'
-    ? pendingActiveRecords
-    : pendingEndedRecords.filter((record) => getMeetingEndedAgeBucket(record) === pendingEndedAgeFilter);
-  const processedVisibleRecords = processedStatusFilter === 'active'
-    ? processedActiveRecords
-    : processedEndedRecords.filter((record) => getMeetingEndedAgeBucket(record) === processedEndedAgeFilter);
-
-  const buildMeetingFilterCounts = (activeRecords: ConsultationRecord[], endedRecords: ConsultationRecord[]) => ({
-    active: activeRecords.length,
-    ended: endedRecords.length,
-    ended7: endedRecords.filter((record) => getMeetingEndedAgeBucket(record) === '7').length,
-    ended30: endedRecords.filter((record) => getMeetingEndedAgeBucket(record) === '30').length,
-    endedOver30: endedRecords.filter((record) => getMeetingEndedAgeBucket(record) === 'over30').length,
-  });
-  const pendingFilterCounts = buildMeetingFilterCounts(pendingActiveRecords, pendingEndedRecords);
-  const processedFilterCounts = buildMeetingFilterCounts(processedActiveRecords, processedEndedRecords);
+  const pendingVisibleRecords = [...pendingActiveRecords, ...pendingEndedRecords.filter(isMeetingEndedInSelectedRange)];
+  const processedVisibleRecords = processedRecords;
+  const pendingRangeCounts = {
+    active: pendingActiveRecords.length,
+    endedInRange: pendingEndedRecords.filter(isMeetingEndedInSelectedRange).length,
+    endedTotal: pendingEndedRecords.length,
+  };
 
   const openViewModal = (record: ConsultationRecord) => {
     setSelectedRecord(record);
@@ -409,63 +415,67 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
     </motion.div>
   );
 
-  const renderMeetingSecondaryFilters = (
-    statusValue: 'active' | 'ended',
-    setStatusValue: (value: 'active' | 'ended') => void,
-    ageValue: '7' | '30' | 'over30',
-    setAgeValue: (value: '7' | '30' | 'over30') => void,
-    counts: { active: number; ended: number; ended7: number; ended30: number; endedOver30: number },
-  ) => (
+  const renderMeetingRangeFilter = () => (
     <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-[#D9EEF7] bg-[#F9FDFF] px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="flex flex-wrap items-center gap-2">
-        {[
-          { key: 'active' as const, label: '待咨询', count: counts.active },
-          { key: 'ended' as const, label: '已结束', count: counts.ended },
-        ].map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setStatusValue(item.key)}
-            className={cn(
-              'h-8 rounded-full border px-3 text-xs font-bold transition',
-              statusValue === item.key
-                ? 'border-sky-200 bg-sky-500 text-white'
-                : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
-            )}
-          >
-            {item.label}
-            <span className={cn('ml-1 rounded-full px-1.5 py-0.5 text-[10px]', statusValue === item.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300')}>
-              {item.count}
-            </span>
-          </button>
-        ))}
+        <span className="inline-flex h-8 items-center rounded-full border border-sky-100 bg-white px-3 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+          待咨询
+          <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-white/10 dark:text-slate-300">
+            全部 {pendingRangeCounts.active}
+          </span>
+        </span>
+        <span className="inline-flex h-8 items-center rounded-full border border-sky-100 bg-white px-3 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+          已结束
+          <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-white/10 dark:text-slate-300">
+            {pendingRangeCounts.endedInRange}/{pendingRangeCounts.endedTotal}
+          </span>
+        </span>
       </div>
-      {statusValue === 'ended' && (
-        <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-2">
-          {[
-            { key: '7' as const, label: '一周内', count: counts.ended7 },
-            { key: '30' as const, label: '一月内', count: counts.ended30 },
-            { key: 'over30' as const, label: '30天+', count: counts.endedOver30 },
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setAgeValue(item.key)}
-              className={cn(
-                'h-7 rounded-full border px-2.5 text-[11px] font-bold transition',
-                ageValue === item.key
-                  ? 'border-emerald-200 bg-emerald-500 text-white'
-                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
-              )}
-            >
-              {item.label}
-              <span className={cn('ml-1 rounded-full px-1 py-0.5 text-[10px]', ageValue === item.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300')}>
-                {item.count}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-2">
+        <button
+          type="button"
+          onClick={() => setEndedRangeMode('week')}
+          className={cn(
+            'h-7 rounded-full border px-2.5 text-[11px] font-bold transition',
+            endedRangeMode === 'week'
+              ? 'border-emerald-200 bg-emerald-500 text-white'
+              : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+          )}
+        >
+          近1周
+        </button>
+        <button
+          type="button"
+          onClick={() => setEndedRangeMode('custom')}
+          className={cn(
+            'h-7 rounded-full border px-2.5 text-[11px] font-bold transition',
+            endedRangeMode === 'custom'
+              ? 'border-emerald-200 bg-emerald-500 text-white'
+              : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300',
+          )}
+        >
+          自定义日期
+        </button>
+        {endedRangeMode === 'custom' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={customEndedStart}
+              onChange={(event) => setCustomEndedStart(event.target.value)}
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none focus:border-emerald-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              aria-label="已结束开始日期"
+            />
+            <span className="text-xs font-bold text-slate-400">至</span>
+            <input
+              type="date"
+              value={customEndedEnd}
+              onChange={(event) => setCustomEndedEnd(event.target.value)}
+              className="h-8 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 outline-none focus:border-emerald-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              aria-label="已结束结束日期"
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -602,7 +612,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
               }`}
             >
               待处理
-              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-200">{pendingRecords.length}</span>
+              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-200">{pendingVisibleRecords.length}</span>
             </button>
             <button
               type="button"
@@ -620,13 +630,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
 
           {workbenchTab === 'pending' ? (
             <div>
-              {renderMeetingSecondaryFilters(
-                pendingStatusFilter,
-                setPendingStatusFilter,
-                pendingEndedAgeFilter,
-                setPendingEndedAgeFilter,
-                pendingFilterCounts,
-              )}
+              {renderMeetingRangeFilter()}
               <div className="grid gap-3">
                 {pendingVisibleRecords.length ? (
                   <AnimatePresence initial={false}>
@@ -637,24 +641,12 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
             </div>
           ) : (
             <div className="space-y-4">
-              {renderMeetingSecondaryFilters(
-                processedStatusFilter,
-                setProcessedStatusFilter,
-                processedEndedAgeFilter,
-                setProcessedEndedAgeFilter,
-                processedFilterCounts,
-              )}
               <div className="grid gap-3">
                 {processedVisibleRecords.length ? (
                   <AnimatePresence initial={false}>
                     {processedVisibleRecords.map(renderMeetingRecordCard)}
                   </AnimatePresence>
-                ) : renderWorkbenchEmptyState(
-                  processedStatusFilter === 'active' ? '当前筛选下暂无待咨询' : '当前筛选下暂无已结束记录',
-                  processedStatusFilter === 'active' ? '可以查看待处理队列继续核对，或切换到已结束查看完成记录。' : '咨询成功、咨询失败或中途结束的记录会在这里集中查看。',
-                  '查看待处理',
-                  () => setWorkbenchTab('pending'),
-                )}
+                ) : renderWorkbenchEmptyState('本次还没有已处理记录', '编辑、结束或直接标记核对后，记录会进入这里，最终保存后同步主咨询页。', '查看待处理', () => setWorkbenchTab('pending'))}
               </div>
             </div>
           )}

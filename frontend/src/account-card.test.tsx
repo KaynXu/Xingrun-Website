@@ -225,11 +225,11 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
   assert.match(workbenchBlock[0], /setDraftsById\(\(current\) => \(\{ \.\.\.current, \[selectedRecord\.id\]: nextValues \}\)\);/);
   assert.match(workbenchBlock[0], /setProcessedIds\(\(current\) => new Set\(current\)\.add\(selectedRecord\.id\)\);/);
   assert.match(workbenchBlock[0], /const pendingRecords = /);
-  assert.match(workbenchBlock[0], /const processedActiveRecords = /);
-  assert.match(workbenchBlock[0], /const processedEndedRecords = /);
+  assert.match(workbenchBlock[0], /const processedRecords = /);
   assert.match(workbenchBlock[0], /const \[workbenchTab, setWorkbenchTab\] = useState<'pending' \| 'processed'>\('pending'\);/);
-  assert.match(workbenchBlock[0], /const \[pendingStatusFilter, setPendingStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
-  assert.match(workbenchBlock[0], /const \[processedStatusFilter, setProcessedStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
+  assert.match(workbenchBlock[0], /const \[endedRangeMode, setEndedRangeMode\] = useState<'week' \| 'custom'>\('week'\);/);
+  assert.match(workbenchBlock[0], /const pendingVisibleRecords = \[\.\.\.pendingActiveRecords, \.\.\.pendingEndedRecords\.filter\(isMeetingEndedInSelectedRange\)\]/);
+  assert.match(workbenchBlock[0], /const processedVisibleRecords = processedRecords;/);
   assert.match(workbenchBlock[0], /const isTerminal = isConsultationEnded\(values\.flow_stage\) \|\| isConsultationResultStage\(values\.flow_stage\);/);
   assert.match(workbenchBlock[0], /ended_at: isTerminal \? values\.ended_at \|\| new Date\(\)\.toISOString\(\) : ''/);
   assert.doesNotMatch(workbenchBlock[0], /setWorkbenchTab\('processed'\);/);
@@ -237,24 +237,25 @@ test('consultation meeting workbench keeps local drafts until final save', () =>
   assert.match(workbenchBlock[0], /workbenchTab === 'pending'/);
   assert.match(workbenchBlock[0], /onClick=\{\(\) => setWorkbenchTab\('pending'\)\}/);
   assert.match(workbenchBlock[0], /onClick=\{\(\) => setWorkbenchTab\('processed'\)\}/);
-  assert.match(workbenchBlock[0], /renderMeetingSecondaryFilters/);
+  assert.match(workbenchBlock[0], /renderMeetingRangeFilter/);
   assert.match(workbenchBlock[0], /待处理/);
   assert.match(workbenchBlock[0], /待咨询/);
   assert.match(workbenchBlock[0], /已结束/);
 });
 
-test('consultation meeting workbench has lighter secondary filters and terminal age filters', () => {
+test('consultation meeting workbench shows all active consultations plus ended range review', () => {
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(workbenchBlock);
-  assert.match(workbenchBlock[0], /const \[pendingStatusFilter, setPendingStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
-  assert.match(workbenchBlock[0], /const \[pendingEndedAgeFilter, setPendingEndedAgeFilter\] = useState<'7' \| '30' \| 'over30'>\('over30'\);/);
-  assert.match(workbenchBlock[0], /const \[processedStatusFilter, setProcessedStatusFilter\] = useState<'active' \| 'ended'>\('active'\);/);
-  assert.match(workbenchBlock[0], /getMeetingEndedAgeBucket/);
-  assert.match(workbenchBlock[0], /renderMeetingSecondaryFilters/);
-  assert.match(workbenchBlock[0], /一周内/);
-  assert.match(workbenchBlock[0], /一月内/);
-  assert.match(workbenchBlock[0], /30天\+/);
+  assert.match(workbenchBlock[0], /const \[endedRangeMode, setEndedRangeMode\] = useState<'week' \| 'custom'>\('week'\);/);
+  assert.match(workbenchBlock[0], /const \[customEndedStart, setCustomEndedStart\] = useState/);
+  assert.match(workbenchBlock[0], /const \[customEndedEnd, setCustomEndedEnd\] = useState/);
+  assert.match(workbenchBlock[0], /const isMeetingEndedInSelectedRange = \(record: ConsultationRecord\) =>/);
+  assert.match(workbenchBlock[0], /pendingActiveRecords, \.\.\.pendingEndedRecords\.filter\(isMeetingEndedInSelectedRange\)/);
+  assert.match(workbenchBlock[0], /近1周/);
+  assert.match(workbenchBlock[0], /自定义日期/);
+  assert.doesNotMatch(workbenchBlock[0], /一月内/);
+  assert.doesNotMatch(workbenchBlock[0], /30天\+/);
 });
 
 test('consultation meeting workbench uses a grouped teacher popover instead of a select', () => {
@@ -286,22 +287,23 @@ test('consultation meeting workbench can directly mark a card processed with mot
   assert.match(workbenchBlock[0], /exit=\{\{ opacity: 0, scale: prefersReducedMotion \? 1 : 0\.96, y: prefersReducedMotion \? 0 : 10 \}\}/);
 });
 
-test('consultation meeting workbench only lets the flow over node change state on double click', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
-  const flowBarBlock = source.match(/const ConsultationFlowBar = \([\s\S]*?\n};/);
+test('consultation meeting workbench keeps card flow read-only except the over shortcut', () => {
+  const flowBarBlock = consultationSharedSource.match(/export const ConsultationFlowBar = \([\s\S]*?\n};/);
   const workbenchBlock = [consultationMeetingWorkbenchSource];
 
   assert.ok(flowBarBlock);
   assert.ok(workbenchBlock);
   assert.match(flowBarBlock[0], /onOverDoubleClick/);
+  assert.match(flowBarBlock[0], /onDoubleClick=\{handlePrimaryDoubleClick\}/);
   assert.match(flowBarBlock[0], /if \(node\.type === 'over'\) onOverDoubleClick\?\.\(\);/);
+  assert.match(flowBarBlock[0], /if \(node\.type === 'over'\) onOverClick\?\.\(\);/);
   assert.match(workbenchBlock[0], /const handleMeetingOverDoubleClick = \(record: ConsultationRecord\) => \{/);
   assert.match(workbenchBlock[0], /const values = endConsultationValues\(toConsultationFormValues\(record\)\);/);
   assert.match(workbenchBlock[0], /setDraftsById\(\(current\) => \(\{ \.\.\.current, \[record\.id\]: \{ \.\.\.values, ended_at: values\.ended_at \|\| new Date\(\)\.toISOString\(\) \} \}\)\);/);
   assert.match(workbenchBlock[0], /setProcessedIds\(\(current\) => new Set\(current\)\.add\(record\.id\)\);/);
   assert.match(workbenchBlock[0], /editable=\{false\}/);
   assert.match(workbenchBlock[0], /onOverDoubleClick=\{\(\) => handleMeetingOverDoubleClick\(record\)\}/);
-  assert.doesNotMatch(workbenchBlock[0], /onStageDoubleClick=/);
+  assert.doesNotMatch(workbenchBlock[0], /onStageContextMenu=/);
   assert.doesNotMatch(workbenchBlock[0], /onResultDoubleClick=/);
 });
 
@@ -343,8 +345,7 @@ test('consultation meeting workbench final save and close guard are explicit', (
   assert.match(workbenchBlock[0], /xr_consultation_meeting_saved_at/);
   assert.match(workbenchBlock[0], /setDraftsById\(\{\}\);/);
   assert.match(workbenchBlock[0], /setProcessedIds\(new Set\(\)\);/);
-  assert.match(consultationPageSource, /const handleMeetingWorkbenchSave = \(event: StorageEvent\) => \{/);
-  assert.match(consultationPageSource, /event\.key === 'xr_consultation_meeting_saved_at'/);
+  assert.match(workbenchBlock[0], /writeLocalStorageItem\('xr_consultation_meeting_saved_at', String\(Date\.now\(\)\)\);/);
 });
 
 test('consultation source renders approved v6 flow stage bars', () => {
