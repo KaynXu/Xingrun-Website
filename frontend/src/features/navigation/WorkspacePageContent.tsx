@@ -12,6 +12,7 @@ import { LessonInput } from '../review-generation/LessonInput';
 import { CreditCenterPage } from '../credits/CreditCenterPage';
 import { SettingsPage } from '../settings/SettingsPage';
 import { ApprovalPage } from '../approval/ApprovalPage';
+import { ConsultationMeetingWorkbench } from '../consultation/ConsultationMeetingWorkbench';
 import {
   workspaceCardClass,
   workspacePageClass,
@@ -62,6 +63,8 @@ export function WorkspacePageContent({
   handleLogout: () => void;
   onCurrentUserUpdated: (user: CurrentUser) => void;
 }) {
+  const consultationMeetingMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('consultationMeeting') === '1';
+
   return (
     <AnimatePresence mode={isMobileViewport ? undefined : 'wait'}>
       <motion.div
@@ -93,7 +96,11 @@ export function WorkspacePageContent({
           />
         )}
         {activeWorkspacePage === 'class-feedback-generation' && canOpenWorkspacePage(currentUser, 'class-feedback-generation') && <ClassFeedbackGenerationPage currentUser={currentUser} />}
-        {activeWorkspacePage === 'consultation' && canOpenWorkspacePage(currentUser, 'consultation') && <ConsultationPageComponent currentUser={currentUser} />}
+        {activeWorkspacePage === 'consultation' && canOpenWorkspacePage(currentUser, 'consultation') && (
+          consultationMeetingMode
+            ? <ConsultationMeetingWorkbench currentUser={currentUser} />
+            : <ConsultationPageComponent currentUser={currentUser} />
+        )}
         {activeWorkspacePage === 'calendar' && canOpenWorkspacePage(currentUser, 'calendar') && <CalendarWorkspacePage currentUser={currentUser} />}
         {activeWorkspacePage === 'smartWrongQuestions' &&
           canOpenWorkspacePage(currentUser, 'smartWrongQuestions') &&

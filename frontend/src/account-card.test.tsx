@@ -14,6 +14,7 @@ const headerSource = readFileSync(resolve(process.cwd(), 'src/features/navigatio
 const shellSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspaceShellLayout.tsx'), 'utf8');
 const consultationPageSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationPage.tsx'), 'utf8');
 const consultationMeetingWorkbenchSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationMeetingWorkbench.tsx'), 'utf8');
+const workspacePageContentSource = readFileSync(resolve(process.cwd(), 'src/features/navigation/WorkspacePageContent.tsx'), 'utf8');
 const consultationModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationModal.tsx'), 'utf8');
 const consultationBatchModalSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
 const consultationSharedSource = readFileSync(resolve(process.cwd(), 'src/features/consultation/consultationShared.tsx'), 'utf8');
@@ -177,17 +178,17 @@ test('consultation page source adds ai batch entry in the existing action area',
 });
 
 test('consultation page V2.0 exposes owner-only meeting workbench instead of refresh', () => {
-  const source = readFileSync(resolve(process.cwd(), 'src/features/consultation/ConsultationBatchModal.tsx'), 'utf8');
-  const appBlock = source.match(/export default function App\(\) \{[\s\S]*?\n}/);
+  const appBlock = appSource.match(/export default function App\(\) \{[\s\S]*?\n}/);
 
   assert.ok(appBlock);
-  assert.match(source, /const consultationMeetingVersion = 'V2\.0';/);
+  assert.match(consultationSharedSource, /const consultationMeetingVersion = 'V2\.0';/);
   assert.match(consultationPageSource, /const canOpenMeetingWorkbench = hasOwnerAccess\(currentUser\.role\);/);
   assert.match(consultationPageSource, /openConsultationMeetingWorkbench/);
   assert.match(consultationPageSource, /面对面模式/);
-  assert.match(consultationPageSource, /!canOpenMeetingWorkbench && \(/);
-  assert.match(source, /consultationMeeting'\) === '1'/);
-  assert.match(source, /<ConsultationMeetingWorkbench currentUser=\{currentUser\}/);
+  assert.match(consultationPageSource, /canOpenMeetingWorkbench && \(/);
+  assert.doesNotMatch(consultationPageSource, /<RefreshCw size=\{14\} \/>[\s\S]*刷新/);
+  assert.match(workspacePageContentSource, /consultationMeeting'\) === '1'/);
+  assert.match(workspacePageContentSource, /<ConsultationMeetingWorkbench currentUser=\{currentUser\}/);
 });
 
 test('consultation page uses one unified search without mode switching', () => {

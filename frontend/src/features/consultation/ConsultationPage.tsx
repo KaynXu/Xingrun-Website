@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CalendarDays, ChevronDown, Cpu, Eye, Pencil, PlusCircle, RefreshCw, Search, Trash2, } from 'lucide-react';
+import { AlertCircle, CalendarDays, ChevronDown, Cpu, Eye, Pencil, PlusCircle, Search, Trash2, UsersRound, } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import type {
@@ -49,12 +49,13 @@ import {
   type ConsultationFlowNodeDraft,
 } from './consultationShared';
 import { workspaceCardClass, workspaceFieldClass, workspacePageClass, workspacePrimaryButtonClass, workspaceSecondaryButtonClass, workspaceSectionTextClass, workspaceSectionTitleClass, apiFetch, cn, getTodayIsoDate } from '../../workspaceShared';
-import { hasStaffAccess } from '../navigation/workspaceAccess';
+import { hasOwnerAccess, hasStaffAccess } from '../navigation/workspaceAccess';
 
 const consultationQuickClassGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 
 export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) {
   const canManage = hasStaffAccess(currentUser.role);
+  const canOpenMeetingWorkbench = hasOwnerAccess(currentUser.role);
   const canEditConsultations = canManage || currentUser.role === 'member';
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
@@ -179,6 +180,10 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   const openBatchModal = () => {
     setBatchModalOpen(true);
     setError('');
+  };
+
+  const openConsultationMeetingWorkbench = () => {
+    window.location.assign('/workspace/consultation?consultationMeeting=1');
   };
 
   const openViewModal = (record: ConsultationRecord) => {
@@ -885,14 +890,16 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             </label>
           </div>
           <div className={`grid w-full gap-2 self-start lg:w-[22rem] lg:self-auto xl:w-[24rem] ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
-            <button
-              type="button"
-              onClick={() => load(search).catch(() => undefined)}
-              className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
-            >
-              <RefreshCw size={14} />
-              刷新
-            </button>
+            {canOpenMeetingWorkbench && (
+              <button
+                type="button"
+                onClick={openConsultationMeetingWorkbench}
+                className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
+              >
+                <UsersRound size={14} />
+                面对面模式
+              </button>
+            )}
             {canManage && (
               <button
                 type="button"
