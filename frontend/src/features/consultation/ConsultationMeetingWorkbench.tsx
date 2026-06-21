@@ -67,7 +67,7 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<'pending' | 'processed'>('pending');
   const [endedRangeMode, setEndedRangeMode] = useState<'week' | 'custom'>('week');
-  const [meetingStatusFilter, setMeetingStatusFilter] = useState<'all' | 'active' | 'ended'>('all');
+  const [meetingStatusFilter, setMeetingStatusFilter] = useState<'' | 'active' | 'ended'>('');
   const [customEndedStart, setCustomEndedStart] = useState(() => shiftMeetingIsoDate(getTodayIsoDate(), -7));
   const [customEndedEnd, setCustomEndedEnd] = useState(() => getTodayIsoDate());
   const teacherDirectory = buildConsultationTeacherDirectory(records);
@@ -425,14 +425,13 @@ export const ConsultationMeetingWorkbench = ({ currentUser }: { currentUser: Cur
     <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-[#D9EEF7] bg-[#F9FDFF] px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="flex flex-wrap items-center gap-2">
         {[
-          { key: 'all' as const, label: '全部', count: pendingRangeRecords.length },
           { key: 'active' as const, label: '待咨询', count: pendingRangeCounts.active },
           { key: 'ended' as const, label: '已结束', count: pendingRangeCounts.endedInRange },
         ].map((item) => (
           <button
             key={item.key}
             type="button"
-            onClick={() => setMeetingStatusFilter(item.key)}
+            onClick={() => setMeetingStatusFilter((current) => current === item.key ? '' : item.key)}
             className={cn(
               'inline-flex h-8 items-center rounded-full border px-3 text-xs font-bold transition',
               meetingStatusFilter === item.key
