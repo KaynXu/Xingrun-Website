@@ -254,7 +254,18 @@ CONSULTATION_STAGE_RESPONSIBILITY_LABELS = {
 CONSULTATION_STAGE_FIELD_GROUPS = {
     "已加小客服微信": {"customer_service_added", "customer_service_teacher", "customer_service_note"},
     "已加对应教师微信": {"communication_teacher_added", "communication_teacher_note"},
-    "正在沟通细节": {"communication_teacher_added", "communication_teacher_note"},
+    "正在沟通细节": {
+        "communication_teacher_added",
+        "communication_teacher_note",
+        "receiving_teacher",
+        "teacher_id",
+        "follow_up_status",
+        "follow_up_note",
+        "接待老师",
+        "老师ID",
+        "跟进状态",
+        "跟进备注",
+    },
     "待测试": {"test_taken", "test_teacher", "test_note", "test_images"},
     "待试听": {
         "trial_teacher_added",
@@ -1663,6 +1674,21 @@ def _api_field_current_value(current: dict, field: str) -> object:
     return current.get(field)
 
 
+def _consultation_stage_for_edit_field(field: str) -> str:
+    for stage, fields in CONSULTATION_STAGE_FIELD_GROUPS.items():
+        if field in fields:
+            return stage
+    return ""
+
+
+def _transferred_consultation_field_change_touches_prior_stage(field: str, assigned_index: int) -> bool:
+    stage = _consultation_stage_for_edit_field(field)
+    if not stage:
+        return True
+    stage_index = _stage_index(stage)
+    return stage_index < 0 or stage_index < assigned_index
+
+
 def _completed_stages_before_index(stages: object, assigned_index: int) -> set[str]:
     return {
         str(stage or "").strip()
@@ -1677,10 +1703,12 @@ def _transferred_consultation_update_touches_prior_stage(data: dict, current: di
         return False
     for field in CONSULTATION_EDITABLE_FIELDS:
         if field in data and not _values_equal_for_permission(data.get(field), _api_field_current_value(current, field)):
-            return True
+            if _transferred_consultation_field_change_touches_prior_stage(field, assigned_index):
+                return True
     for api_field in CONSULTATION_API_FIELD_MAP:
         if api_field in data and not _values_equal_for_permission(data.get(api_field), _api_field_current_value(current, api_field)):
-            return True
+            if _transferred_consultation_field_change_touches_prior_stage(api_field, assigned_index):
+                return True
     for field in ("assigned_stage",):
         if field in data and not _values_equal_for_permission(data.get(field), current.get(field)):
             return True
@@ -1712,6 +1740,24 @@ def _transferred_consultation_update_touches_prior_stage(data: dict, current: di
     return False
 
 
+def _preserve_transferred_prior_stage_teacher_ids(data: dict, current: dict, assigned_stage: str) -> dict:
+    if "stage_teacher_ids" not in data:
+        return data
+    assigned_index = _stage_index(assigned_stage)
+    if assigned_index < 0:
+        return data
+    incoming_stage_teacher_ids = _json_dict(data.get("stage_teacher_ids"))
+    current_stage_teacher_ids = current.get("stage_teacher_ids") or {}
+    merged_stage_teacher_ids = dict(incoming_stage_teacher_ids)
+    for stage in CONSULTATION_FLOW_STAGES:
+        stage_index = _stage_index(stage)
+        if 0 <= stage_index < assigned_index and stage not in merged_stage_teacher_ids:
+            current_teacher_id = str(current_stage_teacher_ids.get(stage) or "").strip()
+            if current_teacher_id:
+                merged_stage_teacher_ids[stage] = current_teacher_id
+    return {**data, "stage_teacher_ids": merged_stage_teacher_ids}
+
+
 def update_consultation_for_actor(actor_user: dict, consultation_id: int, data: dict):
     current = get_consultation_for_actor(actor_user, consultation_id)
     if not current:
@@ -1723,6 +1769,7 @@ def update_consultation_for_actor(actor_user: dict, consultation_id: int, data: 
         if _consultation_current_assignment_context_for_actor(current, actor_user) is None:
             raise PermissionError("只有当前责任教师可以编辑转接咨询")
         assigned_stage = str(current.get("assigned_stage") or "").strip()
+        data = _preserve_transferred_prior_stage_teacher_ids(data or {}, current, assigned_stage)
         if _transferred_consultation_update_touches_prior_stage(data or {}, current, assigned_stage):
             raise PermissionError("转接咨询只能编辑转接阶段及后续流程")
     change_kind = "transfer" if actor_user.get("role") == MEMBER_ROLE else "reassign"
