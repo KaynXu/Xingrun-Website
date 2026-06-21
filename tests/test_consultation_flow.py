@@ -1062,6 +1062,48 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload[0]["current_responsibility"], "")
         self.assertTrue(payload[0]["can_edit_consultation"])
 
+    def test_member_created_consultation_stays_self_owned_after_assigning_current_stage_to_self(self):
+        member_token = self.create_member_token(username="cao_teacher", display_name="曹老师")
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(member_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "自转家长",
+                "孩子姓名": "自转学生",
+                "年级": "五年级",
+                "接待老师": "曹老师",
+                "老师ID": "cao_teacher",
+                "咨询科目": "数学",
+                "具体需求": "老师自己创建，后续自己沟通",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        updated = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(member_token),
+            json={
+                "flow_stage": "正在沟通细节",
+                "completed_stages": ["已加对应教师微信", "正在沟通细节"],
+                "assigned_stage": "正在沟通细节",
+                "stage_teacher_ids": {"正在沟通细节": "cao_teacher"},
+                "follow_up_note": "曹老师自己继续沟通",
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+
+        listed = self.client.get("/api/consultations", headers=self.auth_headers(member_token))
+
+        self.assertEqual(listed.status_code, 200)
+        payload = listed.get_json()
+        self.assertEqual([item["id"] for item in payload], [consultation_id])
+        self.assertFalse(payload[0]["is_transferred_consultation"])
+        self.assertEqual(payload[0]["transfer_marker"], "")
+        self.assertEqual(payload[0]["current_responsibility"], "")
+        self.assertTrue(payload[0]["can_edit_consultation"])
+
     def test_member_created_consultation_transferred_away_is_history_only_and_readonly(self):
         creator_token = self.create_member_token(username="creator_teacher", display_name="创建老师")
         assignee_token = self.create_member_token(username="trial_teacher", display_name="试听老师")
@@ -1248,6 +1290,48 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(stage_update.status_code, 200)
         self.assertEqual(stage_update.get_json()["trial_teacher_note"], "试听老师已沟通时间")
+
+    def test_member_can_update_current_communication_stage_with_partial_teacher_map(self):
+        teacher_token = self.create_member_token(username="cao_teacher", display_name="曹老师")
+        self.user_for_token(teacher_token)
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "沟通家长",
+                "孩子姓名": "沟通学生",
+                "年级": "五年级",
+                "接待老师": "前台老师",
+                "咨询科目": "数学",
+                "具体需求": "已经加教师微信，正在沟通",
+                "flow_stage": "正在沟通细节",
+                "completed_stages": ["已加对应教师微信", "正在沟通细节"],
+                "assigned_stage": "正在沟通细节",
+                "stage_teacher_ids": {
+                    "已加对应教师微信": "cao_teacher",
+                    "正在沟通细节": "cao_teacher",
+                },
+                "communication_teacher_added": "曹老师",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        updated = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(teacher_token),
+            json={
+                "stage_teacher_ids": {"正在沟通细节": "cao_teacher"},
+                "follow_up_note": "曹老师确认继续沟通",
+            },
+        )
+
+        self.assertEqual(updated.status_code, 200)
+        payload = updated.get_json()
+        self.assertEqual(payload["follow_up_note"], "曹老师确认继续沟通")
+        self.assertEqual(payload["stage_teacher_ids"]["已加对应教师微信"], "cao_teacher")
+        self.assertEqual(payload["stage_teacher_ids"]["正在沟通细节"], "cao_teacher")
 
     def test_member_transferred_to_test_can_edit_test_and_later_stages_only(self):
         teacher_token = self.create_member_token(username="test_teacher", display_name="测试老师")

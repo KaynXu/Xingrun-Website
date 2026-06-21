@@ -58,7 +58,7 @@ test('modular consultation types include saved flow node and transfer metadata f
   assert.match(typesSource, /assignment_note: string/);
 });
 
-test('consultation edit modal opens ordinary node dialog and cancels lit nodes directly', () => {
+test('consultation edit modal opens ordinary node dialog and confirms before cancelling lit nodes', () => {
   assert.match(modalSource, /flowNodeDialog/);
   assert.match(modalSource, /openFlowNodeDialog/);
   assert.match(modalSource, /<ConsultationFlowNodeDialog/);
@@ -66,15 +66,19 @@ test('consultation edit modal opens ordinary node dialog and cancels lit nodes d
   assert.match(modalSource, /onStageContextMenu=\{\(nextStage\) => openFlowNodeDialog\(nextStage, true\)\}/);
   assert.match(modalSource, /onStageLongPress=\{\(nextStage\) => openFlowNodeDialog\(nextStage, true\)\}/);
   assert.match(modalSource, /getConsultationFlowLightColor\(form, stage\)/);
+  assert.match(modalSource, /window\.confirm/);
+  assert.match(modalSource, /是否取消该阶段状态/);
   assert.match(modalSource, /clearConsultationFlowNodeContent\(current, stage\)/);
 });
 
-test('consultation list cards open ordinary node dialog and save through inline update', () => {
+test('consultation list cards open ordinary node dialog and confirm before cancelling lit nodes', () => {
   assert.match(pageSource, /flowNodeDialog/);
   assert.match(pageSource, /openInlineFlowNodeDialog/);
   assert.match(pageSource, /handleSaveInlineFlowNodeDialog/);
   assert.match(pageSource, /<ConsultationFlowNodeDialog/);
   assert.match(pageSource, /getConsultationFlowLightColor\(toConsultationFormValues\(record\), stage\)/);
+  assert.match(pageSource, /window\.confirm/);
+  assert.match(pageSource, /是否取消该阶段状态/);
   assert.match(pageSource, /clearConsultationFlowNodeContent\(toConsultationFormValues\(record\), stage\)/);
   assert.match(pageSource, /applyConsultationFlowNodeDraft\(toConsultationFormValues\(record\), stage, draft, setAsCurrent\)/);
 });

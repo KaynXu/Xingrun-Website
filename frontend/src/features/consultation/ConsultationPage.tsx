@@ -347,6 +347,9 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     setError('');
     const lightColor = getConsultationFlowLightColor(toConsultationFormValues(record), stage);
     if (lightColor === 'green' || lightColor === 'blue') {
+      if (!window.confirm('是否取消该阶段状态？取消后会删除这个阶段已填写的内容。')) {
+        return;
+      }
       const values = clearConsultationFlowNodeContent(toConsultationFormValues(record), stage);
       await saveInlineConsultationUpdate(record, values, '更新咨询流程失败');
       return;

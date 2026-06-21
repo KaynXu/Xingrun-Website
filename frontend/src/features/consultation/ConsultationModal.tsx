@@ -929,6 +929,9 @@ const ConsultationModal = ({
     if (!setAsCurrent) {
       const lightColor = getConsultationFlowLightColor(form, stage);
       if (lightColor === 'green' || lightColor === 'blue') {
+        if (!window.confirm('是否取消该阶段状态？取消后会删除这个阶段已填写的内容。')) {
+          return;
+        }
         setForm((current) => clearConsultationFlowNodeContent(current, stage));
         return;
       }
