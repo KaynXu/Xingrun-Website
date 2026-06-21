@@ -1477,6 +1477,26 @@ def _consultation_current_assignment_context_for_actor(row: dict, actor_user: di
     }
 
 
+def _consultation_current_responsibility_context(row: dict) -> dict | None:
+    stage_teacher_ids = row.get("stage_teacher_ids") or {}
+    current_stage = str(row.get("assigned_stage") or row.get("flow_stage") or "").strip()
+    current_teacher_id = str(stage_teacher_ids.get(current_stage) or "").strip() if current_stage else ""
+    teacher_name = ""
+    if current_teacher_id:
+        teacher_name = _get_consultation_teacher_directory().get(current_teacher_id.lower()) or current_teacher_id
+    elif row.get("assigned_user_id") is not None:
+        teacher_name = str(row.get("display_name") or row.get("username") or "").strip()
+    else:
+        return None
+    responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(current_stage, "负责教师")
+    return {
+        "assigned_stage": current_stage,
+        "transfer_marker": "咨询转接",
+        "current_responsibility": f"{responsibility_label}：{teacher_name}" if teacher_name else responsibility_label,
+        "legacy_direct_assignment": False,
+    }
+
+
 def _consultation_assignment_context_for_actor(row: dict, actor_user: dict) -> dict | None:
     context = _consultation_current_assignment_context_for_actor(row, actor_user)
     if context:
@@ -1488,15 +1508,17 @@ def _consultation_assignment_context_for_actor(row: dict, actor_user: dict) -> d
     for stage in CONSULTATION_FLOW_STAGES:
         teacher_id = str(stage_teacher_ids.get(stage) or "").strip()
         if teacher_id.lower() in identifiers:
-            teacher_name = (
-                teacher_directory.get(teacher_id.lower())
-                or str(actor_user.get("display_name") or actor_user.get("username") or "").strip()
+            current_stage = str(row.get("assigned_stage") or row.get("flow_stage") or stage).strip()
+            current_teacher_id = str(stage_teacher_ids.get(current_stage) or "").strip()
+            current_teacher_name = (
+                teacher_directory.get(current_teacher_id.lower())
+                if current_teacher_id else ""
             )
-            responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(stage, "负责教师")
+            responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(current_stage, "负责教师")
             return {
-                "assigned_stage": stage,
+                "assigned_stage": current_stage,
                 "transfer_marker": "咨询转接",
-                "current_responsibility": f"{responsibility_label}：{teacher_name}" if teacher_name else responsibility_label,
+                "current_responsibility": f"{responsibility_label}：{current_teacher_name}" if current_teacher_name else responsibility_label,
                 "legacy_direct_assignment": False,
                 "historical_assignment": True,
             }
@@ -1504,7 +1526,7 @@ def _consultation_assignment_context_for_actor(row: dict, actor_user: dict) -> d
     for history_item in _json_list(row.get("responsibility_history")):
         if not isinstance(history_item, dict):
             continue
-        if str(history_item.get("change_kind") or "transfer").strip() != "transfer":
+        if str(history_item.get("change_kind") or "transfer").strip() not in {"transfer", "reassign"}:
             continue
         historical_ids = {
             str(history_item.get("from_teacher_id") or "").strip().lower(),
@@ -1545,14 +1567,19 @@ def _annotate_consultation_for_actor(row: dict, actor_user: dict) -> dict:
     is_creator = annotated.get("created_by_user_id") == actor_user.get("id")
     context = _consultation_assignment_context_for_actor(annotated, actor_user)
     current_context = _consultation_current_assignment_context_for_actor(annotated, actor_user)
+    current_responsibility_context = _consultation_current_responsibility_context(annotated)
+    creator_current_access = bool(is_creator and (current_context or not current_responsibility_context))
+    creator_transferred_away = bool(is_creator and not creator_current_access)
     if context:
         annotated.update(context)
+    elif creator_transferred_away and current_responsibility_context:
+        annotated.update(current_responsibility_context)
     is_transferred = bool(context) and not is_creator and not context.get("legacy_direct_assignment")
     annotated.pop("legacy_direct_assignment", None)
     annotated.pop("historical_assignment", None)
     annotated["is_transferred_consultation"] = is_transferred
-    annotated["can_edit_consultation"] = bool(is_creator or current_context)
-    if not is_transferred:
+    annotated["can_edit_consultation"] = bool(creator_current_access or current_context)
+    if not is_transferred and not creator_transferred_away:
         annotated["transfer_marker"] = ""
         annotated["current_responsibility"] = ""
     return annotated
@@ -1690,6 +1717,8 @@ def update_consultation_for_actor(actor_user: dict, consultation_id: int, data: 
     if not current:
         return None
     organization_id = None if actor_user.get("role") == SUPER_OWNER_ROLE else actor_user.get("organization_id")
+    if actor_user.get("role") == MEMBER_ROLE and not current.get("can_edit_consultation"):
+        raise PermissionError("只有当前责任教师可以编辑咨询")
     if actor_user.get("role") == MEMBER_ROLE and current.get("is_transferred_consultation"):
         if _consultation_current_assignment_context_for_actor(current, actor_user) is None:
             raise PermissionError("只有当前责任教师可以编辑转接咨询")
@@ -7952,9 +7981,17 @@ def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int 
     return [dict(row) for row in rows]
 
 
-def list_consultations_for_actor(actor_user: dict, query: str = "", search_mode: str = "fuzzy") -> list[dict]:
+def list_consultations_for_actor(
+    actor_user: dict,
+    query: str = "",
+    search_mode: str = "fuzzy",
+    scope: str = "current",
+    ownership: str = "all",
+) -> list[dict]:
     organization_id = None if (actor_user or {}).get("role") == SUPER_OWNER_ROLE else actor_user["organization_id"]
     if actor_user.get("role") == MEMBER_ROLE:
+        normalized_scope = scope if scope in {"current", "history"} else "current"
+        normalized_ownership = ownership if ownership in {"all", "created", "transferred"} else "all"
         rows = list_consultations(
             query=query,
             search_mode=search_mode,
@@ -7963,8 +8000,21 @@ def list_consultations_for_actor(actor_user: dict, query: str = "", search_mode:
         visible_rows = []
         for row in rows:
             is_creator = row.get("created_by_user_id") == actor_user.get("id")
-            has_assignment = _consultation_assignment_context_for_actor(row, actor_user) is not None
-            if is_creator or has_assignment:
+            current_assignment = _consultation_current_assignment_context_for_actor(row, actor_user)
+            historical_assignment = _consultation_assignment_context_for_actor(row, actor_user)
+            current_responsibility = _consultation_current_responsibility_context(row)
+            creator_current_access = bool(is_creator and (current_assignment or not current_responsibility))
+            if normalized_scope == "current":
+                has_assignment = current_assignment is not None
+                has_creator_visibility = creator_current_access
+            else:
+                has_assignment = historical_assignment is not None and current_assignment is None
+                has_creator_visibility = bool(is_creator and not creator_current_access)
+            if has_creator_visibility or has_assignment:
+                if normalized_ownership == "created" and not is_creator:
+                    continue
+                if normalized_ownership == "transferred" and (is_creator or not historical_assignment):
+                    continue
                 visible_rows.append(_annotate_consultation_for_actor(row, actor_user))
         return visible_rows
 

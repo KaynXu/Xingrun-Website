@@ -1062,6 +1062,59 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(payload[0]["current_responsibility"], "")
         self.assertTrue(payload[0]["can_edit_consultation"])
 
+    def test_member_created_consultation_transferred_away_is_history_only_and_readonly(self):
+        creator_token = self.create_member_token(username="creator_teacher", display_name="创建老师")
+        assignee_token = self.create_member_token(username="trial_teacher", display_name="试听老师")
+        self.user_for_token(assignee_token)
+
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(creator_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "创建转出家长",
+                "孩子姓名": "创建转出学生",
+                "年级": "五年级",
+                "接待老师": "创建老师",
+                "老师ID": "creator_teacher",
+                "咨询科目": "数学",
+                "具体需求": "创建后转给试听老师处理",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        reassigned = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "flow_stage": "待试听",
+                "assigned_stage": "待试听",
+                "completed_stages": ["待试听"],
+                "stage_teacher_ids": {"待试听": "trial_teacher"},
+                "assignment_note": "创建老师转出，试听老师当前处理",
+            },
+        )
+        self.assertEqual(reassigned.status_code, 200)
+
+        current = self.client.get("/api/consultations", headers=self.auth_headers(creator_token))
+        self.assertEqual(current.status_code, 200)
+        self.assertEqual([item["id"] for item in current.get_json()], [])
+
+        history = self.client.get("/api/consultations?scope=history", headers=self.auth_headers(creator_token))
+        self.assertEqual(history.status_code, 200)
+        history_payload = history.get_json()
+        self.assertEqual([item["id"] for item in history_payload], [consultation_id])
+        self.assertFalse(history_payload[0]["can_edit_consultation"])
+        self.assertEqual(history_payload[0]["current_responsibility"], "试听教师：试听老师")
+
+        stale_update = self.client.put(
+            f"/api/consultations/{consultation_id}",
+            headers=self.auth_headers(creator_token),
+            json={"trial_teacher_note": "创建老师不应继续编辑转出咨询"},
+        )
+        self.assertEqual(stale_update.status_code, 403)
+
     def test_member_sees_stage_teacher_transfer_with_marker_and_note(self):
         teacher_token = self.create_member_token(username="trial_teacher", display_name="试听老师")
         self.user_for_token(teacher_token)
@@ -1290,7 +1343,7 @@ class ConsultationFlowTestCase(unittest.TestCase):
         )
         self.assertEqual(deleted.status_code, 403)
 
-    def test_previous_stage_teacher_can_view_after_same_stage_transfer_but_cannot_edit(self):
+    def test_previous_stage_teacher_can_view_same_stage_transfer_in_history_but_cannot_edit(self):
         first_token = self.create_member_token(username="trial_teacher_a", display_name="试听甲")
         self.user_for_token(first_token)
         second_token = self.create_member_token(username="trial_teacher_b", display_name="试听乙")
@@ -1323,9 +1376,13 @@ class ConsultationFlowTestCase(unittest.TestCase):
 
         listed = self.client.get("/api/consultations", headers=self.auth_headers(first_token))
         self.assertEqual(listed.status_code, 200)
-        self.assertEqual([item["id"] for item in listed.get_json()], [consultation_id])
-        self.assertFalse(listed.get_json()[0]["can_edit_consultation"])
-        self.assertEqual(listed.get_json()[0]["current_responsibility"], "试听教师：试听乙")
+        self.assertEqual([item["id"] for item in listed.get_json()], [])
+
+        history = self.client.get("/api/consultations?scope=history", headers=self.auth_headers(first_token))
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual([item["id"] for item in history.get_json()], [consultation_id])
+        self.assertFalse(history.get_json()[0]["can_edit_consultation"])
+        self.assertEqual(history.get_json()[0]["current_responsibility"], "试听教师：试听乙")
 
         stale_update = self.client.put(
             f"/api/consultations/{consultation_id}",
@@ -1395,8 +1452,146 @@ class ConsultationFlowTestCase(unittest.TestCase):
         listed_for_first = self.client.get("/api/consultations", headers=self.auth_headers(first_token))
         self.assertEqual(listed_for_first.status_code, 200)
         first_payload = listed_for_first.get_json()
-        self.assertEqual([item["id"] for item in first_payload], [consultation_id])
-        self.assertFalse(first_payload[0]["can_edit_consultation"])
+        self.assertEqual([item["id"] for item in first_payload], [])
+
+        history_for_first = self.client.get("/api/consultations?scope=history", headers=self.auth_headers(first_token))
+        self.assertEqual(history_for_first.status_code, 200)
+        history_payload = history_for_first.get_json()
+        self.assertEqual([item["id"] for item in history_payload], [consultation_id])
+        self.assertFalse(history_payload[0]["can_edit_consultation"])
+        self.assertEqual(history_payload[0]["transfer_marker"], "咨询转接")
+
+    def test_member_history_scope_includes_historical_transfer_but_current_scope_does_not(self):
+        first_token = self.create_member_token(username="test_teacher_a", display_name="小姝老师测试")
+        second_token = self.create_member_token(username="trial_teacher_b", display_name="何天兰试听")
+        self.user_for_token(first_token)
+        self.user_for_token(second_token)
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "历史转接家长",
+                "孩子姓名": "历史转接学生",
+                "年级": "五年级",
+                "接待老师": "前台老师",
+                "咨询科目": "数学",
+                "具体需求": "先测试再试听",
+                "flow_stage": "待试听",
+                "completed_stages": ["待测试", "待试听"],
+                "assigned_stage": "待试听",
+                "stage_teacher_ids": {"待测试": "test_teacher_a", "待试听": "trial_teacher_b"},
+                "assignment_note": "测试完成，转给何天兰试听",
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        current = self.client.get("/api/consultations", headers=self.auth_headers(first_token))
+        self.assertEqual(current.status_code, 200)
+        self.assertEqual([item["id"] for item in current.get_json()], [])
+
+        history = self.client.get("/api/consultations?scope=history", headers=self.auth_headers(first_token))
+        self.assertEqual(history.status_code, 200)
+        history_payload = history.get_json()
+        self.assertEqual([item["id"] for item in history_payload], [consultation_id])
+        self.assertEqual(history_payload[0]["current_responsibility"], "试听教师：何天兰试听")
+        self.assertFalse(history_payload[0]["can_edit_consultation"])
+
+    def test_member_history_scope_excludes_current_transfer_assignment(self):
+        transfer_token = self.create_member_token(username="trial_teacher_current", display_name="当前试听老师")
+        self.user_for_token(transfer_token)
+        created = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "当前转接家长",
+                "孩子姓名": "当前转接学生",
+                "年级": "五年级",
+                "接待老师": "前台老师",
+                "咨询科目": "数学",
+                "具体需求": "当前需要试听老师处理",
+                "flow_stage": "待试听",
+                "completed_stages": ["待试听"],
+                "assigned_stage": "待试听",
+                "stage_teacher_ids": {"待试听": "trial_teacher_current"},
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        consultation_id = created.get_json()["id"]
+
+        current = self.client.get("/api/consultations", headers=self.auth_headers(transfer_token))
+        self.assertEqual(current.status_code, 200)
+        self.assertEqual([item["id"] for item in current.get_json()], [consultation_id])
+        self.assertTrue(current.get_json()[0]["can_edit_consultation"])
+
+        history = self.client.get("/api/consultations?scope=history", headers=self.auth_headers(transfer_token))
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.get_json(), [])
+
+    def test_member_ownership_filter_distinguishes_created_and_transferred_consultations(self):
+        creator_token = self.create_member_token(username="creator_teacher", display_name="创建老师")
+        transfer_token = self.create_member_token(username="transfer_teacher", display_name="转接老师")
+        creator_user = self.user_for_token(creator_token)
+        self.user_for_token(transfer_token)
+        created_by_member = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(creator_token),
+            json={
+                "日期": "2026-03-12",
+                "家长微信名": "自创家长",
+                "孩子姓名": "自创学生",
+                "年级": "五年级",
+                "接待老师": "创建老师",
+                "老师ID": "creator_teacher",
+                "咨询科目": "数学",
+                "具体需求": "老师自己创建",
+            },
+        )
+        self.assertEqual(created_by_member.status_code, 201)
+        transferred = self.client.post(
+            "/api/consultations",
+            headers=self.auth_headers(self.owner_token),
+            json={
+                "日期": "2026-03-13",
+                "家长微信名": "转接家长",
+                "孩子姓名": "转接学生",
+                "年级": "五年级",
+                "接待老师": "前台老师",
+                "咨询科目": "数学",
+                "具体需求": "需要试听",
+                "flow_stage": "待试听",
+                "assigned_stage": "待试听",
+                "stage_teacher_ids": {"待试听": "transfer_teacher"},
+            },
+        )
+        self.assertEqual(transferred.status_code, 201)
+        own_assigned = self.create_consultation_record(
+            assigned_user_id=creator_user["id"],
+            **{"家长微信名": "旧派单家长", "孩子姓名": "旧派单学生"},
+        )
+
+        created_only = self.client.get(
+            "/api/consultations?ownership=created",
+            headers=self.auth_headers(creator_token),
+        )
+        self.assertEqual(created_only.status_code, 200)
+        self.assertEqual([item["id"] for item in created_only.get_json()], [created_by_member.get_json()["id"]])
+
+        transferred_only = self.client.get(
+            "/api/consultations?ownership=transferred",
+            headers=self.auth_headers(transfer_token),
+        )
+        self.assertEqual(transferred_only.status_code, 200)
+        self.assertEqual([item["id"] for item in transferred_only.get_json()], [transferred.get_json()["id"]])
+
+        creator_transferred_only = self.client.get(
+            "/api/consultations?ownership=transferred",
+            headers=self.auth_headers(creator_token),
+        )
+        self.assertEqual(creator_transferred_only.status_code, 200)
+        self.assertEqual([item["id"] for item in creator_transferred_only.get_json()], [own_assigned["id"]])
 
     def test_owner_can_reassign_current_stage_teacher_without_leaving_old_teacher_visibility(self):
         first_token = self.create_member_token(username="trial_teacher_a", display_name="试听甲")
@@ -1460,6 +1655,13 @@ class ConsultationFlowTestCase(unittest.TestCase):
         self.assertEqual(listed_for_first.status_code, 200)
         first_payload = listed_for_first.get_json()
         self.assertEqual([item["id"] for item in first_payload], [])
+
+        history_for_first = self.client.get("/api/consultations?scope=history", headers=self.auth_headers(first_token))
+        self.assertEqual(history_for_first.status_code, 200)
+        first_history_payload = history_for_first.get_json()
+        self.assertEqual([item["id"] for item in first_history_payload], [consultation_id])
+        self.assertFalse(first_history_payload[0]["can_edit_consultation"])
+        self.assertEqual(first_history_payload[0]["current_responsibility"], "试听教师：试听乙")
 
     def test_member_cannot_update_other_teacher_record(self):
         member_token = self.create_member_token(username="teacher_a", display_name="Teacher A")

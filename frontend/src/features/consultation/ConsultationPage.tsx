@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CalendarDays, ChevronDown, Cpu, Eye, Pencil, PlusCircle, Search, Trash2, UsersRound, } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CalendarDays, ChevronDown, Cpu, Eye, History, Pencil, PlusCircle, Search, Trash2, UsersRound, } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import type {
@@ -7,7 +7,7 @@ import type {
   CurrentUser,
 } from '../../appTypes';
 import type {
-  ConsultationFilterKey, ConsultationFormValues, ConsultationRecord, ConsultationResultStage, ConsultationTeacherOption,
+  ConsultationFilterKey, ConsultationFormValues, ConsultationOwnership, ConsultationRecord, ConsultationResultStage, ConsultationScope, ConsultationTeacherOption,
 } from './consultationTypes';
 import {
   ConsultationModal,
@@ -56,6 +56,7 @@ const consultationQuickClassGradeOptions = ['一年级', '二年级', '三年级
 export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) {
   const canManage = hasStaffAccess(currentUser.role);
   const canOpenMeetingWorkbench = hasOwnerAccess(currentUser.role);
+  const isMemberConsultationUser = currentUser.role === 'member';
   const canEditConsultations = canManage || currentUser.role === 'member';
   const [records, setRecords] = useState<ConsultationRecord[]>([]);
   const [consultationTeachers, setConsultationTeachers] = useState<ConsultationTeacherOption[]>([]);
@@ -68,6 +69,8 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   const [modalMode, setModalMode] = useState<'view' | 'create' | 'edit'>('view');
   const [selectedRecord, setSelectedRecord] = useState<ConsultationRecord | null>(null);
   const [activeFilter, setActiveFilter] = useState<ConsultationFilterKey | null>(null);
+  const [consultationScope, setConsultationScope] = useState<ConsultationScope>('current');
+  const [consultationOwnership, setConsultationOwnership] = useState<ConsultationOwnership>('all');
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [restoreConfirmRecord, setRestoreConfirmRecord] = useState<ConsultationRecord | null>(null);
@@ -110,7 +113,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     setError('');
     try {
       const query = keyword.trim();
-      const data = await apiFetch<ConsultationRecord[]>(`/api/consultations?q=${encodeURIComponent(query)}`);
+      const data = await apiFetch<ConsultationRecord[]>(`/api/consultations?q=${encodeURIComponent(query)}&scope=${consultationScope}&ownership=${consultationOwnership}`);
       if (requestId !== loadRequestId.current) {
         return;
       }
@@ -125,7 +128,7 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
         setLoading(false);
       }
     }
-  }, []);
+  }, [consultationOwnership, consultationScope]);
 
   useEffect(() => {
     let active = true;
@@ -270,6 +273,9 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
   }, [records, consultationTodayIso]);
   const visibleRecords = useMemo(() => {
     if (!activeFilter) {
+      if (consultationScope === 'history') {
+        return records;
+      }
       return sortConsultationsForFilter(
         records.filter((record) => getConsultationFilterKey(record, consultationTodayIso).startsWith('pending-')),
         'pending-7',
@@ -279,7 +285,21 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
       records.filter((record) => getConsultationFilterKey(record, consultationTodayIso) === activeFilter),
       activeFilter,
     );
-  }, [records, consultationTodayIso, activeFilter]);
+  }, [records, consultationTodayIso, activeFilter, consultationScope]);
+  const hasMemberServerFilter = isMemberConsultationUser && (
+    consultationScope !== 'current' || consultationOwnership !== 'all'
+  );
+  const isHistoryConsultationView = isMemberConsultationUser && consultationScope === 'history';
+  const openHistoryConsultationView = () => {
+    setConsultationScope('history');
+    setConsultationOwnership('all');
+    setActiveFilter(null);
+  };
+  const backToCurrentConsultationView = () => {
+    setConsultationScope('current');
+    setConsultationOwnership('all');
+    setActiveFilter(null);
+  };
   const getVisibleRecordSectionLabel = (record: ConsultationRecord, index: number): string | null => {
     if (activeFilter !== 'pending-over30') {
       return null;
@@ -871,9 +891,13 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
     <div className={`${workspacePageClass} space-y-6`}>
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h3 className={`${workspaceSectionTitleClass} mt-3`}>咨询记录</h3>
+          <h3 className={`${workspaceSectionTitleClass} mt-3`}>
+            {isHistoryConsultationView ? '历史咨询档案' : '咨询记录'}
+          </h3>
           <p className={`${workspaceSectionTextClass} mt-2`}>
-            记录咨询、跟进和备注，搜索后直接筛当前列表。
+            {isHistoryConsultationView
+              ? '查看自创和曾经转接处理过的咨询记录，历史记录以查档为主。'
+              : '记录咨询、跟进和备注，搜索后直接筛当前列表。'}
           </p>
         </div>
         <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
@@ -890,34 +914,57 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
             </label>
           </div>
           <div className={`grid w-full gap-2 self-start lg:w-[22rem] lg:self-auto xl:w-[24rem] ${canManage ? 'grid-cols-3' : 'grid-cols-2'}`}>
-            {canOpenMeetingWorkbench && (
+            {isHistoryConsultationView ? (
               <button
                 type="button"
-                onClick={openConsultationMeetingWorkbench}
+                onClick={backToCurrentConsultationView}
                 className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
               >
-                <UsersRound size={14} />
-                面对面模式
+                <ArrowLeft size={14} />
+                返回咨询主页
               </button>
+            ) : (
+              <>
+                {canOpenMeetingWorkbench && (
+                  <button
+                    type="button"
+                    onClick={openConsultationMeetingWorkbench}
+                    className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
+                  >
+                    <UsersRound size={14} />
+                    面对面模式
+                  </button>
+                )}
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={openBatchModal}
+                    className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
+                  >
+                    <Cpu size={14} />
+                    AI 批量整理
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className={`${workspacePrimaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
+                >
+                  <PlusCircle size={14} />
+                  新增记录
+                </button>
+                {isMemberConsultationUser && (
+                  <button
+                    type="button"
+                    onClick={openHistoryConsultationView}
+                    className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
+                  >
+                    <History size={14} />
+                    历史咨询
+                  </button>
+                )}
+              </>
             )}
-            {canManage && (
-              <button
-                type="button"
-                onClick={openBatchModal}
-                className={`${workspaceSecondaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
-              >
-                <Cpu size={14} />
-                AI 批量整理
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={openCreateModal}
-              className={`${workspacePrimaryButtonClass} h-10 w-full min-w-0 !gap-1 !px-1 !py-2 text-[11px] sm:text-xs`}
-            >
-              <PlusCircle size={14} />
-              新增记录
-            </button>
           </div>
         </div>
       </div>
@@ -930,8 +977,33 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
       )}
 
       <div className={`${workspaceCardClass} p-3 sm:p-4`}>
+        {isMemberConsultationUser && (
+          <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
+            {([
+              ['all', '全部'],
+              ['created', '自创咨询'],
+              ['transferred', '咨询转接'],
+            ] as Array<[ConsultationOwnership, string]>).map(([value, label]) => {
+              const active = consultationOwnership === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setConsultationOwnership(value)}
+                  className={`inline-flex h-8 shrink-0 items-center rounded-full border px-3 text-xs font-bold transition ${
+                    active
+                      ? 'border-sky-200 bg-sky-500 text-white'
+                      : 'border-sky-100 bg-white text-slate-600 hover:bg-sky-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="grid min-w-0 grid-cols-2 gap-2 min-[520px]:flex min-[520px]:items-center min-[520px]:gap-3 min-[520px]:overflow-hidden">
-          {consultationFilterGroups.map((group) => (
+          {!isHistoryConsultationView && consultationFilterGroups.map((group) => (
             <div key={group.title} className="min-w-0 min-[520px]:flex min-[520px]:shrink-0 min-[520px]:items-center min-[520px]:gap-2">
               <p className="shrink-0 text-[11px] font-bold text-slate-400">{group.title}</p>
               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1 min-[520px]:mt-0 min-[520px]:flex-nowrap min-[520px]:gap-1.5">
@@ -962,14 +1034,24 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
         </div>
         <div className="mt-3 flex items-center gap-2 rounded-xl bg-sky-50/70 px-3 py-2 text-[11px] font-semibold leading-5 text-[#55708D] dark:bg-sky-400/10 dark:text-sky-100">
           <AlertCircle size={14} className="shrink-0 text-[#0EA5E9]" />
-          <span className="hidden xl:inline">主页卡片：流程操作会立即保存；左键编辑阶段状态，右键标记为当前阶段。</span>
-          <span className="xl:hidden">主页卡片：流程操作会立即保存；轻点编辑阶段状态，长按标记为当前阶段。</span>
+          {isHistoryConsultationView ? (
+            <span>历史咨询只用于查档；仅查看的转接记录不会进入当前待处理。</span>
+          ) : (
+            <>
+              <span className="hidden xl:inline">主页卡片：流程操作会立即保存；左键编辑阶段状态，右键标记为当前阶段。</span>
+              <span className="xl:hidden">主页卡片：流程操作会立即保存；轻点编辑阶段状态，长按标记为当前阶段。</span>
+            </>
+          )}
         </div>
       </div>
 
       <div className={`${workspaceCardClass} overflow-hidden`}>
         {loading ? (
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">正在加载咨询记录...</div>
+        ) : hasMemberServerFilter && records.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+            {isHistoryConsultationView && consultationOwnership === 'all' ? '暂无历史咨询记录。' : '当前筛选暂无咨询记录。'}
+          </div>
         ) : records.length === 0 ? (
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">
             暂无咨询记录，点击「新增记录」开始录入。
@@ -977,6 +1059,10 @@ export function ConsultationPage({ currentUser }: { currentUser: CurrentUser }) 
         ) : activeFilter && visibleRecords.length === 0 ? (
           <div className="p-8 text-center text-slate-500 dark:text-slate-400">
             当前分类「{consultationFilterLabels[activeFilter]}」暂无咨询记录。
+          </div>
+        ) : visibleRecords.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+            当前筛选暂无咨询记录。
           </div>
         ) : (
           <>

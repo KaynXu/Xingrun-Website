@@ -6184,6 +6184,8 @@ def api_consultations_list():
         user,
         query=request.args.get("q", ""),
         search_mode=request.args.get("search_mode", "fuzzy"),
+        scope=request.args.get("scope", "current"),
+        ownership=request.args.get("ownership", "all"),
     ))
 
 

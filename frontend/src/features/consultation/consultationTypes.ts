@@ -55,6 +55,8 @@ export interface ConsultationRecord {
 
 export type ConsultationFormValues = Omit<ConsultationRecord, 'id' | 'created_at' | 'updated_at'>;
 export type ConsultationResultStage = '成功进班' | '试听失败';
+export type ConsultationScope = 'current' | 'history';
+export type ConsultationOwnership = 'all' | 'created' | 'transferred';
 export type ConsultationFilterKey =
   | 'pending-7'
   | 'pending-30'
