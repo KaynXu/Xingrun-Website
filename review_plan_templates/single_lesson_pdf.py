@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from review_plan_templates.generate_review_pdfs import build_lesson_filename_part, normalize_portable_text, render_review_plan_pdf
+from review_plan_workflow.schemas import normalize_final_review_plan
+from review_plan_templates.generate_review_pdfs import build_lesson_filename_part, normalize_portable_text_preserving_latex, render_review_plan_pdf
 
 
 DEFAULT_FINAL_REMINDERS = [
@@ -10,10 +12,25 @@ DEFAULT_FINAL_REMINDERS = [
     "先回忆课堂原话，再完成当天填空与选择。",
     "遇到不会的题先回看课堂总结，再补做口头复述。",
 ]
+BAD_QUOTE_PATTERNS = (
+    "每一个复习日",
+    "完整复习整节课内容",
+    "请完成以上",
+    "对照答案自检",
+    "完成当天",
+    "完成以上填空",
+    "完成标准",
+    "使用说明",
+    "复习计划",
+    "正确率≥",
+    "正确率>=",
+    "填空题全部正确",
+    "能独立",
+)
 
 
 def _clean_text(value: object, default: str = "") -> str:
-    text = normalize_portable_text(str(value or "").strip())
+    text = normalize_portable_text_preserving_latex(str(value or "").strip())
     return text or default
 
 
@@ -28,29 +45,155 @@ def _dedupe_clean_lines(values: object) -> list[str]:
     return lines
 
 
+def _is_real_class_quote(value: object) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    return not any(pattern in text for pattern in BAD_QUOTE_PATTERNS)
+
+
+def _dedupe_real_quotes(values: object) -> list[str]:
+    return [text for text in _dedupe_clean_lines(values) if _is_real_class_quote(text)]
+
+
+def _append_blank_once(blanks: list[tuple[str, str]], text: object, answer: object = "") -> None:
+    clean_text = _clean_text(text)
+    if not clean_text:
+        return
+    for existing_text, _existing_answer in blanks:
+        if _clean_text(existing_text) == clean_text:
+            return
+    blanks.append((clean_text, _clean_text(answer, "见课堂笔记")))
+
+
+def _append_task_once(tasks: list[str], text: object) -> None:
+    clean_text = _clean_text(text)
+    if clean_text and clean_text not in tasks:
+        tasks.append(clean_text)
+
+
+def _is_completion_standard(value: object) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    return (
+        text.startswith(("能", "完成后", "正确率", "自查"))
+        or "完成标准" in text
+        or "对照答案" in text
+        or "全部正确" in text
+    )
+
+
+def _compact_instruction_with_blanks(instruction: object, blanks: object) -> str:
+    parts = [_clean_text(instruction)]
+    if isinstance(blanks, list):
+        blank_texts = []
+        for blank in blanks:
+            if isinstance(blank, dict):
+                blank_texts.append(_clean_text(blank.get("label") or blank.get("text") or blank.get("stem")))
+            else:
+                blank_texts.append(_clean_text(blank))
+        blank_texts = [text for text in blank_texts if text]
+        if blank_texts:
+            parts.append("；".join(blank_texts))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _active_recall_cards(active_recall: object) -> list[str]:
+    if isinstance(active_recall, str):
+        text = _clean_text(active_recall)
+        return [text] if text else []
+    if not isinstance(active_recall, dict):
+        return []
+
+    cards: list[str] = []
+    for field in ("instructions", "instruction", "question", "prompt", "expected", "content"):
+        value = active_recall.get(field)
+        if isinstance(value, list):
+            for item in value:
+                _append_task_once(cards, item)
+        else:
+            _append_task_once(cards, value)
+
+    top_level_card = _compact_instruction_with_blanks("", active_recall.get("blanks"))
+    if top_level_card:
+        _append_task_once(cards, top_level_card)
+
+    for item in active_recall.get("items", []) if isinstance(active_recall.get("items"), list) else []:
+        if not isinstance(item, dict):
+            _append_task_once(cards, item)
+            continue
+        card = _compact_instruction_with_blanks(
+            item.get("instruction") or item.get("question") or item.get("prompt") or item.get("stem"),
+            item.get("blanks"),
+        )
+        if item.get("answer_ref"):
+            card = f"{card}（口述后对照参考答案）" if card else "口述后对照参考答案。"
+        _append_task_once(cards, card)
+    return cards
+
+
+def _lesson_title_from_topic(topic: str) -> str:
+    clean_topic = re.sub(r"(课后)?复习计划$", "", _clean_text(topic, "课后")).strip()
+    if clean_topic.endswith("复习"):
+        return f"{clean_topic}计划"
+    return f"{clean_topic}复习计划"
+
+
+def _append_explicit_tasks(tasks: list[str], day_data: dict) -> None:
+    for field in ("tasks", "task_list", "checklist", "execution_checklist"):
+        values = day_data.get(field)
+        if isinstance(values, list):
+            for value in values:
+                if isinstance(value, dict):
+                    _append_task_once(tasks, value.get("text") or value.get("task") or value.get("instruction"))
+                else:
+                    _append_task_once(tasks, value)
+        else:
+            _append_task_once(tasks, values)
+
+
+def _synthesized_tasks(day_data: dict, topic: str, method_cards: list[str], choices: list[dict]) -> list[str]:
+    tasks: list[str] = []
+    goal = _clean_text(day_data.get("goal") or day_data.get("review_goal"))
+    focus = _clean_text(day_data.get("focus") or day_data.get("review_focus") or day_data.get("theme") or day_data.get("label"))
+    if goal:
+        _append_task_once(tasks, f"用2分钟口头复述今日目标：{goal}")
+    if focus:
+        _append_task_once(tasks, f"回看课堂笔记中与“{focus}”相关的例题入口和易错点。")
+    _append_task_once(tasks, "完成当天填空题；遇到公式题，先写适用条件和等号成立条件，再代入。")
+    if choices:
+        _append_task_once(tasks, "完成选择题，并口头说明每个错误选项错在哪里。")
+    if method_cards:
+        _append_task_once(tasks, "完成课堂方法复盘卡片，用自己的话复述关键步骤。")
+    phrase = _clean_text(day_data.get("self_test_phrase") or day_data.get("completion_standard"))
+    if phrase and not _is_completion_standard(phrase):
+        _append_task_once(tasks, f"最后自查：{phrase}")
+    return tasks or [f"完整复习{topic or '本课内容'}并复述关键方法。"]
+
+
+def _day_meta_texts(day_data: dict) -> set[str]:
+    fields = ("goal", "review_goal", "focus", "review_focus", "completion_standard", "self_test_phrase")
+    return {_clean_text(day_data.get(field)) for field in fields if _clean_text(day_data.get(field))}
+
+
+def _is_printable_task(text: str, meta_texts: set[str]) -> bool:
+    clean_text = _clean_text(text)
+    return bool(clean_text and clean_text not in meta_texts and not _is_completion_standard(clean_text))
+
+
 def collect_plan_quotes(plan_data: dict) -> list[str]:
     quotes: list[str] = []
-    for text in _dedupe_clean_lines(plan_data.get("quotes")):
+    for text in _dedupe_real_quotes(plan_data.get("quotes")):
         quotes.append(text)
-    for text in _dedupe_clean_lines(plan_data.get("lesson_info", {}).get("quotes")):
+    for text in _dedupe_real_quotes(plan_data.get("lesson_info", {}).get("quotes")):
         if text not in quotes:
             quotes.append(text)
     for day_data in plan_data.get("days", []):
-        phrase = _clean_text(day_data.get("self_test_phrase"))
-        if phrase and phrase not in quotes:
-            quotes.append(phrase)
-        for step in day_data.get("steps", []):
-            for item in step.get("items", []):
-                if item.get("type") == "body":
-                    text = _clean_text(item.get("text"))
-                    if text and text not in quotes:
-                        quotes.append(text)
-        for item in day_data.get("items", []):
-            if item.get("type") == "body":
-                text = _clean_text(item.get("text"))
-                if text and text not in quotes:
-                    quotes.append(text)
-    return quotes[:12] or ["每一个复习日都要完整复习整节课内容。"]
+        for text in _dedupe_real_quotes(day_data.get("quotes")):
+            if text not in quotes:
+                quotes.append(text)
+    return quotes[:5]
 
 
 def extract_knowledge_sections(plan_data: dict) -> dict:
@@ -71,41 +214,20 @@ def extract_knowledge_sections(plan_data: dict) -> dict:
     return normalized
 
 
-def _default_choice(topic: str, day_number: int) -> dict:
-    return {
-        "question": f"第{day_number}天关于{topic or '本课内容'}的自测题，最该先复述哪一步？",
-        "options": [
-            "A. 先回忆整节课的核心方法",
-            "B. 直接跳到最后一道题",
-            "C. 只看答案不复盘过程",
-            "D. 只记零散结论不看结构",
-        ],
-        "answer": "A",
-    }
-
-
 def _question_pool(plan_data: dict) -> list[dict]:
-    topic = _clean_text(plan_data.get("lesson_info", {}).get("topic"), "本课内容")
     pool: list[dict] = []
     for question in plan_data.get("questions", []):
         question_text = _clean_text(question.get("question"))
-        answer_text = _clean_text(question.get("answer"), "先完整复述本课方法，再回到题目。")
-        if not question_text:
+        options = _dedupe_clean_lines(question.get("options"))
+        if not question_text or len(options) < 2:
             continue
         pool.append(
             {
                 "question": question_text,
-                "options": [
-                    f"A. {answer_text}",
-                    "B. 只看结果不看过程",
-                    "C. 跳过课堂原话直接猜",
-                    "D. 只做最后一题",
-                ],
-                "answer": "A",
+                "options": options,
+                "answer": _clean_text(question.get("answer"), "A"),
             }
         )
-    if not pool:
-        pool.append(_default_choice(topic, 1))
     return pool
 
 
@@ -113,6 +235,9 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
     day_number = int(day_data.get("day") or day_data.get("day_number") or 0) or 1
     tasks: list[str] = []
     blanks: list[tuple[str, str]] = []
+    method_cards = _active_recall_cards(day_data.get("active_recall"))
+    meta_texts = _day_meta_texts(day_data)
+    _append_explicit_tasks(tasks, day_data)
 
     for step in day_data.get("steps", []):
         title = _clean_text(step.get("title"))
@@ -121,31 +246,15 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         for item in step.get("items", []):
             text = _clean_text(item.get("text"))
             if item.get("type") == "fill" and text:
-                blanks.append((text, _clean_text(item.get("answer"), "见课堂笔记")))
-            elif item.get("type") == "body" and text:
+                _append_blank_once(blanks, text, item.get("answer"))
+            elif item.get("type") == "body" and _is_printable_task(text, meta_texts):
                 tasks.append(text)
 
     for item in day_data.get("items", []):
         text = _clean_text(item.get("text"))
         if item.get("type") == "fill" and text:
-            blanks.append((text, _clean_text(item.get("answer"), "见课堂笔记")))
-        elif text:
-            tasks.append(text)
-
-    for field in ("goal", "focus"):
-        text = _clean_text(day_data.get(field))
-        if text and text not in tasks:
-            tasks.append(text)
-
-    active_recall = day_data.get("active_recall")
-    if isinstance(active_recall, dict):
-        for field in ("instructions", "expected"):
-            text = _clean_text(active_recall.get(field))
-            if text and text not in tasks:
-                tasks.append(text)
-    elif isinstance(active_recall, str):
-        text = _clean_text(active_recall)
-        if text and text not in tasks:
+            _append_blank_once(blanks, text, item.get("answer"))
+        elif _is_printable_task(text, meta_texts):
             tasks.append(text)
 
     for blank in day_data.get("blanks", []) if isinstance(day_data.get("blanks"), list) else []:
@@ -159,18 +268,11 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
             text = _clean_text(blank)
             answer = "见课堂笔记"
         if text:
-            blanks.append((text, answer))
+            _append_blank_once(blanks, text, answer)
 
     phrase = _clean_text(day_data.get("self_test_phrase"))
-    if phrase:
+    if phrase and not _is_completion_standard(phrase):
         tasks.append(phrase)
-    elif isinstance(active_recall, dict):
-        phrase = _clean_text(active_recall.get("expected") or active_recall.get("instructions"))
-        if phrase:
-            tasks.append(phrase)
-
-    task_values = tasks[:4] or [f"完整复习{topic or '本课内容'}并复述关键方法。"]
-    blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
 
     explicit_choices: list[dict] = []
     for choice in day_data.get("choices", []) if isinstance(day_data.get("choices"), list) else []:
@@ -184,23 +286,38 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 
     if explicit_choices:
         choice_values = explicit_choices[:2]
-    else:
+    elif question_pool:
         choice_values = [question_pool[(day_number - 1) % len(question_pool)]]
-    quote_values = [phrase] if phrase else [task_values[0]]
+    else:
+        choice_values = []
+
+    task_values = tasks[:5] if tasks else _synthesized_tasks(day_data, topic, method_cards, choice_values)[:5]
+    blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
+    quote_values = _dedupe_real_quotes(day_data.get("quotes"))
+    if phrase and _is_real_class_quote(phrase) and phrase not in quote_values:
+        quote_values.append(phrase)
 
     return {
         "offset": day_number,
         "day": f"第{day_number}天",
-        "focus": _clean_text(day_data.get("focus") or day_data.get("theme") or day_data.get("label"), f"聚焦复习{topic or '本课内容'}"),
-        "goal": f"完整回顾{topic or '本课内容'}，并复述关键方法与易错点。",
+        "focus": _clean_text(
+            day_data.get("focus") or day_data.get("review_focus") or day_data.get("theme") or day_data.get("label"),
+            f"聚焦复习{topic or '本课内容'}",
+        ),
+        "goal": _clean_text(
+            day_data.get("goal") or day_data.get("review_goal"),
+            f"完整回顾{topic or '本课内容'}，并复述关键方法与易错点。",
+        ),
         "tasks": task_values,
         "blanks": blank_values,
         "choices": choice_values,
+        "method_cards": method_cards,
         "quotes": quote_values,
     }
 
 
 def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], list[str]]:
+    plan_data = normalize_final_review_plan(plan_data)
     lesson_info = plan_data.get("lesson_info", {})
     topic = _clean_text(lesson_info.get("topic") or plan_data.get("topic"), "课后")
     weak_points = _clean_text(plan_data.get("weak_points_summary"))
@@ -209,7 +326,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
         if text not in full_review_topics:
             full_review_topics.append(text)
     lesson = {
-        "title": f"{topic}复习计划",
+        "title": _lesson_title_from_topic(topic),
         "subtitle": "",
         "audience": "老师发给学生使用",
         "duration": "每次 10-20 分钟",

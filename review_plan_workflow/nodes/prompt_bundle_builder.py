@@ -6,7 +6,15 @@ from typing import Any
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.llm.prompt_registry import PROMPT_ROOT
-from review_plan_workflow.schemas import PromptBundle, ScopePlan, SourceSummary, SubjectRoute, TaskBlueprint, TimeAllocation
+from review_plan_workflow.schemas import (
+    AgenticPlanBlueprint,
+    PromptBundle,
+    ScopePlan,
+    SourceSummary,
+    SubjectRoute,
+    TaskBlueprint,
+    TimeAllocation,
+)
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -26,6 +34,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> PromptBundle:
     scope: ScopePlan = input_data["scope"]
     time_allocation: TimeAllocation = input_data["time_allocation"]
     task_blueprint: TaskBlueprint = input_data["task_blueprint"]
+    agent_blueprint: AgenticPlanBlueprint | None = input_data.get("agent_blueprint")
 
     subject_pack_path = _relative_prompt_path(route.subject_pack_path or "", "subjects/common.yaml")
     variables = {
@@ -36,6 +45,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> PromptBundle:
         "time_allocation": time_allocation.model_dump(),
         "task_blueprint": task_blueprint.model_dump(),
     }
+    if agent_blueprint is not None:
+        variables["agent_blueprint"] = agent_blueprint.model_dump()
     rendered = render_prompt(
         system_prompt_path="system/review-plan-agent.md",
         node_prompt_path="nodes/task-generator.md",

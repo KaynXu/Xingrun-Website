@@ -14,6 +14,7 @@ from config_runtime import (
     resolve_review_plan_provider,
 )
 from pydantic import BaseModel
+from review_plan_workflow.observability import llm_generation, summarize_for_observability
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -167,26 +168,58 @@ def generate_review_plan_json(
     provider: str = "",
     model: str = "",
     reasoning_effort: str = "",
+    temperature: float | None = None,
+    stage: str = "generate_json",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     provider_name = resolve_chat_provider(provider)
     model_name = resolve_chat_model(provider_name, model)
     client = get_chat_client(provider_name)
+    request_temperature = 0.3 if temperature is None else float(temperature)
     request_kwargs: dict[str, Any] = {
         "model": model_name,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        "temperature": 0.3,
+        "temperature": request_temperature,
         "response_format": {"type": "json_object"},
         "timeout": REVIEW_PLAN_LLM_TIMEOUT_SECONDS,
     }
     normalized_effort = normalize_reasoning_effort(reasoning_effort)
     if provider_name == "openai" and normalized_effort:
         request_kwargs["reasoning_effort"] = normalized_effort
-    response = client.chat.completions.create(**request_kwargs)
-    raw = response.choices[0].message.content
-    return loads_model_json(raw), usage_dict(response, provider=provider_name, model_fallback=model_name)
+    with llm_generation(
+        provider=provider_name,
+        model=model_name,
+        system_prompt=system_prompt,
+        user_message=user_message,
+        reasoning_effort=normalized_effort,
+        stage=stage,
+        temperature=request_temperature,
+    ) as generation:
+        try:
+            response = client.chat.completions.create(**request_kwargs)
+            raw = response.choices[0].message.content
+            payload = loads_model_json(raw)
+            usage = usage_dict(response, provider=provider_name, model_fallback=model_name)
+            generation.record_success(
+                output={
+                    "json": summarize_for_observability(payload),
+                    "usage": usage,
+                },
+                metadata={
+                    "provider": provider_name,
+                    "model": model_name,
+                    "input_tokens": usage["input_tokens"],
+                    "output_tokens": usage["output_tokens"],
+                    "temperature": request_temperature,
+                    "stage": stage,
+                },
+            )
+            return payload, usage
+        except Exception as exc:
+            generation.record_failure(error=exc)
+            raise
 
 
 def generate_structured(

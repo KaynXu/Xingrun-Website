@@ -191,3 +191,64 @@ test('small classes do not require class number in info issue checks', () => {
     [],
   );
 });
+
+test('resolveFilteredClasses sorts small classes before group classes then low grade to high grade', () => {
+  const ordered = resolveFilteredClasses({
+    classes: [
+      {
+        id: 31,
+        name: '班课八年级',
+        class_type: 'group',
+        subject: '数学',
+        grade: '八年级',
+        current_grade: '八年级',
+        stage: '初中',
+        class_number: '2',
+        teacher_user_id: 1,
+        teacher_name: '曹老师',
+      },
+      {
+        id: 32,
+        name: '小课五年级',
+        class_type: '1v1',
+        subject: '数学',
+        grade: '五年级',
+        current_grade: '五年级',
+        stage: '小奥',
+        class_number: '',
+        teacher_user_id: 1,
+        teacher_name: '曹老师',
+      },
+      {
+        id: 33,
+        name: '小课九年级',
+        class_type: '1v1',
+        subject: '数学',
+        grade: '九年级',
+        current_grade: '九年级',
+        stage: '初中',
+        class_number: '',
+        teacher_user_id: 1,
+        teacher_name: '曹老师',
+      },
+      {
+        id: 34,
+        name: '班课七年级',
+        class_type: 'group',
+        subject: '数学',
+        grade: '七年级',
+        current_grade: '七年级',
+        stage: '初中',
+        class_number: '1',
+        teacher_user_id: 1,
+        teacher_name: '曹老师',
+      },
+    ],
+    subjectLookupClasses: [],
+    teacherBindingByClassId: {},
+    subjectOptions,
+    filters: allFilters,
+  }).map((item) => item.id);
+
+  assert.deepEqual(ordered, [32, 33, 34, 31]);
+});

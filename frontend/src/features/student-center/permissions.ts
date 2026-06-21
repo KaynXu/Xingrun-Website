@@ -6,38 +6,40 @@ export interface StudentCenterPermissionUser {
 
 export interface StudentCenterPermissions {
   canLoadStaffMembers: boolean;
+  canLoadStudentProfiles: boolean;
   canManageClassTeachers: boolean;
   canCreateClass: boolean;
   canManageStudents: boolean;
   canEditTeacherBinding: boolean;
   canUseOrganizationScope: boolean;
   isTeacherScoped: boolean;
+  overviewTitle: string;
+  overviewScopeLabel: string;
   classScopeLabel: string;
   studentScopeLabel: string;
 }
 
-function hasOwnerAccess(role: StudentCenterRole): boolean {
-  return role === 'super_owner' || role === 'owner';
-}
-
 function hasStaffAccess(role: StudentCenterRole): boolean {
-  return hasOwnerAccess(role) || role === 'admin';
+  return role === 'super_owner' || role === 'owner' || role === 'admin';
 }
 
 export function getStudentCenterPermissions(user: StudentCenterPermissionUser): StudentCenterPermissions {
-  const canUseOrganizationScope = hasOwnerAccess(user.role);
+  const canUseOrganizationScope = hasStaffAccess(user.role);
   const canManageClassTeachers = hasStaffAccess(user.role);
   const isTeacherScoped = user.role === 'member';
 
   return {
     canLoadStaffMembers: canManageClassTeachers,
+    canLoadStudentProfiles: canManageClassTeachers,
     canManageClassTeachers,
     canCreateClass: canManageClassTeachers,
     canManageStudents: canManageClassTeachers,
     canEditTeacherBinding: canManageClassTeachers,
     canUseOrganizationScope,
     isTeacherScoped,
-    classScopeLabel: canUseOrganizationScope ? '全机构班级' : '仅本人班级',
-    studentScopeLabel: canUseOrganizationScope ? '全机构学员' : '仅本人学员',
+    overviewTitle: canUseOrganizationScope ? '校区总览' : '教师总览',
+    overviewScopeLabel: canUseOrganizationScope ? '全校区' : '学生人数',
+    classScopeLabel: canUseOrganizationScope ? '全校区班级' : '仅本人班级',
+    studentScopeLabel: canUseOrganizationScope ? '全校区学员' : '仅本人学员',
   };
 }

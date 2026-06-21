@@ -208,17 +208,75 @@ CONSULTATION_LEGACY_STATUS_STAGE_MAP = {
 CONSULTATION_STAGE_API_FIELDS = {
     "flow_stage",
     "completed_stages",
+    "stage_teacher_ids",
+    "assigned_stage",
+    "assignment_note",
+    "customer_service_added",
+    "customer_service_teacher",
+    "customer_service_note",
+    "communication_teacher_added",
+    "communication_teacher_note",
     "test_taken",
+    "test_teacher",
+    "test_note",
     "test_images",
+    "trial_teacher_added",
+    "trial_teacher_note",
     "trial_taken",
     "trial_time_slot",
     "trial_class_id",
     "trial_class_manual",
     "trial_teacher",
     "trial_feedback",
+    "teaching_teacher_added",
+    "teaching_teacher",
+    "teaching_teacher_note",
     "success_class_id",
     "success_class_manual",
+    "enrollment_handoff_note",
+    "student_profile_status",
+    "student_profile_note",
+    "failure_reason",
+    "failure_note",
+    "closing_result",
+    "closed_by_user_id",
     "end_note",
+}
+
+CONSULTATION_STAGE_RESPONSIBILITY_LABELS = {
+    "已加小客服微信": "客服",
+    "已加对应教师微信": "沟通教师",
+    "正在沟通细节": "沟通教师",
+    "待测试": "测试教师",
+    "待试听": "试听教师",
+    "成功进班": "带课教师",
+}
+CONSULTATION_STAGE_FIELD_GROUPS = {
+    "已加小客服微信": {"customer_service_added", "customer_service_teacher", "customer_service_note"},
+    "已加对应教师微信": {"communication_teacher_added", "communication_teacher_note"},
+    "正在沟通细节": {"communication_teacher_added", "communication_teacher_note"},
+    "待测试": {"test_taken", "test_teacher", "test_note", "test_images"},
+    "待试听": {
+        "trial_teacher_added",
+        "trial_teacher_note",
+        "trial_taken",
+        "trial_time_slot",
+        "trial_class_id",
+        "trial_class_manual",
+        "trial_teacher",
+        "trial_feedback",
+    },
+    "成功进班": {
+        "success_class_id",
+        "teaching_teacher_added",
+        "teaching_teacher",
+        "teaching_teacher_note",
+        "success_class_manual",
+        "enrollment_handoff_note",
+        "student_profile_status",
+        "student_profile_note",
+    },
+    "咨询结束": {"failure_reason", "failure_note", "closing_result", "closed_by_user_id", "end_note"},
 }
 COURSE_CALENDAR_TIME_BLOCKS = (
     "08:00-10:00",
@@ -321,6 +379,15 @@ CONSULTATION_SEARCH_LONG_TEXT_FIELDS = (
     "具体需求",
     "need_detail",
     "trial_feedback",
+    "customer_service_note",
+    "communication_teacher_note",
+    "test_note",
+    "trial_teacher_note",
+    "teaching_teacher_note",
+    "enrollment_handoff_note",
+    "student_profile_note",
+    "failure_reason",
+    "failure_note",
     "end_note",
     "跟进备注",
     "follow_up_note",
@@ -925,6 +992,23 @@ def resolve_teacher_username_to_user_id(username: str) -> Optional[int]:
     return row["id"] if row else None
 
 
+def _consultation_teacher_identifiers_for_user(actor_user: dict) -> set[str]:
+    username = str((actor_user or {}).get("username") or "").strip()
+    identifiers = {username.lower()} if username else set()
+    if not username:
+        return identifiers
+    for item in list_consultation_teachers():
+        teacher_id = str(item.get("teacher_id") or "").strip()
+        if teacher_id.lower() != username.lower():
+            continue
+        for value in [teacher_id, item.get("display_name"), *item.get("aliases", [])]:
+            normalized = str(value or "").strip().lower()
+            if normalized:
+                identifiers.add(normalized)
+        break
+    return identifiers
+
+
 def list_consultation_teachers() -> list[dict]:
     alias_records = _load_consultation_teacher_alias_records()
     teacher_entries: dict[str, dict] = {}
@@ -1067,6 +1151,19 @@ def _json_list(value: object) -> list:
             return []
         return parsed if isinstance(parsed, list) else []
     return []
+
+
+def _json_dict(value: object) -> dict:
+    if isinstance(value, dict):
+        return {str(key): str(item) for key, item in value.items() if str(key).strip() and str(item).strip()}
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return {str(key): str(item) for key, item in parsed.items() if str(key).strip() and str(item).strip()}
+    return {}
 
 
 def _normalize_consultation_flow_stage(value: object, legacy_status: str = "") -> str:
@@ -1336,6 +1433,305 @@ def list_consultations(
     return serialized_rows
 
 
+def _consultation_current_assignment_context_for_actor(row: dict, actor_user: dict) -> dict | None:
+    identifiers = _consultation_teacher_identifiers_for_user(actor_user)
+    matched_stage = ""
+    matched_teacher_id = ""
+    legacy_direct_assignment = False
+    assigned_stage = str(row.get("assigned_stage") or "").strip()
+    stage_teacher_ids = row.get("stage_teacher_ids") or {}
+    if assigned_stage:
+        assigned_teacher_id = str(stage_teacher_ids.get(assigned_stage) or "").strip()
+        if assigned_teacher_id.lower() in identifiers:
+            matched_stage = assigned_stage
+            matched_teacher_id = assigned_teacher_id
+    if not matched_stage:
+        flow_stage = str(row.get("flow_stage") or "").strip()
+        flow_teacher_id = str(stage_teacher_ids.get(flow_stage) or "").strip()
+        if flow_teacher_id.lower() in identifiers:
+            matched_stage = flow_stage
+            matched_teacher_id = flow_teacher_id
+    explicit_stage_teacher_id = ""
+    if assigned_stage:
+        explicit_stage_teacher_id = str(stage_teacher_ids.get(assigned_stage) or "").strip()
+    if not explicit_stage_teacher_id:
+        flow_stage = str(row.get("flow_stage") or "").strip()
+        explicit_stage_teacher_id = str(stage_teacher_ids.get(flow_stage) or "").strip()
+    if not matched_stage and not explicit_stage_teacher_id and row.get("assigned_user_id") == actor_user.get("id"):
+        matched_stage = assigned_stage or str(row.get("flow_stage") or "").strip()
+        legacy_direct_assignment = True
+    if not matched_stage:
+        return None
+
+    teacher_directory = _get_consultation_teacher_directory()
+    teacher_name = (
+        teacher_directory.get(matched_teacher_id.lower())
+        or str(actor_user.get("display_name") or actor_user.get("username") or "").strip()
+    )
+    responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(matched_stage, "负责教师")
+    return {
+        "assigned_stage": matched_stage,
+        "transfer_marker": "咨询转接",
+        "current_responsibility": f"{responsibility_label}：{teacher_name}" if teacher_name else responsibility_label,
+        "legacy_direct_assignment": legacy_direct_assignment,
+    }
+
+
+def _consultation_current_responsibility_context(row: dict) -> dict | None:
+    stage_teacher_ids = row.get("stage_teacher_ids") or {}
+    current_stage = str(row.get("assigned_stage") or row.get("flow_stage") or "").strip()
+    current_teacher_id = str(stage_teacher_ids.get(current_stage) or "").strip() if current_stage else ""
+    teacher_name = ""
+    if current_teacher_id:
+        teacher_name = _get_consultation_teacher_directory().get(current_teacher_id.lower()) or current_teacher_id
+    elif row.get("assigned_user_id") is not None:
+        teacher_name = str(row.get("display_name") or row.get("username") or "").strip()
+    else:
+        return None
+    responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(current_stage, "负责教师")
+    return {
+        "assigned_stage": current_stage,
+        "transfer_marker": "咨询转接",
+        "current_responsibility": f"{responsibility_label}：{teacher_name}" if teacher_name else responsibility_label,
+        "legacy_direct_assignment": False,
+    }
+
+
+def _consultation_assignment_context_for_actor(row: dict, actor_user: dict) -> dict | None:
+    context = _consultation_current_assignment_context_for_actor(row, actor_user)
+    if context:
+        return context
+
+    identifiers = _consultation_teacher_identifiers_for_user(actor_user)
+    stage_teacher_ids = row.get("stage_teacher_ids") or {}
+    teacher_directory = _get_consultation_teacher_directory()
+    for stage in CONSULTATION_FLOW_STAGES:
+        teacher_id = str(stage_teacher_ids.get(stage) or "").strip()
+        if teacher_id.lower() in identifiers:
+            current_stage = str(row.get("assigned_stage") or row.get("flow_stage") or stage).strip()
+            current_teacher_id = str(stage_teacher_ids.get(current_stage) or "").strip()
+            current_teacher_name = (
+                teacher_directory.get(current_teacher_id.lower())
+                if current_teacher_id else ""
+            )
+            responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(current_stage, "负责教师")
+            return {
+                "assigned_stage": current_stage,
+                "transfer_marker": "咨询转接",
+                "current_responsibility": f"{responsibility_label}：{current_teacher_name}" if current_teacher_name else responsibility_label,
+                "legacy_direct_assignment": False,
+                "historical_assignment": True,
+            }
+
+    for history_item in _json_list(row.get("responsibility_history")):
+        if not isinstance(history_item, dict):
+            continue
+        if str(history_item.get("change_kind") or "transfer").strip() not in {"transfer", "reassign"}:
+            continue
+        historical_ids = {
+            str(history_item.get("from_teacher_id") or "").strip().lower(),
+            str(history_item.get("to_teacher_id") or "").strip().lower(),
+        }
+        if not identifiers.intersection({item for item in historical_ids if item}):
+            continue
+        current_stage = str(row.get("assigned_stage") or row.get("flow_stage") or history_item.get("stage") or "").strip()
+        current_teacher_id = str(stage_teacher_ids.get(current_stage) or "").strip()
+        current_teacher_name = teacher_directory.get(current_teacher_id.lower()) if current_teacher_id else ""
+        responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(current_stage, "负责教师")
+        return {
+            "assigned_stage": current_stage,
+            "transfer_marker": "咨询转接",
+            "current_responsibility": f"{responsibility_label}：{current_teacher_name}" if current_teacher_name else responsibility_label,
+            "legacy_direct_assignment": False,
+            "historical_assignment": True,
+        }
+
+    if row.get("assigned_user_id") == actor_user.get("id"):
+        current_stage = str(row.get("assigned_stage") or row.get("flow_stage") or "").strip()
+        current_teacher_id = str(stage_teacher_ids.get(current_stage) or "").strip()
+        current_teacher_name = teacher_directory.get(current_teacher_id.lower()) if current_teacher_id else ""
+        responsibility_label = CONSULTATION_STAGE_RESPONSIBILITY_LABELS.get(current_stage, "负责教师")
+        return {
+            "assigned_stage": current_stage,
+            "transfer_marker": "咨询转接",
+            "current_responsibility": f"{responsibility_label}：{current_teacher_name}" if current_teacher_name else responsibility_label,
+            "legacy_direct_assignment": False,
+            "historical_assignment": True,
+        }
+
+    return None
+
+
+def _annotate_consultation_for_actor(row: dict, actor_user: dict) -> dict:
+    annotated = dict(row)
+    is_creator = annotated.get("created_by_user_id") == actor_user.get("id")
+    context = _consultation_assignment_context_for_actor(annotated, actor_user)
+    current_context = _consultation_current_assignment_context_for_actor(annotated, actor_user)
+    current_responsibility_context = _consultation_current_responsibility_context(annotated)
+    creator_current_access = bool(is_creator and (current_context or not current_responsibility_context))
+    creator_transferred_away = bool(is_creator and not creator_current_access)
+    if context:
+        annotated.update(context)
+    elif creator_transferred_away and current_responsibility_context:
+        annotated.update(current_responsibility_context)
+    is_transferred = bool(context) and not is_creator and not context.get("legacy_direct_assignment")
+    annotated.pop("legacy_direct_assignment", None)
+    annotated.pop("historical_assignment", None)
+    annotated["is_transferred_consultation"] = is_transferred
+    annotated["can_edit_consultation"] = bool(creator_current_access or current_context)
+    if not is_transferred and not creator_transferred_away:
+        annotated["transfer_marker"] = ""
+        annotated["current_responsibility"] = ""
+    return annotated
+
+
+def _consultation_teacher_name_for_history(teacher_id: str, teacher_directory: dict[str, str]) -> str:
+    teacher_id = str(teacher_id or "").strip()
+    if not teacher_id:
+        return ""
+    return teacher_directory.get(teacher_id.lower()) or teacher_id
+
+
+def _append_responsibility_history_for_stage_teacher_changes(
+    current: dict,
+    next_row: dict,
+    teacher_directory: dict[str, str],
+    change_kind: str = "reassign",
+) -> dict:
+    current_stage_teacher_ids = current.get("stage_teacher_ids") or {}
+    next_stage_teacher_ids = next_row.get("stage_teacher_ids") or {}
+    current_history = [
+        item for item in _json_list(current.get("responsibility_history"))
+        if isinstance(item, dict)
+    ]
+    history = list(current_history)
+    note = str(next_row.get("assignment_note") or "").strip()
+    for stage in CONSULTATION_FLOW_STAGES:
+        from_teacher_id = str(current_stage_teacher_ids.get(stage) or "").strip()
+        to_teacher_id = str(next_stage_teacher_ids.get(stage) or "").strip()
+        if not from_teacher_id or not to_teacher_id or from_teacher_id == to_teacher_id:
+            continue
+        history.append({
+            "stage": stage,
+            "from_teacher_id": from_teacher_id,
+            "from_teacher_name": _consultation_teacher_name_for_history(from_teacher_id, teacher_directory),
+            "to_teacher_id": to_teacher_id,
+            "to_teacher_name": _consultation_teacher_name_for_history(to_teacher_id, teacher_directory),
+            "note": note,
+            "change_kind": change_kind if change_kind in {"transfer", "reassign"} else "reassign",
+        })
+    if history != current_history:
+        return {**next_row, "responsibility_history": history}
+    return next_row
+
+
+def get_consultation_for_actor(actor_user: dict, consultation_id: int):
+    item = get_consultation(
+        consultation_id,
+        None if (actor_user or {}).get("role") == SUPER_OWNER_ROLE else actor_user.get("organization_id"),
+    )
+    if not item:
+        return None
+    if actor_user.get("role") != MEMBER_ROLE:
+        return item
+    is_creator = item.get("created_by_user_id") == actor_user.get("id")
+    has_assignment = _consultation_assignment_context_for_actor(item, actor_user) is not None
+    if not is_creator and not has_assignment:
+        return None
+    return _annotate_consultation_for_actor(item, actor_user)
+
+
+def _stage_index(stage: str) -> int:
+    try:
+        return CONSULTATION_FLOW_STAGES.index(stage)
+    except ValueError:
+        return -1
+
+
+def _values_equal_for_permission(left: object, right: object) -> bool:
+    if isinstance(left, (dict, list)) or isinstance(right, (dict, list)):
+        return left == right
+    return str(left or "") == str(right or "")
+
+
+def _api_field_current_value(current: dict, field: str) -> object:
+    if field in current:
+        return current.get(field)
+    csv_field = CONSULTATION_API_FIELD_MAP.get(field)
+    if csv_field:
+        return current.get(csv_field)
+    return current.get(field)
+
+
+def _completed_stages_before_index(stages: object, assigned_index: int) -> set[str]:
+    return {
+        str(stage or "").strip()
+        for stage in _json_list(stages)
+        if 0 <= _stage_index(str(stage or "").strip()) < assigned_index
+    }
+
+
+def _transferred_consultation_update_touches_prior_stage(data: dict, current: dict, assigned_stage: str) -> bool:
+    assigned_index = _stage_index(assigned_stage)
+    if assigned_index < 0:
+        return False
+    for field in CONSULTATION_EDITABLE_FIELDS:
+        if field in data and not _values_equal_for_permission(data.get(field), _api_field_current_value(current, field)):
+            return True
+    for api_field in CONSULTATION_API_FIELD_MAP:
+        if api_field in data and not _values_equal_for_permission(data.get(api_field), _api_field_current_value(current, api_field)):
+            return True
+    for field in ("assigned_stage",):
+        if field in data and not _values_equal_for_permission(data.get(field), current.get(field)):
+            return True
+    if "completed_stages" in data:
+        current_prior = _completed_stages_before_index(current.get("completed_stages"), assigned_index)
+        next_prior = _completed_stages_before_index(data.get("completed_stages"), assigned_index)
+        if current_prior != next_prior:
+            return True
+    if "stage_teacher_ids" in data:
+        current_stage_teacher_ids = current.get("stage_teacher_ids") or {}
+        next_stage_teacher_ids = data.get("stage_teacher_ids") or {}
+        for stage in CONSULTATION_FLOW_STAGES:
+            stage_index = _stage_index(stage)
+            if 0 <= stage_index < assigned_index:
+                if str(current_stage_teacher_ids.get(stage) or "") != str(next_stage_teacher_ids.get(stage) or ""):
+                    return True
+    if "flow_stage" in data:
+        next_stage = str(data.get("flow_stage") or "").strip()
+        next_index = _stage_index(next_stage)
+        if 0 <= next_index < assigned_index:
+            return True
+    for stage, fields in CONSULTATION_STAGE_FIELD_GROUPS.items():
+        stage_index = _stage_index(stage)
+        if stage_index < 0 or stage_index >= assigned_index:
+            continue
+        for field in fields:
+            if field in data and not _values_equal_for_permission(data.get(field), current.get(field)):
+                return True
+    return False
+
+
+def update_consultation_for_actor(actor_user: dict, consultation_id: int, data: dict):
+    current = get_consultation_for_actor(actor_user, consultation_id)
+    if not current:
+        return None
+    organization_id = None if actor_user.get("role") == SUPER_OWNER_ROLE else actor_user.get("organization_id")
+    if actor_user.get("role") == MEMBER_ROLE and not current.get("can_edit_consultation"):
+        raise PermissionError("只有当前责任教师可以编辑咨询")
+    if actor_user.get("role") == MEMBER_ROLE and current.get("is_transferred_consultation"):
+        if _consultation_current_assignment_context_for_actor(current, actor_user) is None:
+            raise PermissionError("只有当前责任教师可以编辑转接咨询")
+        assigned_stage = str(current.get("assigned_stage") or "").strip()
+        if _transferred_consultation_update_touches_prior_stage(data or {}, current, assigned_stage):
+            raise PermissionError("转接咨询只能编辑转接阶段及后续流程")
+    change_kind = "transfer" if actor_user.get("role") == MEMBER_ROLE else "reassign"
+    updated = update_consultation(consultation_id, data, organization_id, None, change_kind)
+    if actor_user.get("role") == MEMBER_ROLE and updated:
+        return _annotate_consultation_for_actor(updated, actor_user)
+    return updated
+
+
 def get_consultation(consultation_id: int, organization_id: Optional[int] = None):
     teacher_directory = _get_consultation_teacher_directory()
     with get_conn() as conn:
@@ -1353,8 +1749,25 @@ def get_consultation(consultation_id: int, organization_id: Optional[int] = None
     return _consultation_storage_row_to_public_dict(row, teacher_directory) if row else None
 
 
-def create_consultation(data: dict, organization_id: int, assigned_user_id: Optional[int] = None) -> dict:
+def create_consultation(
+    data: dict,
+    organization_id: int,
+    assigned_user_id: Optional[int] = None,
+    created_by_user_id: Optional[int] = None,
+) -> dict:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    required_fields = {
+        "child_name": "学生姓名",
+        "consultation_subject": "咨询科目",
+        "grade": "咨询年级",
+        "need_detail": "家长诉求",
+        "receiving_teacher": "接待教师",
+    }
+    for api_field, label in required_fields.items():
+        csv_field = CONSULTATION_API_FIELD_MAP[api_field]
+        value = data.get(api_field, data.get(csv_field, "")) if isinstance(data, dict) else ""
+        if not str(value or "").strip():
+            raise ValueError(f"{label}不能为空")
     new_row = {field: "" for field in CONSULTATION_FIELDNAMES}
     new_row["录入时间"] = now
     new_row["最后更新"] = now
@@ -1369,19 +1782,27 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
         cur = conn.execute(
             """
             INSERT INTO consultations (
-                organization_id, assigned_user_id, date, parent_wechat_name, child_name, grade,
+                organization_id, assigned_user_id, created_by_user_id, date, parent_wechat_name, child_name, grade,
                 consultation_subject, need_detail,
                 source_channel, source_channel_note, screenshot, reminder_at,
                 reminder_status, reminder_task_id, follow_up_status, follow_up_note,
-                created_at, updated_at, flow_stage, completed_stages_json, test_taken,
-                test_images_json, trial_taken, trial_time_slot, trial_class_id,
+                created_at, updated_at, flow_stage, completed_stages_json, stage_teacher_ids_json,
+                assigned_stage, assignment_note, test_taken,
+                customer_service_added, customer_service_teacher, customer_service_note,
+                communication_teacher_added, communication_teacher_note, test_teacher,
+                test_note, test_images_json, trial_teacher_added,
+                trial_teacher_note, trial_taken, trial_time_slot, trial_class_id,
                 trial_class_manual, trial_teacher, trial_feedback, success_class_id,
-                success_class_manual, end_note, ended_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                teaching_teacher_added, teaching_teacher, teaching_teacher_note,
+                success_class_manual, enrollment_handoff_note, student_profile_status,
+                student_profile_note, failure_reason, failure_note, closing_result,
+                closed_by_user_id, end_note, ended_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 organization_id,
                 assigned_user_id,
+                created_by_user_id,
                 stored["date"] or str(date.today()),
                 stored["parent_wechat_name"],
                 stored["child_name"],
@@ -1400,8 +1821,20 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 now,
                 stored["flow_stage"],
                 stored["completed_stages_json"],
+                stored["stage_teacher_ids_json"],
+                stored["assigned_stage"],
+                stored["assignment_note"],
                 stored["test_taken"],
+                stored["customer_service_added"],
+                stored["customer_service_teacher"],
+                stored["customer_service_note"],
+                stored["communication_teacher_added"],
+                stored["communication_teacher_note"],
+                stored["test_teacher"],
+                stored["test_note"],
                 stored["test_images_json"],
+                stored["trial_teacher_added"],
+                stored["trial_teacher_note"],
                 stored["trial_taken"],
                 stored["trial_time_slot"],
                 stored["trial_class_id"],
@@ -1409,7 +1842,17 @@ def create_consultation(data: dict, organization_id: int, assigned_user_id: Opti
                 stored["trial_teacher"],
                 stored["trial_feedback"],
                 stored["success_class_id"],
+                stored["teaching_teacher_added"],
+                stored["teaching_teacher"],
+                stored["teaching_teacher_note"],
                 stored["success_class_manual"],
+                stored["enrollment_handoff_note"],
+                stored["student_profile_status"],
+                stored["student_profile_note"],
+                stored["failure_reason"],
+                stored["failure_note"],
+                stored["closing_result"],
+                stored["closed_by_user_id"],
                 stored["end_note"],
                 stored["ended_at"],
             ),
@@ -1431,6 +1874,7 @@ def update_consultation(
     data: dict,
     organization_id: Optional[int] = None,
     assigned_user_id: Optional[int] = None,
+    responsibility_change_kind: str = "reassign",
 ):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     teacher_directory = _get_consultation_teacher_directory()
@@ -1471,6 +1915,12 @@ def update_consultation(
             legacy_status = data.get("follow_up_status") or data.get("跟进状态") or public_row.get("follow_up_status", "")
             public_row["flow_stage"] = _normalize_consultation_flow_stage("", legacy_status)
             public_row["completed_stages"] = [public_row["flow_stage"]]
+        public_row = _append_responsibility_history_for_stage_teacher_changes(
+            _consultation_storage_row_to_public_dict(current, teacher_directory),
+            public_row,
+            teacher_directory,
+            responsibility_change_kind,
+        )
         stored = _consultation_row_to_storage(public_row, current["organization_id"])
         
         # Get assigned_user_id from data if provided, otherwise keep existing
@@ -1496,8 +1946,21 @@ def update_consultation(
                 assigned_user_id=?,
                 flow_stage=?,
                 completed_stages_json=?,
+                stage_teacher_ids_json=?,
+                responsibility_history_json=?,
+                assigned_stage=?,
+                assignment_note=?,
                 test_taken=?,
+                customer_service_added=?,
+                customer_service_teacher=?,
+                customer_service_note=?,
+                communication_teacher_added=?,
+                communication_teacher_note=?,
+                test_teacher=?,
+                test_note=?,
                 test_images_json=?,
+                trial_teacher_added=?,
+                trial_teacher_note=?,
                 trial_taken=?,
                 trial_time_slot=?,
                 trial_class_id=?,
@@ -1505,7 +1968,17 @@ def update_consultation(
                 trial_teacher=?,
                 trial_feedback=?,
                 success_class_id=?,
+                teaching_teacher_added=?,
+                teaching_teacher=?,
+                teaching_teacher_note=?,
                 success_class_manual=?,
+                enrollment_handoff_note=?,
+                student_profile_status=?,
+                student_profile_note=?,
+                failure_reason=?,
+                failure_note=?,
+                closing_result=?,
+                closed_by_user_id=?,
                 end_note=?,
                 ended_at=?,
                 updated_at=?
@@ -1526,8 +1999,21 @@ def update_consultation(
                 assigned_user_id,
                 stored["flow_stage"],
                 stored["completed_stages_json"],
+                stored["stage_teacher_ids_json"],
+                stored["responsibility_history_json"],
+                stored["assigned_stage"],
+                stored["assignment_note"],
                 stored["test_taken"],
+                stored["customer_service_added"],
+                stored["customer_service_teacher"],
+                stored["customer_service_note"],
+                stored["communication_teacher_added"],
+                stored["communication_teacher_note"],
+                stored["test_teacher"],
+                stored["test_note"],
                 stored["test_images_json"],
+                stored["trial_teacher_added"],
+                stored["trial_teacher_note"],
                 stored["trial_taken"],
                 stored["trial_time_slot"],
                 stored["trial_class_id"],
@@ -1535,7 +2021,17 @@ def update_consultation(
                 stored["trial_teacher"],
                 stored["trial_feedback"],
                 stored["success_class_id"],
+                stored["teaching_teacher_added"],
+                stored["teaching_teacher"],
+                stored["teaching_teacher_note"],
                 stored["success_class_manual"],
+                stored["enrollment_handoff_note"],
+                stored["student_profile_status"],
+                stored["student_profile_note"],
+                stored["failure_reason"],
+                stored["failure_note"],
+                stored["closing_result"],
+                stored["closed_by_user_id"],
                 stored["end_note"],
                 stored["ended_at"],
                 now,
@@ -1552,6 +2048,126 @@ def update_consultation(
             (consultation_id,)
         ).fetchone()
     return _consultation_storage_row_to_public_dict(updated, teacher_directory)
+
+
+def enter_consultation_class(
+    consultation_id: int,
+    payload: dict,
+    organization_id: Optional[int] = None,
+    actor_user_id: Optional[int] = None,
+    member_user_id: Optional[int] = None,
+) -> Optional[dict]:
+    item = get_consultation(consultation_id, organization_id)
+    if not item:
+        return None
+    update_assigned_user_id = member_user_id
+    if member_user_id is not None and item.get("assigned_user_id") != member_user_id:
+        member_user = get_user_by_id(member_user_id)
+        if not member_user or _consultation_assignment_context_for_actor(item, member_user) is None:
+            return None
+        update_assigned_user_id = None
+
+    mode = str((payload or {}).get("mode") or "existing").strip() or "existing"
+    completed_stages = list(dict.fromkeys([*item.get("completed_stages", []), "成功进班", "咨询结束"]))
+    teaching_teacher_id = str((payload or {}).get("teaching_teacher_id") or "").strip()
+    teaching_teacher_name = str((payload or {}).get("teaching_teacher") or item.get("teaching_teacher") or "").strip()
+    teaching_teacher_user_id = _normalize_optional_int((payload or {}).get("teaching_teacher_user_id"))
+    if teaching_teacher_id and teaching_teacher_user_id is None:
+        teaching_teacher_user_id = resolve_teacher_username_to_user_id(teaching_teacher_id)
+    next_stage_teacher_ids = dict(item.get("stage_teacher_ids") or {})
+    if teaching_teacher_id:
+        next_stage_teacher_ids["成功进班"] = teaching_teacher_id
+    elif teaching_teacher_user_id is not None:
+        next_stage_teacher_ids["成功进班"] = str(teaching_teacher_user_id)
+    update_payload: dict[str, object] = {
+        "flow_stage": "咨询结束",
+        "completed_stages": completed_stages,
+        "closing_result": "success",
+        "closed_by_user_id": actor_user_id,
+        "stage_teacher_ids": next_stage_teacher_ids,
+    }
+    if teaching_teacher_name:
+        update_payload.update({
+            "teaching_teacher_added": "已添加",
+            "teaching_teacher": teaching_teacher_name,
+        })
+    class_id: Optional[int] = None
+    student = None
+
+    if mode == "existing":
+        class_id = _normalize_optional_int((payload or {}).get("class_id"))
+        if class_id is None:
+            raise ValueError("请选择转化班级")
+        class_row = get_class(class_id)
+        if not class_row or (organization_id is not None and class_row.get("organization_id") != organization_id):
+            raise ValueError("转化班级不存在")
+        student = create_student_for_class(class_id, str(item.get("child_name") or ""))
+        backfill_subject = str((payload or {}).get("consultation_subject") or class_row.get("subject") or "").strip()
+        backfill_grade = str((payload or {}).get("grade") or class_row.get("current_grade") or class_row.get("grade") or "").strip()
+        update_payload.update({
+            "success_class_id": class_id,
+            "success_class_manual": "",
+            "student_profile_status": "created",
+        })
+        if backfill_subject and not str(item.get("consultation_subject") or "").strip():
+            update_payload["consultation_subject"] = backfill_subject
+        if backfill_grade and not str(item.get("grade") or "").strip():
+            update_payload["grade"] = backfill_grade
+    elif mode == "quick_new_class":
+        class_name = str((payload or {}).get("class_name") or "").strip()
+        if not class_name:
+            raise ValueError("班级名称不能为空")
+        backfill_subject = str((payload or {}).get("subject") or item.get("consultation_subject") or "").strip()
+        backfill_grade = str((payload or {}).get("grade") or (payload or {}).get("current_grade") or item.get("grade") or "").strip()
+        class_id = save_class(
+            class_name,
+            subject=backfill_subject,
+            grade=backfill_grade,
+            class_type=str((payload or {}).get("class_type") or "group"),
+            stage=str((payload or {}).get("stage") or ""),
+            current_grade=str((payload or {}).get("current_grade") or backfill_grade),
+            class_number=str((payload or {}).get("class_number") or ""),
+            cohort_year=_normalize_optional_int((payload or {}).get("cohort_year")),
+            show_cohort_year=bool((payload or {}).get("show_cohort_year")),
+            is_bridge=bool((payload or {}).get("is_bridge")),
+            bridge_target=str((payload or {}).get("bridge_target") or ""),
+            content_track=str((payload or {}).get("content_track") or ""),
+            teacher_name=teaching_teacher_name,
+            teacher_user_id=teaching_teacher_user_id,
+            organization_id=organization_id,
+        )
+        student = create_student_for_class(class_id, str(item.get("child_name") or ""))
+        update_payload.update({
+            "success_class_id": class_id,
+            "success_class_manual": "",
+            "student_profile_status": "created",
+        })
+        if backfill_subject and not str(item.get("consultation_subject") or "").strip():
+            update_payload["consultation_subject"] = backfill_subject
+        if backfill_grade and not str(item.get("grade") or "").strip():
+            update_payload["grade"] = backfill_grade
+    elif mode == "converted_without_class":
+        update_payload.update({
+            "success_class_id": None,
+            "success_class_manual": "班级待补充",
+            "student_profile_status": "needs_completion",
+        })
+    else:
+        raise ValueError("mode must be existing, quick_new_class or converted_without_class")
+
+    updated = update_consultation(
+        consultation_id,
+        update_payload,
+        organization_id=organization_id,
+        assigned_user_id=update_assigned_user_id,
+    )
+    if not updated:
+        return None
+    return {
+        "item": updated,
+        "class_id": class_id,
+        "student": student,
+    }
 
 
 def delete_consultation(consultation_id: int, organization_id: Optional[int] = None) -> bool:
@@ -1590,6 +2206,54 @@ def append_consultation_test_image(
             (json.dumps(images, ensure_ascii=False), consultation_id),
         )
     return get_consultation(consultation_id, organization_id)
+
+
+def append_consultation_test_image_for_actor(actor_user: dict, consultation_id: int, image: dict) -> Optional[dict]:
+    current = get_consultation_for_actor(actor_user, consultation_id)
+    if not current:
+        return None
+    images = [*(_json_list(current.get("test_images"))), image]
+    return update_consultation_for_actor(actor_user, consultation_id, {"test_images": images})
+
+
+def remove_consultation_test_image(
+    consultation_id: int,
+    image_index: int,
+    organization_id: Optional[int] = None,
+    assigned_user_id: Optional[int] = None,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        query_sql = "SELECT * FROM consultations WHERE id=?"
+        params: list[object] = [consultation_id]
+        if organization_id is not None:
+            query_sql += " AND organization_id=?"
+            params.append(organization_id)
+        if assigned_user_id is not None:
+            query_sql += " AND assigned_user_id=?"
+            params.append(assigned_user_id)
+        row = conn.execute(query_sql, params).fetchone()
+        if not row:
+            return None
+        images = _json_list(row["test_images_json"])
+        if image_index < 0 or image_index >= len(images):
+            return None
+        images.pop(image_index)
+        conn.execute(
+            "UPDATE consultations SET test_images_json=?, updated_at=datetime('now','localtime') WHERE id=?",
+            (json.dumps(images, ensure_ascii=False), consultation_id),
+        )
+    return get_consultation(consultation_id, organization_id)
+
+
+def remove_consultation_test_image_for_actor(actor_user: dict, consultation_id: int, image_index: int) -> Optional[dict]:
+    current = get_consultation_for_actor(actor_user, consultation_id)
+    if not current:
+        return None
+    images = _json_list(current.get("test_images"))
+    if image_index < 0 or image_index >= len(images):
+        return None
+    next_images = [image for index, image in enumerate(images) if index != image_index]
+    return update_consultation_for_actor(actor_user, consultation_id, {"test_images": next_images})
 
 
 # ─── 数据库 ────────────────────────────────────────────────────────────────────
@@ -1869,6 +2533,7 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
     completed_stages = _normalize_consultation_completed_stages(row.get("completed_stages"), flow_stage)
     trial_class_id = _normalize_optional_int(row.get("trial_class_id"))
     success_class_id = _normalize_optional_int(row.get("success_class_id"))
+    closed_by_user_id = _normalize_optional_int(row.get("closed_by_user_id"))
     success_class_manual = str(row.get("success_class_manual") or "").strip()
     if row.get("_require_success_class") and flow_stage == "成功进班" and not success_class_id and not success_class_manual:
         raise ValueError("成功进班必须选择或填写班级")
@@ -1899,8 +2564,21 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
         "updated_at": serialized.get("updated_at", ""),
         "flow_stage": flow_stage,
         "completed_stages_json": json.dumps(completed_stages, ensure_ascii=False),
+        "stage_teacher_ids_json": json.dumps(_json_dict(row.get("stage_teacher_ids")), ensure_ascii=False),
+        "responsibility_history_json": json.dumps(_json_list(row.get("responsibility_history")), ensure_ascii=False),
+        "assigned_stage": str(row.get("assigned_stage") or "").strip(),
+        "assignment_note": str(row.get("assignment_note") or "").strip(),
         "test_taken": str(row.get("test_taken") or ""),
+        "customer_service_added": str(row.get("customer_service_added") or ""),
+        "customer_service_teacher": str(row.get("customer_service_teacher") or ""),
+        "customer_service_note": str(row.get("customer_service_note") or ""),
+        "communication_teacher_added": str(row.get("communication_teacher_added") or ""),
+        "communication_teacher_note": str(row.get("communication_teacher_note") or ""),
+        "test_teacher": str(row.get("test_teacher") or ""),
+        "test_note": str(row.get("test_note") or ""),
         "test_images_json": json.dumps(_json_list(row.get("test_images")), ensure_ascii=False),
+        "trial_teacher_added": str(row.get("trial_teacher_added") or ""),
+        "trial_teacher_note": str(row.get("trial_teacher_note") or ""),
         "trial_taken": str(row.get("trial_taken") or ""),
         "trial_time_slot": str(row.get("trial_time_slot") or ""),
         "trial_class_id": trial_class_id,
@@ -1908,7 +2586,17 @@ def _consultation_row_to_storage(row: dict, organization_id: int) -> dict[str, s
         "trial_teacher": str(row.get("trial_teacher") or ""),
         "trial_feedback": str(row.get("trial_feedback") or ""),
         "success_class_id": success_class_id,
+        "teaching_teacher_added": str(row.get("teaching_teacher_added") or ""),
+        "teaching_teacher": str(row.get("teaching_teacher") or ""),
+        "teaching_teacher_note": str(row.get("teaching_teacher_note") or ""),
         "success_class_manual": success_class_manual,
+        "enrollment_handoff_note": str(row.get("enrollment_handoff_note") or ""),
+        "student_profile_status": str(row.get("student_profile_status") or ""),
+        "student_profile_note": str(row.get("student_profile_note") or ""),
+        "failure_reason": str(row.get("failure_reason") or ""),
+        "failure_note": str(row.get("failure_note") or ""),
+        "closing_result": str(row.get("closing_result") or ""),
+        "closed_by_user_id": closed_by_user_id,
         "end_note": str(row.get("end_note") or ""),
         "ended_at": ended_at,
     }
@@ -1944,15 +2632,33 @@ def _consultation_storage_row_to_public_dict(
     serialized = _serialize_consultation_row(legacy_row, teacher_directory)
     serialized["organization_id"] = payload.get("organization_id")
     serialized["assigned_user_id"] = payload.get("assigned_user_id")
+    serialized["created_by_user_id"] = payload.get("created_by_user_id")
     flow_stage = _normalize_consultation_flow_stage(payload.get("flow_stage"), payload.get("follow_up_status", ""))
     serialized["flow_stage"] = flow_stage
     serialized["completed_stages"] = _normalize_consultation_completed_stages(
         payload.get("completed_stages_json", "[]"),
         flow_stage,
     )
+    serialized["stage_teacher_ids"] = _json_dict(payload.get("stage_teacher_ids_json", "{}"))
+    serialized["responsibility_history"] = _json_list(payload.get("responsibility_history_json", "[]"))
+    serialized["assigned_stage"] = payload.get("assigned_stage", "") or ""
+    serialized["assignment_note"] = payload.get("assignment_note", "") or ""
+    serialized["is_transferred_consultation"] = False
+    serialized["can_edit_consultation"] = True
+    serialized["transfer_marker"] = ""
+    serialized["current_responsibility"] = ""
     serialized["follow_up_status"] = _derive_consultation_follow_up_status(flow_stage)
     serialized["test_taken"] = payload.get("test_taken", "") or ""
+    serialized["customer_service_added"] = payload.get("customer_service_added", "") or ""
+    serialized["customer_service_teacher"] = payload.get("customer_service_teacher", "") or ""
+    serialized["customer_service_note"] = payload.get("customer_service_note", "") or ""
+    serialized["communication_teacher_added"] = payload.get("communication_teacher_added", "") or ""
+    serialized["communication_teacher_note"] = payload.get("communication_teacher_note", "") or ""
+    serialized["test_teacher"] = payload.get("test_teacher", "") or ""
+    serialized["test_note"] = payload.get("test_note", "") or ""
     serialized["test_images"] = _json_list(payload.get("test_images_json", "[]"))
+    serialized["trial_teacher_added"] = payload.get("trial_teacher_added", "") or ""
+    serialized["trial_teacher_note"] = payload.get("trial_teacher_note", "") or ""
     serialized["trial_taken"] = payload.get("trial_taken", "") or ""
     serialized["trial_time_slot"] = payload.get("trial_time_slot", "") or ""
     serialized["trial_class_id"] = payload.get("trial_class_id")
@@ -1960,7 +2666,17 @@ def _consultation_storage_row_to_public_dict(
     serialized["trial_teacher"] = payload.get("trial_teacher", "") or ""
     serialized["trial_feedback"] = payload.get("trial_feedback", "") or ""
     serialized["success_class_id"] = payload.get("success_class_id")
+    serialized["teaching_teacher_added"] = payload.get("teaching_teacher_added", "") or ""
+    serialized["teaching_teacher"] = payload.get("teaching_teacher", "") or ""
+    serialized["teaching_teacher_note"] = payload.get("teaching_teacher_note", "") or ""
     serialized["success_class_manual"] = payload.get("success_class_manual", "") or ""
+    serialized["enrollment_handoff_note"] = payload.get("enrollment_handoff_note", "") or ""
+    serialized["student_profile_status"] = payload.get("student_profile_status", "") or ""
+    serialized["student_profile_note"] = payload.get("student_profile_note", "") or ""
+    serialized["failure_reason"] = payload.get("failure_reason", "") or ""
+    serialized["failure_note"] = payload.get("failure_note", "") or ""
+    serialized["closing_result"] = payload.get("closing_result", "") or ""
+    serialized["closed_by_user_id"] = payload.get("closed_by_user_id")
     serialized["end_note"] = payload.get("end_note", "") or ""
     serialized["ended_at"] = payload.get("ended_at", "") or ""
     return serialized
@@ -2004,8 +2720,22 @@ def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
     )
     _ensure_column(conn, "consultations", "flow_stage", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "completed_stages_json", "TEXT DEFAULT '[]'")
+    _ensure_column(conn, "consultations", "stage_teacher_ids_json", "TEXT DEFAULT '{}'")
+    _ensure_column(conn, "consultations", "responsibility_history_json", "TEXT DEFAULT '[]'")
+    _ensure_column(conn, "consultations", "created_by_user_id", "INTEGER")
+    _ensure_column(conn, "consultations", "assigned_stage", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "assignment_note", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "customer_service_added", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "customer_service_teacher", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "customer_service_note", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "communication_teacher_added", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "communication_teacher_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "test_taken", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "test_teacher", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "test_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "test_images_json", "TEXT DEFAULT '[]'")
+    _ensure_column(conn, "consultations", "trial_teacher_added", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "trial_teacher_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "trial_taken", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "trial_time_slot", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "trial_class_id", "INTEGER")
@@ -2013,7 +2743,17 @@ def _ensure_consultations_table(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "consultations", "trial_teacher", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "trial_feedback", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "success_class_id", "INTEGER")
+    _ensure_column(conn, "consultations", "teaching_teacher_added", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "teaching_teacher", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "teaching_teacher_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "success_class_manual", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "enrollment_handoff_note", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "student_profile_status", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "student_profile_note", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "failure_reason", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "failure_note", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "closing_result", "TEXT DEFAULT ''")
+    _ensure_column(conn, "consultations", "closed_by_user_id", "INTEGER")
     _ensure_column(conn, "consultations", "end_note", "TEXT DEFAULT ''")
     _ensure_column(conn, "consultations", "ended_at", "TEXT DEFAULT ''")
 
@@ -4155,6 +4895,40 @@ def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
             WHERE id=?
             """,
             (error_message, lesson_id),
+        )
+        if cur.rowcount == 0:
+            raise LookupError("lesson not found")
+
+
+def requeue_lesson_generation(
+    lesson_id: int,
+    *,
+    record_status: str = "generating",
+    review_request_key: str = "",
+    review_request_id: str = "",
+    review_chat_provider: str = "",
+    review_chat_model: str = "",
+) -> None:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE lessons
+            SET record_status=?,
+                generation_error='',
+                review_request_key=?,
+                review_request_id=?,
+                review_chat_provider=?,
+                review_chat_model=?
+            WHERE id=?
+            """,
+            (
+                str(record_status or "generating"),
+                str(review_request_key or ""),
+                str(review_request_id or ""),
+                str(review_chat_provider or ""),
+                str(review_chat_model or ""),
+                int(lesson_id),
+            ),
         )
         if cur.rowcount == 0:
             raise LookupError("lesson not found")
@@ -7241,19 +8015,47 @@ def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int 
     return [dict(row) for row in rows]
 
 
-def list_consultations_for_actor(actor_user: dict, query: str = "", search_mode: str = "fuzzy") -> list[dict]:
+def list_consultations_for_actor(
+    actor_user: dict,
+    query: str = "",
+    search_mode: str = "fuzzy",
+    scope: str = "current",
+    ownership: str = "all",
+) -> list[dict]:
     organization_id = None if (actor_user or {}).get("role") == SUPER_OWNER_ROLE else actor_user["organization_id"]
-    assigned_user_id = None
-    
-    # member 角色只看分配给自己的咨询
     if actor_user.get("role") == MEMBER_ROLE:
-        assigned_user_id = actor_user["id"]
-    
+        normalized_scope = scope if scope in {"current", "history"} else "current"
+        normalized_ownership = ownership if ownership in {"all", "created", "transferred"} else "all"
+        rows = list_consultations(
+            query=query,
+            search_mode=search_mode,
+            organization_id=organization_id,
+        )
+        visible_rows = []
+        for row in rows:
+            is_creator = row.get("created_by_user_id") == actor_user.get("id")
+            current_assignment = _consultation_current_assignment_context_for_actor(row, actor_user)
+            historical_assignment = _consultation_assignment_context_for_actor(row, actor_user)
+            current_responsibility = _consultation_current_responsibility_context(row)
+            creator_current_access = bool(is_creator and (current_assignment or not current_responsibility))
+            if normalized_scope == "current":
+                has_assignment = current_assignment is not None
+                has_creator_visibility = creator_current_access
+            else:
+                has_assignment = historical_assignment is not None and current_assignment is None
+                has_creator_visibility = bool(is_creator and not creator_current_access)
+            if has_creator_visibility or has_assignment:
+                if normalized_ownership == "created" and not is_creator:
+                    continue
+                if normalized_ownership == "transferred" and (is_creator or not historical_assignment):
+                    continue
+                visible_rows.append(_annotate_consultation_for_actor(row, actor_user))
+        return visible_rows
+
     return list_consultations(
         query=query,
         search_mode=search_mode,
         organization_id=organization_id,
-        assigned_user_id=assigned_user_id
     )
 
 

@@ -15,6 +15,7 @@ export type WorkspacePage =
 export interface ClassItem {
   id: number;
   name: string;
+  class_type?: string;
   subject: string;
   grade: string;
   stage?: string;

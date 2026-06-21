@@ -4,6 +4,9 @@ import sys
 import re
 import importlib.util
 import platform
+import warnings
+from io import BytesIO
+from functools import lru_cache
 from typing import Any
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -20,12 +23,15 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.pdfmetrics import registerFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus import CondPageBreak, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, Flowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "pdf_output"
 OUTPUT_NAME = "review-plan-bilingual-quotes-10-15-quote-replay-layout.pdf"
+FORMULA_DPI = 240
+FORMULA_DEFAULT_FONT_SIZE = 10.3
+FORMULA_DEFAULT_COLOR = "#5A4034"
 
 
 LESSON = {
@@ -688,6 +694,13 @@ LATEX_BLOCK_DOLLAR_PATTERN = re.compile(r"(?<!\\)\$\$(.+?)(?<!\\)\$\$", re.DOTAL
 LATEX_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(.+?)(?<!\\)\$(?!\$)")
 LATEX_PAREN_PATTERN = re.compile(r"\\{1,2}\((.+?)\\{1,2}\)")
 LATEX_BRACKET_PATTERN = re.compile(r"\\{1,2}\[(.+?)\\{1,2}\]", re.DOTALL)
+LATEX_SEGMENT_PATTERN = re.compile(
+    r"(?<!\\)\$\$(.+?)(?<!\\)\$\$"
+    r"|(?<!\\)\$(?!\$)(.+?)(?<!\\)\$(?!\$)"
+    r"|\\{1,2}\((.+?)\\{1,2}\)"
+    r"|\\{1,2}\[(.+?)\\{1,2}\]",
+    re.DOTALL,
+)
 LATEX_COMMAND_REPLACEMENTS = (
     (r"\infty", "∞"),
     (r"\Rightarrow", "⇒"),
@@ -751,18 +764,6 @@ SUPERSCRIPT_LETTER_MAP = {
     "s": "ˢ", "t": "ᵗ", "u": "ᵘ", "v": "ᵛ", "w": "ʷ",
     "x": "ˣ", "y": "ʸ",
 }
-# Unicode subscript letters that are available (limited set)
-SUBSCRIPT_LETTER_MAP = {
-    "a": "ₐ", "e": "ₑ", "o": "ₒ", "x": "ₓ", "h": "ₕ",
-    "k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "p": "ₚ",
-    "s": "ₛ", "t": "ₜ",
-}
-SUBSCRIPT_DIGIT_MAP = {
-    "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
-    "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
-}
-
-
 def _render_superscript(content: str) -> str:
     result = []
     for c in content:
@@ -777,21 +778,25 @@ def _render_superscript(content: str) -> str:
 
 
 def _render_subscript(content: str) -> str:
-    result = []
-    for c in content:
-        if c in SUBSCRIPT_DIGIT_MAP:
-            result.append(SUBSCRIPT_DIGIT_MAP[c])
-        elif c.lower() in SUBSCRIPT_LETTER_MAP:
-            result.append(SUBSCRIPT_LETTER_MAP[c.lower()])
-        else:
-            # No Unicode subscript available – fall back to _(content) notation
-            return f"_({content})"
-    return "".join(result)
+    compact = str(content or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9]+", compact):
+        return f"_{compact}" if len(compact) == 1 else f"_{{{compact}}}"
+
+    # Complex subscripts such as limits are easier to read as an inline condition.
+    return f"_({content})"
 
 
 BROKEN_NEWLINE_LATEX_COMMAND_PATTERN = re.compile(
     r"(?<![。！？.!?：:；;])\n(?=(?:eq\b|otin\b|abla\b|mid\b|parallel\b|subset(?:eq)?\b|supset(?:eq)?\b|rightarrow\b|leftarrow\b|Rightarrow\b|Leftarrow\b|iff\b))"
 )
+LATEX_CASES_PATTERN = re.compile(r"\\begin\s*\{\s*cases\s*\}([\s\S]*?)\\end\s*\{\s*cases\s*\}")
+LATEX_UNDERLINED_SPACE_PATTERN = re.compile(r"\\underline\s*\{\s*\\hspace\s*\{[^{}]*\}\s*\}")
+LATEX_UNDERLINED_PHANTOM_PATTERN = re.compile(r"\\underline\s*\{\s*\\phantom\s*\{[^{}]*\}\s*\}")
+LATEX_HSPACE_PATTERN = re.compile(r"\\hspace\s*\{[^{}]*\}")
+LATEX_VISUAL_RENDER_PATTERN = re.compile(r"\\(?:d?frac|sqrt|sum|int|prod|lim)\b")
+
+_MATHTEXT_MODULE: Any | None = None
+_MATHTEXT_IMPORT_FAILED = False
 
 
 def _repair_latex_transport_controls(text: str) -> str:
@@ -803,8 +808,207 @@ def _repair_latex_transport_controls(text: str) -> str:
     return BROKEN_NEWLINE_LATEX_COMMAND_PATTERN.sub(r"\\n", repaired)
 
 
+def _normalize_latex_cases(text: str) -> str:
+    def replace_cases(match: re.Match[str]) -> str:
+        content = match.group(1)
+        content = content.replace("\\\\", "\n").replace(r"\cr", "\n")
+        rows = []
+        for row in content.splitlines():
+            clean = re.sub(r"\s*&\s*", "，", row).strip(" \t,，;；")
+            if clean:
+                rows.append(clean)
+        return "； ".join(rows)
+
+    return LATEX_CASES_PATTERN.sub(replace_cases, text)
+
+
+def _normalize_latex_placeholders(text: str) -> str:
+    normalized = LATEX_UNDERLINED_SPACE_PATTERN.sub("______", text)
+    normalized = LATEX_UNDERLINED_PHANTOM_PATTERN.sub("______", normalized)
+    normalized = LATEX_HSPACE_PATTERN.sub("______", normalized)
+    normalized = re.sub(r"\\underline\s*\{([^{}]+)\}", r"\1", normalized)
+    return normalized
+
+
+def _normalize_latex_placeholders_for_mathtext(text: str) -> str:
+    normalized = LATEX_UNDERLINED_SPACE_PATTERN.sub(r"\\_\\_\\_", text)
+    normalized = LATEX_UNDERLINED_PHANTOM_PATTERN.sub(r"\\_\\_\\_", normalized)
+    normalized = LATEX_HSPACE_PATTERN.sub(r"\\_\\_\\_", normalized)
+    normalized = re.sub(r"\\underline\s*\{([^{}]+)\}", r"\1", normalized)
+    return normalized
+
+
+def _normalize_latex_structures(text: str) -> str:
+    normalized = _normalize_latex_placeholders(text)
+    normalized = _normalize_latex_cases(normalized)
+    return normalized
+
+
+def _get_mathtext_module():
+    global _MATHTEXT_MODULE, _MATHTEXT_IMPORT_FAILED
+    if _MATHTEXT_MODULE is not None:
+        return _MATHTEXT_MODULE
+    if _MATHTEXT_IMPORT_FAILED:
+        return None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            import matplotlib
+
+            matplotlib.use("Agg", force=True)
+            from matplotlib import mathtext
+
+        _MATHTEXT_MODULE = mathtext
+        return _MATHTEXT_MODULE
+    except Exception:
+        _MATHTEXT_IMPORT_FAILED = True
+        return None
+
+
+def _latex_needs_visual_render(latex: str) -> bool:
+    return bool(LATEX_VISUAL_RENDER_PATTERN.search(str(latex or "")))
+
+
+def _prepare_latex_for_mathtext(latex: str) -> str:
+    prepared = _repair_latex_transport_controls(latex).strip()
+    prepared = re.sub(r"\\\\(?=[A-Za-z])", r"\\", prepared)
+    prepared = _normalize_latex_placeholders_for_mathtext(prepared)
+    prepared = re.sub(r"\\ge(?![A-Za-z])", r"\\geq", prepared)
+    prepared = re.sub(r"\\le(?![A-Za-z])", r"\\leq", prepared)
+    prepared = prepared.replace(r"\dfrac", r"\frac")
+    return prepared
+
+
+def _normalize_formula_color_hex(value: Any) -> str:
+    if value is None:
+        return FORMULA_DEFAULT_COLOR
+    if isinstance(value, str):
+        text = value.strip()
+        if re.fullmatch(r"#[0-9A-Fa-f]{6}", text):
+            return text.upper()
+        try:
+            value = colors.toColor(text)
+        except Exception:
+            return FORMULA_DEFAULT_COLOR
+
+    red = getattr(value, "red", None)
+    green = getattr(value, "green", None)
+    blue = getattr(value, "blue", None)
+    if red is None or green is None or blue is None:
+        return FORMULA_DEFAULT_COLOR
+    return "#{:02X}{:02X}{:02X}".format(
+        max(0, min(255, round(float(red) * 255))),
+        max(0, min(255, round(float(green) * 255))),
+        max(0, min(255, round(float(blue) * 255))),
+    )
+
+
+def _style_formula_font_size(style) -> float:
+    font_size = getattr(style, "fontSize", FORMULA_DEFAULT_FONT_SIZE)
+    try:
+        return max(1.0, float(font_size))
+    except (TypeError, ValueError):
+        return FORMULA_DEFAULT_FONT_SIZE
+
+
+def _make_formula_png_transparent(buffer: BytesIO, color_hex: str) -> tuple[BytesIO, int, int]:
+    from PIL import Image as PILImage
+
+    buffer.seek(0)
+    with PILImage.open(buffer) as image:
+        rgba = image.convert("RGBA")
+
+    target = colors.HexColor(color_hex)
+    target_rgb = (
+        max(0, min(255, round(float(target.red) * 255))),
+        max(0, min(255, round(float(target.green) * 255))),
+        max(0, min(255, round(float(target.blue) * 255))),
+    )
+    pixels = []
+    for red, green, blue, alpha in rgba.getdata():
+        luminance = int(red * 0.299 + green * 0.587 + blue * 0.114)
+        ink_alpha = max(0, min(255, 255 - luminance))
+        if ink_alpha < 9 or alpha == 0:
+            pixels.append((target_rgb[0], target_rgb[1], target_rgb[2], 0))
+        else:
+            pixels.append((target_rgb[0], target_rgb[1], target_rgb[2], min(alpha, ink_alpha)))
+    rgba.putdata(pixels)
+
+    bbox = rgba.getbbox()
+    if bbox is not None:
+        left, top, right, bottom = bbox
+        padding = 2
+        left = max(0, left - padding)
+        top = max(0, top - padding)
+        right = min(rgba.width, right + padding)
+        bottom = min(rgba.height, bottom + padding)
+        rgba = rgba.crop((left, top, right, bottom))
+
+    output = BytesIO()
+    rgba.save(output, format="PNG")
+    output.seek(0)
+    return output, rgba.width, rgba.height
+
+
+@lru_cache(maxsize=512)
+def _render_latex_formula_png_bytes(prepared: str, dpi: int, font_size: float, color_hex: str) -> tuple[bytes, int, int] | None:
+    mathtext = _get_mathtext_module()
+    if mathtext is None:
+        return None
+
+    buffer = BytesIO()
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from matplotlib.font_manager import FontProperties
+
+            mathtext.math_to_image(
+                f"${prepared}$",
+                buffer,
+                dpi=dpi,
+                format="png",
+                prop=FontProperties(size=font_size),
+            )
+        buffer, width_px, height_px = _make_formula_png_transparent(buffer, color_hex)
+    except Exception:
+        return None
+    return buffer.getvalue(), width_px, height_px
+
+
+def render_latex_formula_flowable(
+    latex: str,
+    max_width: float = 150 * mm,
+    *,
+    dpi: int = FORMULA_DPI,
+    font_size: float = FORMULA_DEFAULT_FONT_SIZE,
+    color: Any = FORMULA_DEFAULT_COLOR,
+) -> Image | None:
+    if not _latex_needs_visual_render(latex):
+        return None
+
+    prepared = _prepare_latex_for_mathtext(latex)
+    color_hex = _normalize_formula_color_hex(color)
+    rendered = _render_latex_formula_png_bytes(prepared, dpi, font_size, color_hex)
+    if rendered is None:
+        return None
+    png_bytes, width_px, height_px = rendered
+    buffer = BytesIO(png_bytes)
+
+    width = max(1.0, width_px / dpi * 72)
+    height = max(1.0, height_px / dpi * 72)
+    if width > max_width:
+        scale = max_width / width
+        width *= scale
+        height *= scale
+
+    formula = Image(buffer, width=width, height=height)
+    formula.hAlign = "LEFT"
+    return formula
+
+
 def _normalize_bare_latex_text(text: str) -> str:
     normalized = str(text or "").replace(r"\$", "$")
+    normalized = _normalize_latex_structures(normalized)
 
     for _ in range(5):
         next_value = re.sub(
@@ -873,7 +1077,9 @@ class TrackingCanvas(Canvas):
 
 def _format_latex_math_segment(text):
     # Some inputs may contain double-escaped latex commands from JSON/text transport.
-    normalized = _repair_latex_transport_controls(text).replace("\\\\", "\\")
+    normalized = _repair_latex_transport_controls(text)
+    normalized = _normalize_latex_structures(normalized)
+    normalized = normalized.replace("\\\\", "\\")
     normalized = _normalize_bare_latex_text(normalized)
     normalized = re.sub(r"\\([A-Za-z]+)", lambda match: match.group(1), normalized)
     normalized = re.sub(r"\\([{}()\[\]])", r"\1", normalized)
@@ -999,6 +1205,19 @@ def normalize_portable_text(value):
     return normalized.strip()
 
 
+def normalize_portable_text_preserving_latex(value):
+    if not isinstance(value, str):
+        return value
+
+    pieces = []
+    for kind, segment in _split_latex_segments(value):
+        if kind == "latex":
+            pieces.append(f"${_repair_latex_transport_controls(segment).strip()}$")
+        else:
+            pieces.append(normalize_portable_text(segment))
+    return "".join(pieces).strip()
+
+
 def localize_text(value, chinese_only):
     if not isinstance(value, str):
         return value
@@ -1007,12 +1226,204 @@ def localize_text(value, chinese_only):
         return normalize_portable_text(value)
 
     localized = value.split(" / ", 1)[0].strip()
-    localized = re.sub(r"([。！？：；）】』”])\s*[A-Za-z][\s\S]*$", r"\1", localized)
+    localized = re.sub(r"([。！？）】』”])\s*[A-Za-z][\s\S]*$", r"\1", localized)
     return normalize_portable_text(localized.strip())
 
 
 def localize_lines(values, chinese_only):
     return [localize_text(value, chinese_only) for value in values]
+
+
+def paragraph_safe_text(value):
+    return escape(normalize_portable_text(str(value or "")))
+
+
+def localize_paragraph_text(value, chinese_only):
+    return escape(localize_text(value, chinese_only))
+
+
+def _localize_raw_text(value, chinese_only):
+    if not isinstance(value, str):
+        return str(value or "")
+
+    if not chinese_only:
+        return value
+
+    localized = value.split(" / ", 1)[0].strip()
+    return re.sub(r"([。！？）】』”])\s*[A-Za-z][\s\S]*$", r"\1", localized)
+
+
+def _split_latex_segments(value: str):
+    position = 0
+    for match in LATEX_SEGMENT_PATTERN.finditer(value):
+        if match.start() > position:
+            yield "text", value[position:match.start()]
+        latex = next((group for group in match.groups() if group is not None), "")
+        yield "latex", latex
+        position = match.end()
+    if position < len(value):
+        yield "text", value[position:]
+
+
+def _split_latex_segments_with_spans(value: str):
+    position = 0
+    for match in LATEX_SEGMENT_PATTERN.finditer(value):
+        if match.start() > position:
+            yield "text", value[position:match.start()], position, match.start()
+        latex = next((group for group in match.groups() if group is not None), "")
+        yield "latex", latex, match.start(), match.end()
+        position = match.end()
+    if position < len(value):
+        yield "text", value[position:], position, len(value)
+
+
+def _latex_is_display_context(raw: str, start: int, end: int) -> bool:
+    before = raw[:start]
+    after = raw[end:]
+    before = re.sub(r"^\s*(?:[-•]\s*)?(?:\d+\.\s*)?(?:[A-D][.．]\s*)?", "", before).strip()
+    after = after.strip()
+    return not before and bool(re.fullmatch(r"[。！？.!?，,；;：:、）】』”]*", after))
+
+
+def _paragraph_from_text(value: str, style) -> Paragraph | None:
+    text = value.strip()
+    if not text:
+        return None
+    return Paragraph(escape(text), style)
+
+
+def rich_text_flowables(
+    value,
+    style,
+    chinese_only=False,
+    *,
+    max_width: float = 150 * mm,
+    render_display_formulas: bool = True,
+) -> list[Flowable]:
+    raw = _localize_raw_text(str(value or ""), chinese_only).strip()
+    if not raw:
+        return [Paragraph("", style)]
+
+    parts: list[tuple[str, str | Flowable]] = []
+    saw_rendered_formula = False
+    formula_font_size = _style_formula_font_size(style)
+    formula_color = getattr(style, "textColor", FORMULA_DEFAULT_COLOR)
+    for kind, segment, start, end in _split_latex_segments_with_spans(raw):
+        if kind == "latex":
+            if render_display_formulas and _latex_is_display_context(raw, start, end):
+                formula = render_latex_formula_flowable(
+                    segment,
+                    max_width=max_width,
+                    font_size=formula_font_size,
+                    color=formula_color,
+                )
+                if formula is not None:
+                    parts.append(("formula", formula))
+                    parts.append(("spacer", Spacer(1, 0.45 * mm)))
+                    saw_rendered_formula = True
+                    continue
+            parts.append(("text", _format_latex_math_segment(segment)))
+        else:
+            parts.append(("text", normalize_portable_text(segment)))
+
+    if not saw_rendered_formula:
+        combined = "".join(str(part) for kind, part in parts if kind == "text").strip()
+        return [_paragraph_from_text(combined, style) or Paragraph("", style)]
+
+    flowables: list[Flowable] = []
+    pending_text = ""
+    for kind, part in parts:
+        if kind == "text":
+            text = str(part)
+            if re.fullmatch(r"[。！？.!?，,；;：:、]+", text.strip()):
+                continue
+            pending_text += text
+            continue
+        paragraph = _paragraph_from_text(pending_text, style)
+        if paragraph is not None:
+            flowables.append(paragraph)
+            pending_text = ""
+        if kind == "formula":
+            if flowables:
+                flowables.append(Spacer(1, 0.4 * mm))
+            flowables.append(part)  # type: ignore[arg-type]
+        elif kind == "spacer":
+            flowables.append(part)  # type: ignore[arg-type]
+    paragraph = _paragraph_from_text(pending_text, style)
+    if paragraph is not None:
+        flowables.append(paragraph)
+
+    return flowables or [Paragraph(localize_paragraph_text(value, chinese_only), style)]
+
+
+def rich_bullet_flowables(
+    items,
+    style,
+    chinese_only=False,
+    *,
+    max_width: float = 150 * mm,
+    render_display_formulas: bool = True,
+) -> list[Flowable]:
+    flowables: list[Flowable] = []
+    for item in items:
+        if flowables:
+            flowables.append(Spacer(1, 0.6 * mm))
+        flowables.extend(
+            rich_text_flowables(
+                f"- {item}",
+                style,
+                chinese_only,
+                max_width=max_width,
+                render_display_formulas=render_display_formulas,
+            )
+        )
+    return flowables or [Paragraph("", style)]
+
+
+def rich_numbered_flowables(
+    items,
+    style,
+    chinese_only=False,
+    *,
+    max_width: float = 150 * mm,
+    render_display_formulas: bool = False,
+) -> list[Flowable]:
+    flowables: list[Flowable] = []
+    for index, item in enumerate(items, start=1):
+        if flowables:
+            flowables.append(Spacer(1, 0.8 * mm))
+        flowables.extend(
+            rich_text_flowables(
+                f"{index}. {item}",
+                style,
+                chinese_only,
+                max_width=max_width,
+                render_display_formulas=render_display_formulas,
+            )
+        )
+    return flowables or [Paragraph("", style)]
+
+
+def localize_paragraph_lines(values, chinese_only):
+    return [localize_paragraph_text(value, chinese_only) for value in values]
+
+
+def localize_choice_option_lines(values, chinese_only):
+    lines = []
+    for value in values:
+        text = localize_paragraph_text(value, chinese_only)
+        lines.append(text.replace("； ", "；<br/>"))
+    return lines
+
+
+def choice_options_need_full_width(options, chinese_only):
+    for option in options:
+        localized = localize_text(option, chinese_only)
+        if "；" in localized or "\\begin{cases}" in str(option):
+            return True
+        if len(re.sub(r"\s+", "", localized)) > 44:
+            return True
+    return False
 
 
 def build_labels(chinese_only):
@@ -1107,7 +1518,7 @@ def build_quote_replay_text(day, labels, chinese_only):
         replay_intro = "先回想老师当时强调过的这几句，再动笔。Replay these class cues before writing:"
 
     replay_lines = [
-        f"{index}. {escape(localize_text(quote, chinese_only))}"
+        f"{index}. {localize_paragraph_text(quote, chinese_only)}"
         for index, quote in enumerate(quotes[:2], start=1)
     ]
     return "<br/>".join([replay_intro, *replay_lines])
@@ -1121,7 +1532,7 @@ def build_quote_summary_text(quotes, chinese_only):
             normalized_quotes.append(normalized_quote)
 
     quote_lines = [
-        f"{index}. “{escape(localize_text(quote, chinese_only))}”"
+        f"{index}. “{localize_paragraph_text(quote, chinese_only)}”"
         for index, quote in enumerate(normalized_quotes, start=1)
     ]
     return "<br/>".join(quote_lines)
@@ -1237,6 +1648,11 @@ def _resolve_brand_logo(style_config: dict[str, Any]) -> Path | None:
     return path if path.exists() else None
 
 
+def _brand_name(style_config: dict[str, Any]) -> str:
+    brand = style_config.get("brand") if isinstance(style_config.get("brand"), dict) else {}
+    return str(brand.get("name") or "星润教育").strip() or "星润教育"
+
+
 def _page_metric(style_config: dict[str, Any], key: str, fallback_mm: float) -> float:
     page = style_config.get("page") if isinstance(style_config.get("page"), dict) else {}
     value = page.get(key, fallback_mm)
@@ -1302,11 +1718,27 @@ def build_styles(style_config: dict[str, Any] | None = None):
 
 
 def bullet_paragraph(items, style):
-    return Paragraph("<br/>".join([f"- {item}" for item in items]), style)
+    return Paragraph("<br/>".join([f"- {paragraph_safe_text(item)}" for item in items]), style)
+
+
+def _box_body_rows(body, body_style):
+    if isinstance(body, (list, tuple)):
+        rows = []
+        for item in body:
+            if isinstance(item, Spacer):
+                continue
+            if isinstance(item, Flowable):
+                rows.append([item])
+            else:
+                rows.append([Paragraph(paragraph_safe_text(item), body_style)])
+        return rows or [[Paragraph("", body_style)]]
+    return [[body]]
 
 
 def make_box(title, body, styles, background):
-    box = Table([[Paragraph(f"<b>{title}</b>", styles["h2"])], [body]], colWidths=[170 * mm])
+    rows = [[Paragraph(f"<b>{title}</b>", styles["h2"])]]
+    rows.extend(_box_body_rows(body, styles["body"]))
+    box = Table(rows, colWidths=[170 * mm], repeatRows=1)
     box.setStyle(
         TableStyle(
             [
@@ -1319,8 +1751,10 @@ def make_box(title, body, styles, background):
                 ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                 ("TOPPADDING", (0, 0), (-1, 0), 6),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
-                ("TOPPADDING", (0, 1), (-1, -1), 7),
-                ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+                ("TOPPADDING", (0, 1), (-1, -1), 1.6),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 1.6),
+                ("TOPPADDING", (0, 1), (-1, 1), 6),
+                ("BOTTOMPADDING", (0, -1), (-1, -1), 7),
             ]
         )
     )
@@ -1329,17 +1763,42 @@ def make_box(title, body, styles, background):
 
 def make_choice_table(choices, styles, chinese_only=False):
     rows = []
+    spans = []
     for index, choice in enumerate(choices, start=1):
-        rows.append(
-            [
-                Paragraph(f"{index}. {localize_text(choice['question'], chinese_only)}", styles["body"]),
-                Paragraph("<br/>".join(localize_lines(choice["options"], chinese_only)), styles["small"]),
-            ]
+        question_flowables = rich_text_flowables(
+            f"{index}. {choice['question']}",
+            styles["body"],
+            chinese_only,
+            max_width=74 * mm,
         )
+        option_flowables: list[Flowable] = []
+        for option in choice["options"]:
+            if option_flowables:
+                option_flowables.append(Spacer(1, 0.5 * mm))
+            option_flowables.extend(
+                rich_text_flowables(
+                    option,
+                    styles["small"],
+                    chinese_only,
+                    max_width=72 * mm,
+                )
+            )
+        if choice_options_need_full_width(choice["options"], chinese_only):
+            spans.append(len(rows))
+            rows.append([question_flowables + [Spacer(1, 1 * mm)] + option_flowables, ""])
+        else:
+            rows.append(
+                [
+                    question_flowables,
+                    option_flowables,
+                ]
+            )
     table = Table(rows, colWidths=[80 * mm, 78 * mm])
+    span_styles = [("SPAN", (0, row), (1, row)) for row in spans]
     table.setStyle(
         TableStyle(
             [
+                *span_styles,
                 ("BACKGROUND", (0, 0), (-1, -1), styles["card"]),
                 ("BOX", (0, 0), (-1, -1), 0.5, styles["line"]),
                 ("INNERGRID", (0, 0), (-1, -1), 0.35, styles["line"]),
@@ -1357,9 +1816,9 @@ def make_choice_table(choices, styles, chinese_only=False):
 def make_answer_table(day, styles, labels):
     rows = [[Paragraph(labels["answer_type"], styles["small"]), Paragraph(labels["answer_value"], styles["small"])]]
     for index, item in enumerate(day["blanks"], start=1):
-        rows.append([Paragraph(f"{labels['blank_prefix']} {index}", styles["small"]), Paragraph(item[1], styles["small"])])
+        rows.append([Paragraph(f"{labels['blank_prefix']} {index}", styles["small"]), Paragraph(paragraph_safe_text(item[1]), styles["small"])])
     for index, item in enumerate(day["choices"], start=1):
-        rows.append([Paragraph(f"{labels['choice_prefix']} {index}", styles["small"]), Paragraph(item["answer"], styles["small"])])
+        rows.append([Paragraph(f"{labels['choice_prefix']} {index}", styles["small"]), Paragraph(paragraph_safe_text(item["answer"]), styles["small"])])
     table = Table(rows, colWidths=[34 * mm, 136 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -1381,13 +1840,37 @@ def make_answer_table(day, styles, labels):
 def make_knowledge_mixed_table(knowledge_items, styles, chinese_only=False):
     rows = []
     for item in knowledge_items:
-        parts = [f"<b>{localize_text(item['title'], chinese_only)}</b>"]
+        cell_flowables: list[Flowable] = [Paragraph(f"<b>{localize_paragraph_text(item['title'], chinese_only)}</b>", styles["body"])]
         for index, blank in enumerate(item["mixed"]["blanks"], start=1):
-            parts.append(f"填空 {index}. {localize_text(blank[0], chinese_only)}")
+            cell_flowables.append(Spacer(1, 1 * mm))
+            cell_flowables.extend(
+                rich_text_flowables(
+                    f"填空 {index}. {blank[0]}",
+                    styles["body"],
+                    chinese_only,
+                    max_width=150 * mm,
+                )
+            )
         for index, choice in enumerate(item["mixed"]["choices"], start=1):
-            option_text = "<br/>".join(localize_lines(choice["options"], chinese_only))
-            parts.append(f"选择 {index}. {localize_text(choice['question'], chinese_only)}<br/>{option_text}")
-        rows.append([Paragraph("<br/><br/>".join(parts), styles["body"])])
+            cell_flowables.append(Spacer(1, 1 * mm))
+            cell_flowables.extend(
+                rich_text_flowables(
+                    f"选择 {index}. {choice['question']}",
+                    styles["body"],
+                    chinese_only,
+                    max_width=150 * mm,
+                )
+            )
+            for option in choice["options"]:
+                cell_flowables.extend(
+                    rich_text_flowables(
+                        option,
+                        styles["body"],
+                        chinese_only,
+                        max_width=150 * mm,
+                    )
+                )
+        rows.append([cell_flowables])
     table = Table(rows, colWidths=[158 * mm])
     table.setStyle(
         TableStyle(
@@ -1408,9 +1891,9 @@ def make_knowledge_mixed_table(knowledge_items, styles, chinese_only=False):
 def make_knowledge_oral_table(knowledge_items, styles, chinese_only=False):
     rows = []
     for item in knowledge_items:
-        prompt_lines = [f"<b>{localize_text(item['title'], chinese_only)}</b>"]
+        prompt_lines = [f"<b>{localize_paragraph_text(item['title'], chinese_only)}</b>"]
         for index, prompt in enumerate(item["oral"]["prompts"], start=1):
-            prompt_lines.append(f"提问 {index}. {localize_text(prompt, chinese_only)}")
+            prompt_lines.append(f"提问 {index}. {localize_paragraph_text(prompt, chinese_only)}")
         rows.append([Paragraph("<br/><br/>".join(prompt_lines), styles["body"])])
     table = Table(rows, colWidths=[158 * mm])
     table.setStyle(
@@ -1435,12 +1918,12 @@ def make_knowledge_answer_table(knowledge_items, styles, knowledge_mode, labels,
         title = localize_text(item["title"], chinese_only)
         if knowledge_mode == "mixed":
             for index, blank in enumerate(item["mixed"]["blanks"], start=1):
-                rows.append([Paragraph(f"{title} {labels['blank_prefix']} {index}", styles["small"]), Paragraph(blank[1], styles["small"])])
+                rows.append([Paragraph(paragraph_safe_text(f"{title} {labels['blank_prefix']} {index}"), styles["small"]), Paragraph(paragraph_safe_text(blank[1]), styles["small"])])
             for index, choice in enumerate(item["mixed"]["choices"], start=1):
-                rows.append([Paragraph(f"{title} {labels['choice_prefix']} {index}", styles["small"]), Paragraph(choice["answer"], styles["small"])])
+                rows.append([Paragraph(paragraph_safe_text(f"{title} {labels['choice_prefix']} {index}"), styles["small"]), Paragraph(paragraph_safe_text(choice["answer"]), styles["small"])])
         else:
             for index, keypoint in enumerate(item["oral"]["keypoints"], start=1):
-                rows.append([Paragraph(f"{title} {labels['oral_prompt_prefix']} {index}", styles["small"]), Paragraph(localize_text(keypoint, chinese_only), styles["small"])])
+                rows.append([Paragraph(paragraph_safe_text(f"{title} {labels['oral_prompt_prefix']} {index}"), styles["small"]), Paragraph(localize_paragraph_text(keypoint, chinese_only), styles["small"])])
     table = Table(rows, colWidths=[50 * mm, 120 * mm], repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -1465,9 +1948,9 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
     for day in days:
         day_label = localize_text(day["day"], chinese_only)
         for index, item in enumerate(day["blanks"], start=1):
-            entries.append((day_label, f"{labels['blank_prefix']} {index}", escape(normalize_portable_text(item[1]))))
+            entries.append((day_label, f"{labels['blank_prefix']} {index}", paragraph_safe_text(item[1])))
         for index, item in enumerate(day["choices"], start=1):
-            entries.append((day_label, f"{labels['choice_prefix']} {index}", escape(normalize_portable_text(item["answer"]))))
+            entries.append((day_label, f"{labels['choice_prefix']} {index}", paragraph_safe_text(item["answer"])))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         if not knowledge_items:
@@ -1477,12 +1960,12 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
             title = localize_text(item["title"], chinese_only)
             if knowledge_mode == "mixed":
                 for index, blank in enumerate(item["mixed"]["blanks"], start=1):
-                    entries.append((day_label, escape(f"{title} {labels['blank_prefix']} {index}"), escape(normalize_portable_text(blank[1]))))
+                    entries.append((day_label, paragraph_safe_text(f"{title} {labels['blank_prefix']} {index}"), paragraph_safe_text(blank[1])))
                 for index, choice in enumerate(item["mixed"]["choices"], start=1):
-                    entries.append((day_label, escape(f"{title} {labels['choice_prefix']} {index}"), escape(normalize_portable_text(choice["answer"]))))
+                    entries.append((day_label, paragraph_safe_text(f"{title} {labels['choice_prefix']} {index}"), paragraph_safe_text(choice["answer"])))
             else:
                 for index, keypoint in enumerate(item["oral"]["keypoints"], start=1):
-                    entries.append((day_label, escape(f"{title} {labels['oral_prompt_prefix']} {index}"), escape(localize_text(keypoint, chinese_only))))
+                    entries.append((day_label, paragraph_safe_text(f"{title} {labels['oral_prompt_prefix']} {index}"), localize_paragraph_text(keypoint, chinese_only)))
 
     split_at = (len(entries) + 1) // 2
     left_entries = entries[:split_at]
@@ -1499,11 +1982,11 @@ def make_compact_answer_key_table(days, knowledge_sections, styles, labels, vari
     for index, left_entry in enumerate(left_entries):
         right_entry = right_entries[index] if index < len(right_entries) else blank_cells
         rows.append([
-            Paragraph(left_entry[0], styles["tiny"]),
-            Paragraph(left_entry[1], styles["tiny"]),
+            Paragraph(paragraph_safe_text(left_entry[0]), styles["tiny"]),
+            Paragraph(paragraph_safe_text(left_entry[1]), styles["tiny"]),
             Paragraph(left_entry[2], styles["tiny"]),
-            Paragraph(right_entry[0], styles["tiny"]),
-            Paragraph(right_entry[1], styles["tiny"]),
+            Paragraph(paragraph_safe_text(right_entry[0]), styles["tiny"]),
+            Paragraph(paragraph_safe_text(right_entry[1]), styles["tiny"]),
             Paragraph(right_entry[2], styles["tiny"]),
         ])
 
@@ -1532,28 +2015,41 @@ def on_page(styles, variant_key, style_config=None, lesson_title=None):
     footer_title = lesson_title or LESSON["title"]
     style_config = style_config or {}
     logo_path = _resolve_brand_logo(style_config)
+    brand_name = _brand_name(style_config)
 
     def draw(canvas, doc):
         canvas.saveState()
-        top_rule_y = A4[1] - 16 * mm
-        canvas.setStrokeColor(styles["line"])
-        canvas.setLineWidth(0.8)
-        canvas.line(doc.leftMargin, top_rule_y, A4[0] - doc.rightMargin, top_rule_y)
+        brand_logo_size = 8.5 * mm
+        brand_top_y = A4[1] - 8 * mm
+        brand_logo_y = brand_top_y - brand_logo_size
+        brand_left_x = doc.leftMargin
+        brand_text_x = brand_left_x
+        brand_text_y = brand_logo_y + 2.7 * mm
+        top_rule_y = A4[1] - 19 * mm
+
         if logo_path is not None:
             try:
                 logo_reader = ImageReader(str(logo_path))
                 canvas.drawImage(
                     logo_reader,
-                    doc.leftMargin,
-                    A4[1] - 15 * mm,
-                    width=10 * mm,
-                    height=10 * mm,
+                    brand_left_x,
+                    brand_logo_y,
+                    width=brand_logo_size,
+                    height=brand_logo_size,
                     mask="auto",
                     preserveAspectRatio=True,
-                    anchor="nw",
                 )
+                brand_text_x = brand_left_x + brand_logo_size + 3 * mm
             except Exception:
                 pass
+
+        canvas.setFont(ACTIVE_FONT_NAME, 9.2)
+        canvas.setFillColor(styles["accent"])
+        canvas.drawString(brand_text_x, brand_text_y, brand_name)
+
+        canvas.setStrokeColor(styles["line"])
+        canvas.setLineWidth(0.8)
+        canvas.line(doc.leftMargin, top_rule_y, A4[0] - doc.rightMargin, top_rule_y)
         canvas.setFont(ACTIVE_FONT_NAME, 8.5)
         canvas.setFillColor(styles["muted"])
         canvas.drawString(doc.leftMargin, 10 * mm, footer_title)
@@ -1580,40 +2076,50 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
         story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("星润课后复习计划", styles["brand"]))
     story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(lesson["title"], styles["title"]))
+    story.append(Paragraph(paragraph_safe_text(lesson["title"]), styles["title"]))
     subtitle = "" if chinese_only else lesson.get("subtitle", "")
     if subtitle:
-        story.append(Paragraph(subtitle, styles["subtitle"]))
+        story.append(Paragraph(paragraph_safe_text(subtitle), styles["subtitle"]))
     story.append(Spacer(1, 5 * mm))
     story.append(make_box(labels["usage_title"], Paragraph(labels["usage_text"], styles["body"]), styles, styles["soft"]))
     story.append(Spacer(1, 3 * mm))
-    story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, styles["card"]))
+    story.append(make_box(labels["coverage_title"], rich_bullet_flowables(lesson["full_review_topics"], styles["body"], chinese_only), styles, styles["card"]))
     story.append(Spacer(1, 3 * mm))
     golden_quotes = build_quote_summary_text(lesson.get("quotes", []), chinese_only)
-    story.append(make_box(labels["quotes_title"], Paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
+    if golden_quotes:
+        story.append(make_box(labels["quotes_title"], Paragraph(golden_quotes, styles["quote"]), styles, styles["quote_bg"]))
     story.append(PageBreak())
 
     for index, day in enumerate(days):
         if index > 0:
             story.append(PageBreak())
         story.append(Paragraph(build_day_heading(day, base_date, chinese_only), styles["h1"]))
-        if index == 0:
-            story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_text(day['goal'], chinese_only)}", styles["body"]))
-            story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_text(day['focus'], chinese_only)}", styles["body"]))
+        if day.get("goal"):
+            story.append(Paragraph(f"<b>{labels['goal']}:</b> {localize_paragraph_text(day['goal'], chinese_only)}", styles["body"]))
+        if day.get("focus"):
+            story.append(Paragraph(f"<b>{labels['focus']}:</b> {localize_paragraph_text(day['focus'], chinese_only)}", styles["body"]))
+        if day.get("tasks"):
             story.append(Spacer(1, 2 * mm))
-            story.append(make_box(labels["coverage_title"], bullet_paragraph(localize_lines(lesson["full_review_topics"], chinese_only), styles["body"]), styles, styles["soft"]))
+            story.append(make_box(labels["tasks_title"], rich_bullet_flowables(day["tasks"], styles["body"], chinese_only), styles, styles["card"]))
             story.append(Spacer(1, 2 * mm))
-            story.append(make_box(labels["tasks_title"], bullet_paragraph(localize_lines(day["tasks"], chinese_only), styles["body"]), styles, styles["card"]))
-            story.append(Spacer(1, 2 * mm))
-        blank_body = Paragraph("<br/>".join([f"{index}. {localize_text(item[0], chinese_only)}" for index, item in enumerate(day["blanks"], start=1)]), styles["body"])
+        blank_body = rich_numbered_flowables([item[0] for item in day["blanks"]], styles["body"], chinese_only)
         story.append(make_box(labels["blanks_title"], blank_body, styles, styles["card"]))
         story.append(Spacer(1, 2 * mm))
-        story.append(CondPageBreak(60 * mm))
-        story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, styles["paper"]))
+        if day.get("choices"):
+            story.append(CondPageBreak(60 * mm))
+            story.append(make_box(labels["choices_title"], make_choice_table(day["choices"], styles, chinese_only), styles, styles["paper"]))
+        if day.get("method_cards"):
+            story.append(Spacer(1, 2 * mm))
+            story.append(make_box(
+                labels["knowledge_mixed_title"],
+                rich_bullet_flowables(day["method_cards"], styles["body"], chinese_only),
+                styles,
+                styles["paper"],
+            ))
 
         knowledge_items = knowledge_sections.get(day["day"], [])
         has_teacher_quote = index == 0 and day["quotes"]
-        has_replay_block = index == 0
+        has_replay_block = index == 0 and bool(day["quotes"])
         if knowledge_items or has_teacher_quote or has_replay_block:
             story.append(Spacer(1, 2 * mm))
         if knowledge_items:
@@ -1630,7 +2136,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
                 story.append(Spacer(1, 2 * mm))
 
         if has_teacher_quote:
-            quote_body = Paragraph("<br/>".join([f"“{quote}”" for quote in day["quotes"]]), styles["quote"])
+            quote_body = Paragraph("<br/>".join([f"“{localize_paragraph_text(quote, chinese_only)}”" for quote in day["quotes"]]), styles["quote"])
             story.append(make_box(labels["teacher_quote_title"], quote_body, styles, styles["quote_bg"]))
             story.append(Spacer(1, 2 * mm))
 
@@ -1644,10 +2150,7 @@ def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_l
     story.append(Paragraph(labels["final_reminder"], styles["h1"]))
     story.append(make_box(
         labels["final_reminder_box"],
-        bullet_paragraph(
-            localize_lines(final_reminder_lines, chinese_only),
-            styles["body"],
-        ),
+        rich_bullet_flowables(final_reminder_lines, styles["body"], chinese_only),
         styles,
         styles["soft"],
     ))

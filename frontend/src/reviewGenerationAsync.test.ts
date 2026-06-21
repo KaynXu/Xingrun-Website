@@ -126,6 +126,30 @@ test('review lesson task progress distinguishes audio transcription from plan ge
   assert.equal(getReviewLessonTaskProgress(generatingLesson), 78);
 });
 
+test('review lesson task progress can estimate moving progress while generation is active', () => {
+  const generatingLesson = normalizeReviewLessonsResponse([
+    {
+      id: 19,
+      date: '2026-05-02',
+      subject: '数学',
+      grade: '七年级',
+      topic: '整式',
+      summary: '课堂摘要',
+      weak_points: '',
+      pdf_path: '',
+      class_id: 3,
+      created_at: '2026-05-02T12:00:00.000Z',
+      record_status: 'generating',
+      generation_error: '',
+    },
+  ])[0];
+
+  assert.ok(generatingLesson);
+  assert.equal(getReviewLessonTaskProgress(generatingLesson, { nowMs: Date.parse('2026-05-02T12:00:00.000Z') }), 62);
+  assert.equal(getReviewLessonTaskProgress(generatingLesson, { nowMs: Date.parse('2026-05-02T12:02:00.000Z') }), 78);
+  assert.equal(getReviewLessonTaskProgress(generatingLesson, { nowMs: Date.parse('2026-05-02T12:10:00.000Z') }), 94);
+});
+
 test('review lesson task state refuses completed output until a PDF path is present', () => {
   const incompleteReadyLesson = normalizeReviewLessonsResponse([
     {
