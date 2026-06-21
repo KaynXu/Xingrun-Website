@@ -34,6 +34,7 @@ from config_runtime import (
     load_file_config,
     normalize_chat_provider,
     normalize_reasoning_effort,
+    normalize_temperature,
     resolve_review_plan_model,
     resolve_review_plan_provider,
     resolve_review_plan_reasoning_effort,
@@ -196,6 +197,7 @@ from lesson_manager import (
     preview_student_class_invite,
     reject_organization_request,
     reject_registration_request,
+    requeue_lesson_generation,
     reset_class_invite,
     reset_organization_invite,
     remove_student_from_class,
@@ -624,6 +626,16 @@ def _build_review_plan_request_id(*, user_id: int, request_key: str) -> str:
         feature_key="lesson_plan_generate",
         source_record_type="lesson_request",
         source_record_id="pending",
+        request_key=request_key,
+    )
+
+
+def _build_review_plan_regenerate_request_id(*, user_id: int, lesson_id: int, request_key: str) -> str:
+    return _build_ai_charge_request_id(
+        user_id=user_id,
+        feature_key="lesson_plan_generate",
+        source_record_type="lesson_regenerate",
+        source_record_id=lesson_id,
         request_key=request_key,
     )
 
@@ -7572,6 +7584,80 @@ def api_lesson_delete(lesson_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/review-plans/<int:lesson_id>/regenerate", methods=["POST"])
+def api_lesson_regenerate(lesson_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    if not has_review_plan_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+
+    lesson = get_lesson(lesson_id)
+    if not lesson or not _can_access_lesson(user, lesson):
+        return jsonify({"error": "not found"}), 404
+
+    record_status = str(lesson.get("record_status") or "").strip()
+    if record_status in {"pending", "queued", "processing", "transcribing", "generating"}:
+        return jsonify({"error": "这份复习计划正在生成中，请稍后再试"}), 409
+
+    raw_text = str(lesson.get("summary") or "").strip()
+    if not raw_text:
+        return jsonify({"error": "这份记录缺少课堂内容，无法重新生成"}), 400
+
+    organization_id = int(user["organization_id"])
+    request_key = _current_ai_request_key()
+    request_id = _build_review_plan_regenerate_request_id(
+        user_id=int(user["id"]),
+        lesson_id=lesson_id,
+        request_key=request_key,
+    )
+    chat_provider = _review_plan_ai_provider_name()
+    chat_model = _review_plan_chat_model_name()
+    request_identity_claimed = False
+    try:
+        _claim_ai_request_identity(
+            organization_id=organization_id,
+            request_id=request_id,
+        )
+        request_identity_claimed = True
+        ensure_feature_credits_available(
+            organization_id=organization_id,
+            feature_key="lesson_plan_generate",
+        )
+        requeue_lesson_generation(
+            lesson_id,
+            record_status="generating",
+            review_request_key=request_key,
+            review_request_id=request_id,
+            review_chat_provider=chat_provider,
+            review_chat_model=chat_model,
+        )
+        _start_review_plan_generation_thread(
+            lesson_id=lesson_id,
+            user={
+                "id": int(user["id"]),
+                "organization_id": organization_id,
+            },
+            chat_provider=chat_provider,
+            chat_model=chat_model,
+            request_key=request_key,
+            request_id=request_id,
+            same_lesson_materials=lesson.get("review_same_lesson_materials") or [],
+        )
+    except DuplicateAiRequestError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except CreditBalanceError as exc:
+        if request_identity_claimed:
+            _release_ai_request_identity(request_id)
+        return jsonify({"error": str(exc)}), 402
+    except Exception:
+        if request_identity_claimed:
+            _release_ai_request_identity(request_id)
+        raise
+
+    return jsonify({"id": lesson_id, "success": True, "status": "generating"}), 202
+
+
 def _extract_same_lesson_materials(data) -> list[str]:
     raw_values: list[object] = []
     if hasattr(data, "getlist"):
@@ -8132,8 +8218,12 @@ def api_settings_get():
         "review_plan_provider": cfg.get("review_plan_provider", ""),
         "review_plan_model": cfg.get("review_plan_model", ""),
         "review_plan_reasoning_effort": cfg.get("review_plan_reasoning_effort", ""),
+        "review_plan_temperature": cfg.get("review_plan_temperature", 0.25),
         "review_plan_writer_provider": cfg.get("review_plan_writer_provider", "deepseek"),
         "review_plan_writer_model": cfg.get("review_plan_writer_model", ""),
+        "review_plan_writer_temperature": cfg.get("review_plan_writer_temperature", 0.35),
+        "review_plan_repair_temperature": cfg.get("review_plan_repair_temperature", 0.1),
+        "review_plan_reviewer_temperature": cfg.get("review_plan_reviewer_temperature", 0.1),
         "openai_set": bool(cfg.get("openai_api_key")),
         "openai_masked": _mask(cfg.get("openai_api_key", "")),
         "openai_model": cfg.get("openai_model", "gpt-4o"),
@@ -8163,10 +8253,18 @@ def api_settings_save():
         cfg["review_plan_model"] = str(data["review_plan_model"] or "").strip()
     if "review_plan_reasoning_effort" in data and "review_plan_reasoning_effort" not in controlled_keys:
         cfg["review_plan_reasoning_effort"] = normalize_reasoning_effort(data["review_plan_reasoning_effort"])
+    if "review_plan_temperature" in data and "review_plan_temperature" not in controlled_keys:
+        cfg["review_plan_temperature"] = normalize_temperature(data["review_plan_temperature"], 0.25)
     if "review_plan_writer_provider" in data and "review_plan_writer_provider" not in controlled_keys:
         cfg["review_plan_writer_provider"] = normalize_chat_provider(data["review_plan_writer_provider"] or "deepseek")
     if "review_plan_writer_model" in data and "review_plan_writer_model" not in controlled_keys:
         cfg["review_plan_writer_model"] = str(data["review_plan_writer_model"] or "").strip()
+    if "review_plan_writer_temperature" in data and "review_plan_writer_temperature" not in controlled_keys:
+        cfg["review_plan_writer_temperature"] = normalize_temperature(data["review_plan_writer_temperature"], 0.35)
+    if "review_plan_repair_temperature" in data and "review_plan_repair_temperature" not in controlled_keys:
+        cfg["review_plan_repair_temperature"] = normalize_temperature(data["review_plan_repair_temperature"], 0.1)
+    if "review_plan_reviewer_temperature" in data and "review_plan_reviewer_temperature" not in controlled_keys:
+        cfg["review_plan_reviewer_temperature"] = normalize_temperature(data["review_plan_reviewer_temperature"], 0.1)
     for key in ("openai_api_key", "openai_model", "openai_base_url", "deepseek_api_key", "qwen_api_key", "qwen_base_url"):
         if data.get(key) and key not in controlled_keys:
             cfg[key] = data[key].strip()

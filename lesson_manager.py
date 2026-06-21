@@ -4900,6 +4900,40 @@ def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
             raise LookupError("lesson not found")
 
 
+def requeue_lesson_generation(
+    lesson_id: int,
+    *,
+    record_status: str = "generating",
+    review_request_key: str = "",
+    review_request_id: str = "",
+    review_chat_provider: str = "",
+    review_chat_model: str = "",
+) -> None:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE lessons
+            SET record_status=?,
+                generation_error='',
+                review_request_key=?,
+                review_request_id=?,
+                review_chat_provider=?,
+                review_chat_model=?
+            WHERE id=?
+            """,
+            (
+                str(record_status or "generating"),
+                str(review_request_key or ""),
+                str(review_request_id or ""),
+                str(review_chat_provider or ""),
+                str(review_chat_model or ""),
+                int(lesson_id),
+            ),
+        )
+        if cur.rowcount == 0:
+            raise LookupError("lesson not found")
+
+
 def _dump_review_plan_run_json(value: object, fallback: object) -> str:
     try:
         return json.dumps(value if value is not None else fallback, ensure_ascii=False)

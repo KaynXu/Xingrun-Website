@@ -61,7 +61,7 @@ test('review generation source replaces separate lesson input and library pages 
   assert.doesNotMatch(sidebarBlock, /id: 'library'[\s\S]*label:/);
   assert.match(appSource, /'review-generation': '复习生成'/);
   assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
-  assert.match(contentSource, /import \{ ReviewGenerationPage \} from '\.\.\/review-generation\/ReviewGenerationPage';/);
+  assert.match(contentSource, /ReviewGenerationPage,[\s\S]*ReviewGenerationTaskDock,[\s\S]*from '\.\.\/review-generation\/ReviewGenerationPage';/);
   assert.match(contentSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*renderLessonInput=\{\(handleFormSuccess\) => \(/);
   assert.match(contentSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
   assert.doesNotMatch(appSource, /activePage === 'input'/);
@@ -74,7 +74,8 @@ test('review generation source defaults to history documents and expands the sha
   assert.match(reviewGenerationSource, /inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white shadow-none transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60/);
   assert.match(reviewGenerationSource, /新建/);
   assert.match(reviewGenerationSource, /生成复习文档/);
-  assert.match(reviewGenerationSource, /<ReviewDocumentHistory refreshToken=\{historyRefreshToken\} highlightedLessonId=\{highlightedLessonId\} \/>/);
+  assert.match(reviewGenerationSource, /<ReviewDocumentHistory[\s\S]*refreshToken=\{historyRefreshToken\}[\s\S]*highlightedLessonId=\{highlightedLessonId\}[\s\S]*onFloatingNotice=\{taskControls\.onFloatingNotice\}/);
+  assert.match(contentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);
 });
 
 test('review generation source closes the shared composer after successful generation and refreshes history', () => {
@@ -105,7 +106,7 @@ test('review generation source renders history as a paginated list with merged d
   assert.match(reviewGenerationSource, /hour: '2-digit',/);
   assert.match(reviewGenerationSource, /minute: '2-digit',/);
   assert.doesNotMatch(reviewGenerationSource, /second:/);
-  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_180px_112px_132px\]/);
+  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_180px_112px_176px\]/);
   assert.match(reviewGenerationSource, /<ul className="divide-y divide-slate-200\/70 dark:divide-white\/10">/);
   assert.match(reviewGenerationSource, /上一页/);
   assert.match(reviewGenerationSource, /下一页/);

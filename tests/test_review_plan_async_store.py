@@ -93,6 +93,40 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["record_status"], "failed")
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
 
+    def test_requeue_lesson_generation_preserves_existing_output_until_new_result_ready(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+            plan={"lesson_info": {"topic": "旧计划"}, "days": []},
+            pdf_path="/tmp/old.pdf",
+            record_status="failed",
+        )
+        lesson_manager.mark_lesson_generation_failed(lesson_id, "旧错误")
+
+        lesson_manager.requeue_lesson_generation(
+            lesson_id,
+            record_status="generating",
+            review_request_key="regen-key",
+            review_request_id="regen-id",
+            review_chat_provider="openai",
+            review_chat_model="gpt-5.4",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "generating")
+        self.assertEqual(saved["generation_error"], "")
+        self.assertEqual(saved["pdf_path"], "/tmp/old.pdf")
+        self.assertEqual(saved["plan"]["lesson_info"]["topic"], "旧计划")
+        self.assertEqual(saved["review_request_key"], "regen-key")
+        self.assertEqual(saved["review_request_id"], "regen-id")
+        self.assertEqual(saved["review_chat_provider"], "openai")
+        self.assertEqual(saved["review_chat_model"], "gpt-5.4")
+
     def test_mark_lesson_generation_succeeded_missing_raises(self):
         with self.assertRaisesRegex(LookupError, "lesson not found"):
             lesson_manager.mark_lesson_generation_succeeded(
@@ -107,6 +141,10 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
                 lesson_id=999999,
                 error_message="failure",
             )
+
+    def test_requeue_lesson_generation_missing_raises(self):
+        with self.assertRaisesRegex(LookupError, "lesson not found"):
+            lesson_manager.requeue_lesson_generation(999999)
 
     def test_create_monthly_plan_job_and_mark_ready(self):
         job = lesson_manager.create_monthly_plan_job(

@@ -18,6 +18,11 @@ export interface ReviewLessonRecord {
 
 export type ReviewLessonTaskState = 'pending' | 'failed' | 'ready' | 'missing-output' | 'empty';
 
+export type ReviewLessonProgressOptions = {
+  nowMs?: number;
+  startedAtMs?: number;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -113,19 +118,73 @@ export function getReviewLessonTaskMessage(
   return '';
 }
 
-export function getReviewLessonTaskProgress(lesson: Pick<ReviewLessonRecord, 'record_status' | 'pdf_path'>): number {
+function clampProgress(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function progressBetween(start: number, end: number, elapsedMs: number, durationMs: number): number {
+  if (elapsedMs <= 0) {
+    return start;
+  }
+  const ratio = Math.min(1, elapsedMs / durationMs);
+  return clampProgress(start + (end - start) * ratio);
+}
+
+function parseStartedAtMs(value: unknown): number | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function getReviewLessonTaskProgress(
+  lesson: Pick<ReviewLessonRecord, 'record_status' | 'pdf_path' | 'created_at'>,
+  options: ReviewLessonProgressOptions = {},
+): number {
   const status = lesson.record_status?.trim() ?? '';
-  if (status === 'transcribing') {
-    return 45;
-  }
-  if (status === 'generating') {
-    return 78;
-  }
-  if (['pending', 'queued', 'processing'].includes(status)) {
-    return 68;
-  }
-  if (getReviewLessonTaskState(lesson) === 'ready') {
+  const state = getReviewLessonTaskState(lesson);
+  if (state === 'ready') {
     return 100;
   }
-  return 0;
+  if (state === 'failed' || state === 'missing-output' || state === 'empty') {
+    return 0;
+  }
+
+  const fixedProgress = (() => {
+    if (status === 'transcribing') {
+      return 45;
+    }
+    if (status === 'generating') {
+      return 78;
+    }
+    if (['pending', 'queued', 'processing'].includes(status)) {
+      return 68;
+    }
+    return 0;
+  })();
+
+  if (options.nowMs === undefined) {
+    return fixedProgress;
+  }
+
+  const startedAtMs = options.startedAtMs ?? parseStartedAtMs(lesson.created_at);
+  if (startedAtMs === null) {
+    return fixedProgress;
+  }
+
+  const elapsedMs = Math.max(0, options.nowMs - startedAtMs);
+  if (status === 'transcribing') {
+    return progressBetween(14, 48, elapsedMs, 90_000);
+  }
+  if (status === 'generating') {
+    return progressBetween(62, 94, elapsedMs, 240_000);
+  }
+  if (status === 'processing') {
+    return progressBetween(46, 74, elapsedMs, 120_000);
+  }
+  if (['pending', 'queued'].includes(status)) {
+    return progressBetween(18, 58, elapsedMs, 90_000);
+  }
+  return fixedProgress;
 }

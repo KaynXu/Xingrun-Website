@@ -101,6 +101,32 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertFalse(app.has_api_key())
                 self.assertFalse(app.has_review_plan_api_key())
 
+    def test_review_plan_langfuse_observability_is_env_only_and_disabled_by_default(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_config = Path(tmpdir) / "config.json"
+            with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(os.environ, {}, clear=True):
+                cfg = config_runtime.get_runtime_config()
+                self.assertFalse(cfg["review_plan_langfuse_enabled"])
+                self.assertEqual(cfg["langfuse_public_key"], "")
+                self.assertEqual(cfg["langfuse_secret_key"], "")
+                self.assertEqual(cfg["langfuse_base_url"], "")
+
+            with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
+                os.environ,
+                {
+                    "XR_REVIEW_PLAN_LANGFUSE_ENABLED": "true",
+                    "LANGFUSE_PUBLIC_KEY": "pk-lf-test",
+                    "LANGFUSE_SECRET_KEY": "sk-lf-test",
+                    "LANGFUSE_BASE_URL": "https://cloud.langfuse.com",
+                },
+                clear=True,
+            ):
+                cfg = config_runtime.get_runtime_config()
+                self.assertTrue(cfg["review_plan_langfuse_enabled"])
+                self.assertEqual(cfg["langfuse_public_key"], "pk-lf-test")
+                self.assertEqual(cfg["langfuse_secret_key"], "sk-lf-test")
+                self.assertEqual(cfg["langfuse_base_url"], "https://cloud.langfuse.com")
+
     def test_review_plan_writer_key_is_required_when_chain_uses_openai(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             missing_config = Path(tmpdir) / "config.json"
