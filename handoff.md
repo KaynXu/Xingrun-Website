@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-23 已完成“复习计划详情页 PDF 预览过短”正式发布：发布内容提交为 `597d860c`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已拉取该提交并完成 `./scripts/deploy_backend.sh master`、`npm --prefix frontend run build`、`pm2 restart xingrun`；`pm2 status xingrun` 为 `online`，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。发布证明脚本：`/tmp/proof_release_master_20260623.sh`、`/tmp/deploy_master_20260623.sh`。
 - 2026-06-23 已完成“复习计划详情页 PDF 预览过短”修复：`frontend/src/features/review-generation/ReviewPlanDetailView.tsx` 已把详情页当前版本 PDF iframe 与 loading skeleton 从 `62vh / 420px` 提升到响应式 `70vh~76vh / 520px~640px`，桌面端预览高度明显增加。验证脚本：`/tmp/proof_review_plan_detail_preview_height_20260623.sh`。
 - 2026-06-23 已完成“复习计划版本历史与重新生成不覆盖”正式发布：`origin/master` 已更新到 `d21f434f`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已拉到同一提交；`./scripts/deploy_backend.sh master` 健康通过，`npm --prefix frontend run build` 成功，`pm2 status xingrun` 为 `online`，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。发布证明脚本：`/tmp/proof_release_master_20260623.sh`、`/tmp/deploy_master_20260623.sh`。
 - 2026-06-23 已完成“复习计划版本历史与重新生成不覆盖”实现：`lessons` 已通过迁移移除旧生成产物字段，生成产物进入 `review_plan_versions`；新建/重新生成会创建版本，成功自动切当前版，失败保留旧当前版；列表显示当前版本生成时间，详情页支持 PDF 预览、下载、版本历史和设为当前。验证脚本：`/tmp/proof_review_plan_version_history_20260623.sh`。
