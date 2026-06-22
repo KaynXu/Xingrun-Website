@@ -6,6 +6,7 @@
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-23 已完成“复习计划版本历史与重新生成不覆盖”implementation plan，路径为 `docs/superpowers/plans/2026-06-23-review-plan-version-history.md`；计划按 storage migration、后端版本 API、前端版本状态、轻量详情页、清理验证拆成可执行任务，待用户选择 Subagent-Driven 或 Inline Execution 后进入实现。
 - 2026-06-23 已完成“复习计划重新生成版本历史”设计稿，路径为 `docs/superpowers/specs/2026-06-23-review-plan-version-history-design.md`：方案采用 lesson 一条记录、多 version 产物表，重新生成成功自动切当前版，失败不影响旧当前版，列表时间显示当前版本生成时间，详情页提供轻量预览、下载、版本历史和回退；设计稿待用户审阅后再进入 implementation plan。
 - 2026-06-22 已在用户人工批准后完成正式发布闭环：`origin/develop` 与 `origin/master` 已同步到 `1cdffe38 test: align class overview assertions after branch sync`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已拉取最新 `master`、安装后端依赖、初始化数据库、完成 `npm --prefix frontend run build`、重启 `pm2 xingrun`；延迟健康检查通过，`pm2 status xingrun` 为 `online`，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。发布证明脚本：`/tmp/deploy_xingrun_master_20260622.sh` 与 `/tmp/proof_xingrun_deploy_health_20260622.sh`。
 - 2026-06-22 已把复习计划 PDF 中“结构化 active_recall 字段名外泄”和裸几何 token 乱码修复落到真实仓库：`review_plan_templates/single_lesson_pdf.py` 现在会展开 `active_recall.instructions/cards` 中的 `intro/steps/stem` 等结构，不再把 dict/list 直接转成正文；`review_plan_templates/generate_review_pdfs.py` 现在会把裸 `triangle / angle / cong / ^circ` 等常见几何 token 归一化成 `△ / ∠ / ≌ / °`，并避免 `^circ` 被先处理成异常上标。回归补在 `tests/test_single_lesson_pdf_unification.py` 和 `tests/test_review_plan_math_normalization.py`；本轮目标分支为 `codex/review-plan-active-recall-geometry-fix`。
