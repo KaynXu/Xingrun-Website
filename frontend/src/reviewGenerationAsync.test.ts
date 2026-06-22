@@ -115,11 +115,11 @@ test('review lesson task progress distinguishes audio transcription from plan ge
       topic: '整式',
       summary: '',
       weak_points: '',
-      pdf_path: '',
       class_id: 3,
       created_at: '2026-05-02T12:00:00',
-      record_status: 'transcribing',
-      generation_error: '',
+      has_version_generating: true,
+      active_version_status: 'transcribing',
+      active_version_created_at: '2026-05-02T12:00:00',
     },
   ])[0];
   const generatingLesson = normalizeReviewLessonsResponse([
@@ -131,11 +131,11 @@ test('review lesson task progress distinguishes audio transcription from plan ge
       topic: '整式',
       summary: '课堂摘要',
       weak_points: '',
-      pdf_path: '',
       class_id: 3,
       created_at: '2026-05-02T12:00:00',
-      record_status: 'generating',
-      generation_error: '',
+      has_version_generating: true,
+      active_version_status: 'generating',
+      active_version_created_at: '2026-05-02T12:00:00',
     },
   ])[0];
 
@@ -145,7 +145,7 @@ test('review lesson task progress distinguishes audio transcription from plan ge
   assert.equal(getReviewLessonTaskProgress(transcribingLesson), 45);
 
   assert.ok(generatingLesson);
-  assert.equal(getReviewLessonTaskMessage(generatingLesson), '转写完成，正在生成复习计划');
+  assert.equal(getReviewLessonTaskMessage(generatingLesson), '正在生成复习计划，可离开页面');
   assert.equal(getReviewLessonTaskProgress(generatingLesson), 78);
 });
 
@@ -159,11 +159,11 @@ test('review lesson task progress can estimate moving progress while generation 
       topic: '整式',
       summary: '课堂摘要',
       weak_points: '',
-      pdf_path: '',
       class_id: 3,
       created_at: '2026-05-02T12:00:00.000Z',
-      record_status: 'generating',
-      generation_error: '',
+      has_version_generating: true,
+      active_version_status: 'generating',
+      active_version_created_at: '2026-05-02T12:00:00.000Z',
     },
   ])[0];
 
