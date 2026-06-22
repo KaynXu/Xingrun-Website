@@ -43,8 +43,14 @@ test('normalizeReviewLessonsResponse keeps current version and active generation
   assert.equal(lessons[0]?.id, 12);
   assert.equal(lessons[0]?.current_version_id, 31);
   assert.equal(lessons[0]?.current_version_no, 2);
+  assert.equal(lessons[0]?.current_generated_at, '2026-05-02T12:30:00');
   assert.equal(lessons[0]?.current_pdf_url, '/api/review-plans/12/versions/31/pdf');
+  assert.equal(lessons[0]?.current_download_url, '/api/review-plans/12/versions/31/download');
+  assert.equal(lessons[0]?.current_status, 'ready');
   assert.equal(lessons[0]?.has_version_generating, true);
+  assert.equal(lessons[0]?.active_version_status, 'generating');
+  assert.equal(lessons[0]?.active_version_created_at, '2026-05-02T12:35:00');
+  assert.equal(lessons[0]?.latest_generation_error, '');
 });
 
 test('review lesson state keeps current output available while a new version generates', () => {
@@ -103,6 +109,32 @@ test('failed regeneration does not hide current output', () => {
   assert.equal(getReviewLessonTaskState(lesson), 'ready');
   assert.equal(getReviewLessonTaskMessage(lesson), '');
   assert.equal(hasReviewLessonOutput(lesson), true);
+});
+
+test('failed generation without current output shows the latest error', () => {
+  const lesson = normalizeReviewLessonsResponse([
+    {
+      id: 20,
+      date: '2026-05-02',
+      subject: '数学',
+      grade: '七年级',
+      topic: '整式',
+      summary: '课堂摘要',
+      weak_points: '',
+      class_id: 3,
+      created_at: '2026-05-02T12:00:00',
+      current_pdf_url: '',
+      current_download_url: '',
+      has_version_generating: false,
+      latest_generation_error: 'AI 生成失败，请稍后重试',
+    },
+  ])[0];
+
+  assert.ok(lesson);
+  assert.equal(hasReviewLessonOutput(lesson), false);
+  assert.equal(getReviewLessonTaskState(lesson), 'failed');
+  assert.equal(isReviewLessonPending(lesson), false);
+  assert.equal(getReviewLessonTaskMessage(lesson), 'AI 生成失败，请稍后重试');
 });
 
 test('review lesson task progress distinguishes audio transcription from plan generation', () => {
