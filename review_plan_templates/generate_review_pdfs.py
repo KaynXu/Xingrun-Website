@@ -720,6 +720,12 @@ LATEX_COMMAND_REPLACEMENTS = (
     (r"\neq", "≠"),
     (r"\times", "×"),
     (r"\cdot", "·"),
+    (r"\angle", "∠"),
+    (r"\triangle", "△"),
+    (r"\cong", "≌"),
+    (r"\circ", "°"),
+    (r"\perp", "⊥"),
+    (r"\parallel", "∥"),
     (r"\ldots", "..."),
     (r"\cdots", "..."),
     (r"\dots", "..."),
@@ -841,6 +847,17 @@ def _normalize_latex_placeholders_for_mathtext(text: str) -> str:
 def _normalize_latex_structures(text: str) -> str:
     normalized = _normalize_latex_placeholders(text)
     normalized = _normalize_latex_cases(normalized)
+    return normalized
+
+
+def _normalize_bare_math_words(text: str) -> str:
+    normalized = str(text or "")
+    normalized = re.sub(r"\^\\?circ\b", "°", normalized)
+    normalized = re.sub(r"(?<![A-Za-z\\])triangle\s*", "△", normalized)
+    normalized = re.sub(r"(?<![A-Za-z\\])angle\s*", "∠", normalized)
+    normalized = re.sub(r"(?<![A-Za-z\\])cong(?![A-Za-z])", "≌", normalized)
+    normalized = re.sub(r"(?<![A-Za-z\\])perp(?![A-Za-z])", "⊥", normalized)
+    normalized = re.sub(r"(?<![A-Za-z\\])parallel(?![A-Za-z])", "∥", normalized)
     return normalized
 
 
@@ -1009,6 +1026,7 @@ def render_latex_formula_flowable(
 def _normalize_bare_latex_text(text: str) -> str:
     normalized = str(text or "").replace(r"\$", "$")
     normalized = _normalize_latex_structures(normalized)
+    normalized = _normalize_bare_math_words(normalized)
 
     for _ in range(5):
         next_value = re.sub(
@@ -1060,6 +1078,7 @@ def _normalize_bare_latex_text(text: str) -> str:
     for source, target in LATEX_COMMAND_REPLACEMENTS:
         normalized = normalized.replace(source, target)
 
+    normalized = _normalize_bare_math_words(normalized)
     return normalized
 
 

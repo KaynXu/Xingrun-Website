@@ -64,6 +64,17 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertEqual(normalize_portable_text(r"$a_n$"), "a_n")
         self.assertEqual(normalize_portable_text(r"$x_{12}$"), "x_12")
 
+    def test_normalize_portable_text_normalizes_bare_geometry_tokens(self):
+        text = "在triangle ABC中，angle BAC=120^circ，triangle ADC cong triangle EDB。"
+
+        normalized = normalize_portable_text(text)
+
+        self.assertEqual(normalized, "在△ABC中，∠BAC=120°，△ADC ≌ △EDB。")
+        self.assertNotIn("triangle", normalized)
+        self.assertNotIn("angle", normalized)
+        self.assertNotIn("^circ", normalized)
+        self.assertNotIn("cong", normalized)
+
     def test_render_latex_formula_flowable_renders_fraction_as_image(self):
         flowable = render_latex_formula_flowable(
             r"\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}",

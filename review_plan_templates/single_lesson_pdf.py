@@ -30,6 +30,8 @@ BAD_QUOTE_PATTERNS = (
 
 
 def _clean_text(value: object, default: str = "") -> str:
+    if isinstance(value, (dict, list, tuple, set)):
+        return default
     text = normalize_portable_text_preserving_latex(str(value or "").strip())
     return text or default
 
@@ -99,6 +101,53 @@ def _compact_instruction_with_blanks(instruction: object, blanks: object) -> str
     return " ".join(part for part in parts if part).strip()
 
 
+def _first_string_field(data: dict, fields: tuple[str, ...]) -> object:
+    for field in fields:
+        value = data.get(field)
+        if isinstance(value, str) and _clean_text(value):
+            return value
+    return ""
+
+
+def _append_active_recall_entry(cards: list[str], value: object) -> None:
+    if isinstance(value, str):
+        _append_task_once(cards, value)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _append_active_recall_entry(cards, item)
+        return
+    if not isinstance(value, dict):
+        return
+
+    intro = _clean_text(value.get("intro"))
+    if intro:
+        _append_task_once(cards, intro)
+
+    steps = value.get("steps")
+    if isinstance(steps, list):
+        for step in steps:
+            _append_active_recall_entry(cards, step)
+    else:
+        _append_task_once(cards, steps)
+
+    primary = _first_string_field(
+        value,
+        ("instruction", "instructions", "question", "prompt", "stem", "text", "expected"),
+    )
+    card = _compact_instruction_with_blanks(primary, value.get("blanks"))
+    if value.get("answer_ref"):
+        card = f"{card}（口述后对照参考答案）" if card else "口述后对照参考答案。"
+    _append_task_once(cards, card)
+
+    for field in ("instructions", "content", "items", "cards"):
+        nested = value.get(field)
+        if nested is primary:
+            continue
+        if isinstance(nested, (dict, list)):
+            _append_active_recall_entry(cards, nested)
+
+
 def _active_recall_cards(active_recall: object) -> list[str]:
     if isinstance(active_recall, str):
         text = _clean_text(active_recall)
@@ -107,13 +156,7 @@ def _active_recall_cards(active_recall: object) -> list[str]:
         return []
 
     cards: list[str] = []
-    for field in ("instructions", "instruction", "question", "prompt", "expected", "content"):
-        value = active_recall.get(field)
-        if isinstance(value, list):
-            for item in value:
-                _append_task_once(cards, item)
-        else:
-            _append_task_once(cards, value)
+    _append_active_recall_entry(cards, active_recall)
 
     top_level_card = _compact_instruction_with_blanks("", active_recall.get("blanks"))
     if top_level_card:

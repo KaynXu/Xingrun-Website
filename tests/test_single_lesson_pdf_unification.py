@@ -243,6 +243,50 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertTrue(any("不能只比较括号大小" in card for card in days[1]["method_cards"]))
         self.assertTrue(any("课堂方法复盘卡片" in task for task in days[0]["tasks"]))
 
+    def test_adapt_plan_to_review_template_formats_structured_active_recall_without_schema_keys(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = {
+            "lesson_info": {"topic": "瓜豆模型", "key_categories": ["瓜豆模型"]},
+            "days": [
+                {
+                    "day": 1,
+                    "focus": "模型回看",
+                    "goal": "复述瓜豆模型",
+                    "active_recall": {
+                        "instructions": [
+                            {
+                                "intro": "请尝试复述课堂12题U绝对值操作的分类讨论方法。",
+                                "steps": [
+                                    "步骤1：因为有绝对值，全正和全负的符号组合化简结果____。",
+                                    "步骤2：除去全正、全负后，还有____种不同的符号组合。",
+                                ],
+                                "answers": ["相同", "6"],
+                            }
+                        ],
+                        "cards": [
+                            {
+                                "stem": "在triangle ABC中，angle BAC=90^circ，先说明旋转中心。",
+                                "answer_ref": "课堂笔记第12题",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+        method_text = "\n".join(days[0]["method_cards"])
+
+        self.assertIn("请尝试复述课堂12题U绝对值操作的分类讨论方法。", method_text)
+        self.assertIn("步骤1：因为有绝对值", method_text)
+        self.assertIn("步骤2：除去全正、全负后", method_text)
+        self.assertIn("在△ABC中，∠BAC=90°", method_text)
+        self.assertNotIn("{", method_text)
+        self.assertNotIn("'intro'", method_text)
+        self.assertNotIn("'steps'", method_text)
+        self.assertNotIn("'answers'", method_text)
+
     def test_adapt_plan_to_review_template_preserves_latex_for_pdf_formula_rendering(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
 

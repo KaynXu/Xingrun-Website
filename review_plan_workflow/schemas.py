@@ -236,6 +236,8 @@ def validate_final_review_plan(plan: dict) -> Tuple[Optional[FinalReviewPlan], l
 
 
 def _clean_text(value: object) -> str:
+    if isinstance(value, (dict, list, tuple, set)):
+        return ""
     return str(value or "").strip()
 
 
