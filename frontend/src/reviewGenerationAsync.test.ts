@@ -137,6 +137,54 @@ test('failed generation without current output shows the latest error', () => {
   assert.equal(getReviewLessonTaskMessage(lesson), 'AI 生成失败，请稍后重试');
 });
 
+test('legacy generating record status still shows a pending task', () => {
+  const lesson = normalizeReviewLessonsResponse([
+    {
+      id: 21,
+      date: '2026-05-02',
+      subject: '数学',
+      grade: '七年级',
+      topic: '整式',
+      summary: '课堂摘要',
+      weak_points: '',
+      class_id: 3,
+      created_at: '2026-05-02T12:00:00',
+      record_status: 'generating',
+    },
+  ])[0];
+
+  assert.ok(lesson);
+  assert.equal(hasReviewLessonOutput(lesson), false);
+  assert.equal(getReviewLessonTaskState(lesson), 'pending');
+  assert.equal(isReviewLessonPending(lesson), true);
+  assert.equal(getReviewLessonTaskMessage(lesson), '正在生成复习计划，可离开页面');
+  assert.equal(getReviewLessonTaskProgress(lesson), 78);
+});
+
+test('legacy failed record status still shows the generation error', () => {
+  const lesson = normalizeReviewLessonsResponse([
+    {
+      id: 22,
+      date: '2026-05-02',
+      subject: '数学',
+      grade: '七年级',
+      topic: '整式',
+      summary: '课堂摘要',
+      weak_points: '',
+      class_id: 3,
+      created_at: '2026-05-02T12:00:00',
+      record_status: 'failed',
+      generation_error: 'AI 生成失败，请稍后重试',
+    },
+  ])[0];
+
+  assert.ok(lesson);
+  assert.equal(hasReviewLessonOutput(lesson), false);
+  assert.equal(getReviewLessonTaskState(lesson), 'failed');
+  assert.equal(isReviewLessonPending(lesson), false);
+  assert.equal(getReviewLessonTaskMessage(lesson), 'AI 生成失败，请稍后重试');
+});
+
 test('review lesson task progress distinguishes audio transcription from plan generation', () => {
   const transcribingLesson = normalizeReviewLessonsResponse([
     {

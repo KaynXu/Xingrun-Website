@@ -50,6 +50,10 @@ function pickBoolean(value: unknown): boolean {
   return value === true;
 }
 
+function pickTaskStatus(lesson: Pick<ReviewLessonRecord, 'active_version_status' | 'record_status'>): string {
+  return lesson.active_version_status.trim() || lesson.record_status?.trim() || '';
+}
+
 export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRecord[] {
   if (!Array.isArray(payload)) {
     return [];
@@ -104,16 +108,17 @@ export function hasReviewLessonOutput(
 export function getReviewLessonTaskState(
   lesson: Pick<
     ReviewLessonRecord,
-    'has_version_generating' | 'active_version_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error'
+    'has_version_generating' | 'active_version_status' | 'record_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error' | 'generation_error'
   >,
 ): ReviewLessonTaskState {
-  if (lesson.has_version_generating || ['pending', 'queued', 'processing', 'transcribing', 'generating'].includes(lesson.active_version_status.trim())) {
+  const status = pickTaskStatus(lesson);
+  if (lesson.has_version_generating || ['pending', 'queued', 'processing', 'transcribing', 'generating'].includes(status)) {
     return 'pending';
   }
   if (hasReviewLessonOutput(lesson)) {
     return 'ready';
   }
-  if (lesson.latest_generation_error.trim()) {
+  if (lesson.latest_generation_error.trim() || ['failed', 'expired'].includes(status) || lesson.generation_error?.trim()) {
     return 'failed';
   }
   if (lesson.current_status.trim() === 'ready') {
@@ -125,7 +130,7 @@ export function getReviewLessonTaskState(
 export function isReviewLessonPending(
   lesson: Pick<
     ReviewLessonRecord,
-    'has_version_generating' | 'active_version_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error'
+    'has_version_generating' | 'active_version_status' | 'record_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error' | 'generation_error'
   >,
 ): boolean {
   return getReviewLessonTaskState(lesson) === 'pending';
@@ -134,12 +139,12 @@ export function isReviewLessonPending(
 export function getReviewLessonTaskMessage(
   lesson: Pick<
     ReviewLessonRecord,
-    'has_version_generating' | 'active_version_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error' | 'generation_error'
+    'has_version_generating' | 'active_version_status' | 'record_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error' | 'generation_error'
   >,
 ): string {
   const state = getReviewLessonTaskState(lesson);
   if (state === 'pending') {
-    const status = lesson.active_version_status?.trim() ?? '';
+    const status = pickTaskStatus(lesson);
     const hasCurrentOutput = hasReviewLessonOutput(lesson);
     if (status === 'transcribing') {
       return hasCurrentOutput ? '新版录音转写中，当前 PDF 可继续使用' : '录音已上传，正在转写';
@@ -150,6 +155,9 @@ export function getReviewLessonTaskMessage(
     return '正在生成复习计划，可离开页面';
   }
   if (state === 'failed') {
+    if (lesson.record_status?.trim() === 'expired' && !lesson.latest_generation_error.trim()) {
+      return '生成任务已过期，请重新生成';
+    }
     return lesson.latest_generation_error.trim() || lesson.generation_error?.trim() || '生成失败';
   }
   if (state === 'missing-output') {
@@ -181,11 +189,11 @@ function parseStartedAtMs(value: unknown): number | null {
 export function getReviewLessonTaskProgress(
   lesson: Pick<
     ReviewLessonRecord,
-    'active_version_status' | 'active_version_created_at' | 'has_version_generating' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'created_at' | 'latest_generation_error' | 'current_status'
+    'active_version_status' | 'record_status' | 'active_version_created_at' | 'has_version_generating' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'created_at' | 'latest_generation_error' | 'generation_error' | 'current_status'
   >,
   options: ReviewLessonProgressOptions = {},
 ): number {
-  const status = lesson.active_version_status?.trim() ?? '';
+  const status = pickTaskStatus(lesson);
   const state = getReviewLessonTaskState(lesson);
   if (state === 'ready') {
     return 100;
