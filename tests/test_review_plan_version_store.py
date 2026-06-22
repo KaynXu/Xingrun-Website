@@ -143,6 +143,32 @@ class ReviewPlanVersionMigrationTestCase(unittest.TestCase):
         self.assertEqual(version["generation_error"], "AI 生成失败")
         self.assertIsNone(lesson["current_review_plan_version_id"])
 
+    def test_does_not_migrate_empty_ready_legacy_lesson_to_bogus_version(self):
+        conn = _legacy_conn(lesson_manager.DB_PATH)
+        conn.execute(
+            """
+            INSERT INTO lessons (
+                organization_id, date, subject, grade, topic, summary, weak_points,
+                plan_json, pdf_path, record_status, generation_error, created_by_user_id
+            )
+            VALUES (1, '2026-04-09', '数学', '初二', '一次函数', '课堂总结', '斜率',
+                    '', '', 'ready', '', 7)
+            """
+        )
+        conn.commit()
+
+        lesson_manager._ensure_review_plan_versions_schema(conn)
+        lesson_manager._migrate_legacy_review_plan_columns(conn)
+        lesson_manager._rebuild_lessons_without_review_plan_artifact_columns(conn)
+        conn.commit()
+
+        lesson = conn.execute("SELECT * FROM lessons WHERE id=1").fetchone()
+        version_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM review_plan_versions WHERE lesson_id=1"
+        ).fetchone()["count"]
+        self.assertEqual(version_count, 0)
+        self.assertIsNone(lesson["current_review_plan_version_id"])
+
     def test_migration_is_idempotent(self):
         conn = _legacy_conn(lesson_manager.DB_PATH)
         conn.execute(
@@ -195,6 +221,17 @@ class ReviewPlanVersionMigrationTestCase(unittest.TestCase):
             """
         )
         failed_lesson_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        conn.execute(
+            """
+            INSERT INTO lessons (
+                organization_id, date, subject, grade, topic, summary, weak_points,
+                plan_json, pdf_path, record_status, generation_error, created_by_user_id
+            )
+            VALUES (1, '2026-04-11', '数学', '初二', '空记录', '课堂总结', '待补充',
+                    '', '', 'ready', '', 7)
+            """
+        )
+        empty_lesson_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
         conn.commit()
         conn.close()
 
@@ -218,6 +255,11 @@ class ReviewPlanVersionMigrationTestCase(unittest.TestCase):
             ).fetchone()
             ready_lesson = fresh.execute("SELECT * FROM lessons WHERE id=?", (ready_lesson_id,)).fetchone()
             failed_lesson = fresh.execute("SELECT * FROM lessons WHERE id=?", (failed_lesson_id,)).fetchone()
+            empty_lesson = fresh.execute("SELECT * FROM lessons WHERE id=?", (empty_lesson_id,)).fetchone()
+            empty_version = fresh.execute(
+                "SELECT * FROM review_plan_versions WHERE lesson_id=?",
+                (empty_lesson_id,),
+            ).fetchone()
 
             self.assertEqual(ready_version["status"], "ready")
             self.assertEqual(json.loads(ready_version["plan_json"]), ready_plan)
@@ -226,6 +268,8 @@ class ReviewPlanVersionMigrationTestCase(unittest.TestCase):
             self.assertEqual(failed_version["status"], "failed")
             self.assertEqual(failed_version["generation_error"], "AI 生成失败")
             self.assertIsNone(failed_lesson["current_review_plan_version_id"])
+            self.assertIsNone(empty_version)
+            self.assertIsNone(empty_lesson["current_review_plan_version_id"])
 
 
 class ReviewPlanVersionLifecycleTestCase(unittest.TestCase):

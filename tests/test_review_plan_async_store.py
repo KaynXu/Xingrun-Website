@@ -54,6 +54,32 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["pdf_path"], "/tmp/example.pdf")
         self.assertFalse(saved["has_version_generating"])
 
+    def test_create_pending_lesson_ready_compatibility_sets_current_version(self):
+        plan = {"lesson_info": {"topic": "旧计划"}, "days": []}
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+            plan=plan,
+            pdf_path="/tmp/legacy-ready.pdf",
+            record_status="ready",
+            created_by_user_id=7,
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+
+        self.assertIsNotNone(saved["current_review_plan_version_id"])
+        self.assertEqual(saved["record_status"], "ready")
+        self.assertEqual(saved["current_version"]["status"], "ready")
+        self.assertEqual(saved["current_version"]["pdf_path"], "/tmp/legacy-ready.pdf")
+        self.assertEqual(saved["pdf_path"], "/tmp/legacy-ready.pdf")
+        self.assertEqual(saved["plan"], plan)
+        self.assertEqual(saved["current_generated_at"], saved["current_version"]["completed_at"])
+
     def test_review_plan_version_persists_generation_resume_context(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
@@ -158,6 +184,33 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(updated["current_version"]["id"], second["id"])
         self.assertEqual(updated["pdf_path"], "/tmp/new.pdf")
         self.assertFalse(updated["has_version_generating"])
+
+    def test_student_profile_study_records_use_current_ready_version_not_latest_failed(self):
+        student = lesson_manager.create_student_for_class(self.class_id, "版本学生")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+        )
+        first = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            first["id"],
+            plan={"lesson_info": {"topic": "旧计划"}, "days": []},
+            pdf_path="/tmp/current-ready.pdf",
+        )
+        second = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.fail_review_plan_version(second["id"], "第二版失败")
+
+        profile = lesson_manager.get_student_profile(student["id"])
+
+        self.assertEqual(profile["study_status"], "在读")
+        self.assertEqual(profile["first_lesson_date"], "2026-04-09")
+        self.assertEqual(profile["last_lesson_date"], "2026-04-09")
+        self.assertEqual(profile["study_records"][0]["lesson_count"], 1)
 
     def test_complete_review_plan_version_missing_raises(self):
         with self.assertRaisesRegex(LookupError, "review plan version not found"):
