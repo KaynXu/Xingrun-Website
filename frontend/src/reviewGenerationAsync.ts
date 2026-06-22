@@ -6,12 +6,23 @@ export interface ReviewLessonRecord {
   topic: string;
   summary: string;
   weak_points: string;
-  pdf_path: string;
   class_id: number | null;
   created_at: string;
+  updated_at?: string;
   created_by_user_id?: number | null;
   creator_display_name?: string;
   creator_username?: string;
+  current_version_id: number | null;
+  current_version_no: number | null;
+  current_generated_at: string;
+  current_pdf_url: string;
+  current_download_url: string;
+  current_status: string;
+  has_version_generating: boolean;
+  active_version_status: string;
+  active_version_created_at: string;
+  latest_generation_error: string;
+  pdf_path: string;
   record_status?: string;
   generation_error?: string;
 }
@@ -35,6 +46,10 @@ function pickNullableNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function pickBoolean(value: unknown): boolean {
+  return value === true;
+}
+
 export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRecord[] {
   if (!Array.isArray(payload)) {
     return [];
@@ -53,64 +68,89 @@ export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRe
       topic: pickString(item.topic),
       summary: pickString(item.summary),
       weak_points: pickString(item.weak_points),
-      pdf_path: pickString(item.pdf_path),
       class_id: pickNullableNumber(item.class_id),
       created_at: pickString(item.created_at),
+      updated_at: pickString(item.updated_at),
       created_by_user_id: pickNullableNumber(item.created_by_user_id),
       creator_display_name: pickString(item.creator_display_name),
       creator_username: pickString(item.creator_username),
+      current_version_id: pickNullableNumber(item.current_version_id),
+      current_version_no: pickNullableNumber(item.current_version_no),
+      current_generated_at: pickString(item.current_generated_at),
+      current_pdf_url: pickString(item.current_pdf_url),
+      current_download_url: pickString(item.current_download_url),
+      current_status: pickString(item.current_status),
+      has_version_generating: pickBoolean(item.has_version_generating),
+      active_version_status: pickString(item.active_version_status),
+      active_version_created_at: pickString(item.active_version_created_at),
+      latest_generation_error: pickString(item.latest_generation_error),
+      pdf_path: pickString(item.pdf_path),
       record_status: pickString(item.record_status),
       generation_error: pickString(item.generation_error),
     }];
   });
 }
 
-export function hasReviewLessonOutput(lesson: Pick<ReviewLessonRecord, 'pdf_path'>): boolean {
-  return lesson.pdf_path.trim().length > 0;
+export function hasReviewLessonOutput(
+  lesson: Pick<ReviewLessonRecord, 'current_pdf_url' | 'current_download_url' | 'pdf_path'>,
+): boolean {
+  return Boolean(
+    lesson.current_pdf_url.trim()
+    || lesson.current_download_url.trim()
+    || lesson.pdf_path.trim(),
+  );
 }
 
 export function getReviewLessonTaskState(
-  lesson: Pick<ReviewLessonRecord, 'record_status' | 'pdf_path'>,
+  lesson: Pick<
+    ReviewLessonRecord,
+    'has_version_generating' | 'active_version_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error'
+  >,
 ): ReviewLessonTaskState {
-  const status = lesson.record_status?.trim() ?? '';
-  if (['pending', 'queued', 'processing', 'transcribing', 'generating'].includes(status)) {
+  if (lesson.has_version_generating || ['pending', 'queued', 'processing', 'transcribing', 'generating'].includes(lesson.active_version_status.trim())) {
     return 'pending';
-  }
-  if (status === 'failed' || status === 'expired') {
-    return 'failed';
   }
   if (hasReviewLessonOutput(lesson)) {
     return 'ready';
   }
-  if (status === 'ready') {
+  if (lesson.latest_generation_error.trim()) {
+    return 'failed';
+  }
+  if (lesson.current_status.trim() === 'ready') {
     return 'missing-output';
   }
   return 'empty';
 }
 
-export function isReviewLessonPending(lesson: Pick<ReviewLessonRecord, 'record_status' | 'pdf_path'>): boolean {
+export function isReviewLessonPending(
+  lesson: Pick<
+    ReviewLessonRecord,
+    'has_version_generating' | 'active_version_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error'
+  >,
+): boolean {
   return getReviewLessonTaskState(lesson) === 'pending';
 }
 
 export function getReviewLessonTaskMessage(
-  lesson: Pick<ReviewLessonRecord, 'record_status' | 'generation_error' | 'pdf_path'>,
+  lesson: Pick<
+    ReviewLessonRecord,
+    'has_version_generating' | 'active_version_status' | 'current_status' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'latest_generation_error' | 'generation_error'
+  >,
 ): string {
   const state = getReviewLessonTaskState(lesson);
   if (state === 'pending') {
-    const status = lesson.record_status?.trim() ?? '';
+    const status = lesson.active_version_status?.trim() ?? '';
+    const hasCurrentOutput = hasReviewLessonOutput(lesson);
     if (status === 'transcribing') {
-      return '录音已上传，正在转写';
+      return hasCurrentOutput ? '新版录音转写中，当前 PDF 可继续使用' : '录音已上传，正在转写';
     }
-    if (status === 'generating') {
-      return '转写完成，正在生成复习计划';
+    if (hasCurrentOutput) {
+      return '正在生成新版，当前 PDF 可继续使用';
     }
     return '正在生成复习计划，可离开页面';
   }
   if (state === 'failed') {
-    if (lesson.record_status === 'expired') {
-      return '生成任务已过期，请重新生成';
-    }
-    return lesson.generation_error?.trim() || '生成失败';
+    return lesson.latest_generation_error.trim() || lesson.generation_error?.trim() || '生成失败';
   }
   if (state === 'missing-output') {
     return '生成结果缺少 PDF，请刷新后重试';
@@ -139,10 +179,13 @@ function parseStartedAtMs(value: unknown): number | null {
 }
 
 export function getReviewLessonTaskProgress(
-  lesson: Pick<ReviewLessonRecord, 'record_status' | 'pdf_path' | 'created_at'>,
+  lesson: Pick<
+    ReviewLessonRecord,
+    'active_version_status' | 'active_version_created_at' | 'has_version_generating' | 'current_pdf_url' | 'current_download_url' | 'pdf_path' | 'created_at' | 'latest_generation_error' | 'current_status'
+  >,
   options: ReviewLessonProgressOptions = {},
 ): number {
-  const status = lesson.record_status?.trim() ?? '';
+  const status = lesson.active_version_status?.trim() ?? '';
   const state = getReviewLessonTaskState(lesson);
   if (state === 'ready') {
     return 100;
@@ -168,7 +211,7 @@ export function getReviewLessonTaskProgress(
     return fixedProgress;
   }
 
-  const startedAtMs = options.startedAtMs ?? parseStartedAtMs(lesson.created_at);
+  const startedAtMs = options.startedAtMs ?? parseStartedAtMs(lesson.active_version_created_at || lesson.created_at);
   if (startedAtMs === null) {
     return fixedProgress;
   }
