@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, Download, Eye, FileText, PlusCircle, RefreshCw, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Download, Eye, FileText, Info, PlusCircle, RefreshCw, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import {
@@ -23,6 +23,7 @@ import {
   workspaceSecondaryButtonClass,
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
+import { ReviewPlanDetailView } from './ReviewPlanDetailView';
 
 type ReviewPlanCreateResult = {
   id: number;
@@ -100,13 +101,14 @@ function getLessonCreatorAvatarUrl(lesson: ReviewLessonRecord): string {
 
 function getLessonDateTimeLabel(lesson: ReviewLessonRecord): string {
   const dateLabel = lesson.date?.trim() || '';
-  if (!lesson.created_at) {
+  const generatedAt = lesson.current_generated_at || lesson.created_at;
+  if (!generatedAt) {
     return dateLabel || '-';
   }
 
-  const createdAt = new Date(lesson.created_at);
+  const createdAt = new Date(generatedAt);
   if (Number.isNaN(createdAt.getTime())) {
-    return [dateLabel, lesson.created_at].filter(Boolean).join(' ');
+    return [dateLabel, generatedAt].filter(Boolean).join(' ');
   }
 
   const timeLabel = createdAt.toLocaleTimeString('zh-CN', {
@@ -311,6 +313,7 @@ function ReviewDocumentHistory({
   const [loading, setLoading] = useState(true);
   const [historyPage, setHistoryPage] = useState(1);
   const [regeneratingLessonIds, setRegeneratingLessonIds] = useState<Set<number>>(() => new Set());
+  const [selectedDetailLessonId, setSelectedDetailLessonId] = useState<number | null>(null);
 
   const load = useCallback((quiet = false) => {
     if (!quiet) {
@@ -392,7 +395,15 @@ function ReviewDocumentHistory({
       onTaskStarted(lesson.id, startedAtMs);
       setLessons((current) => current.map((item) => (
         item.id === lesson.id
-          ? { ...item, record_status: nextStatus, generation_error: '' }
+          ? {
+            ...item,
+            has_version_generating: true,
+            active_version_status: nextStatus,
+            active_version_created_at: new Date(startedAtMs).toISOString(),
+            latest_generation_error: '',
+            record_status: nextStatus,
+            generation_error: '',
+          }
           : item
       )));
       onFloatingNotice({ type: 'info', text: `《${getLessonTitle(lesson)}》已开始重新生成。` });
@@ -411,6 +422,18 @@ function ReviewDocumentHistory({
     }
   };
 
+  if (selectedDetailLessonId !== null) {
+    const selectedLesson = lessons.find((lesson) => lesson.id === selectedDetailLessonId) ?? null;
+    return (
+      <ReviewPlanDetailView
+        lessonId={selectedDetailLessonId}
+        onBack={() => setSelectedDetailLessonId(null)}
+        onChanged={() => void load(true)}
+        onRegenerate={() => selectedLesson ? handleRegenerate(selectedLesson) : Promise.resolve()}
+      />
+    );
+  }
+
   return (
     <div className={reviewHistoryPanelClass}>
       <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 sm:px-6">
@@ -428,7 +451,7 @@ function ReviewDocumentHistory({
         </div>
       ) : (
         <div className="p-4 sm:p-5">
-          <div className="hidden border-b border-slate-200/70 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_176px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
+          <div className="hidden border-b border-slate-200/70 px-2 pb-3 text-xs font-semibold tracking-[0.12em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_220px] lg:gap-4 dark:border-white/10 dark:text-slate-500">
             <span>文档</span>
             <span>生成人</span>
             <span>时间</span>
@@ -448,7 +471,7 @@ function ReviewDocumentHistory({
                     highlightedLessonId === lesson.id && 'bg-sky-50/70 dark:bg-sky-500/10',
                   )}
                 >
-                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_176px] lg:items-start lg:gap-4">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_128px_180px_112px_220px] lg:items-start lg:gap-4">
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center text-slate-500 dark:text-slate-300">
@@ -502,7 +525,7 @@ function ReviewDocumentHistory({
                       {hasReviewLessonOutput(lesson) && (
                         <>
                           <a
-                            href={buildAuthedPath(`/api/pdf/${lesson.id}`)}
+                            href={buildAuthedPath(lesson.current_pdf_url.trim() || `/api/pdf/${lesson.id}`)}
                             target="_blank"
                             rel="noreferrer"
                             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
@@ -511,7 +534,7 @@ function ReviewDocumentHistory({
                             <Eye size={16} />
                           </a>
                           <a
-                            href={buildAuthedPath(`/api/pdf/download/${lesson.id}`)}
+                            href={buildAuthedPath(lesson.current_download_url.trim() || `/api/pdf/download/${lesson.id}`)}
                             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
                             title="下载"
                           >
@@ -519,6 +542,15 @@ function ReviewDocumentHistory({
                           </a>
                         </>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDetailLessonId(lesson.id)}
+                        className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                        title="详情"
+                        aria-label="详情"
+                      >
+                        <Info size={16} />
+                      </button>
                       <button
                         type="button"
                         onClick={() => void handleRegenerate(lesson)}
