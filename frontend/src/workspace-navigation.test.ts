@@ -106,7 +106,7 @@ test('review generation source renders history as a paginated list with merged d
   assert.match(reviewGenerationSource, /hour: '2-digit',/);
   assert.match(reviewGenerationSource, /minute: '2-digit',/);
   assert.doesNotMatch(reviewGenerationSource, /second:/);
-  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_180px_112px_176px\]/);
+  assert.match(reviewGenerationSource, /grid-cols-\[minmax\(0,2fr\)_128px_180px_112px_220px\]/);
   assert.match(reviewGenerationSource, /<ul className="divide-y divide-slate-200\/70 dark:divide-white\/10">/);
   assert.match(reviewGenerationSource, /上一页/);
   assert.match(reviewGenerationSource, /下一页/);
@@ -142,8 +142,8 @@ test('lesson input source refreshes assignable classes when the signed-in user c
 });
 
 test('review generation source appends auth token to lesson pdf links', () => {
-  assert.match(reviewGenerationSource, /href=\{buildAuthedPath\(`\/api\/pdf\/\$\{lesson\.id\}`\)\}/);
-  assert.match(reviewGenerationSource, /href=\{buildAuthedPath\(`\/api\/pdf\/download\/\$\{lesson\.id\}`\)\}/);
+  assert.match(reviewGenerationSource, /href=\{buildAuthedPath\(lesson\.current_pdf_url\.trim\(\) \|\| `\/api\/pdf\/\$\{lesson\.id\}`\)\}/);
+  assert.match(reviewGenerationSource, /href=\{buildAuthedPath\(lesson\.current_download_url\.trim\(\) \|\| `\/api\/pdf\/download\/\$\{lesson\.id\}`\)\}/);
 });
 
 test('workspace navigation wires smart wrong questions into every authenticated role shell', () => {

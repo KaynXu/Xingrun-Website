@@ -88,7 +88,9 @@ from lesson_manager import (
     authenticate_student_account,
     bind_parent_to_student,
     confirm_class_feedback_task,
+    complete_review_plan_version,
     create_class_feedback_task,
+    create_review_plan_version,
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
     create_wrong_question_asset,
@@ -123,6 +125,7 @@ from lesson_manager import (
     enter_consultation_class,
     find_previous_confirmed_class_feedback_entry,
     find_active_wrong_question_practice_pack_job,
+    fail_review_plan_version,
     get_class,
     get_class_feedback_task,
     get_class_teacher_user_id,
@@ -134,12 +137,15 @@ from lesson_manager import (
     get_course_calendar_schedule,
     get_current_user,
     get_current_student_account,
+    get_current_review_plan_version,
     get_parent_student_binding,
     get_parent_student_binding_for_student,
     get_active_class_invite_by_code,
     get_or_create_active_class_invite,
     get_lesson,
     get_latest_review_plan_run_for_lesson,
+    get_review_plan_version,
+    get_review_plan_version_for_lesson,
     get_student_profile,
     get_wrong_question_chat_session,
     get_weekly_wrong_question_followup_message,
@@ -166,6 +172,7 @@ from lesson_manager import (
     list_course_calendar_schedules_for_actor,
     list_lessons,
     list_lessons_for_actor,
+    list_review_plan_versions,
     list_wrong_question_practice_sheets_for_student,
     list_wrong_question_practice_pack_jobs_for_class,
     list_targeted_wrong_question_practice_candidates,
@@ -193,6 +200,7 @@ from lesson_manager import (
     list_users_for_actor,
     join_organization_by_invite_code,
     join_organization_by_invite_link_token,
+    lesson_has_active_review_plan_version,
     normalize_consultation_batch_parse_result,
     preview_student_class_invite,
     reject_organization_request,
@@ -206,6 +214,7 @@ from lesson_manager import (
     save_class_feedback_label_configs,
     save_class_feedback_task_notes,
     save_class,
+    mark_review_plan_version_transcription_succeeded,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
     mark_lesson_transcription_succeeded,
@@ -218,6 +227,7 @@ from lesson_manager import (
     mark_monthly_plan_job_succeeded,
     requeue_monthly_plan_job,
     set_class_teacher_user_id,
+    set_current_review_plan_version,
     set_student_wrong_question_library_pdf_path,
     set_user_class_ids,
     set_wechat_wrong_question_archive_status,
@@ -641,6 +651,21 @@ def _build_review_plan_regenerate_request_id(*, user_id: int, lesson_id: int, re
 
 
 def _find_existing_review_plan_lesson_for_request(*, organization_id: int, request_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT l.id
+            FROM review_plan_versions v
+            JOIN lessons l ON l.id=v.lesson_id
+            WHERE v.request_id=? AND l.organization_id=?
+            ORDER BY v.id DESC
+            LIMIT 1
+            """,
+            (str(request_id or ""), int(organization_id)),
+        ).fetchone()
+    if row:
+        return get_lesson(int(row["id"]))
+
     usage = get_ai_usage_by_request_id(
         organization_id=organization_id,
         request_id=request_id,
@@ -767,9 +792,42 @@ def _run_ai_feature_with_charge(
             _release_ai_request_identity(request_id)
 
 
+def _get_or_create_compat_review_plan_version_for_job(
+    *,
+    lesson: dict,
+    user: dict,
+    chat_provider: str,
+    chat_model: str,
+    request_key: str | None = None,
+    request_id: str | None = None,
+    audio_path: str = "",
+    audio_request_key: str | None = None,
+    same_lesson_materials: list[str] | None = None,
+) -> dict | None:
+    active_version = lesson.get("active_version")
+    if isinstance(active_version, dict) and active_version.get("id"):
+        return get_review_plan_version_for_lesson(int(lesson["id"]), int(active_version["id"]))
+    record_status = str(lesson.get("record_status") or "").strip()
+    if record_status not in {"pending", "transcribing", "generating"}:
+        return None
+    return create_review_plan_version(
+        lesson_id=int(lesson["id"]),
+        status=record_status,
+        created_by_user_id=int(user.get("id") or 0),
+        audio_path=audio_path or str(lesson.get("review_audio_path") or ""),
+        audio_request_key=audio_request_key or str(lesson.get("review_audio_request_key") or ""),
+        request_key=request_key or str(lesson.get("review_request_key") or ""),
+        request_id=request_id or str(lesson.get("review_request_id") or ""),
+        chat_provider=chat_provider or str(lesson.get("review_chat_provider") or ""),
+        chat_model=chat_model or str(lesson.get("review_chat_model") or ""),
+        same_lesson_materials=same_lesson_materials or lesson.get("review_same_lesson_materials") or [],
+    )
+
+
 def _run_review_plan_generation_job(
     *,
     lesson_id: int,
+    version_id: int = 0,
     user: dict,
     chat_provider: str,
     chat_model: str,
@@ -784,11 +842,34 @@ def _run_review_plan_generation_job(
         if not lesson:
             logger.warning("Review plan generation skipped: lesson %s not found", lesson_id)
             return
-        record_status = str(lesson.get("record_status") or "")
+        if version_id:
+            version = get_review_plan_version_for_lesson(lesson_id, version_id)
+        else:
+            version = _get_or_create_compat_review_plan_version_for_job(
+                lesson=lesson,
+                user=user,
+                chat_provider=chat_provider,
+                chat_model=chat_model,
+                request_key=request_key,
+                request_id=request_id,
+                audio_path=audio_path,
+                audio_request_key=audio_request_key,
+                same_lesson_materials=same_lesson_materials,
+            )
+            version_id = int((version or {}).get("id") or 0)
+        if not version:
+            logger.warning(
+                "Review plan generation skipped: version %s for lesson %s not found or inactive",
+                version_id,
+                lesson_id,
+            )
+            return
+
+        record_status = str(version.get("status") or "")
         if record_status == "transcribing":
-            audio_file_path = Path(audio_path) if audio_path else None
+            audio_file_path = Path(audio_path or str(version.get("audio_path") or "")) if (audio_path or version.get("audio_path")) else None
             if not audio_file_path:
-                mark_lesson_generation_failed(lesson_id, "音频转录失败，请重新上传")
+                fail_review_plan_version(version_id, "音频转录失败，请重新上传")
                 return
             try:
                 from ai_processor import transcribe_audio
@@ -800,37 +881,41 @@ def _run_review_plan_generation_job(
                     producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(audio_file_path)),
                     provider="local",
                     model="faster-whisper-base",
-                    request_key=audio_request_key or request_key,
+                    request_key=audio_request_key or str(version.get("audio_request_key") or "") or request_key,
                 )
                 raw_transcription = str(transcription or "").strip()
                 if not raw_transcription:
-                    mark_lesson_generation_failed(lesson_id, "音频转录失败，请稍后重试")
+                    fail_review_plan_version(version_id, "音频转录失败，请稍后重试")
                     return
-                merged_summary = _merge_review_plan_materials(raw_transcription, same_lesson_materials or [])
-                mark_lesson_transcription_succeeded(lesson_id, summary=merged_summary)
+                merged_summary = _merge_review_plan_materials(
+                    raw_transcription,
+                    same_lesson_materials or version.get("same_lesson_materials") or [],
+                )
+                mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)
-                if not lesson:
+                version = get_review_plan_version_for_lesson(lesson_id, version_id)
+                if not lesson or not version:
                     logger.warning("Review plan generation skipped after transcription: lesson %s not found", lesson_id)
                     return
-                record_status = str(lesson.get("record_status") or "")
+                record_status = str(version.get("status") or "")
             except DuplicateAiRequestError as exc:
                 logger.exception("Review plan audio transcription request rejected for lesson %s", lesson_id)
                 try:
-                    mark_lesson_generation_failed(lesson_id, str(exc))
+                    fail_review_plan_version(version_id, str(exc))
                 except LookupError:
                     logger.exception("Failed to mark lesson %s as failed after duplicate transcription request", lesson_id)
                 return
             except CreditBalanceError as exc:
                 logger.exception("Review plan audio transcription credit preflight failed for lesson %s", lesson_id)
                 try:
-                    mark_lesson_generation_failed(lesson_id, str(exc))
+                    fail_review_plan_version(version_id, str(exc))
                 except LookupError:
                     logger.exception("Failed to mark lesson %s as failed after transcription credit error", lesson_id)
                 return
             except Exception:
                 logger.exception("Review plan audio transcription failed for lesson %s", lesson_id)
                 try:
-                    mark_lesson_generation_failed(lesson_id, "音频转录失败，请稍后重试")
+                    fail_review_plan_version(version_id, "音频转录失败，请稍后重试")
                 except LookupError:
                     logger.exception("Failed to mark lesson %s as failed after transcription error", lesson_id)
                 return
@@ -842,7 +927,7 @@ def _run_review_plan_generation_job(
             logger.info(
                 "Review plan generation skipped for lesson %s with status %s",
                 lesson_id,
-                lesson.get("record_status"),
+                version.get("status"),
             )
             return
 
@@ -882,21 +967,21 @@ def _run_review_plan_generation_job(
         except DuplicateAiRequestError as exc:
             logger.exception("Review plan AI request rejected for lesson %s", lesson_id)
             try:
-                mark_lesson_generation_failed(lesson_id, str(exc))
+                fail_review_plan_version(version_id, str(exc))
             except LookupError:
                 logger.exception("Failed to mark lesson %s as failed after duplicate request", lesson_id)
             return
         except CreditBalanceError as exc:
             logger.exception("Review plan credit preflight failed for lesson %s", lesson_id)
             try:
-                mark_lesson_generation_failed(lesson_id, str(exc))
+                fail_review_plan_version(version_id, str(exc))
             except LookupError:
                 logger.exception("Failed to mark lesson %s as failed after credit error", lesson_id)
             return
         except Exception:
             logger.exception("Review plan AI generation failed for lesson %s", lesson_id)
             try:
-                mark_lesson_generation_failed(lesson_id, "AI 生成失败，请稍后重试")
+                fail_review_plan_version(version_id, "AI 生成失败，请稍后重试")
             except LookupError:
                 logger.exception("Failed to mark lesson %s as failed after AI error", lesson_id)
             return
@@ -905,20 +990,21 @@ def _run_review_plan_generation_job(
 
         from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
-            pdf_name = build_single_lesson_pdf_filename(plan, suffix=str(lesson_id))
+            version_suffix = version.get("version_no") or version_id
+            pdf_name = build_single_lesson_pdf_filename(plan, suffix=f"{lesson_id}-v{version_suffix}")
             pdf_path = str(PDF_DIR / pdf_name)
             generate_single_lesson_pdf(plan, pdf_path)
         except Exception:
             logger.exception("Review plan PDF generation failed for lesson %s", lesson_id)
             try:
-                mark_lesson_generation_failed(lesson_id, "PDF 生成失败，请稍后重试")
+                fail_review_plan_version(version_id, "PDF 生成失败，请稍后重试")
             except LookupError:
                 logger.exception("Failed to mark lesson %s as failed after PDF error", lesson_id)
             return
 
         try:
-            mark_lesson_generation_succeeded(
-                lesson_id,
+            complete_review_plan_version(
+                version_id,
                 plan=plan,
                 pdf_path=pdf_path,
             )
@@ -940,51 +1026,46 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
 def _recover_interrupted_review_plan_jobs() -> int:
     recovered_count = 0
     for lesson in list_lessons():
-        record_status = str(lesson.get("record_status") or "").strip()
-        if record_status not in {"pending", "transcribing", "generating"}:
-            continue
         user_id = int(lesson.get("created_by_user_id") or 0)
         user = get_user_by_id(user_id) if user_id else None
         if not user:
             logger.warning("Review plan recovery skipped for lesson %s: missing user", lesson.get("id"))
             continue
-        audio_path = str(lesson.get("review_audio_path") or "").strip()
-        if record_status == "transcribing" and (not audio_path or not Path(audio_path).exists()):
-            mark_lesson_generation_failed(int(lesson["id"]), "音频转录中断，请重新上传")
-            continue
-        request_id = str(lesson.get("review_request_id") or "").strip()
-        if request_id:
-            try:
-                _claim_ai_request_identity(
-                    organization_id=int(user["organization_id"]),
-                    request_id=request_id,
-                )
-            except DuplicateAiRequestError:
-                logger.warning("Review plan recovery skipped for duplicate request %s", request_id)
+        for version in list_review_plan_versions(int(lesson["id"])):
+            record_status = str(version.get("status") or "").strip()
+            if record_status not in {"pending", "transcribing", "generating"}:
                 continue
-        try:
-            same_lesson_materials = json.loads(
-                str(lesson.get("review_same_lesson_materials_json") or "[]")
+            audio_path = str(version.get("audio_path") or "").strip()
+            if record_status == "transcribing" and (not audio_path or not Path(audio_path).exists()):
+                fail_review_plan_version(int(version["id"]), "音频转录中断，请重新上传")
+                continue
+            request_id = str(version.get("request_id") or "").strip()
+            if request_id:
+                try:
+                    _claim_ai_request_identity(
+                        organization_id=int(user["organization_id"]),
+                        request_id=request_id,
+                    )
+                except DuplicateAiRequestError:
+                    logger.warning("Review plan recovery skipped for duplicate request %s", request_id)
+                    fail_review_plan_version(int(version["id"]), "生成任务已中断，请重新生成")
+                    continue
+            _start_review_plan_generation_thread(
+                lesson_id=int(lesson["id"]),
+                version_id=int(version["id"]),
+                user={
+                    "id": int(user["id"]),
+                    "organization_id": int(user["organization_id"]),
+                },
+                chat_provider=str(version.get("chat_provider") or "") or _default_ai_provider_name(),
+                chat_model=str(version.get("chat_model") or "") or _default_chat_model_name(),
+                request_key=str(version.get("request_key") or ""),
+                request_id=request_id or None,
+                audio_path=audio_path,
+                audio_request_key=str(version.get("audio_request_key") or ""),
+                same_lesson_materials=version.get("same_lesson_materials") or [],
             )
-        except json.JSONDecodeError:
-            same_lesson_materials = []
-        if not isinstance(same_lesson_materials, list):
-            same_lesson_materials = []
-        _start_review_plan_generation_thread(
-            lesson_id=int(lesson["id"]),
-            user={
-                "id": int(user["id"]),
-                "organization_id": int(user["organization_id"]),
-            },
-            chat_provider=str(lesson.get("review_chat_provider") or "") or _default_ai_provider_name(),
-            chat_model=str(lesson.get("review_chat_model") or "") or _default_chat_model_name(),
-            request_key=str(lesson.get("review_request_key") or ""),
-            request_id=request_id or None,
-            audio_path=audio_path,
-            audio_request_key=str(lesson.get("review_audio_request_key") or ""),
-            same_lesson_materials=same_lesson_materials,
-        )
-        recovered_count += 1
+            recovered_count += 1
     return recovered_count
 
 
@@ -1694,6 +1775,20 @@ def index():
 
 
 # ─── PDF 查看 / 下载 ────────────────────────────────────────────────────────────
+def _get_ready_review_plan_version_pdf_path(lesson_id: int, version_id: int | None = None) -> str:
+    version = (
+        get_review_plan_version_for_lesson(lesson_id, version_id)
+        if version_id
+        else get_current_review_plan_version(lesson_id)
+    )
+    if not version or str(version.get("status") or "") != "ready":
+        return ""
+    pdf_path = str(version.get("pdf_path") or "")
+    if not pdf_path or not Path(pdf_path).exists():
+        return ""
+    return pdf_path
+
+
 @app.route("/pdf/<int:lesson_id>")
 @app.route("/api/pdf/<int:lesson_id>")
 def serve_pdf(lesson_id):
@@ -1708,8 +1803,8 @@ def serve_pdf(lesson_id):
         abort(404)
     if user is not None and not _can_access_lesson(user, lesson):
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
+    pdf_path = _get_ready_review_plan_version_pdf_path(lesson_id)
+    if not pdf_path:
         abort(404)
     return send_file(pdf_path, mimetype="application/pdf",
                      download_name=Path(pdf_path).name)
@@ -1729,8 +1824,8 @@ def download_pdf(lesson_id):
         abort(404)
     if user is not None and not _can_access_lesson(user, lesson):
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
+    pdf_path = _get_ready_review_plan_version_pdf_path(lesson_id)
+    if not pdf_path:
         abort(404)
     return send_file(pdf_path, as_attachment=True,
                      download_name=Path(pdf_path).name)
@@ -1744,8 +1839,8 @@ def serve_student_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not student_account_can_access_lesson(account, lesson_id):
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
+    pdf_path = _get_ready_review_plan_version_pdf_path(lesson_id)
+    if not pdf_path:
         abort(404)
     return send_file(pdf_path, mimetype="application/pdf", download_name=Path(pdf_path).name)
 
@@ -1758,8 +1853,8 @@ def download_student_pdf(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not student_account_can_access_lesson(account, lesson_id):
         abort(404)
-    pdf_path = lesson.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
+    pdf_path = _get_ready_review_plan_version_pdf_path(lesson_id)
+    if not pdf_path:
         abort(404)
     return send_file(pdf_path, as_attachment=True, download_name=Path(pdf_path).name)
 
@@ -2378,15 +2473,62 @@ def _weekly_activity_student_item_payload(item: dict) -> dict:
     }
 
 
-def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
+def _serialize_review_plan_version_for_response(lesson_id: int, version: object) -> Optional[dict]:
+    if not isinstance(version, dict):
+        return None
+    serialized = dict(version)
+    serialized.pop("plan_json", None)
+    pdf_path = str(serialized.get("pdf_path") or "")
+    is_ready = str(serialized.get("status") or "") == "ready"
+    pdf_exists = bool(pdf_path and Path(pdf_path).exists())
+    serialized["pdf_available"] = pdf_exists
+    serialized["pdf_url"] = (
+        f"/api/review-plans/{lesson_id}/versions/{serialized['id']}/pdf"
+        if is_ready and pdf_exists
+        else ""
+    )
+    serialized["download_url"] = (
+        f"/api/review-plans/{lesson_id}/versions/{serialized['id']}/download"
+        if is_ready and pdf_exists
+        else ""
+    )
+    if not pdf_exists:
+        serialized["pdf_path"] = ""
+    return serialized
+
+
+def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = False) -> Optional[dict]:
     if not isinstance(lesson, dict):
         return None
     serialized = dict(lesson)
-    pdf_path = serialized.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
-        serialized["pdf_path"] = ""
+    lesson_id = int(serialized.get("id") or 0)
+    current_version = serialized.get("current_version")
+    if not isinstance(current_version, dict):
+        current_version = get_current_review_plan_version(lesson_id) if lesson_id else None
+    serialized["current_version"] = _serialize_review_plan_version_for_response(
+        lesson_id,
+        current_version,
+    ) if current_version else None
+    serialized["current_version_id"] = current_version.get("id") if current_version else None
+    serialized["current_review_plan_version_id"] = serialized["current_version_id"]
+    serialized["current_version_no"] = current_version.get("version_no") if current_version else None
+    serialized["current_status"] = current_version.get("status") if current_version else ""
+    serialized["current_generated_at"] = current_version.get("completed_at") if current_version else ""
+    current_pdf_path = str((current_version or {}).get("pdf_path") or "")
+    current_pdf_exists = bool(current_pdf_path and Path(current_pdf_path).exists())
+    serialized["current_pdf_url"] = (
+        f"/api/review-plans/{lesson_id}/versions/{current_version['id']}/pdf"
+        if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_exists
+        else ""
+    )
+    serialized["current_download_url"] = (
+        f"/api/review-plans/{lesson_id}/versions/{current_version['id']}/download"
+        if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_exists
+        else ""
+    )
+    serialized["pdf_path"] = current_pdf_path if current_pdf_exists else ""
     try:
-        latest_run = get_latest_review_plan_run_for_lesson(int(serialized.get("id") or 0))
+        latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
     except Exception:
         latest_run = None
     if latest_run:
@@ -2406,6 +2548,15 @@ def _serialize_lesson_for_response(lesson: object) -> Optional[dict]:
         (creator or {}).get("username")
         or ""
     ).strip()
+    if include_versions:
+        serialized["versions"] = [
+            item
+            for item in (
+                _serialize_review_plan_version_for_response(lesson_id, version)
+                for version in list_review_plan_versions(lesson_id)
+            )
+            if item is not None
+        ]
     return serialized
 
 
@@ -2417,7 +2568,14 @@ def _serialize_lessons_for_response(lessons: object) -> list[dict]:
         serialized = _serialize_lesson_for_response(lesson)
         if serialized is not None:
             serialized_lessons.append(serialized)
-    return serialized_lessons
+    return sorted(
+        serialized_lessons,
+        key=lambda item: (
+            _dashboard_item_datetime(item, "current_generated_at", "updated_at", "created_at", "date"),
+            int(item.get("id") or 0),
+        ),
+        reverse=True,
+    )
 
 
 _DASHBOARD_PENDING_REVIEW_STATUSES = {"pending", "queued", "processing", "transcribing", "generating"}
@@ -7563,7 +7721,7 @@ def api_lesson_get(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
-    serialized_lesson = _serialize_lesson_for_response(lesson)
+    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True)
     if serialized_lesson is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(serialized_lesson)
@@ -7577,11 +7735,69 @@ def api_lesson_delete(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
-    pdf_path = lesson.get("pdf_path", "")
-    if pdf_path and Path(pdf_path).exists():
-        Path(pdf_path).unlink(missing_ok=True)
+    for version in list_review_plan_versions(lesson_id):
+        pdf_path = str(version.get("pdf_path") or "")
+        if pdf_path and Path(pdf_path).exists():
+            Path(pdf_path).unlink(missing_ok=True)
     db_delete_lesson(lesson_id)
     return jsonify({"ok": True})
+
+
+@app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/pdf", methods=["GET"])
+def api_review_plan_version_pdf(lesson_id, version_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not _can_access_lesson(user, lesson):
+        abort(404)
+    pdf_path = _get_ready_review_plan_version_pdf_path(lesson_id, version_id)
+    if not pdf_path:
+        abort(404)
+    return send_file(pdf_path, mimetype="application/pdf", download_name=Path(pdf_path).name)
+
+
+@app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/download", methods=["GET"])
+def api_review_plan_version_download(lesson_id, version_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not _can_access_lesson(user, lesson):
+        abort(404)
+    pdf_path = _get_ready_review_plan_version_pdf_path(lesson_id, version_id)
+    if not pdf_path:
+        abort(404)
+    return send_file(pdf_path, as_attachment=True, download_name=Path(pdf_path).name)
+
+
+@app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/make-current", methods=["POST"])
+def api_review_plan_version_make_current(lesson_id, version_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not _can_access_lesson(user, lesson):
+        return jsonify({"error": "not found"}), 404
+    version = get_review_plan_version_for_lesson(lesson_id, version_id)
+    if not version:
+        return jsonify({"error": "not found"}), 404
+    if str(version.get("status") or "") != "ready":
+        return jsonify({"error": "review plan version must be ready"}), 400
+    pdf_path = str(version.get("pdf_path") or "")
+    if not pdf_path or not Path(pdf_path).exists():
+        return jsonify({"error": "当前版本的 PDF 文件不存在，无法设为当前版本"}), 400
+    try:
+        set_current_review_plan_version(lesson_id, version_id)
+    except LookupError:
+        return jsonify({"error": "not found"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    lesson = get_lesson(lesson_id)
+    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True)
+    if serialized_lesson is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(serialized_lesson)
 
 
 @app.route("/api/review-plans/<int:lesson_id>/regenerate", methods=["POST"])
@@ -7596,8 +7812,7 @@ def api_lesson_regenerate(lesson_id):
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
 
-    record_status = str(lesson.get("record_status") or "").strip()
-    if record_status in {"pending", "queued", "processing", "transcribing", "generating"}:
+    if lesson_has_active_review_plan_version(lesson_id):
         return jsonify({"error": "这份复习计划正在生成中，请稍后再试"}), 409
 
     raw_text = str(lesson.get("summary") or "").strip()
@@ -7624,16 +7839,20 @@ def api_lesson_regenerate(lesson_id):
             organization_id=organization_id,
             feature_key="lesson_plan_generate",
         )
-        requeue_lesson_generation(
-            lesson_id,
-            record_status="generating",
-            review_request_key=request_key,
-            review_request_id=request_id,
-            review_chat_provider=chat_provider,
-            review_chat_model=chat_model,
+        current_version = get_current_review_plan_version(lesson_id)
+        version = create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=int(user["id"]),
+            request_key=request_key,
+            request_id=request_id,
+            chat_provider=chat_provider,
+            chat_model=chat_model,
+            same_lesson_materials=(current_version or {}).get("same_lesson_materials") or [],
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
+            version_id=int(version["id"]),
             user={
                 "id": int(user["id"]),
                 "organization_id": organization_id,
@@ -7641,8 +7860,8 @@ def api_lesson_regenerate(lesson_id):
             chat_provider=chat_provider,
             chat_model=chat_model,
             request_key=request_key,
-            request_id=request_id,
-            same_lesson_materials=lesson.get("review_same_lesson_materials") or [],
+            request_id=str(version.get("request_id") or request_id),
+            same_lesson_materials=version.get("same_lesson_materials") or [],
         )
     except DuplicateAiRequestError as exc:
         return jsonify({"error": str(exc)}), 409
@@ -7655,7 +7874,7 @@ def api_lesson_regenerate(lesson_id):
             _release_ai_request_identity(request_id)
         raise
 
-    return jsonify({"id": lesson_id, "success": True, "status": "generating"}), 202
+    return jsonify({"id": lesson_id, "version_id": int(version["id"]), "success": True, "status": "generating"}), 202
 
 
 def _extract_same_lesson_materials(data) -> list[str]:
@@ -7727,7 +7946,8 @@ def api_lesson_create():
     raw_text = ""
     audio_path = ""
     audio_request_key = None
-    initial_record_status = "pending"
+    response_status = "pending"
+    version_status = "generating"
     chat_provider = _review_plan_ai_provider_name()
     chat_model = _review_plan_chat_model_name()
     
@@ -7751,7 +7971,8 @@ def api_lesson_create():
                 save_path.unlink(missing_ok=True)
                 return jsonify({"error": f"音频文件过大（最大 {REVIEW_PLAN_AUDIO_MAX_LABEL}）"}), 400
             audio_path = str(save_path)
-            initial_record_status = "transcribing"
+            response_status = "transcribing"
+            version_status = "transcribing"
         elif ext in {".txt", ".md", ".text"}:
             raw_text = file.read().decode("utf-8", errors="replace")
         else:
@@ -7792,6 +8013,7 @@ def api_lesson_create():
                     status = "ready" if str(existing_lesson.get("pdf_path") or "").strip() else "pending"
                 return jsonify({
                     "id": existing_lesson["id"],
+                    "version_id": existing_lesson.get("current_version_id") or (existing_lesson.get("active_version") or {}).get("id"),
                     "success": True,
                     "status": status,
                     "duplicate": True,
@@ -7822,18 +8044,23 @@ def api_lesson_create():
             summary=raw_text,
             weak_points=weak_points,
             class_id=class_id,
-            record_status=initial_record_status,
             created_by_user_id=int(user["id"]),
-            review_audio_path=audio_path,
-            review_audio_request_key=audio_request_key or "",
-            review_request_key=request_key,
-            review_request_id=request_id,
-            review_chat_provider=chat_provider,
-            review_chat_model=chat_model,
-            review_same_lesson_materials=same_lesson_materials,
+        )
+        version = create_review_plan_version(
+            lesson_id=lesson_id,
+            status=version_status,
+            created_by_user_id=int(user["id"]),
+            audio_path=audio_path,
+            audio_request_key=audio_request_key or "",
+            request_key=request_key,
+            request_id=request_id,
+            chat_provider=chat_provider,
+            chat_model=chat_model,
+            same_lesson_materials=same_lesson_materials,
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
+            version_id=int(version["id"]),
             user={
                 "id": int(user["id"]),
                 "organization_id": int(user["organization_id"]),
@@ -7854,7 +8081,7 @@ def api_lesson_create():
         if request_identity_claimed:
             _release_ai_request_identity(request_id)
         raise
-    return jsonify({"id": lesson_id, "success": True, "status": initial_record_status}), 202
+    return jsonify({"id": lesson_id, "version_id": int(version["id"]), "success": True, "status": response_status}), 202
 
 
 @app.route("/api/class-feedback/labels", methods=["GET"])
