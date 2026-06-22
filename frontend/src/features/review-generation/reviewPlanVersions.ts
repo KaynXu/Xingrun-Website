@@ -40,6 +40,8 @@ export type ReviewPlanDetailRecord = {
   current_pdf_url: string;
   current_download_url: string;
   current_status: ReviewPlanVersionStatus;
+  has_version_generating: boolean;
+  active_version_status: ReviewPlanVersionStatus;
   latest_generation_error: string;
   versions: ReviewPlanVersionRecord[];
 };
@@ -120,6 +122,8 @@ export function normalizeReviewPlanDetail(payload: unknown): ReviewPlanDetailRec
     current_pdf_url: pickString(payload.current_pdf_url),
     current_download_url: pickString(payload.current_download_url),
     current_status: pickStatus(payload.current_status),
+    has_version_generating: payload.has_version_generating === true,
+    active_version_status: pickStatus(payload.active_version_status),
     latest_generation_error: pickString(payload.latest_generation_error),
     versions,
   };

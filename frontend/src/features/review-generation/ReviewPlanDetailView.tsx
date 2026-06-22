@@ -51,6 +51,10 @@ function getVersionDotClass(version: ReviewPlanVersionRecord): string {
   return 'bg-amber-500';
 }
 
+function getActiveVersionLabel(detail: ReviewPlanDetailRecord): string {
+  return detail.active_version_status === 'transcribing' ? '正在转写新版' : '正在生成新版';
+}
+
 export function ReviewPlanDetailView({
   lessonId,
   onBack,
@@ -139,9 +143,17 @@ export function ReviewPlanDetailView({
             <ArrowLeft size={16} />
             返回历史
           </button>
-          <h3 className="mt-2 truncate text-xl font-semibold text-slate-950 dark:text-white">
-            {detail ? getDetailTitle(detail) : '复习计划详情'}
-          </h3>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-xl font-semibold text-slate-950 dark:text-white">
+              {detail ? getDetailTitle(detail) : '复习计划详情'}
+            </h3>
+            {detail?.has_version_generating && (
+              <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                {getActiveVersionLabel(detail)}
+              </span>
+            )}
+          </div>
         </div>
         <button
           type="button"
