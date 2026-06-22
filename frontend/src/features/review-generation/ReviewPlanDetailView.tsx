@@ -91,6 +91,18 @@ export function ReviewPlanDetailView({
     void loadDetail();
   }, [loadDetail]);
 
+  useEffect(() => {
+    if (!detail?.has_version_generating) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      void loadDetail(true);
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [detail?.has_version_generating, loadDetail]);
+
   const handleMakeCurrent = async (version: ReviewPlanVersionRecord) => {
     if (!detail || !canMakeReviewPlanVersionCurrent(detail, version) || makingCurrentVersionId !== null) {
       return;

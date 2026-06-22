@@ -146,7 +146,7 @@ export function canMakeReviewPlanVersionCurrent(
   detail: ReviewPlanDetailRecord,
   version: ReviewPlanVersionRecord,
 ): boolean {
-  return version.status === 'ready' && version.id !== detail.current_version_id;
+  return version.status === 'ready' && version.pdf_available === true && version.id !== detail.current_version_id;
 }
 
 export function authedReviewPlanUrl(path: string): string {
