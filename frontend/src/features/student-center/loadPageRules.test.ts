@@ -123,7 +123,7 @@ test('class load failure rules reset editor state to a clean new draft', () => {
   assert.equal(resolveExpandedClassAfterLoadFailure(), null);
 });
 
-test('executeStudentCenterLoadRequest loads classes, staff users, and teacher bindings when allowed', async () => {
+test('executeStudentCenterLoadRequest loads classes, staff users, teacher bindings, and all students when allowed', async () => {
   const requests: Array<{ endpoint: string; init?: RequestInit }> = [];
   const users: UserItem[] = [{ id: 3, name: '曹老师', org: '星润', role: 'member' }];
   const students = [{ id: 21, name: '张三' }];
@@ -141,7 +141,10 @@ test('executeStudentCenterLoadRequest loads classes, staff users, and teacher bi
     return { teacher_bindings: { 8: 3, 9: null } } as T;
   };
 
-  assert.deepEqual(await executeStudentCenterLoadRequest(apiFetch, true), {
+  assert.deepEqual(await executeStudentCenterLoadRequest(apiFetch, {
+    canLoadStaffMembers: true,
+    canLoadStudentProfiles: true,
+  }), {
     classItems: classes,
     userItems: users,
     allStudents: students,
@@ -155,7 +158,7 @@ test('executeStudentCenterLoadRequest loads classes, staff users, and teacher bi
   ]);
 });
 
-test('executeStudentCenterLoadRequest skips staff-only requests when not allowed', async () => {
+test('executeStudentCenterLoadRequest skips staff-only and organization-wide student requests for member read-only loads', async () => {
   const requests: string[] = [];
   const apiFetch = async <T>(endpoint: string): Promise<T> => {
     requests.push(endpoint);
@@ -165,13 +168,16 @@ test('executeStudentCenterLoadRequest skips staff-only requests when not allowed
     return classes as T;
   };
 
-  assert.deepEqual(await executeStudentCenterLoadRequest(apiFetch, false), {
+  assert.deepEqual(await executeStudentCenterLoadRequest(apiFetch, {
+    canLoadStaffMembers: false,
+    canLoadStudentProfiles: false,
+  }), {
     classItems: classes,
     userItems: [],
     allStudents: [],
     teacherBindingData: { teacher_bindings: {} },
   });
-  assert.deepEqual(requests, ['/api/classes', '/api/students']);
+  assert.deepEqual(requests, ['/api/classes']);
 });
 
 test('class load request lifecycle rules increment versions and identify stale requests', () => {

@@ -12,7 +12,7 @@ test('student center permissions keep the existing role scope behavior', () => {
 
   assert.equal(permissionsByRole.super_owner.canUseOrganizationScope, true);
   assert.equal(permissionsByRole.owner.canUseOrganizationScope, true);
-  assert.equal(permissionsByRole.admin.canUseOrganizationScope, false);
+  assert.equal(permissionsByRole.admin.canUseOrganizationScope, true);
   assert.equal(permissionsByRole.member.canUseOrganizationScope, false);
 
   assert.equal(permissionsByRole.super_owner.isTeacherScoped, false);
@@ -43,8 +43,20 @@ test('student center permissions centralize staff-only class management actions'
 });
 
 test('student center permissions provide display labels for scoped filters', () => {
-  assert.equal(getStudentCenterPermissions({ role: 'super_owner' }).classScopeLabel, '全机构班级');
-  assert.equal(getStudentCenterPermissions({ role: 'owner' }).studentScopeLabel, '全机构学员');
-  assert.equal(getStudentCenterPermissions({ role: 'admin' }).classScopeLabel, '仅本人班级');
+  assert.equal(getStudentCenterPermissions({ role: 'super_owner' }).classScopeLabel, '全校区班级');
+  assert.equal(getStudentCenterPermissions({ role: 'owner' }).studentScopeLabel, '全校区学员');
+  assert.equal(getStudentCenterPermissions({ role: 'admin' }).classScopeLabel, '全校区班级');
   assert.equal(getStudentCenterPermissions({ role: 'member' }).studentScopeLabel, '仅本人学员');
+});
+
+test('member permissions are read-only in the student center flow', () => {
+  const member = getStudentCenterPermissions({ role: 'member' });
+
+  assert.equal(member.canLoadStaffMembers, false);
+  assert.equal(member.canManageClassTeachers, false);
+  assert.equal(member.canCreateClass, false);
+  assert.equal(member.canManageStudents, false);
+  assert.equal(member.canEditTeacherBinding, false);
+  assert.equal(member.canUseOrganizationScope, false);
+  assert.equal(member.isTeacherScoped, true);
 });

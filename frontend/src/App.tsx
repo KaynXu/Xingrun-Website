@@ -16,7 +16,6 @@ import {
   getWorkspacePath,
   normalizeWorkspacePathname,
 } from './features/navigation/workspaceRoutes';
-import { ConsultationMeetingWorkbench } from './features/consultation/ConsultationMeetingWorkbench';
 import { ConsultationPage } from './features/consultation/ConsultationPage';
 
 import {
@@ -374,17 +373,6 @@ export default function App() {
         }}
         onLogout={handleLogout}
       />
-    );
-  }
-
-  const consultationMeetingMode = typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).get('consultationMeeting') === '1';
-
-  if (consultationMeetingMode) {
-    return (
-      <div className="relative min-h-[100svh] overflow-x-hidden bg-[#f5f8fc] text-slate-900 sm:min-h-screen dark:bg-[#020617] dark:text-slate-100">
-        <ConsultationMeetingWorkbench currentUser={currentUser} />
-      </div>
     );
   }
 

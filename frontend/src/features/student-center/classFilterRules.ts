@@ -240,14 +240,19 @@ export function isClassInfoIncomplete(
   return getClassInfoIssues(item, teacherBindingByClassId, subjectOptions).length > 0;
 }
 
+function getClassTypeRank(item: ClassItem): number {
+  return item.class_type && item.class_type !== 'group' ? 0 : 1;
+}
+
 export function resolveFilteredClasses(args: ClassRuleBase & {
   filters: ClassFilterState;
 }): ClassItem[] {
   return args.classes.filter((item) => classMatchesFilters({ ...args, item })).sort((left, right) => {
     const incompleteDelta = Number(isClassInfoIncomplete(right, args.teacherBindingByClassId, args.subjectOptions)) - Number(isClassInfoIncomplete(left, args.teacherBindingByClassId, args.subjectOptions));
+    const classTypeDelta = getClassTypeRank(left) - getClassTypeRank(right);
     const gradeDelta = getAcademicGradeRank(left.current_grade || left.grade || '') - getAcademicGradeRank(right.current_grade || right.grade || '');
     const leftSubject = getClassEffectiveSubject(left, args.subjectLookupClasses || args.classes, args.teacherBindingByClassId, args.subjectOptions);
     const rightSubject = getClassEffectiveSubject(right, args.subjectLookupClasses || args.classes, args.teacherBindingByClassId, args.subjectOptions);
-    return incompleteDelta || gradeDelta || `${leftSubject}${left.name}`.localeCompare(`${rightSubject}${right.name}`, 'zh-CN') || left.id - right.id;
+    return incompleteDelta || classTypeDelta || gradeDelta || `${leftSubject}${left.name}`.localeCompare(`${rightSubject}${right.name}`, 'zh-CN') || left.id - right.id;
   });
 }

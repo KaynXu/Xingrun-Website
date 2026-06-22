@@ -27,6 +27,8 @@ type CampusOverviewProps = {
   currentUser: CurrentUser;
   classBindingTarget?: ClassBindingTarget | null;
   onClearClassBindingTarget?: () => void;
+  overviewTitle: string;
+  overviewScopeLabel: string;
   activeHelpKey: 'overview' | null;
   onHelpEnter: () => void;
   onHelpLeave: () => void;
@@ -52,6 +54,8 @@ export function CampusOverview({
   currentUser,
   classBindingTarget,
   onClearClassBindingTarget,
+  overviewTitle,
+  overviewScopeLabel,
   activeHelpKey,
   onHelpEnter,
   onHelpLeave,
@@ -77,7 +81,7 @@ export function CampusOverview({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2">
           <div className="relative flex flex-wrap items-center gap-2">
-            <h3 className={workspaceSectionTitleClass}>校区总览</h3>
+            <h3 className={workspaceSectionTitleClass}>{overviewTitle}</h3>
             <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
               {currentUser.organization_name}
             </span>
@@ -90,13 +94,13 @@ export function CampusOverview({
                 type="button"
                 onClick={onHelpToggle}
                 className="inline-flex h-8 w-8 items-center justify-center text-slate-400 transition hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200"
-                aria-label="查看校区总览说明"
+                aria-label={`查看${overviewTitle}说明`}
               >
                 <Info size={16} />
               </button>
               {activeHelpKey === 'overview' && (
                 <div className="absolute left-0 top-10 z-20 w-[min(24rem,calc(100vw-3rem))] rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-none dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">
-                  <p className="font-semibold text-slate-900 dark:text-white">校区总览说明</p>
+                  <p className="font-semibold text-slate-900 dark:text-white">{overviewTitle}说明</p>
                   <p className="mt-2">查看 {currentUser.organization_name} 的教师、学员、班级和小课数量，可按科目、教师、学段、年级筛选。</p>
                 </div>
               )}
@@ -105,7 +109,7 @@ export function CampusOverview({
         </div>
 
         <FloatingOverviewFilter
-          label="全校区"
+          label={overviewScopeLabel}
           selectedSummary={selectedSummary}
           defaultSummary="全校区"
           open={open}

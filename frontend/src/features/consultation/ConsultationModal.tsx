@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, ArrowUp, CheckCircle2, Cpu, Pencil, Save, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, ArrowRight, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Pencil, Save, Trash2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import type {
@@ -16,15 +16,28 @@ import type {
 import { apiFetch, cn, getTodayIsoDate, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
 import { hasStaffAccess } from '../navigation/workspaceAccess';
 import {
+  buildConsultationQuickClassSavePayload,
+  validateConsultationQuickClassForm,
+} from '../../domain/consultationStudentCenterClassAdapter';
+import type { ClassFormValues, UserItem } from '../student-center/model';
+import { ConsultationEnterClassDialog } from './ConsultationEnterClassDialog';
+import { ConsultationStageStatusCards } from './ConsultationStageStatusCards';
+import {
+  ConsultationFlowNodeDialog,
   ConsultationFlowBar,
   ConsultationStatusLamp,
+  applyConsultationFlowNodeDraft,
+  buildConsultationFlowStageTeacherLabels,
   clearConsultationResultStage,
+  clearConsultationFlowNodeContent,
+  completeConsultationOverValues,
   consultationFlowStages,
   consultationInputClass,
   consultationLabelClass,
   consultationPanelClass,
+  consultationProcessStages,
   consultationSurfaceClass,
-  endConsultationValues,
+  getConsultationFlowLightColor,
   isConsultationEnded,
   isConsultationResultStage,
   moveConsultationStage,
@@ -32,6 +45,7 @@ import {
   restoreConsultationValues,
   setConsultationResultStage,
   toggleConsultationStageLight,
+  type ConsultationFlowNodeDraft,
 } from './consultationShared';
 
 type ConsultationQuickParseKey = keyof Pick<
@@ -364,6 +378,34 @@ function classMatchesAssignedTeacher(
   return false;
 }
 
+function buildConsultationClassUser(currentUser: CurrentUser, teacherName: string): UserItem {
+  return {
+    id: currentUser.id,
+    name: teacherName || currentUser.display_name || currentUser.username,
+    org: currentUser.organization_name,
+    role: currentUser.role,
+    username: currentUser.username,
+  };
+}
+
+function buildConsultationEnterClassUserOption({
+  id,
+  name,
+  currentUser,
+}: {
+  id: number;
+  name: string;
+  currentUser: CurrentUser;
+}): UserItem {
+  return {
+    id,
+    name: name || currentUser.display_name || currentUser.username,
+    org: currentUser.organization_name,
+    role: currentUser.role,
+    username: id === currentUser.id ? currentUser.username : undefined,
+  };
+}
+
 const consultationGradeOptions = ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三'];
 const consultationSubjectOptions = [...academicSubjectOptions];
 const consultationSourceOptions = ['转介绍', '朋友圈', '家长群', '私信', '公众号', '小红书', '抖音', '视频号', '校区到访', '其他'];
@@ -414,8 +456,24 @@ const consultationFormDefaults: ConsultationFormValues = {
   follow_up_note: '',
   flow_stage: '已加小客服微信',
   completed_stages: ['已加小客服微信'],
+  stage_teacher_ids: {},
+  assigned_stage: '',
+  assignment_note: '',
+  is_transferred_consultation: false,
+  can_edit_consultation: true,
+  transfer_marker: '',
+  current_responsibility: '',
+  customer_service_added: '',
+  customer_service_teacher: '',
+  customer_service_note: '',
+  communication_teacher_added: '',
+  communication_teacher_note: '',
   test_taken: '',
+  test_teacher: '',
+  test_note: '',
   test_images: [],
+  trial_teacher_added: '',
+  trial_teacher_note: '',
   trial_taken: '',
   trial_time_slot: '',
   trial_class_id: null,
@@ -423,7 +481,11 @@ const consultationFormDefaults: ConsultationFormValues = {
   trial_teacher: '',
   trial_feedback: '',
   success_class_id: null,
+  teaching_teacher_added: '',
+  teaching_teacher: '',
+  teaching_teacher_note: '',
   success_class_manual: '',
+  closing_result: '',
   end_note: '',
   ended_at: '',
 };
@@ -461,13 +523,13 @@ const ConsultationReadOnlyReport = ({
   form,
   record,
   classes,
+  onPreviewImage,
 }: {
   form: ConsultationFormValues;
   record: ConsultationRecord | null;
   classes: ClassItem[];
+  onPreviewImage: (index: number) => void;
 }) => {
-  const customerWechatDone = form.completed_stages.includes('已加小客服微信') || form.flow_stage === '已加小客服微信';
-  const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
   const sectionStates = getConsultationFlowSectionStates(form);
   const trialClassName = getCurrentClassDisplayNameById(classes, form.trial_class_id);
   const successClassName = getCurrentClassDisplayNameById(classes, form.success_class_id);
@@ -477,61 +539,66 @@ const ConsultationReadOnlyReport = ({
       ? '咨询失败'
       : '尚未定论';
   const value = (text?: string | null) => text?.trim() || '—';
-  const readOnlyTwoColumnGridClass = 'grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]';
+  const followUpLines = form.follow_up_note.split('\n');
+  const readOnlyBoxClass = 'rounded-xl border border-[#D9EEF7] bg-[#F9FDFF] px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]';
+  const readOnlyTwoColumnGridClass = 'grid-cols-2';
 
   return (
     <section className="grid gap-3 md:grid-cols-2">
-      <div className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem]')}>
+      <div className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem] md:order-1')}>
         <p className={compactFlowTitleClass(sectionStates.base)}>基础信息</p>
-        <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
-          <div><p className={compactReadLabelClass}>客服微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{customerWechatDone ? '已添加' : '未添加'}{customerWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
-          <div><p className={compactReadLabelClass}>教师微信</p><p className="mt-0.5 flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-300">{teacherWechatDone ? '已添加' : '未添加'}{teacherWechatDone ? <CheckCircle2 size={14} /> : null}</p></div>
-          <div><p className={compactReadLabelClass}>咨询日期</p><p className={compactReadValueClass}>{value(form.date)}</p></div>
-          <div><p className={compactReadLabelClass}>家长微信</p><p className={compactReadValueClass}>{value(form.parent_wechat_name)}</p></div>
-          <div><p className={compactReadLabelClass}>学生</p><p className={compactReadValueClass}>{value(form.child_name)}</p></div>
+        <ConsultationStageStatusCards values={form} classes={classes} section="base" />
+        <div className={`mt-3 grid gap-x-3 gap-y-3 text-sm ${readOnlyTwoColumnGridClass}`}>
+          <div><p className={compactReadLabelClass}>家长微信名</p><p className={compactReadValueClass}>{value(form.parent_wechat_name)}</p></div>
+          <div><p className={compactReadLabelClass}>孩子姓名</p><p className={compactReadValueClass}>{value(form.child_name)}</p></div>
           <div><p className={compactReadLabelClass}>年级</p><p className={compactReadValueClass}>{value(form.grade)}</p></div>
-          <div><p className={compactReadLabelClass}>咨询老师</p><p className={compactReadValueClass}>{value(form.receiving_teacher)}</p></div>
-          <div><p className={compactReadLabelClass}>科目</p><p className={compactReadValueClass}>{value(form.consultation_subject)}</p></div>
-          <div className="sm:col-span-2"><p className={compactReadLabelClass}>来源</p><p className={compactReadValueClass}>{value([form.source_channel, form.source_channel_note].filter(Boolean).join(' · '))}</p></div>
+          <div><p className={compactReadLabelClass}>咨询科目</p><p className={compactReadValueClass}>{value(form.consultation_subject)}</p></div>
+          <div><p className={compactReadLabelClass}>来源渠道主类</p><p className={compactReadValueClass}>{value(form.source_channel)}</p></div>
+          <div><p className={compactReadLabelClass}>来源渠道备注</p><p className={compactReadValueClass}>{value(form.source_channel_note)}</p></div>
         </div>
       </div>
 
-      <div className={cn(consultationFlowSectionClass(sectionStates.communication), 'min-h-[14rem]')}>
+      <div className={cn(consultationFlowSectionClass(sectionStates.communication), 'min-h-[14rem] space-y-2 md:order-3')}>
         <p className={compactFlowTitleClass(sectionStates.communication)}>沟通与测试</p>
-        <div className="grid gap-3">
-          <div>
-            <p className={compactReadLabelClass}>沟通ing：情况说明</p>
-            <p className={compactReadValueClass}>{value(form.need_detail)}</p>
-          </div>
-          <div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><p className={compactReadLabelClass}>是否测试</p><p className={compactReadValueClass}>{value(form.test_taken)}</p></div>
-              <div><p className={compactReadLabelClass}>图片数量</p><p className={compactReadValueClass}>{form.test_images.length ? `${form.test_images.length} 张` : '暂无'}</p></div>
+        <ConsultationStageStatusCards values={form} classes={classes} section="communication" />
+        <div className="mt-2 grid items-stretch gap-2 sm:grid-cols-2">
+          <div className={cn(readOnlyBoxClass, 'flex h-full flex-col space-y-2')}>
+            <div className="min-h-0 flex-1">
+              <p className={compactReadLabelClass}>沟通情况</p>
+              <p className={cn(compactReadValueClass, 'whitespace-pre-wrap')}>{value(form.need_detail)}</p>
             </div>
+            <div className="grid shrink-0 gap-2">
+              <div><p className={compactReadLabelClass}>跟进 1</p><p className={compactReadValueClass}>{value(followUpLines[0])}</p></div>
+              <div><p className={compactReadLabelClass}>跟进 2</p><p className={compactReadValueClass}>{value(followUpLines.slice(1).join('\n'))}</p></div>
+            </div>
+          </div>
+          <div className={cn(readOnlyBoxClass, 'flex h-full flex-col space-y-2')}>
+            <p className={compactReadLabelClass}>测试情况</p>
             {form.test_images.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {form.test_images.map((image, index) => (
-                  <a
+              <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-2 overflow-hidden">
+                {form.test_images.slice(0, 4).map((image, index) => (
+                  <button
+                    type="button"
                     key={`${image.url}-${index}`}
-                    href={image.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group block overflow-hidden rounded-xl border border-sky-100 bg-sky-50 dark:border-white/10 dark:bg-white/5"
+                    onClick={() => onPreviewImage(index)}
+                    className="group block min-h-0 overflow-hidden rounded-xl border border-sky-100 bg-sky-50 text-left dark:border-white/10 dark:bg-white/5"
+                    aria-label={`查看测试情况图片 ${index + 1}`}
                   >
-                    <img src={image.url} alt={`测试情况图片 ${index + 1}`} className="h-14 w-20 object-cover transition group-hover:scale-105" />
-                  </a>
+                    <img src={image.url} alt={`测试情况图片 ${index + 1}`} className="h-full w-full object-cover transition group-hover:scale-105" />
+                  </button>
                 ))}
               </div>
-            ) : null}
+            ) : (
+              <p className={compactReadValueClass}>暂无</p>
+            )}
           </div>
         </div>
       </div>
 
-      <div className={cn(consultationFlowSectionClass(sectionStates.trial), 'min-h-[14rem]')}>
+      <div className={cn(consultationFlowSectionClass(sectionStates.trial), 'min-h-[14rem] md:order-2')}>
         <p className={compactFlowTitleClass(sectionStates.trial)}>试听</p>
-        <div className={`grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
-          <div><p className={compactReadLabelClass}>是否试听</p><p className={compactReadValueClass}>{value(form.trial_taken)}</p></div>
-          <div><p className={compactReadLabelClass}>试听教师</p><p className={compactReadValueClass}>{value(form.trial_teacher)}</p></div>
+        <ConsultationStageStatusCards values={form} classes={classes} section="trial" />
+        <div className={`mt-3 grid gap-x-3 gap-y-2 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div><p className={compactReadLabelClass}>对应班课</p><p className={compactReadValueClass}>{value(trialClassName || form.trial_class_manual)}</p></div>
           <div><p className={compactReadLabelClass}>试听时间段</p><p className={compactReadValueClass}>{value(form.trial_time_slot)}</p></div>
         </div>
@@ -541,8 +608,9 @@ const ConsultationReadOnlyReport = ({
         </div>
       </div>
 
-      <div className={cn(consultationFlowSectionClass(sectionStates.result), 'min-h-[14rem]')}>
+      <div className={cn(consultationFlowSectionClass(sectionStates.result), 'min-h-[14rem] space-y-3 md:order-4')}>
         <p className={compactFlowTitleClass(sectionStates.result)}>结果与备注</p>
+        <ConsultationStageStatusCards values={form} classes={classes} section="result" />
         <div className={`grid gap-3 text-sm ${readOnlyTwoColumnGridClass}`}>
           <div>
             <p className={compactReadLabelClass}>结果</p>
@@ -564,7 +632,7 @@ const ConsultationReadOnlyReport = ({
           {record && (
             <>
               <div><p className={compactReadLabelClass}>录入时间</p><p className={compactReadValueClass}>{record.created_at || '—'}</p></div>
-              <div><p className={compactReadLabelClass}>最后更新</p><p className={compactReadValueClass}>{record.updated_at || '—'}</p></div>
+              <div><p className={compactReadLabelClass}>结束时间</p><p className={compactReadValueClass}>{record.ended_at || record.updated_at || '—'}</p></div>
             </>
           )}
         </div>
@@ -611,14 +679,22 @@ const ConsultationModal = ({
   const [parseFeedback, setParseFeedback] = useState('');
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   const [trialManualClassActive, setTrialManualClassActive] = useState(false);
-  const [successManualClassActive, setSuccessManualClassActive] = useState(false);
   const [highlightedJumpStage, setHighlightedJumpStage] = useState<string>('');
+  const [flowNodeDialog, setFlowNodeDialog] = useState<{ stage: string; setAsCurrent: boolean } | null>(null);
+  const [enterClassDialogOpen, setEnterClassDialogOpen] = useState(false);
+  const [overResultDialogOpen, setOverResultDialogOpen] = useState(false);
+  const [creatingSuccessClass, setCreatingSuccessClass] = useState(false);
+  const [successClassCreateError, setSuccessClassCreateError] = useState('');
+  const [localClasses, setLocalClasses] = useState<ClassItem[]>(classes);
+  const [deletingTestImageIndex, setDeletingTestImageIndex] = useState<number | null>(null);
+  const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
+  const previewImageCount = form.test_images.length;
   const formScrollRef = useRef<HTMLFormElement | null>(null);
   const baseInfoRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLElement | null>(null);
   const testSectionRef = useRef<HTMLDivElement | null>(null);
   const trialSectionRef = useRef<HTMLDivElement | null>(null);
-  const successSectionRef = useRef<HTMLDivElement | null>(null);
+  const successSectionRef = useRef<HTMLElement | null>(null);
   const endSectionRef = useRef<HTMLLabelElement | null>(null);
   const jumpHighlightTimerRef = useRef<number | null>(null);
   const initialConsultationForm = useMemo(() => {
@@ -642,11 +718,18 @@ const ConsultationModal = ({
       setQuickEntry('');
       setParseFeedback('');
       setConfirmRestoreOpen(false);
+      setFlowNodeDialog(null);
+      setEnterClassDialogOpen(false);
+      setOverResultDialogOpen(false);
+      setCreatingSuccessClass(false);
+      setSuccessClassCreateError('');
+      setLocalClasses(classes);
+      setDeletingTestImageIndex(null);
+      setPreviewImageIndex(null);
       setHighlightedJumpStage('');
       setTrialManualClassActive(Boolean(initialConsultationForm.trial_class_manual && !initialConsultationForm.trial_class_id));
-      setSuccessManualClassActive(Boolean(initialConsultationForm.success_class_manual && !initialConsultationForm.success_class_id));
     }
-  }, [open, mode, initialConsultationForm]);
+  }, [open, mode, initialConsultationForm, classes]);
 
   useEffect(() => () => {
     if (jumpHighlightTimerRef.current !== null) {
@@ -670,6 +753,37 @@ const ConsultationModal = ({
     return () => window.removeEventListener('keydown', handleSaveShortcut);
   }, [open, mode, canSaveConsultationDraft]);
 
+  useEffect(() => {
+    if (previewImageIndex === null) {
+      return undefined;
+    }
+    const handleImagePreviewKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPreviewImageIndex(null);
+      }
+      if (event.key === 'ArrowLeft') {
+        setPreviewImageIndex((current) => {
+          if (current === null || previewImageCount === 0) return current;
+          return (current - 1 + previewImageCount) % previewImageCount;
+        });
+      }
+      if (event.key === 'ArrowRight') {
+        setPreviewImageIndex((current) => {
+          if (current === null || previewImageCount === 0) return current;
+          return (current + 1) % previewImageCount;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleImagePreviewKeydown);
+    return () => window.removeEventListener('keydown', handleImagePreviewKeydown);
+  }, [previewImageCount, previewImageIndex]);
+
+  useEffect(() => {
+    if (previewImageIndex !== null && previewImageIndex >= previewImageCount) {
+      setPreviewImageIndex(previewImageCount > 0 ? previewImageCount - 1 : null);
+    }
+  }, [previewImageCount, previewImageIndex]);
+
   if (!open) {
     return null;
   }
@@ -685,6 +799,47 @@ const ConsultationModal = ({
 
   const updateField = <K extends keyof ConsultationFormValues>(key: K, value: ConsultationFormValues[K]) => {
     setForm((current) => deriveConsultationFlowFromFields({ ...current, [key]: value }));
+  };
+
+  const followUpLines = useMemo(() => {
+    const lines = form.follow_up_note.split('\n');
+    return [lines[0] || '', lines.slice(1).join('\n') || ''];
+  }, [form.follow_up_note]);
+  const testImagePages = useMemo(() => {
+    const tiles: Array<
+      | { type: 'image'; image: ConsultationFormValues['test_images'][number]; index: number }
+      | { type: 'upload' }
+      | { type: 'pending-upload' }
+    > = form.test_images.map((image, index) => ({ type: 'image', image, index }));
+    if (!readOnly) {
+      tiles.push(record ? { type: 'upload' } : { type: 'pending-upload' });
+    }
+    const pageSize = 4;
+    const pages = [];
+    for (let index = 0; index < tiles.length; index += pageSize) {
+      pages.push(tiles.slice(index, index + pageSize));
+    }
+    return pages;
+  }, [form.test_images, readOnly, record]);
+  const previewImage = previewImageIndex === null ? null : form.test_images[previewImageIndex] || null;
+  const closeImagePreview = () => setPreviewImageIndex(null);
+  const showPreviousImage = () => {
+    setPreviewImageIndex((current) => {
+      if (current === null || previewImageCount === 0) return current;
+      return (current - 1 + previewImageCount) % previewImageCount;
+    });
+  };
+  const showNextImage = () => {
+    setPreviewImageIndex((current) => {
+      if (current === null || previewImageCount === 0) return current;
+      return (current + 1) % previewImageCount;
+    });
+  };
+
+  const updateFollowUpLine = (lineIndex: 0 | 1, value: string) => {
+    const nextLines = [...followUpLines];
+    nextLines[lineIndex] = value;
+    updateField('follow_up_note', nextLines.join('\n').trimEnd());
   };
 
   const teacherOptions = (() => {
@@ -724,6 +879,70 @@ const ConsultationModal = ({
       teacher_id: selectedTeacher.teacher_id,
       receiving_teacher: selectedTeacher.display_name,
     }));
+  };
+
+  const handleStageStatusTeacherChange = (
+    field: 'teacher_id' | 'communication_teacher_added' | 'test_teacher' | 'trial_teacher' | 'teaching_teacher',
+    value: string,
+  ) => {
+    if (field === 'teacher_id') {
+      handleTeacherChange(value);
+      return;
+    }
+    if (field === 'teaching_teacher') {
+      const nextTeacher = teacherOptions.find((option) => option.display_name === value);
+      const currentSuccessClass = localClasses.find((item) => item.id === form.success_class_id);
+      const successClassStillMatches = !currentSuccessClass || classMatchesAssignedTeacher(currentSuccessClass, nextTeacher, currentUser);
+      setForm((current) => deriveConsultationFlowFromFields({
+        ...current,
+        teaching_teacher: value,
+        success_class_id: successClassStillMatches ? current.success_class_id : null,
+      }));
+      return;
+    }
+    updateField(field, value);
+  };
+
+  const handleDeleteTestImage = async (index: number) => {
+    if (!record) return;
+    setDeletingTestImageIndex(index);
+    setParseFeedback('');
+    setForm((current) => deriveConsultationFlowFromFields({
+      ...current,
+      test_images: current.test_images.filter((_, imageIndex) => imageIndex !== index),
+    }));
+    try {
+      const deleted = await apiFetch<{ item: ConsultationRecord }>(`/api/consultations/${record.id}/test-images/${index}`, {
+        method: 'DELETE',
+      });
+      setForm(deriveConsultationFlowFromFields(toConsultationFormValues(normalizeConsultationRecord(deleted.item))));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '删除测试图片失败';
+      setParseFeedback(`${message}；已先从当前编辑中移除，点击保存后写入记录。`);
+    } finally {
+      setDeletingTestImageIndex(null);
+    }
+  };
+
+  const openFlowNodeDialog = (stage: string, setAsCurrent: boolean) => {
+    if (!consultationProcessStages.includes(stage)) return;
+    if (!setAsCurrent) {
+      const lightColor = getConsultationFlowLightColor(form, stage);
+      if (lightColor === 'green' || lightColor === 'blue') {
+        if (!window.confirm('是否取消该阶段状态？取消后会删除这个阶段已填写的内容。')) {
+          return;
+        }
+        setForm((current) => clearConsultationFlowNodeContent(current, stage));
+        return;
+      }
+    }
+    setFlowNodeDialog({ stage, setAsCurrent });
+  };
+
+  const handleSaveFlowNodeDialog = (draft: ConsultationFlowNodeDraft) => {
+    if (!flowNodeDialog) return;
+    setForm((current) => applyConsultationFlowNodeDraft(current, flowNodeDialog.stage, draft, flowNodeDialog.setAsCurrent));
+    setFlowNodeDialog(null);
   };
 
   const handleQuickParse = () => {
@@ -790,18 +1009,96 @@ const ConsultationModal = ({
     });
   };
 
-  const handleSuccessManualChange = (value: string) => {
+  const handleConfirmExistingClass = (classId: number) => {
     setForm((current) => {
-      const next = { ...current, success_class_manual: value };
-      return deriveConsultationFlowFromFields(value.trim() ? setConsultationResultStage(next, '成功进班') : next);
+      const next = { ...current, success_class_id: classId, success_class_manual: '' };
+      return deriveConsultationFlowFromFields(completeConsultationOverValues(setConsultationResultStage(next, '成功进班'), 'success'));
     });
+    setEnterClassDialogOpen(false);
+  };
+
+  const handleCreateSuccessClass = async (draft: ClassFormValues) => {
+    setCreatingSuccessClass(true);
+    setSuccessClassCreateError('');
+    try {
+      const quickClassTeacherUserId = form.teaching_teacher_user_id ?? currentUser.id;
+      const selectedTeacher = form.teaching_teacher_user_id != null
+        ? buildConsultationEnterClassUserOption({
+          id: form.teaching_teacher_user_id,
+          name: form.teaching_teacher || form.trial_teacher || form.receiving_teacher,
+          currentUser,
+        })
+        : buildConsultationClassUser(currentUser, currentUser.display_name || currentUser.username);
+      const validationError = validateConsultationQuickClassForm({
+        form: {
+          ...draft,
+          grade: draft.current_grade,
+          class_number: draft.class_type === 'group' ? draft.class_number : '',
+        },
+        selectedTeacher,
+        selectedTeacherUserId: quickClassTeacherUserId,
+        gradeOptions: consultationGradeOptions,
+      });
+      if (validationError) {
+        setSuccessClassCreateError(validationError);
+        return;
+      }
+      const payload = buildConsultationQuickClassSavePayload({
+        form: {
+          ...draft,
+          grade: draft.current_grade,
+          class_number: draft.class_type === 'group' ? draft.class_number : '',
+        },
+        selectedTeacher,
+        selectedTeacherUserId: quickClassTeacherUserId,
+      });
+      const createdClass = await apiFetch<ClassItem>('/api/classes', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setLocalClasses((current) => [createdClass, ...current.filter((item) => item.id !== createdClass.id)]);
+      handleConfirmExistingClass(createdClass.id);
+    } catch (err) {
+      setSuccessClassCreateError(err instanceof Error ? err.message : '快速建班失败');
+    } finally {
+      setCreatingSuccessClass(false);
+    }
+  };
+
+  const handleMarkPendingSuccessClass = () => {
+    setForm((current) => {
+      const next = { ...current, success_class_id: null, success_class_manual: '转化待进班' };
+      return deriveConsultationFlowFromFields(completeConsultationOverValues(setConsultationResultStage(next, '成功进班'), 'success'));
+    });
+    setEnterClassDialogOpen(false);
+  };
+
+  const handleOverSuccess = () => {
+    setOverResultDialogOpen(false);
+    setEnterClassDialogOpen(true);
+  };
+
+  const handleOverFailure = () => {
+    setForm((current) => completeConsultationOverValues(current, 'failed'));
+    setOverResultDialogOpen(false);
   };
 
   const selectedTeacher = teacherOptions.find((option) => option.teacher_id === form.teacher_id);
-  const teacherMatchedClasses = classes.filter((item) => classMatchesAssignedTeacher(item, selectedTeacher, currentUser));
-  const assignableClassOptions = selectedTeacher && teacherMatchedClasses.length > 0 ? teacherMatchedClasses : classes;
+  const teacherMatchedClasses = localClasses.filter((item) => classMatchesAssignedTeacher(item, selectedTeacher, currentUser));
+  const assignableClassOptions = selectedTeacher && teacherMatchedClasses.length > 0 ? teacherMatchedClasses : localClasses;
+  const selectedTeachingTeacher = teacherOptions.find((option) => option.display_name === form.teaching_teacher);
+  const consultationEnterClassTeacherUserId = form.teaching_teacher_user_id ?? null;
+  const successClassOptions = localClasses;
+  const consultationEnterClassUsers = consultationEnterClassTeacherUserId == null ? [] : [
+    buildConsultationEnterClassUserOption({
+      id: consultationEnterClassTeacherUserId,
+      name: consultationEnterClassTeacherUserId === currentUser.id
+        ? currentUser.display_name || currentUser.username
+        : selectedTeachingTeacher?.display_name || form.teaching_teacher,
+      currentUser,
+    }),
+  ];
   const trialUsesManualClass = trialManualClassActive || Boolean(form.trial_class_manual.trim() && !form.trial_class_id);
-  const successUsesManualClass = successManualClassActive || Boolean(form.success_class_manual.trim() && !form.success_class_id);
   const baseInfoHighlighted = highlightedJumpStage === '已加小客服微信' || highlightedJumpStage === '已加对应教师微信';
   const communicationHighlighted = highlightedJumpStage === '正在沟通细节';
   const testHighlighted = highlightedJumpStage === '待测试';
@@ -811,18 +1108,8 @@ const ConsultationModal = ({
 
   const fieldClass = `${consultationInputClass} ${readOnly ? 'cursor-default' : ''}`;
   const sectionBoxClass = 'rounded-xl border border-[#D9EEF7] bg-[#F9FDFF] px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]';
-  const compactStatusClass = (active: boolean) => cn(
-    'inline-flex min-h-10 w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm font-semibold transition',
-    active
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300'
-      : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400',
-    readOnly || stageFrozen ? 'cursor-default' : 'hover:border-emerald-300 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/15',
-  );
-  const customerWechatDone = form.completed_stages.includes('已加小客服微信') || form.flow_stage === '已加小客服微信';
-  const teacherWechatDone = form.completed_stages.includes('已加对应教师微信') || form.flow_stage === '已加对应教师微信';
   const showTestFields = form.flow_stage === '待测试' || form.test_taken || form.test_images.length > 0;
   const showTrialFields = form.flow_stage === '待试听' || form.flow_stage === '试听失败' || form.trial_taken || form.trial_time_slot || form.trial_class_id || form.trial_class_manual || form.trial_teacher || form.trial_feedback;
-  const showSuccessFields = form.flow_stage === '成功进班' || form.success_class_id || form.success_class_manual;
   const showEndFields = form.flow_stage === '咨询结束' || form.end_note;
   const sectionStates = getConsultationFlowSectionStates(form);
   const flowHeaderMetaClass = 'inline-flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400';
@@ -843,27 +1130,59 @@ const ConsultationModal = ({
         transition={{ duration: 0.2 }}
         className={`relative z-10 my-auto flex w-full max-w-5xl flex-col overflow-hidden rounded-[18px] ${consultationSurfaceClass} max-sm:min-h-[calc(100dvh-1.5rem)] max-sm:max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)]`}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-[#EAF6FC] bg-white px-4 py-3.5 sm:px-6 sm:py-4 dark:border-white/10 dark:bg-slate-950/80">
-          <div>
+        <div className="relative grid gap-4 border-b border-[#EAF6FC] bg-white px-4 py-3.5 sm:px-6 sm:py-4 lg:grid-cols-2 lg:items-start dark:border-white/10 dark:bg-slate-950/80">
+          <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#0EA5E9]">Consultation</p>
             <h3 className="mt-1.5 text-xl font-extrabold tracking-tight text-[#1F2A44] sm:text-2xl dark:text-white">{titleMap[mode]}</h3>
-            <p className="mt-1 max-w-2xl text-sm text-[#7188A6] dark:text-slate-400">
-              {readOnly ? '记录详情只读展示，管理员和机构负责人可以在这里进入编辑。' : '先用快速录入整理信息，再确认下方结构化字段。'}
-            </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {!readOnly && (
-              <button
-                type="button"
-                onClick={() => formScrollRef.current?.requestSubmit()}
-                className={`${workspacePrimaryButtonClass} h-10 px-4 text-sm`}
-                disabled={!canSaveConsultationDraft}
-                title="Command+S / Ctrl+S"
-              >
-                <Save size={15} />
-                {saveButtonLabel}
-              </button>
-            )}
+          {!readOnly ? (
+            <div className="min-w-0 rounded-xl border border-[#D9EEF7] bg-[#F8FCFE] p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="grid gap-2 sm:grid-cols-[minmax(13rem,1fr)_4.75rem_3.75rem_auto_auto] sm:items-center">
+                <textarea
+                  value={quickEntry}
+                  onChange={(e) => setQuickEntry(e.target.value)}
+                  rows={1}
+                  aria-label="快速录入咨询描述"
+                  className={`${consultationInputClass} min-h-10 resize-none bg-white`}
+                  placeholder="快速录入"
+                />
+                <button type="button" onClick={handleQuickParse} className={`${workspacePrimaryButtonClass} h-10 min-w-0 gap-0 px-1 py-2 text-xs`}>
+                  智能解析
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickEntry('');
+                    setParseFeedback('');
+                  }}
+                  className={`${workspaceSecondaryButtonClass} h-10 min-w-0 gap-1 px-1.5 py-2 text-xs`}
+                >
+                  清空
+                </button>
+                <button
+                  type="button"
+                  onClick={() => formScrollRef.current?.requestSubmit()}
+                  className={`${workspacePrimaryButtonClass} inline-flex h-10 w-10 items-center justify-center px-0`}
+                  disabled={!canSaveConsultationDraft}
+                  title={`${saveButtonLabel} · Command+S / Ctrl+S`}
+                  aria-label="保存咨询记录"
+                >
+                  <Save size={20} strokeWidth={2.5} className="shrink-0" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F1F9FE] text-[#7188A6] transition-colors hover:bg-sky-100 hover:text-[#1F2A44] dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                  aria-label="关闭咨询记录窗口"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="hidden lg:block" />
+          )}
+          <div className={cn('absolute right-4 top-3.5 flex shrink-0 items-center justify-end gap-2 sm:right-6 sm:top-4', !readOnly && 'hidden')}>
             <button
               type="button"
               onClick={onClose}
@@ -900,7 +1219,6 @@ const ConsultationModal = ({
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h4 className="font-extrabold text-[#1F2A44] dark:text-white">咨询流程</h4>
                 <span className={flowHeaderMetaClass}>
-                  {readOnly ? '当前咨询的完整流程位置。' : '点击阶段框更新当前流程，未经历阶段保持灰色。'}
                   <ConsultationStatusLamp stage={form.flow_stage} />
                 </span>
               </div>
@@ -930,21 +1248,30 @@ const ConsultationModal = ({
                 mode="list"
                 stage={form.flow_stage}
                 completedStages={form.completed_stages}
+                closingResult={form.closing_result}
+                stageTeacherLabels={buildConsultationFlowStageTeacherLabels(form)}
                 editable={!readOnly && !stageFrozen}
                 showJumpActions={!readOnly}
                 showOver
                 overDisabled={readOnly}
-                onStageClick={(stage) => setForm((current) => toggleConsultationStageLight(current, stage))}
-                onStageDoubleClick={(stage) => setForm((current) => moveConsultationStage(current, stage))}
-                onResultChange={(stage) => setForm((current) => setConsultationResultStage(current, stage))}
-                onResultClick={() => {
-                  setForm((current) => (
-                    isConsultationResultStage(current.flow_stage)
-                      ? clearConsultationResultStage(current)
-                      : setConsultationResultStage(current, '成功进班')
-                  ));
+                onStageClick={(nextStage) => openFlowNodeDialog(nextStage, false)}
+                onStageContextMenu={(nextStage) => openFlowNodeDialog(nextStage, true)}
+                onStageLongPress={(nextStage) => openFlowNodeDialog(nextStage, true)}
+                onResultChange={(stage) => {
+                  if (stage === '成功进班') {
+                    setEnterClassDialogOpen(true);
+                    return;
+                  }
+                  setForm((current) => setConsultationResultStage(current, stage));
                 }}
-                onResultDoubleClick={() => setForm((current) => setConsultationResultStage(current, '成功进班'))}
+                onResultClick={() => {
+                  if (isConsultationResultStage(form.flow_stage)) {
+                    setForm((current) => clearConsultationResultStage(current));
+                    return;
+                  }
+                  setEnterClassDialogOpen(true);
+                }}
+                onResultDoubleClick={() => setEnterClassDialogOpen(true)}
                 onStageJump={handleStageJump}
                 onOverClick={() => {
                   if (readOnly) return;
@@ -952,51 +1279,16 @@ const ConsultationModal = ({
                     setConfirmRestoreOpen(true);
                     return;
                   }
-                  setForm((current) => endConsultationValues(current));
+                  setOverResultDialogOpen(true);
                 }}
               />
             </div>
           </section>
 
           {readOnly ? (
-            <ConsultationReadOnlyReport form={form} record={record} classes={classes} />
+            <ConsultationReadOnlyReport form={form} record={record} classes={classes} onPreviewImage={setPreviewImageIndex} />
           ) : (
             <>
-          {!readOnly && (
-            <section className={`${consultationPanelClass} mb-4 grid gap-3 p-3.5 lg:grid-cols-[8rem_minmax(0,1fr)_auto] lg:items-center sm:p-4`}>
-              <div>
-                <h4 className="text-sm font-extrabold text-[#1F2A44] dark:text-white">快速录入</h4>
-                <p className="mt-1 text-xs text-[#7188A6] dark:text-slate-400">自然描述可一键解析。</p>
-              </div>
-              <textarea
-                value={quickEntry}
-                onChange={(e) => setQuickEntry(e.target.value)}
-                rows={1}
-                className={`${consultationInputClass} min-h-10 resize-none`}
-                placeholder="例如：张妈妈，五年级数学，张裕空转介绍，雷文浩接待，想补基础"
-              />
-              <div className="flex flex-wrap gap-2 lg:justify-end">
-                <button type="button" onClick={handleQuickParse} className={`${workspacePrimaryButtonClass} h-10 px-3 py-2 text-sm`}>
-                  <Cpu size={15} />
-                  智能解析
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuickEntry('');
-                    setParseFeedback('');
-                  }}
-                  className={`${workspaceSecondaryButtonClass} h-10 px-3 py-2 text-sm`}
-                >
-                  清空
-                </button>
-              </div>
-              <p className="text-xs text-[#7188A6] dark:text-slate-400 lg:col-span-3">
-                {parseFeedback || '解析后可确认并保存。'}
-              </p>
-            </section>
-          )}
-
           <datalist id="consultation-grade-options">
             {consultationGradeOptions.map((option) => (
               <option key={option} value={option} />
@@ -1004,42 +1296,17 @@ const ConsultationModal = ({
           </datalist>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <section ref={baseInfoRef} className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem] scroll-mt-6', baseInfoHighlighted && consultationJumpHighlightClass)}>
+            <section ref={baseInfoRef} className={cn(consultationFlowSectionClass(sectionStates.base), 'min-h-[14rem] scroll-mt-6 md:order-1', baseInfoHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(sectionStates.base)}>基础信息</p>
-            <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2">
-              <button
-                type="button"
-                onClick={() => setForm((current) => toggleConsultationStageLight(current, '已加小客服微信'))}
-                disabled={readOnly || stageFrozen}
-                className={cn(compactStatusClass(customerWechatDone), 'min-w-0 px-3')}
-              >
-                <span className="min-w-0 truncate">客服微信：{customerWechatDone ? '已添加' : '未添加'}</span>
-                {customerWechatDone ? <CheckCircle2 size={18} className="shrink-0" /> : null}
-              </button>
-              <label className={cn(compactStatusClass(teacherWechatDone), 'relative min-w-0 p-0')}>
-                <span className="pointer-events-none absolute inset-x-3 top-1/2 z-10 min-w-0 -translate-y-1/2 truncate text-center">
-                  负责老师VX：{form.receiving_teacher || '未选择'}
-                </span>
-                <select
-                  value={form.teacher_id}
-                  onChange={(e) => handleTeacherChange(e.target.value)}
-                  disabled={readOnly || stageFrozen}
-                  className="h-full min-h-10 w-full cursor-pointer appearance-none rounded-2xl bg-transparent px-3 text-transparent outline-none"
-                  aria-label="选择负责老师"
-                >
-                  <option value="">请选择老师</option>
-                  {teacherOptions.map((option) => (
-                    <option key={option.teacher_id} value={option.teacher_id}>{option.display_name}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <ConsultationStageStatusCards
+              values={form}
+              classes={localClasses}
+              section="base"
+              teacherOptions={teacherOptions}
+              onTeacherChange={handleStageStatusTeacherChange}
+            />
 
             <div className={`${compactFieldGridClass} mt-3`}>
-              <label className="space-y-2 text-sm">
-                <span className={compactEditLabelClass}>日期</span>
-                <input type="date" value={form.date} onChange={(e) => updateField('date', e.target.value)} disabled={readOnly} className={fieldClass} />
-              </label>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>家长微信名</span>
                 <input value={form.parent_wechat_name} onChange={(e) => updateField('parent_wechat_name', e.target.value)} disabled={readOnly} className={fieldClass} placeholder="家长微信昵称" />
@@ -1052,9 +1319,6 @@ const ConsultationModal = ({
                 <span className={compactEditLabelClass}>年级</span>
                 <input value={form.grade} onChange={(e) => updateField('grade', e.target.value)} disabled={readOnly} list="consultation-grade-options" className={fieldClass} placeholder="如：三年级" />
               </label>
-            </div>
-
-            <div className={`${compactFieldGridClass} mt-3`}>
               <label className="space-y-2 text-sm">
                 <span className={compactEditLabelClass}>咨询科目</span>
                 <select value={academicSubjectOptions.includes(form.consultation_subject) ? form.consultation_subject : ''} onChange={(e) => updateField('consultation_subject', e.target.value)} disabled={readOnly} className={fieldClass}>
@@ -1083,96 +1347,146 @@ const ConsultationModal = ({
             </div>
           </section>
 
-            <section ref={contentRef} className={cn(consultationFlowSectionClass(sectionStates.communication), 'min-h-[14rem] scroll-mt-6 space-y-3', communicationHighlighted && consultationJumpHighlightClass)}>
+            <section ref={contentRef} className={cn(consultationFlowSectionClass(sectionStates.communication), 'min-h-[14rem] scroll-mt-6 space-y-2 md:order-3', communicationHighlighted && consultationJumpHighlightClass)}>
             <p className={compactFlowTitleClass(sectionStates.communication)}>沟通与测试</p>
-            <label className="scroll-mt-6 space-y-2 text-sm">
-              <span className={compactEditLabelClass}>沟通ing：情况说明</span>
-              <textarea
-                value={form.need_detail}
-                onChange={(e) => updateField('need_detail', e.target.value)}
-                disabled={readOnly}
-                rows={5}
-                className={`${fieldClass} resize-none`}
-                placeholder="家长本次咨询目标、问题背景、正在沟通的细节"
-              />
-            </label>
-
-            {(showTestFields || !readOnly) && (
-              <div ref={testSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', testHighlighted && consultationJumpHighlightClass)}>
-                <h5 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white">测试</h5>
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            <ConsultationStageStatusCards
+              values={form}
+              classes={localClasses}
+              section="communication"
+              teacherOptions={teacherOptions}
+              onTeacherChange={handleStageStatusTeacherChange}
+            />
+            <div className="mt-2 grid items-stretch gap-2 sm:grid-cols-2">
+              <div className={cn(sectionBoxClass, 'flex h-full flex-col space-y-2')}>
+                <label className="flex min-h-0 flex-1 scroll-mt-6 flex-col space-y-2 text-sm">
+                  <span className={compactEditLabelClass}>沟通情况</span>
+                  <textarea
+                    value={form.need_detail}
+                    onChange={(e) => updateField('need_detail', e.target.value)}
+                    disabled={readOnly}
+                    rows={6}
+                    className={`${fieldClass} min-h-[8rem] flex-1 resize-none`}
+                    placeholder="家长本次咨询目标、问题背景、正在沟通的细节"
+                  />
+                </label>
+                <div className="grid shrink-0 gap-2">
                   <label className="space-y-2 text-sm">
-                    <span className={compactEditLabelClass}>是否测试</span>
-                    <select value={form.test_taken} onChange={(e) => updateField('test_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
-                      <option value="">未记录</option>
-                      <option value="是">是</option>
-                      <option value="否">否</option>
-                    </select>
+                    <span className={compactEditLabelClass}>跟进 1</span>
+                    <input
+                      value={followUpLines[0]}
+                      onChange={(e) => updateFollowUpLine(0, e.target.value)}
+                      disabled={readOnly}
+                      className={fieldClass}
+                      placeholder="下一步跟进安排"
+                    />
                   </label>
-                  <div className="space-y-2 text-sm">
-                    <span className={compactEditLabelClass}>测试情况图片</span>
-                    {!readOnly && record ? (
-                      <label className={`${workspaceSecondaryButtonClass} w-full cursor-pointer justify-center`}>
-                        <Upload size={17} />
-                        添加图片
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          className="hidden"
-                          onChange={async (event) => {
-                            const file = event.target.files?.[0];
-                            if (!file || !record) return;
-                            const payload = new FormData();
-                            payload.append('image', file);
-                            const uploaded = await apiFetch<{ item: ConsultationRecord }>(`/api/consultations/${record.id}/test-images`, {
-                              method: 'POST',
-                              body: payload,
-                            });
-                            setForm(deriveConsultationFlowFromFields(toConsultationFormValues(normalizeConsultationRecord(uploaded.item))));
-                            event.currentTarget.value = '';
-                          }}
-                        />
-                      </label>
-                    ) : (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">查看下方已上传图片</div>
-                    )}
+                  <label className="space-y-2 text-sm">
+                    <span className={compactEditLabelClass}>跟进 2</span>
+                    <input
+                      value={followUpLines[1]}
+                      onChange={(e) => updateFollowUpLine(1, e.target.value)}
+                      disabled={readOnly}
+                      className={fieldClass}
+                      placeholder="补充跟进备注"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {(showTestFields || !readOnly) && (
+                <div ref={testSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', testHighlighted && consultationJumpHighlightClass)}>
+                  <div className="flex h-full flex-col space-y-2 text-sm">
+                    <span className={compactEditLabelClass}>测试情况</span>
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      <div className="flex h-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin]">
+                        {testImagePages.map((page, pageIndex) => (
+                          <div key={`test-image-page-${pageIndex}`} className="grid h-full min-w-full snap-start grid-cols-2 grid-rows-2 gap-2 pr-2">
+                            {page.map((tile) => {
+                              if (tile.type === 'image') {
+                                return (
+                                  <div key={`${tile.image.url}-${tile.index}`} className="group relative min-h-0 overflow-hidden rounded-xl border border-sky-100 bg-white shadow-sm dark:border-white/10 dark:bg-white/5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewImageIndex(tile.index)}
+                                      className="block h-full w-full text-left"
+                                      title={tile.image.filename || `测试情况图片 ${tile.index + 1}`}
+                                      aria-label={`查看测试情况图片 ${tile.index + 1}`}
+                                    >
+                                      <img src={tile.image.url} alt={`测试情况图片 ${tile.index + 1}`} className="h-full w-full object-cover transition group-hover:scale-105" />
+                                    </button>
+                                    {!readOnly && record && (
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          void handleDeleteTestImage(tile.index);
+                                        }}
+                                        disabled={deletingTestImageIndex === tile.index}
+                                        className="absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-rose-500 text-white shadow-md transition hover:bg-rose-600 disabled:cursor-wait disabled:opacity-60"
+                                        aria-label={`删除测试情况图片 ${tile.index + 1}`}
+                                      >
+                                        <X size={13} strokeWidth={2.5} />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              if (tile.type === 'upload') {
+                                return (
+                                  <label key={`test-image-upload-${pageIndex}`} className="flex min-h-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-sky-200 bg-white/80 text-xs font-semibold text-sky-600 transition hover:border-sky-300 hover:bg-sky-50 dark:border-sky-400/20 dark:bg-white/5 dark:text-sky-300 dark:hover:bg-sky-400/10" aria-label="添加测试情况图片">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-lg leading-none text-sky-600 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300">
+                                      +
+                                    </span>
+                                    <span>添加图片</span>
+                                    <input
+                                      type="file"
+                                      accept="image/png,image/jpeg,image/webp"
+                                      className="hidden"
+                                      onChange={async (event) => {
+                                        const file = event.target.files?.[0];
+                                        if (!file || !record) return;
+                                        const payload = new FormData();
+                                        payload.append('image', file);
+                                        const uploaded = await apiFetch<{ item: ConsultationRecord }>(`/api/consultations/${record.id}/test-images`, {
+                                          method: 'POST',
+                                          body: payload,
+                                        });
+                                        setForm(deriveConsultationFlowFromFields(toConsultationFormValues(normalizeConsultationRecord(uploaded.item))));
+                                        event.currentTarget.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                );
+                              }
+                              return (
+                                <div key={`test-image-pending-upload-${pageIndex}`} className="flex min-h-0 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-2 text-center text-xs font-semibold text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-slate-500">
+                                  保存后添加
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                {form.test_images.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {form.test_images.map((image, index) => (
-                      <a key={`${image.url}-${index}`} href={image.url} target="_blank" rel="noreferrer" className={workspaceSecondaryButtonClass}>
-                        查看图片 {index + 1}
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
 
             </section>
 
             {(showTrialFields || !readOnly) && (
-              <div ref={trialSectionRef} className={cn(consultationFlowSectionClass(sectionStates.trial), 'min-h-[14rem] scroll-mt-6', trialHighlighted && consultationJumpHighlightClass)}>
+              <div ref={trialSectionRef} className={cn(consultationFlowSectionClass(sectionStates.trial), 'min-h-[14rem] scroll-mt-6 md:order-2', trialHighlighted && consultationJumpHighlightClass)}>
                 <p className={compactFlowTitleClass(sectionStates.trial)}>试听</p>
+                <ConsultationStageStatusCards
+                  values={form}
+                  classes={localClasses}
+                  section="trial"
+                  teacherOptions={teacherOptions}
+                  onTeacherChange={handleStageStatusTeacherChange}
+                />
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <label className="space-y-2 text-sm">
-                    <span className={compactEditLabelClass}>是否试听</span>
-                    <select value={form.trial_taken} onChange={(e) => updateField('trial_taken', e.target.value)} disabled={readOnly} className={fieldClass}>
-                      <option value="">未记录</option>
-                      <option value="是">是</option>
-                      <option value="否">否</option>
-                    </select>
-                  </label>
-                  <label className="space-y-2 text-sm">
-                    <span className={compactEditLabelClass}>试听教师</span>
-                    <select value={form.trial_teacher} onChange={(e) => updateField('trial_teacher', e.target.value)} disabled={readOnly} className={fieldClass}>
-                      <option value="">请选择试听教师</option>
-                      {teacherOptions.map((option) => (
-                        <option key={option.teacher_id} value={option.display_name}>{option.display_name}</option>
-                      ))}
-                    </select>
-                  </label>
                   <label className="space-y-2 text-sm">
                     <span className={compactEditLabelClass}>对应班课</span>
                     <select
@@ -1217,55 +1531,24 @@ const ConsultationModal = ({
               </div>
             )}
 
-            <section className={cn(consultationFlowSectionClass(sectionStates.result), 'min-h-[14rem] scroll-mt-6 space-y-3')}>
+            <section ref={successSectionRef} className={cn(consultationFlowSectionClass(sectionStates.result), 'min-h-[14rem] scroll-mt-6 space-y-3 md:order-4', successHighlighted && consultationJumpHighlightClass)}>
               <p className={compactFlowTitleClass(sectionStates.result)}>结果与备注</p>
-            {(showSuccessFields || !readOnly) && (
-              <div ref={successSectionRef} className={cn(sectionBoxClass, 'scroll-mt-6', successHighlighted && consultationJumpHighlightClass)}>
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <label className="space-y-2 text-sm">
-                    <span className={compactEditLabelClass}>班级</span>
-                    <select
-                      value={successUsesManualClass ? '__other__' : form.success_class_id ?? ''}
-                      onChange={(e) => {
-                        if (e.target.value === '__other__') {
-                          setSuccessManualClassActive(true);
-                          setForm((current) => deriveConsultationFlowFromFields(setConsultationResultStage({ ...current, success_class_id: null, success_class_manual: current.success_class_manual || '' }, '成功进班')));
-                          return;
-                        }
-                        setSuccessManualClassActive(false);
-                        handleSuccessClassChange(e.target.value);
-                      }}
-                      disabled={readOnly}
-                      className={fieldClass}
-                    >
-                      <option value="">请选择系统班级</option>
-                      {assignableClassOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{getCurrentClassDisplayName(item)}</option>
-                      ))}
-                      <option value="__other__">其他：手动输入</option>
-                    </select>
-                  </label>
-                  {successUsesManualClass && (
-                    <label className="space-y-2 text-sm">
-                      <span className={compactEditLabelClass}>其他班级</span>
-                      <input value={form.success_class_manual} onChange={(e) => handleSuccessManualChange(e.target.value)} disabled={readOnly} className={fieldClass} placeholder="其他：________" />
-                    </label>
-                  )}
-                </div>
-              </div>
-            )}
-
+            <ConsultationStageStatusCards
+              values={form}
+              classes={successClassOptions}
+              section="result"
+              teacherOptions={teacherOptions}
+              onTeacherChange={handleStageStatusTeacherChange}
+              onClassChange={(classId) => {
+                handleSuccessClassChange(classId ? String(classId) : '');
+              }}
+            />
             {(showEndFields || !readOnly) && (
               <label ref={endSectionRef} className={cn('scroll-mt-6 space-y-2 rounded-xl p-2 text-sm transition', endHighlighted && consultationJumpHighlightClass)}>
                 <span className={compactEditLabelClass}>咨询结束备注</span>
                 <textarea value={form.end_note} onChange={(e) => updateField('end_note', e.target.value)} disabled={readOnly} rows={4} className={`${fieldClass} resize-none`} placeholder="可以为空；用于说明为什么结束、后续是否还可能重新沟通" />
               </label>
             )}
-
-            <label className="space-y-2 text-sm">
-              <span className={compactEditLabelClass}>跟进备注（内部）</span>
-              <textarea value={form.follow_up_note} onChange={(e) => updateField('follow_up_note', e.target.value)} disabled={readOnly} rows={3} className={`${fieldClass} resize-none`} placeholder="补充后续跟进安排或内部提醒" />
-            </label>
 
             {record && (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1274,8 +1557,8 @@ const ConsultationModal = ({
                   <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.created_at || '—'}</p>
                 </div>
                 <div className="rounded-2xl border border-sky-100 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/70">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">最后更新</p>
-                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.updated_at || '—'}</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">结束时间</p>
+                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{record?.ended_at || record?.updated_at || '—'}</p>
                 </div>
               </div>
             )}
@@ -1331,6 +1614,99 @@ const ConsultationModal = ({
             </div>
           </div>
         </form>
+        {flowNodeDialog && (
+          <ConsultationFlowNodeDialog
+            open={Boolean(flowNodeDialog)}
+            stage={flowNodeDialog.stage}
+            values={form}
+            teacherOptions={teacherOptions}
+            setAsCurrent={flowNodeDialog.setAsCurrent}
+            onClose={() => setFlowNodeDialog(null)}
+            onSave={handleSaveFlowNodeDialog}
+          />
+        )}
+        {enterClassDialogOpen && (
+          <ConsultationEnterClassDialog
+            open={enterClassDialogOpen}
+            values={form}
+            classes={successClassOptions}
+            users={consultationEnterClassUsers}
+            teacherBindingByClassId={{}}
+            teachingTeacherUserId={consultationEnterClassTeacherUserId}
+            creating={creatingSuccessClass}
+            createError={successClassCreateError}
+            onClose={() => setEnterClassDialogOpen(false)}
+            onExistingClass={handleConfirmExistingClass}
+            onCreateClass={handleCreateSuccessClass}
+            onPending={handleMarkPendingSuccessClass}
+          />
+        )}
+        {overResultDialogOpen && (
+          <div className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-950/35 px-4" onClick={(event) => event.target === event.currentTarget && setOverResultDialogOpen(false)}>
+            <div className="w-full max-w-md rounded-[18px] border border-[#D9EEF7] bg-white p-5 shadow-[0_24px_70px_rgba(31,42,68,0.22)] dark:border-white/10 dark:bg-slate-950">
+              <h3 className="text-lg font-extrabold text-[#1F2A44] dark:text-white">结束咨询</h3>
+              <p className="mt-1 text-sm text-[#7188A6] dark:text-slate-400">选择这次咨询的结果。</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button type="button" onClick={handleOverSuccess} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-left text-sm font-extrabold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+                  咨询成功
+                </button>
+                <button type="button" onClick={handleOverFailure} className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-left text-sm font-extrabold text-rose-700 transition hover:bg-rose-100 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+                  咨询失败
+                </button>
+              </div>
+              <button type="button" onClick={() => setOverResultDialogOpen(false)} className={`${workspaceSecondaryButtonClass} mt-4 w-full`}>
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+        {previewImage && (
+          <div
+            className="fixed inset-0 z-[76] flex items-center justify-center bg-slate-950/78 px-4 py-6"
+            onClick={(event) => event.target === event.currentTarget && closeImagePreview()}
+          >
+            <div className="relative flex h-full max-h-[88vh] w-full max-w-5xl items-center justify-center">
+              <button
+                type="button"
+                onClick={closeImagePreview}
+                className="absolute right-0 top-0 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white/95 text-slate-600 shadow-lg transition hover:bg-white hover:text-slate-900 dark:bg-slate-900/90 dark:text-slate-100"
+                aria-label="关闭图片预览"
+              >
+                <X size={20} />
+              </button>
+              {previewImageCount > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={showPreviousImage}
+                    className="absolute left-0 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/92 text-slate-700 shadow-lg transition hover:bg-white hover:text-slate-950 dark:bg-slate-900/90 dark:text-slate-100"
+                    aria-label="上一张测试情况图片"
+                  >
+                    <ChevronLeft size={24} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={showNextImage}
+                    className="absolute right-0 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/92 text-slate-700 shadow-lg transition hover:bg-white hover:text-slate-950 dark:bg-slate-900/90 dark:text-slate-100"
+                    aria-label="下一张测试情况图片"
+                  >
+                    <ChevronRight size={24} />
+                  </button>
+                </>
+              )}
+              <figure className="flex h-full w-full flex-col items-center justify-center gap-3 px-12">
+                <img
+                  src={previewImage.url}
+                  alt={previewImage.filename || `测试情况图片 ${(previewImageIndex ?? 0) + 1}`}
+                  className="max-h-full max-w-full rounded-2xl bg-white object-contain shadow-[0_24px_80px_rgba(0,0,0,0.35)]"
+                />
+                <figcaption className="rounded-full bg-slate-950/55 px-3 py-1 text-xs font-semibold text-white">
+                  {(previewImageIndex ?? 0) + 1} / {previewImageCount}
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

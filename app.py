@@ -77,7 +77,8 @@ from lesson_manager import (
     actor_can_manage_user,
     attach_student_library_pdf_path,
     build_wrong_question_practice_pack_schedule,
-    append_consultation_test_image,
+    append_consultation_test_image_for_actor,
+    remove_consultation_test_image_for_actor,
     clean_consultation_batch_input,
     DEFAULT_ORGANIZATION_NAME,
     approve_organization_request,
@@ -119,6 +120,7 @@ from lesson_manager import (
     delete_lesson as db_delete_lesson,
     delete_organization,
     delete_or_archive_student_profile,
+    enter_consultation_class,
     find_previous_confirmed_class_feedback_entry,
     find_active_wrong_question_practice_pack_job,
     get_class,
@@ -126,6 +128,7 @@ from lesson_manager import (
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
+    get_consultation_for_actor,
     get_course_calendar_custom_item,
     get_course_calendar_custom_schedule,
     get_course_calendar_schedule,
@@ -232,6 +235,7 @@ from lesson_manager import (
     update_user_visible_pages_for_actor,
     update_class,
     update_consultation,
+    update_consultation_for_actor,
     update_student_profile,
     update_user_profile,
     resolve_teacher_username_to_user_id,
@@ -3431,6 +3435,15 @@ def _get_accessible_class_or_error(user: dict, class_id: int):
     return None, (jsonify({"error": "forbidden"}), 403)
 
 
+def _member_can_read_student_profile(user: dict, student_id: int) -> bool:
+    if user.get("role") != "member":
+        return True
+    for class_id in get_user_class_ids(user["id"]):
+        if any(student.get("id") == student_id for student in list_students_for_class(class_id)):
+            return True
+    return False
+
+
 def _get_json_object_payload():
     if not request.is_json:
         return {}, None
@@ -6183,6 +6196,8 @@ def api_consultations_list():
         user,
         query=request.args.get("q", ""),
         search_mode=request.args.get("search_mode", "fuzzy"),
+        scope=request.args.get("scope", "current"),
+        ownership=request.args.get("ownership", "all"),
     ))
 
 
@@ -6326,10 +6341,7 @@ def api_consultation_get(consultation_id):
     user, error = _require_auth()
     if error:
         return error
-    item = get_consultation(
-        consultation_id,
-        None if user.get("role") == "super_owner" else user.get("organization_id"),
-    )
+    item = get_consultation_for_actor(user, consultation_id)
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
@@ -6346,7 +6358,12 @@ def api_consultation_create():
         if assigned_user_id is None and request.json.get("teacher_id"):
             assigned_user_id = resolve_teacher_username_to_user_id(request.json["teacher_id"])
     try:
-        item = create_consultation(request.json or {}, user["organization_id"], assigned_user_id=assigned_user_id)
+        item = create_consultation(
+            request.json or {},
+            user["organization_id"],
+            assigned_user_id=assigned_user_id,
+            created_by_user_id=user["id"],
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(item), 201
@@ -6365,17 +6382,35 @@ def api_consultation_update(consultation_id):
         elif not data["teacher_id"]:
             data["assigned_user_id"] = None
     try:
-        item = update_consultation(
-            consultation_id,
-            data,
-            None if user.get("role") == "super_owner" else user.get("organization_id"),
-            user["id"] if user.get("role") == "member" else None,
-        )
+        item = update_consultation_for_actor(user, consultation_id, data)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
     if not item:
         return jsonify({"error": "not found"}), 404
     return jsonify(item)
+
+
+@app.route("/api/consultations/<int:consultation_id>/enter-class", methods=["POST"])
+def api_consultation_enter_class(consultation_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = enter_consultation_class(
+            consultation_id=consultation_id,
+            payload=payload,
+            organization_id=None if user.get("role") == "super_owner" else user.get("organization_id"),
+            actor_user_id=user["id"],
+            member_user_id=user["id"] if user.get("role") == "member" else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not result:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(result)
 
 
 @app.route("/api/consultations/<int:consultation_id>/test-images", methods=["POST"])
@@ -6398,16 +6433,29 @@ def api_consultation_test_image_upload(consultation_id):
         "url": f"/api/consultation-test-images/{filename}",
         "filename": original_filename,
     }
-    item = append_consultation_test_image(
-        consultation_id,
-        image_payload,
-        None if user.get("role") == "super_owner" else user.get("organization_id"),
-        user["id"] if user.get("role") == "member" else None,
-    )
+    try:
+        item = append_consultation_test_image_for_actor(user, consultation_id, image_payload)
+    except PermissionError as exc:
+        save_path.unlink(missing_ok=True)
+        return jsonify({"error": str(exc)}), 403
     if not item:
         save_path.unlink(missing_ok=True)
         return jsonify({"error": "not found"}), 404
     return jsonify({"image": image_payload, "item": item}), 201
+
+
+@app.route("/api/consultations/<int:consultation_id>/test-images/<int:image_index>", methods=["DELETE"])
+def api_consultation_test_image_delete(consultation_id, image_index):
+    user, error = _require_auth()
+    if error:
+        return error
+    try:
+        item = remove_consultation_test_image_for_actor(user, consultation_id, image_index)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    if not item:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"item": item})
 
 
 @app.route("/api/consultation-test-images/<path:filename>", methods=["GET"])
@@ -6732,6 +6780,8 @@ def api_student_profile_get(student_id):
     student = get_student_profile(student_id, user.get("organization_id"))
     if not student:
         return jsonify({"error": "not found"}), 404
+    if not _member_can_read_student_profile(user, student_id):
+        return jsonify({"error": "forbidden"}), 403
     return jsonify({"student": student})
 
 
@@ -6809,6 +6859,8 @@ def api_class_invite_reset(class_id):
     user, error = _require_auth()
     if error:
         return error
+    if user.get("role") == "member":
+        return jsonify({"error": "forbidden"}), 403
     cls, error = _get_accessible_class_or_error(user, class_id)
     if error:
         return error
@@ -6832,6 +6884,8 @@ def api_class_students_create(class_id):
     user, error = _require_auth()
     if error:
         return error
+    if user.get("role") == "member":
+        return jsonify({"error": "forbidden"}), 403
     _, error = _get_accessible_class_or_error(user, class_id)
     if error:
         return error
@@ -6859,6 +6913,8 @@ def api_class_students_delete(class_id, student_id):
     user, error = _require_auth()
     if error:
         return error
+    if user.get("role") == "member":
+        return jsonify({"error": "forbidden"}), 403
     _, error = _get_accessible_class_or_error(user, class_id)
     if error:
         return error
