@@ -20,7 +20,7 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_create_pending_lesson_and_mark_ready(self):
+    def test_create_pending_lesson_and_complete_version(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
             subject="数学",
@@ -30,23 +30,31 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
             weak_points="斜率判断",
             class_id=self.class_id,
         )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            request_key="request-key",
+            request_id="request-id",
+        )
 
         pending = lesson_manager.get_lesson(lesson_id)
-        self.assertEqual(pending["record_status"], "pending")
-        self.assertEqual(pending["generation_error"], "")
+        self.assertIsNone(pending["current_review_plan_version_id"])
+        self.assertTrue(pending["has_version_generating"])
 
-        lesson_manager.mark_lesson_generation_succeeded(
-            lesson_id,
+        lesson_manager.complete_review_plan_version(
+            version["id"],
             plan={"lesson_info": {"topic": "一次函数"}, "days": []},
             pdf_path="/tmp/example.pdf",
         )
 
         saved = lesson_manager.get_lesson(lesson_id)
-        self.assertEqual(saved["record_status"], "ready")
-        self.assertEqual(saved.get("pdf_path"), "/tmp/example.pdf")
-        self.assertEqual(saved["generation_error"], "")
+        self.assertEqual(saved["current_review_plan_version_id"], version["id"])
+        self.assertEqual(saved["current_status"], "ready")
+        self.assertEqual(saved["current_version"]["pdf_path"], "/tmp/example.pdf")
+        self.assertEqual(saved["pdf_path"], "/tmp/example.pdf")
+        self.assertFalse(saved["has_version_generating"])
 
-    def test_create_pending_lesson_persists_review_generation_resume_context(self):
+    def test_review_plan_version_persists_generation_resume_context(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
             subject="数学",
@@ -55,28 +63,32 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
             summary="",
             weak_points="斜率判断",
             class_id=self.class_id,
-            record_status="transcribing",
             created_by_user_id=7,
-            review_audio_path="/tmp/lesson.m4a",
-            review_audio_request_key="audio-key",
-            review_request_key="request-key",
-            review_request_id="request-id",
-            review_chat_provider="deepseek",
-            review_chat_model="deepseek-v4-flash",
-            review_same_lesson_materials=["补充材料"],
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="transcribing",
+            created_by_user_id=7,
+            audio_path="/tmp/lesson.m4a",
+            audio_request_key="audio-key",
+            request_key="request-key",
+            request_id="request-id",
+            chat_provider="deepseek",
+            chat_model="deepseek-v4-flash",
+            same_lesson_materials=["补充材料"],
         )
 
-        saved = lesson_manager.get_lesson(lesson_id)
+        saved = lesson_manager.get_review_plan_version(version["id"])
         self.assertEqual(saved["created_by_user_id"], 7)
-        self.assertEqual(saved["review_audio_path"], "/tmp/lesson.m4a")
-        self.assertEqual(saved["review_audio_request_key"], "audio-key")
-        self.assertEqual(saved["review_request_key"], "request-key")
-        self.assertEqual(saved["review_request_id"], "request-id")
-        self.assertEqual(saved["review_chat_provider"], "deepseek")
-        self.assertEqual(saved["review_chat_model"], "deepseek-v4-flash")
-        self.assertEqual(saved["review_same_lesson_materials"], ["补充材料"])
+        self.assertEqual(saved["audio_path"], "/tmp/lesson.m4a")
+        self.assertEqual(saved["audio_request_key"], "audio-key")
+        self.assertEqual(saved["request_key"], "request-key")
+        self.assertEqual(saved["request_id"], "request-id")
+        self.assertEqual(saved["chat_provider"], "deepseek")
+        self.assertEqual(saved["chat_model"], "deepseek-v4-flash")
+        self.assertEqual(saved["same_lesson_materials"], ["补充材料"])
 
-    def test_mark_lesson_generation_failed_records_error(self):
+    def test_fail_review_plan_version_records_error_without_current_pointer(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
             subject="数学",
@@ -86,14 +98,21 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
             weak_points="斜率判断",
             class_id=self.class_id,
         )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+        )
 
-        lesson_manager.mark_lesson_generation_failed(lesson_id, "AI 生成失败，请稍后重试")
+        lesson_manager.fail_review_plan_version(version["id"], "AI 生成失败，请稍后重试")
 
-        saved = lesson_manager.get_lesson(lesson_id)
-        self.assertEqual(saved["record_status"], "failed")
-        self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
+        saved_version = lesson_manager.get_review_plan_version(version["id"])
+        saved_lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved_version["status"], "failed")
+        self.assertEqual(saved_version["generation_error"], "AI 生成失败，请稍后重试")
+        self.assertIsNone(saved_lesson["current_review_plan_version_id"])
+        self.assertFalse(saved_lesson["has_version_generating"])
 
-    def test_requeue_lesson_generation_preserves_existing_output_until_new_result_ready(self):
+    def test_new_generation_version_preserves_existing_current_until_ready(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
             subject="数学",
@@ -102,49 +121,72 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
             summary="课堂总结",
             weak_points="斜率判断",
             class_id=self.class_id,
+        )
+        first = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            request_key="request-1",
+            request_id="request-id-1",
+        )
+        lesson_manager.complete_review_plan_version(
+            first["id"],
             plan={"lesson_info": {"topic": "旧计划"}, "days": []},
             pdf_path="/tmp/old.pdf",
-            record_status="failed",
         )
-        lesson_manager.mark_lesson_generation_failed(lesson_id, "旧错误")
 
-        lesson_manager.requeue_lesson_generation(
-            lesson_id,
-            record_status="generating",
-            review_request_key="regen-key",
-            review_request_id="regen-id",
-            review_chat_provider="openai",
-            review_chat_model="gpt-5.4",
+        second = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            request_key="request-2",
+            request_id="request-id-2",
         )
 
         saved = lesson_manager.get_lesson(lesson_id)
-        self.assertEqual(saved["record_status"], "generating")
-        self.assertEqual(saved["generation_error"], "")
+        self.assertEqual(saved["current_review_plan_version_id"], first["id"])
+        self.assertEqual(saved["current_version"]["id"], first["id"])
         self.assertEqual(saved["pdf_path"], "/tmp/old.pdf")
-        self.assertEqual(saved["plan"]["lesson_info"]["topic"], "旧计划")
-        self.assertEqual(saved["review_request_key"], "regen-key")
-        self.assertEqual(saved["review_request_id"], "regen-id")
-        self.assertEqual(saved["review_chat_provider"], "openai")
-        self.assertEqual(saved["review_chat_model"], "gpt-5.4")
+        self.assertTrue(saved["has_version_generating"])
 
-    def test_mark_lesson_generation_succeeded_missing_raises(self):
-        with self.assertRaisesRegex(LookupError, "lesson not found"):
-            lesson_manager.mark_lesson_generation_succeeded(
-                lesson_id=999999,
+        lesson_manager.complete_review_plan_version(
+            second["id"],
+            plan={"lesson_info": {"topic": "新计划"}, "days": []},
+            pdf_path="/tmp/new.pdf",
+        )
+
+        updated = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(updated["current_review_plan_version_id"], second["id"])
+        self.assertEqual(updated["current_version"]["id"], second["id"])
+        self.assertEqual(updated["pdf_path"], "/tmp/new.pdf")
+        self.assertFalse(updated["has_version_generating"])
+
+    def test_complete_review_plan_version_missing_raises(self):
+        with self.assertRaisesRegex(LookupError, "review plan version not found"):
+            lesson_manager.complete_review_plan_version(
+                version_id=999999,
                 plan={"dummy": "data"},
                 pdf_path="/tmp/placeholder.pdf",
             )
 
-    def test_mark_lesson_generation_failed_missing_raises(self):
-        with self.assertRaisesRegex(LookupError, "lesson not found"):
-            lesson_manager.mark_lesson_generation_failed(
-                lesson_id=999999,
+    def test_fail_review_plan_version_missing_raises(self):
+        with self.assertRaisesRegex(LookupError, "review plan version not found"):
+            lesson_manager.fail_review_plan_version(
+                version_id=999999,
                 error_message="failure",
             )
 
-    def test_requeue_lesson_generation_missing_raises(self):
-        with self.assertRaisesRegex(LookupError, "lesson not found"):
-            lesson_manager.requeue_lesson_generation(999999)
+    def test_set_current_review_plan_version_missing_version_raises(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+        )
+
+        with self.assertRaisesRegex(LookupError, "review plan version not found"):
+            lesson_manager.set_current_review_plan_version(lesson_id, 999999)
 
     def test_create_monthly_plan_job_and_mark_ready(self):
         job = lesson_manager.create_monthly_plan_job(
