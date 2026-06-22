@@ -181,7 +181,7 @@ export function ReviewPlanDetailView({
       {loading ? (
         <div className="space-y-4 p-5 sm:p-6">
           <div className="h-5 w-40 rounded-full bg-slate-100 dark:bg-white/10" />
-          <div className="h-[360px] rounded-2xl bg-slate-50 dark:bg-white/5" />
+          <div className="h-[70vh] min-h-[520px] rounded-2xl bg-slate-50 dark:bg-white/5 sm:h-[76vh] sm:min-h-[640px]" />
         </div>
       ) : !detail ? (
         <div className="px-5 py-12 text-center text-sm text-slate-500 dark:text-slate-400 sm:px-6">
@@ -231,7 +231,7 @@ export function ReviewPlanDetailView({
               <iframe
                 src={currentPdfUrl}
                 title="当前复习计划 PDF"
-                className="mt-4 h-[62vh] min-h-[420px] w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5"
+                className="mt-4 h-[70vh] min-h-[520px] w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5 sm:h-[76vh] sm:min-h-[640px]"
               />
             ) : (
               <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-5 py-12 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
