@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-06-20
+最后更新：2026-06-22
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-22 已先把 `origin/master` 独有修改合并回 `develop`，形成本地合并提交 `564a6aa7 Merge origin/master into develop`，用于接回 master 上的班级编辑教师筛选面板优化和发布文档记录；`master` 本身仍未由本轮自动推进，等待人工按发布规则手动合并 `develop -> master`。
 - 2026-06-22 已把复习计划 PDF 中“结构化 active_recall 字段名外泄”和裸几何 token 乱码修复落到真实仓库：`review_plan_templates/single_lesson_pdf.py` 现在会展开 `active_recall.instructions/cards` 中的 `intro/steps/stem` 等结构，不再把 dict/list 直接转成正文；`review_plan_templates/generate_review_pdfs.py` 现在会把裸 `triangle / angle / cong / ^circ` 等常见几何 token 归一化成 `△ / ∠ / ≌ / °`，并避免 `^circ` 被先处理成异常上标。回归补在 `tests/test_single_lesson_pdf_unification.py` 和 `tests/test_review_plan_math_normalization.py`；本轮目标分支为 `codex/review-plan-active-recall-geometry-fix`。
 - 2026-06-20 已按用户“所有题目要求跟这个框一样宽，可以根据需求调整高度”的要求追加生成 `数学·初2025级·七年级·5班` 6 月 20 日错题练习“原图等宽版”：沿用原图裁边流程，并临时把 PDF 渲染模板中的 `.source-image` 改为 `width: 100%; height: auto; max-height: none;` 后生成，使 7 张题图都撑满同一图片框宽度，随后已恢复源码模板原值。成品目录在 `output/pdf/七年级5班-6月20日错题练习原图等宽版PDF-20260620/`，zip 在 `output/pdf/七年级5班-6月20日错题练习原图等宽版PDF-20260620.zip`。生成脚本为临时脚本 `/tmp/generate_grade7_class5_20260620_equal_width_original_image_pdfs.py`；proof 已通过 `/tmp/proof_grade7_class5_20260620_equal_width_original_image_pdfs.py`：zip 条目 3 个，题图宽度全部为 `514.5pt`，刘益函 3 题、李奕萱 2 题、邹欣彤 2 题，关键词“原题 / 原图”“方法提醒”“订正区”齐全，首末页 PyMuPDF 渲染非空；contact sheet 在 `/tmp/grade7_class5_20260620_equal_width_original_image_pdf_render/contact-sheet.png`。
 - 2026-06-20 已按用户“把原图位置放大”的要求追加生成 `数学·初2025级·七年级·5班` 6 月 20 日错题练习“原图裁边放大版”：在上一版原图练习基础上，对 7 张原上传图片自动裁掉大白边后再嵌入 PDF，使题目主体占位更大，同时保留“方法提醒 / 挖空复盘 / 订正区”。成品目录在 `output/pdf/七年级5班-6月20日错题练习原图裁边放大版PDF-20260620/`，zip 在 `output/pdf/七年级5班-6月20日错题练习原图裁边放大版PDF-20260620.zip`。生成脚本为临时脚本 `/tmp/generate_grade7_class5_20260620_cropped_original_image_pdfs.py`；proof 已通过 `/tmp/proof_grade7_class5_20260620_cropped_original_image_pdfs.py`：zip 条目 3 个，题页图片数分别为刘益函 3、李奕萱 2、邹欣彤 2，关键词“原题 / 原图”“方法提醒”“订正区”齐全，首末页 PyMuPDF 渲染非空；contact sheet 在 `/tmp/grade7_class5_20260620_cropped_original_image_pdf_render/contact-sheet.png`。期间曾临时把 `frontend/scripts/renderWrongQuestionPracticeSheetPdf.mjs` 的 `.source-image max-height` 调到 112mm 试生成“原图放大版”，随后已恢复源码原值 68mm，最终交付采用裁边放大版。

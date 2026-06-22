@@ -14,6 +14,7 @@ const classFilterRulesSource = readFileSync(new URL('./features/student-center/c
 const studentFilterRulesSource = readFileSync(new URL('./features/student-center/studentFilterRules.ts', import.meta.url), 'utf8');
 const overviewFilterRulesSource = readFileSync(new URL('./features/student-center/overviewFilterRules.ts', import.meta.url), 'utf8');
 const filterInteractionRulesSource = readFileSync(new URL('./features/student-center/filterInteractionRules.ts', import.meta.url), 'utf8');
+const permissionsSource = readFileSync(new URL('./features/student-center/permissions.ts', import.meta.url), 'utf8');
 const floatingFilterSource = readFileSync(new URL('./components/FloatingFilterBar.tsx', import.meta.url), 'utf8');
 const studentCenterClassSource = `${studentCenterSource}\n${classManagementTabSource}\n${classEditorModalSource}\n${classEditorModalStateSource}\n${classSaveRulesSource}\n${classFilterRulesSource}`;
 const studentCenterDisplaySource = `${studentCenterSource}\n${classManagementTabSource}\n${studentManagementTabSource}\n${classEditorModalSource}\n${studentFilterRulesSource}`;
@@ -98,7 +99,9 @@ test('class management summary uses campus overview filters and compact help wit
   assert.doesNotMatch(classPageBlock[0], /titleTeacherFilterOptions/);
   assert.doesNotMatch(classPageBlock[0], /titleTeacherSubjectOptions/);
   assert.doesNotMatch(classPageBlock[0], /负责教师：/);
-  assert.match(classPageBlock[0], />校区总览<\/h3>/);
+  assert.match(campusOverviewSource, /<h3 className=\{workspaceSectionTitleClass\}>\{overviewTitle\}<\/h3>/);
+  assert.match(studentCenterSource, /overviewTitle=\{studentCenterPermissions\.overviewTitle\}/);
+  assert.match(permissionsSource, /overviewTitle: canUseOrganizationScope \? '校区总览' : '教师总览'/);
   assert.match(classPageBlock[0], /activeOverviewFilterLayer/);
   assert.match(classPageBlock[0], /clickedOverviewFilterLayer/);
   assert.match(classPageBlock[0], /overviewFilterItems/);
@@ -121,7 +124,7 @@ test('class management summary uses campus overview filters and compact help wit
   assert.match(classPageBlock[0], /const classSummaryItems = resolveOverviewSummaryItems\(\{/);
   assert.match(classPageBlock[0], /grid grid-cols-2 divide-x divide-y divide-slate-200 xl:grid-cols-4 xl:divide-y-0/);
   assert.match(classPageBlock[0], /activeClassHelpKey/);
-  assert.match(classPageBlock[0], /校区总览说明/);
+  assert.match(campusOverviewSource, /\{overviewTitle\}说明/);
   assert.match(classPageBlock[0], /inline-flex h-8 w-8 items-center justify-center text-slate-400/);
   assert.match(classPageBlock[0], /const filteredClasses = resolveFilteredClasses\(\{/);
   assert.match(classFilterRulesSource, /isClassInfoIncomplete/);
