@@ -102,15 +102,19 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(payload["status"], "pending")
 
         lesson_id = payload["id"]
+        version_id = payload["version_id"]
         lesson = lesson_manager.get_lesson(lesson_id)
+        version = lesson_manager.get_review_plan_version(version_id)
         self.assertIsNotNone(lesson)
-        self.assertEqual(lesson["record_status"], "pending")
-        self.assertEqual(lesson["generation_error"], "")
+        self.assertIsNotNone(version)
+        self.assertEqual(version["status"], "generating")
+        self.assertEqual(version["lesson_id"], lesson_id)
         self.assertEqual(lesson["summary"], "课堂总结文本")
 
         mock_start_thread.assert_called_once()
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["lesson_id"], lesson_id)
+        self.assertEqual(thread_kwargs["version_id"], version_id)
         self.assertEqual(thread_kwargs["user"], {"id": 1, "organization_id": 1})
         self.assertEqual(thread_kwargs["chat_provider"], "deepseek")
         self.assertEqual(thread_kwargs["chat_model"], "deepseek-v4-pro")
@@ -157,10 +161,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         payload = response.get_json()
         self.assertIsNotNone(payload)
-        lesson = lesson_manager.get_lesson(payload["id"])
-        self.assertIsNotNone(lesson)
-        self.assertEqual(lesson["review_chat_provider"], "openai")
-        self.assertEqual(lesson["review_chat_model"], "gpt-4.1")
+        version = lesson_manager.get_review_plan_version(payload["version_id"])
+        self.assertIsNotNone(version)
+        self.assertEqual(version["chat_provider"], "openai")
+        self.assertEqual(version["chat_model"], "gpt-4.1")
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["chat_provider"], "openai")
         self.assertEqual(thread_kwargs["chat_model"], "gpt-4.1")
@@ -259,20 +263,23 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
         lesson = lesson_manager.get_lesson(payload["id"])
         self.assertIsNotNone(lesson)
-        self.assertEqual(lesson["record_status"], "transcribing")
         self.assertEqual(lesson["summary"], "")
         self.assertEqual(lesson["created_by_user_id"], 1)
-        self.assertTrue(lesson["review_audio_path"])
-        self.assertTrue(lesson["review_audio_request_key"])
-        self.assertTrue(lesson["review_request_key"])
-        self.assertTrue(lesson["review_request_id"])
-        self.assertEqual(lesson["review_chat_provider"], "deepseek")
-        self.assertEqual(lesson["review_chat_model"], "deepseek-v4-pro")
+        version = lesson_manager.get_review_plan_version(payload["version_id"])
+        self.assertIsNotNone(version)
+        self.assertEqual(version["status"], "transcribing")
+        self.assertTrue(version["audio_path"])
+        self.assertTrue(version["audio_request_key"])
+        self.assertTrue(version["request_key"])
+        self.assertTrue(version["request_id"])
+        self.assertEqual(version["chat_provider"], "deepseek")
+        self.assertEqual(version["chat_model"], "deepseek-v4-pro")
 
         mock_transcribe_audio.assert_not_called()
         mock_start_thread.assert_called_once()
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["lesson_id"], payload["id"])
+        self.assertEqual(thread_kwargs["version_id"], payload["version_id"])
         self.assertIn("audio_path", thread_kwargs)
         self.assertIn("audio_request_key", thread_kwargs)
 
@@ -319,7 +326,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("app.ensure_feature_credits_available")
     @patch("app._current_ai_request_key", return_value="header:regenerate-review-plan")
     @patch("app.has_review_plan_api_key", return_value=True)
-    def test_regenerate_review_plan_requeues_existing_lesson(
+    def test_regenerate_review_plan_creates_new_version_without_overwriting_current(
         self,
         _mock_has_api_key,
         _mock_request_key,
@@ -337,11 +344,17 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
             topic="一次函数",
             summary="课堂总结文本",
             weak_points="斜率判断",
+            created_by_user_id=1,
+        )
+        first = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            same_lesson_materials=["补充材料"],
+        )
+        lesson_manager.complete_review_plan_version(
+            first["id"],
             plan={"lesson_info": {"topic": "旧计划"}, "days": []},
             pdf_path="/tmp/old-review.pdf",
-            record_status="ready",
-            created_by_user_id=1,
-            review_same_lesson_materials=["补充材料"],
         )
 
         response = self.client.post(
@@ -354,25 +367,193 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         self.assertEqual(payload["id"], lesson_id)
         self.assertEqual(payload["status"], "generating")
+        self.assertNotEqual(payload["version_id"], first["id"])
 
         lesson = lesson_manager.get_lesson(lesson_id)
-        self.assertEqual(lesson["record_status"], "generating")
-        self.assertEqual(lesson["generation_error"], "")
+        second = lesson_manager.get_review_plan_version(payload["version_id"])
+        self.assertEqual(second["lesson_id"], lesson_id)
+        self.assertEqual(lesson["current_review_plan_version_id"], first["id"])
         self.assertEqual(lesson["pdf_path"], "/tmp/old-review.pdf")
         self.assertEqual(lesson["plan"]["lesson_info"]["topic"], "旧计划")
-        self.assertEqual(lesson["review_chat_provider"], "openai")
-        self.assertEqual(lesson["review_chat_model"], "gpt-5.4")
-        self.assertTrue(lesson["review_request_id"])
+        self.assertEqual(second["status"], "generating")
+        self.assertEqual(second["chat_provider"], "openai")
+        self.assertEqual(second["chat_model"], "gpt-5.4")
+        self.assertTrue(second["request_id"])
 
         mock_start_thread.assert_called_once()
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["lesson_id"], lesson_id)
+        self.assertEqual(thread_kwargs["version_id"], second["id"])
         self.assertEqual(thread_kwargs["user"], {"id": 1, "organization_id": 1})
         self.assertEqual(thread_kwargs["chat_provider"], "openai")
         self.assertEqual(thread_kwargs["chat_model"], "gpt-5.4")
         self.assertEqual(thread_kwargs["request_key"], "header:regenerate-review-plan")
-        self.assertEqual(thread_kwargs["request_id"], lesson["review_request_id"])
+        self.assertEqual(thread_kwargs["request_id"], second["request_id"])
         self.assertEqual(thread_kwargs["same_lesson_materials"], ["补充材料"])
+
+    def test_review_plan_list_uses_current_version_fields_and_time(self):
+        first_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="第一课",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        first_version = lesson_manager.create_review_plan_version(lesson_id=first_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            first_version["id"],
+            plan={"days": []},
+            pdf_path="/tmp/first.pdf",
+        )
+        second_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-10",
+            subject="数学",
+            grade="初二",
+            topic="第二课",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        second_version = lesson_manager.create_review_plan_version(lesson_id=second_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            second_version["id"],
+            plan={"days": []},
+            pdf_path="/tmp/second.pdf",
+        )
+
+        response = self.client.get(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        by_id = {item["id"]: item for item in payload}
+        self.assertIn(second_id, by_id)
+        self.assertEqual(by_id[first_id]["current_version_id"], first_version["id"])
+        self.assertEqual(by_id[first_id]["current_version_no"], 1)
+        self.assertEqual(by_id[first_id]["current_status"], "ready")
+        saved_first_version = lesson_manager.get_review_plan_version(first_version["id"])
+        self.assertEqual(by_id[first_id]["current_generated_at"], saved_first_version["completed_at"])
+        self.assertIn(
+            f"/api/review-plans/{first_id}/versions/{first_version['id']}/pdf",
+            by_id[first_id]["current_pdf_url"],
+        )
+
+    def test_review_plan_detail_returns_versions_newest_first(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        first = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            first["id"],
+            plan={"lesson_info": {"topic": "第一版"}, "days": []},
+            pdf_path="/tmp/v1.pdf",
+        )
+        second = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.fail_review_plan_version(second["id"], "第二版失败")
+
+        response = self.client.get(
+            f"/api/review-plans/{lesson_id}",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["current_version_id"], first["id"])
+        self.assertEqual([version["id"] for version in payload["versions"]], [second["id"], first["id"]])
+        self.assertEqual(payload["versions"][0]["status"], "failed")
+        self.assertEqual(payload["versions"][1]["status"], "ready")
+
+    def test_make_current_switches_to_ready_old_version(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        first = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            first["id"],
+            plan={"lesson_info": {"topic": "第一版"}, "days": []},
+            pdf_path="/tmp/v1.pdf",
+        )
+        second = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            second["id"],
+            plan={"lesson_info": {"topic": "第二版"}, "days": []},
+            pdf_path="/tmp/v2.pdf",
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/versions/{first['id']}/make-current",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["current_version_id"], first["id"])
+        lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(lesson["current_review_plan_version_id"], first["id"])
+
+    def test_version_pdf_preview_and_download_use_specific_version(self):
+        requested_pdf_path = self.base / "requested-version.pdf"
+        current_pdf_path = self.base / "current-version.pdf"
+        requested_bytes = b"%PDF-1.4\nrequested version pdf\n%%EOF\n"
+        current_bytes = b"%PDF-1.4\ncurrent version pdf\n%%EOF\n"
+        requested_pdf_path.write_bytes(requested_bytes)
+        current_pdf_path.write_bytes(current_bytes)
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        requested_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            requested_version["id"],
+            plan={"lesson_info": {"topic": "请求版"}, "days": []},
+            pdf_path=str(requested_pdf_path),
+        )
+        current_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            current_version["id"],
+            plan={"lesson_info": {"topic": "当前版"}, "days": []},
+            pdf_path=str(current_pdf_path),
+        )
+        lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(lesson["current_review_plan_version_id"], current_version["id"])
+
+        preview = self.client.get(
+            f"/api/review-plans/{lesson_id}/versions/{requested_version['id']}/pdf",
+            headers=self._auth_headers(self.owner_token),
+        )
+        download = self.client.get(
+            f"/api/review-plans/{lesson_id}/versions/{requested_version['id']}/download",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.mimetype, "application/pdf")
+        self.assertEqual(preview.data, requested_bytes)
+        self.assertEqual(download.status_code, 200)
+        self.assertIn("attachment", download.headers.get("Content-Disposition", ""))
+        self.assertEqual(download.data, requested_bytes)
+        preview.close()
+        download.close()
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
