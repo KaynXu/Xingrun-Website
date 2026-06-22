@@ -3084,12 +3084,11 @@ def init_db():
             topic       TEXT,
             summary     TEXT,
             weak_points TEXT,
-            plan_json   TEXT,
-            pdf_path    TEXT,
             class_id    INTEGER REFERENCES classes(id) ON DELETE SET NULL,
-            record_status TEXT NOT NULL DEFAULT 'ready',
-            generation_error TEXT NOT NULL DEFAULT '',
-            created_at  TEXT DEFAULT (datetime('now','localtime'))
+            current_review_plan_version_id INTEGER DEFAULT NULL,
+            created_by_user_id INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT DEFAULT (datetime('now','localtime')),
+            updated_at  TEXT DEFAULT (datetime('now','localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS review_plan_runs (
@@ -3788,16 +3787,10 @@ def init_db():
                 )
         _ensure_class_feedback_task_integrity_guards(conn)
         _migrate_legacy_organization_scope(conn)
-        _ensure_column(conn, "lessons", "record_status", "TEXT NOT NULL DEFAULT 'ready'")
-        _ensure_column(conn, "lessons", "generation_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
-        _ensure_column(conn, "lessons", "review_audio_path", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "lessons", "review_audio_request_key", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "lessons", "review_request_key", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "lessons", "review_request_id", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "lessons", "review_chat_provider", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "lessons", "review_chat_model", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(conn, "lessons", "review_same_lesson_materials_json", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_review_plan_versions_schema(conn)
+        _migrate_legacy_review_plan_columns(conn)
+        _rebuild_lessons_without_review_plan_artifact_columns(conn)
         _bootstrap_account_state(conn)
         default_org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
         _backfill_student_organization_scope(conn, default_org["id"])
@@ -4811,29 +4804,675 @@ def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
         )
 
 
+REVIEW_PLAN_ACTIVE_STATUSES = {"pending", "queued", "processing", "transcribing", "generating"}
+REVIEW_PLAN_READY_STATUS = "ready"
+REVIEW_PLAN_FAILED_STATUS = "failed"
+REVIEW_PLAN_LEGACY_ARTIFACT_COLUMNS = {
+    "plan_json",
+    "pdf_path",
+    "record_status",
+    "generation_error",
+    "review_audio_path",
+    "review_audio_request_key",
+    "review_request_key",
+    "review_request_id",
+    "review_chat_provider",
+    "review_chat_model",
+    "review_same_lesson_materials_json",
+}
+
+
+def _review_plan_version_from_row(row) -> Optional[dict]:
+    if not row:
+        return None
+    version = dict(row)
+    try:
+        version["plan"] = json.loads(version.get("plan_json") or "{}")
+    except json.JSONDecodeError:
+        version["plan"] = {}
+    try:
+        materials = json.loads(version.get("same_lesson_materials_json") or "[]")
+    except json.JSONDecodeError:
+        materials = []
+    version["same_lesson_materials"] = materials if isinstance(materials, list) else []
+    return version
+
+
+def _lesson_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row["name"] for row in conn.execute("PRAGMA table_info(lessons)").fetchall()}
+
+
+def _review_plan_version_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row["name"] for row in conn.execute("PRAGMA table_info(review_plan_versions)").fetchall()}
+
+
+def _column_expr(columns: set[str], column: str, fallback_sql: str) -> str:
+    return column if column in columns else fallback_sql
+
+
+def _dump_review_plan_materials(value: Optional[list[str]]) -> str:
+    try:
+        return json.dumps(value or [], ensure_ascii=False)
+    except TypeError:
+        return "[]"
+
+
+def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS review_plan_versions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson_id        INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+            version_no       INTEGER NOT NULL,
+            status           TEXT NOT NULL DEFAULT 'pending',
+            plan_json        TEXT NOT NULL DEFAULT '',
+            pdf_path         TEXT NOT NULL DEFAULT '',
+            generation_error TEXT NOT NULL DEFAULT '',
+            audio_path       TEXT NOT NULL DEFAULT '',
+            audio_request_key TEXT NOT NULL DEFAULT '',
+            request_key      TEXT NOT NULL DEFAULT '',
+            request_id       TEXT NOT NULL DEFAULT '',
+            chat_provider    TEXT NOT NULL DEFAULT '',
+            chat_model       TEXT NOT NULL DEFAULT '',
+            same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
+            created_by_user_id INTEGER NOT NULL DEFAULT 0,
+            completed_at     TEXT NOT NULL DEFAULT '',
+            created_at       TEXT DEFAULT (datetime('now','localtime')),
+            updated_at       TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(lesson_id, version_no)
+        )
+        """
+    )
+    _ensure_column(conn, "lessons", "current_review_plan_version_id", "INTEGER DEFAULT NULL")
+    _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "lessons", "updated_at", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "status", "TEXT NOT NULL DEFAULT 'pending'")
+    _ensure_column(conn, "review_plan_versions", "plan_json", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "pdf_path", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "generation_error", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "audio_path", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "audio_request_key", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "request_key", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "request_id", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "chat_provider", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "chat_model", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "same_lesson_materials_json", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(conn, "review_plan_versions", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "review_plan_versions", "completed_at", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "created_at", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "updated_at", "TEXT NOT NULL DEFAULT ''")
+    _migrate_review_plan_generated_at_column(conn)
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_review_plan_versions_lesson_created
+        ON review_plan_versions(lesson_id, created_at, id)
+        """
+    )
+    conn.execute(
+        """
+        UPDATE review_plan_versions
+        SET status='interrupted', updated_at=datetime('now','localtime')
+        WHERE status IN ('pending', 'queued', 'processing', 'transcribing', 'generating')
+          AND id NOT IN (
+              SELECT MAX(id)
+              FROM review_plan_versions
+              WHERE status IN ('pending', 'queued', 'processing', 'transcribing', 'generating')
+              GROUP BY lesson_id
+          )
+        """
+    )
+    conn.execute("DROP INDEX IF EXISTS idx_review_plan_versions_active")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_review_plan_versions_one_active
+        ON review_plan_versions(lesson_id)
+        WHERE status IN ('pending', 'queued', 'processing', 'transcribing', 'generating')
+        """
+    )
+
+
+def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
+    columns = _review_plan_version_columns(conn)
+    if "generated_at" not in columns:
+        return
+    conn.execute(
+        """
+        UPDATE review_plan_versions
+        SET completed_at=generated_at
+        WHERE COALESCE(completed_at, '') = ''
+          AND COALESCE(generated_at, '') <> ''
+        """
+    )
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("DROP TABLE IF EXISTS review_plan_versions__completed_at_rebuild")
+        conn.execute(
+            """
+            CREATE TABLE review_plan_versions__completed_at_rebuild (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                lesson_id        INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+                version_no       INTEGER NOT NULL,
+                status           TEXT NOT NULL DEFAULT 'pending',
+                plan_json        TEXT NOT NULL DEFAULT '',
+                pdf_path         TEXT NOT NULL DEFAULT '',
+                generation_error TEXT NOT NULL DEFAULT '',
+                audio_path       TEXT NOT NULL DEFAULT '',
+                audio_request_key TEXT NOT NULL DEFAULT '',
+                request_key      TEXT NOT NULL DEFAULT '',
+                request_id       TEXT NOT NULL DEFAULT '',
+                chat_provider    TEXT NOT NULL DEFAULT '',
+                chat_model       TEXT NOT NULL DEFAULT '',
+                same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
+                created_by_user_id INTEGER NOT NULL DEFAULT 0,
+                completed_at     TEXT NOT NULL DEFAULT '',
+                created_at       TEXT DEFAULT (datetime('now','localtime')),
+                updated_at       TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(lesson_id, version_no)
+            )
+            """
+        )
+        copy_columns = [
+            "id",
+            "lesson_id",
+            "version_no",
+            "status",
+            "plan_json",
+            "pdf_path",
+            "generation_error",
+            "audio_path",
+            "audio_request_key",
+            "request_key",
+            "request_id",
+            "chat_provider",
+            "chat_model",
+            "same_lesson_materials_json",
+            "created_by_user_id",
+            "completed_at",
+            "created_at",
+            "updated_at",
+        ]
+        conn.execute(
+            f"""
+            INSERT INTO review_plan_versions__completed_at_rebuild ({", ".join(copy_columns)})
+            SELECT {", ".join(copy_columns)}
+            FROM review_plan_versions
+            """
+        )
+        conn.execute("DROP TABLE review_plan_versions")
+        conn.execute("ALTER TABLE review_plan_versions__completed_at_rebuild RENAME TO review_plan_versions")
+        conn.commit()
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _migrate_legacy_review_plan_columns(conn: sqlite3.Connection) -> None:
+    columns = _lesson_columns(conn)
+    if not (columns & REVIEW_PLAN_LEGACY_ARTIFACT_COLUMNS):
+        return
+    _ensure_review_plan_versions_schema(conn)
+    record_status_expr = _column_expr(columns, "record_status", "'ready'")
+    rows = conn.execute(
+        f"""
+        SELECT
+            id AS lesson_id,
+            {_column_expr(columns, "plan_json", "''")} AS plan_json,
+            {_column_expr(columns, "pdf_path", "''")} AS pdf_path,
+            {record_status_expr} AS record_status,
+            {_column_expr(columns, "generation_error", "''")} AS generation_error,
+            {_column_expr(columns, "review_audio_path", "''")} AS audio_path,
+            {_column_expr(columns, "review_audio_request_key", "''")} AS audio_request_key,
+            {_column_expr(columns, "review_request_key", "''")} AS request_key,
+            {_column_expr(columns, "review_request_id", "''")} AS request_id,
+            {_column_expr(columns, "review_chat_provider", "''")} AS chat_provider,
+            {_column_expr(columns, "review_chat_model", "''")} AS chat_model,
+            {_column_expr(columns, "review_same_lesson_materials_json", "'[]'")} AS same_lesson_materials_json,
+            {_column_expr(columns, "created_by_user_id", "0")} AS created_by_user_id,
+            {_column_expr(columns, "created_at", "datetime('now','localtime')")} AS created_at
+        FROM lessons
+        ORDER BY id
+        """
+    ).fetchall()
+    for row in rows:
+        lesson_id = int(row["lesson_id"])
+        existing = conn.execute(
+            "SELECT id, status FROM review_plan_versions WHERE lesson_id=? ORDER BY version_no LIMIT 1",
+            (lesson_id,),
+        ).fetchone()
+        if existing:
+            if existing["status"] == REVIEW_PLAN_READY_STATUS:
+                conn.execute(
+                    """
+                    UPDATE lessons
+                    SET current_review_plan_version_id=COALESCE(current_review_plan_version_id, ?)
+                    WHERE id=?
+                    """,
+                    (existing["id"], lesson_id),
+                )
+            continue
+        raw_status = str(row["record_status"] or REVIEW_PLAN_READY_STATUS).strip() or REVIEW_PLAN_READY_STATUS
+        status = raw_status
+        if raw_status == "expired":
+            status = REVIEW_PLAN_FAILED_STATUS
+        has_artifact = bool(str(row["plan_json"] or "").strip() or str(row["pdf_path"] or "").strip())
+        has_error_state = raw_status in {REVIEW_PLAN_FAILED_STATUS, "expired"} or bool(
+            str(row["generation_error"] or "").strip()
+        )
+        has_active_state = raw_status in REVIEW_PLAN_ACTIVE_STATUSES
+        if not (has_artifact or has_error_state or has_active_state):
+            continue
+        completed_at = str(row["created_at"] or "") if status == REVIEW_PLAN_READY_STATUS else ""
+        cur = conn.execute(
+            """
+            INSERT INTO review_plan_versions (
+                lesson_id, version_no, status, plan_json, pdf_path, generation_error,
+                audio_path, audio_request_key, request_key, request_id, chat_provider,
+                chat_model, same_lesson_materials_json, created_by_user_id,
+                completed_at, created_at, updated_at
+            )
+            VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            """,
+            (
+                lesson_id,
+                status,
+                str(row["plan_json"] or ""),
+                str(row["pdf_path"] or ""),
+                str(row["generation_error"] or ""),
+                str(row["audio_path"] or ""),
+                str(row["audio_request_key"] or ""),
+                str(row["request_key"] or ""),
+                str(row["request_id"] or ""),
+                str(row["chat_provider"] or ""),
+                str(row["chat_model"] or ""),
+                str(row["same_lesson_materials_json"] or "[]"),
+                int(row["created_by_user_id"] or 0),
+                completed_at,
+                str(row["created_at"] or ""),
+            ),
+        )
+        if status == REVIEW_PLAN_READY_STATUS:
+            conn.execute(
+                "UPDATE lessons SET current_review_plan_version_id=? WHERE id=?",
+                (cur.lastrowid, lesson_id),
+            )
+
+
+def _rebuild_lessons_without_review_plan_artifact_columns(conn: sqlite3.Connection) -> None:
+    columns = _lesson_columns(conn)
+    if not (columns & REVIEW_PLAN_LEGACY_ARTIFACT_COLUMNS):
+        return
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("DROP TABLE IF EXISTS lessons__review_plan_artifact_rebuild")
+        conn.execute(
+            """
+            CREATE TABLE lessons__review_plan_artifact_rebuild (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                organization_id INTEGER REFERENCES organizations(id),
+                date        TEXT NOT NULL,
+                subject     TEXT,
+                grade       TEXT,
+                topic       TEXT,
+                summary     TEXT,
+                weak_points TEXT,
+                class_id    INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+                current_review_plan_version_id INTEGER DEFAULT NULL,
+                created_by_user_id INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT DEFAULT (datetime('now','localtime')),
+                updated_at  TEXT DEFAULT (datetime('now','localtime'))
+            )
+            """
+        )
+        current_columns = _lesson_columns(conn)
+        copy_columns = [
+            "id",
+            "organization_id",
+            "date",
+            "subject",
+            "grade",
+            "topic",
+            "summary",
+            "weak_points",
+            "class_id",
+            "current_review_plan_version_id",
+            "created_by_user_id",
+            "created_at",
+            "updated_at",
+        ]
+        select_exprs = [
+            _column_expr(current_columns, "id", "NULL"),
+            _column_expr(current_columns, "organization_id", "NULL"),
+            _column_expr(current_columns, "date", "date('now')"),
+            _column_expr(current_columns, "subject", "''"),
+            _column_expr(current_columns, "grade", "''"),
+            _column_expr(current_columns, "topic", "''"),
+            _column_expr(current_columns, "summary", "''"),
+            _column_expr(current_columns, "weak_points", "''"),
+            _column_expr(current_columns, "class_id", "NULL"),
+            _column_expr(current_columns, "current_review_plan_version_id", "NULL"),
+            _column_expr(current_columns, "created_by_user_id", "0"),
+            _column_expr(current_columns, "created_at", "datetime('now','localtime')"),
+            _column_expr(current_columns, "updated_at", "datetime('now','localtime')"),
+        ]
+        conn.execute(
+            f"""
+            INSERT INTO lessons__review_plan_artifact_rebuild ({", ".join(copy_columns)})
+            SELECT {", ".join(select_exprs)}
+            FROM lessons
+            """
+        )
+        conn.execute("DROP TABLE lessons")
+        conn.execute("ALTER TABLE lessons__review_plan_artifact_rebuild RENAME TO lessons")
+        conn.commit()
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
+def _get_review_plan_version_for_update(conn: sqlite3.Connection, version_id: int):
+    return conn.execute(
+        "SELECT * FROM review_plan_versions WHERE id=?",
+        (int(version_id),),
+    ).fetchone()
+
+
+def _get_latest_active_review_plan_version_row(conn: sqlite3.Connection, lesson_id: int):
+    placeholders = ", ".join("?" for _ in REVIEW_PLAN_ACTIVE_STATUSES)
+    params: list[object] = [int(lesson_id), *sorted(REVIEW_PLAN_ACTIVE_STATUSES)]
+    return conn.execute(
+        f"""
+        SELECT *
+        FROM review_plan_versions
+        WHERE lesson_id=? AND status IN ({placeholders})
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+
+
+def _get_latest_review_plan_version_row(conn: sqlite3.Connection, lesson_id: int):
+    return conn.execute(
+        """
+        SELECT *
+        FROM review_plan_versions
+        WHERE lesson_id=?
+        ORDER BY version_no DESC, id DESC
+        LIMIT 1
+        """,
+        (int(lesson_id),),
+    ).fetchone()
+
+
+def _lesson_has_active_review_plan_version(conn: sqlite3.Connection, lesson_id: int) -> bool:
+    return _get_latest_active_review_plan_version_row(conn, lesson_id) is not None
+
+
+def create_review_plan_version(
+    *,
+    lesson_id: int,
+    status: str = "pending",
+    created_by_user_id: int = 0,
+    audio_path: str = "",
+    audio_request_key: str = "",
+    request_key: str = "",
+    request_id: str = "",
+    chat_provider: str = "",
+    chat_model: str = "",
+    same_lesson_materials: Optional[list[str]] = None,
+) -> dict:
+    normalized_status = str(status or "pending").strip() or "pending"
+    with get_conn() as conn:
+        lesson = conn.execute("SELECT id FROM lessons WHERE id=?", (int(lesson_id),)).fetchone()
+        if not lesson:
+            raise LookupError("lesson not found")
+        if normalized_status in REVIEW_PLAN_ACTIVE_STATUSES:
+            placeholders = ", ".join("?" for _ in REVIEW_PLAN_ACTIVE_STATUSES)
+            conn.execute(
+                f"""
+                UPDATE review_plan_versions
+                SET status='interrupted', updated_at=datetime('now','localtime')
+                WHERE lesson_id=? AND status IN ({placeholders})
+                """,
+                (int(lesson_id), *sorted(REVIEW_PLAN_ACTIVE_STATUSES)),
+            )
+        row = conn.execute(
+            "SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version_no FROM review_plan_versions WHERE lesson_id=?",
+            (int(lesson_id),),
+        ).fetchone()
+        version_no = int(row["next_version_no"] or 1)
+        cur = conn.execute(
+            """
+            INSERT INTO review_plan_versions (
+                lesson_id, version_no, status, created_by_user_id, audio_path,
+                audio_request_key, request_key, request_id, chat_provider, chat_model,
+                same_lesson_materials_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(lesson_id),
+                version_no,
+                normalized_status,
+                int(created_by_user_id or 0),
+                str(audio_path or ""),
+                str(audio_request_key or ""),
+                str(request_key or ""),
+                str(request_id or ""),
+                str(chat_provider or ""),
+                str(chat_model or ""),
+                _dump_review_plan_materials(same_lesson_materials),
+            ),
+        )
+        if normalized_status == REVIEW_PLAN_READY_STATUS:
+            conn.execute(
+                "UPDATE lessons SET current_review_plan_version_id=?, updated_at=datetime('now','localtime') WHERE id=?",
+                (cur.lastrowid, int(lesson_id)),
+            )
+        row = conn.execute(
+            "SELECT * FROM review_plan_versions WHERE id=?",
+            (cur.lastrowid,),
+        ).fetchone()
+        return _review_plan_version_from_row(row)
+
+
+def mark_review_plan_version_transcription_succeeded(version_id: int, *, summary: str) -> None:
+    with get_conn() as conn:
+        row = _get_review_plan_version_for_update(conn, version_id)
+        if not row:
+            raise LookupError("review plan version not found")
+        conn.execute(
+            """
+            UPDATE lessons
+            SET summary=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (summary, int(row["lesson_id"])),
+        )
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET status='generating', generation_error='', updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (int(version_id),),
+        )
+
+
+def complete_review_plan_version(version_id: int, *, plan: dict, pdf_path: str) -> None:
+    plan_json = json.dumps(plan or {}, ensure_ascii=False)
+    with get_conn() as conn:
+        row = _get_review_plan_version_for_update(conn, version_id)
+        if not row:
+            raise LookupError("review plan version not found")
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET status='ready',
+                plan_json=?,
+                pdf_path=?,
+                generation_error='',
+                completed_at=datetime('now','localtime'),
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (plan_json, str(pdf_path or ""), int(version_id)),
+        )
+        conn.execute(
+            """
+            UPDATE lessons
+            SET current_review_plan_version_id=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (int(version_id), int(row["lesson_id"])),
+        )
+
+
+def fail_review_plan_version(version_id: int, error_message: str) -> None:
+    with get_conn() as conn:
+        row = _get_review_plan_version_for_update(conn, version_id)
+        if not row:
+            raise LookupError("review plan version not found")
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET status='failed',
+                generation_error=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (str(error_message or ""), int(version_id)),
+        )
+
+
+def get_review_plan_version(version_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM review_plan_versions WHERE id=?",
+            (int(version_id),),
+        ).fetchone()
+        return _review_plan_version_from_row(row)
+
+
+def get_review_plan_version_for_lesson(lesson_id: int, version_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM review_plan_versions WHERE id=? AND lesson_id=?",
+            (int(version_id), int(lesson_id)),
+        ).fetchone()
+        return _review_plan_version_from_row(row)
+
+
+def list_review_plan_versions(lesson_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM review_plan_versions
+            WHERE lesson_id=?
+            ORDER BY version_no DESC, id DESC
+            """,
+            (int(lesson_id),),
+        ).fetchall()
+        return [_review_plan_version_from_row(row) for row in rows]
+
+
+def set_current_review_plan_version(lesson_id: int, version_id: int) -> None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM review_plan_versions WHERE id=? AND lesson_id=?",
+            (int(version_id), int(lesson_id)),
+        ).fetchone()
+        if not row:
+            raise LookupError("review plan version not found")
+        if str(row["status"] or "") != REVIEW_PLAN_READY_STATUS:
+            raise ValueError("review plan version must be ready")
+        conn.execute(
+            """
+            UPDATE lessons
+            SET current_review_plan_version_id=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (int(version_id), int(lesson_id)),
+        )
+
+
+def get_current_review_plan_version(lesson_id: int):
+    with get_conn() as conn:
+        lesson = conn.execute(
+            "SELECT current_review_plan_version_id FROM lessons WHERE id=?",
+            (int(lesson_id),),
+        ).fetchone()
+        if not lesson or not lesson["current_review_plan_version_id"]:
+            return None
+        row = conn.execute(
+            "SELECT * FROM review_plan_versions WHERE id=? AND lesson_id=?",
+            (int(lesson["current_review_plan_version_id"]), int(lesson_id)),
+        ).fetchone()
+        return _review_plan_version_from_row(row)
+
+
+def lesson_has_active_review_plan_version(lesson_id: int) -> bool:
+    with get_conn() as conn:
+        return _lesson_has_active_review_plan_version(conn, lesson_id)
+
+
+def _active_or_latest_version_for_lesson(conn: sqlite3.Connection, lesson_id: int):
+    return _get_latest_active_review_plan_version_row(conn, lesson_id) or _get_latest_review_plan_version_row(conn, lesson_id)
+
+
+def _ensure_compat_review_plan_version(
+    conn: sqlite3.Connection,
+    lesson_id: int,
+    *,
+    status: str = "generating",
+    request_key: str = "",
+    request_id: str = "",
+    chat_provider: str = "",
+    chat_model: str = "",
+) -> int:
+    active = _get_latest_active_review_plan_version_row(conn, lesson_id)
+    if active:
+        return int(active["id"])
+    latest = conn.execute(
+        "SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version_no FROM review_plan_versions WHERE lesson_id=?",
+        (int(lesson_id),),
+    ).fetchone()
+    cur = conn.execute(
+        """
+        INSERT INTO review_plan_versions (
+            lesson_id, version_no, status, request_key, request_id, chat_provider, chat_model
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(lesson_id),
+            int(latest["next_version_no"] or 1),
+            str(status or "generating"),
+            str(request_key or ""),
+            str(request_id or ""),
+            str(chat_provider or ""),
+            str(chat_model or ""),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
 def save_lesson(date_str: str, subject: str, grade: str, topic: str,
                 summary: str, weak_points: str,
                 plan: dict, pdf_path: str, class_id: int = 0) -> int:
     """保存一节课及其复习计划，返回 lesson_id。"""
-    with get_conn() as conn:
-        organization_id = None
-        if class_id:
-            class_row = conn.execute(
-                "SELECT organization_id FROM classes WHERE id=?",
-                (class_id,),
-            ).fetchone()
-            organization_id = class_row["organization_id"] if class_row else None
-        if organization_id is None:
-            organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
-        cur = conn.execute(
-            """INSERT INTO lessons
-               (date, subject, grade, topic, summary, weak_points, plan_json, pdf_path, class_id, organization_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (date_str, subject, grade, topic, summary, weak_points,
-             json.dumps(plan, ensure_ascii=False), pdf_path,
-             class_id if class_id else None, organization_id)
-        )
-        lesson_id = cur.lastrowid
+    lesson_id = create_pending_lesson(
+        date_str=date_str,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        summary=summary,
+        weak_points=weak_points,
+        class_id=class_id,
+    )
+    version = create_review_plan_version(lesson_id=lesson_id, status="generating")
+    complete_review_plan_version(version["id"], plan=plan, pdf_path=pdf_path)
     return lesson_id
 
 
@@ -4859,8 +5498,6 @@ def create_pending_lesson(
     review_same_lesson_materials: Optional[list[str]] = None,
 ) -> int:
     """Create a lesson record in pending state before AI generation completes."""
-    plan_content = json.dumps(plan or {}, ensure_ascii=False)
-    same_lesson_materials_json = json.dumps(review_same_lesson_materials or [], ensure_ascii=False)
     with get_conn() as conn:
         organization_id = None
         if class_id:
@@ -4873,11 +5510,8 @@ def create_pending_lesson(
             organization_id = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)["id"]
         cur = conn.execute(
             """INSERT INTO lessons
-               (date, subject, grade, topic, summary, weak_points,
-                plan_json, pdf_path, class_id, organization_id, record_status, generation_error,
-                created_by_user_id, review_audio_path, review_audio_request_key, review_request_key,
-                review_request_id, review_chat_provider, review_chat_model, review_same_lesson_materials_json)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               (date, subject, grade, topic, summary, weak_points, class_id, organization_id, created_by_user_id)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (
                 date_str,
                 subject,
@@ -4885,66 +5519,153 @@ def create_pending_lesson(
                 topic,
                 summary,
                 weak_points,
-                plan_content,
-                pdf_path or "",
                 class_id if class_id else None,
                 organization_id,
-                record_status,
-                "",
                 int(created_by_user_id or 0),
-                str(review_audio_path or ""),
-                str(review_audio_request_key or ""),
-                str(review_request_key or ""),
-                str(review_request_id or ""),
-                str(review_chat_provider or ""),
-                str(review_chat_model or ""),
-                same_lesson_materials_json,
             ),
         )
-        return cur.lastrowid
+        lesson_id = int(cur.lastrowid)
+        needs_runtime_version = any(
+            str(value or "").strip()
+            for value in (
+                pdf_path,
+                review_audio_path,
+                review_audio_request_key,
+                review_request_key,
+                review_request_id,
+                review_chat_provider,
+                review_chat_model,
+            )
+        ) or record_status not in {"", "pending"} or bool(plan)
+        if needs_runtime_version:
+            status = str(record_status or "pending").strip() or "pending"
+            version_id = _ensure_compat_review_plan_version(
+                conn,
+                lesson_id,
+                status=status,
+                request_key=review_request_key,
+                request_id=review_request_id,
+                chat_provider=review_chat_provider,
+                chat_model=review_chat_model,
+            )
+            plan_json = json.dumps(plan or {}, ensure_ascii=False) if plan else ""
+            if plan_json or pdf_path or review_audio_path or review_audio_request_key or review_same_lesson_materials:
+                conn.execute(
+                    """
+                    UPDATE review_plan_versions
+                    SET plan_json=?,
+                        pdf_path=?,
+                        audio_path=?,
+                        audio_request_key=?,
+                        same_lesson_materials_json=?,
+                        completed_at=CASE
+                            WHEN status='ready' AND (COALESCE(plan_json, '') <> '' OR COALESCE(pdf_path, '') <> '')
+                            THEN COALESCE(NULLIF(completed_at, ''), datetime('now','localtime'))
+                            ELSE completed_at
+                        END,
+                        updated_at=datetime('now','localtime')
+                    WHERE id=?
+                    """,
+                    (
+                        plan_json,
+                        str(pdf_path or ""),
+                        str(review_audio_path or ""),
+                        str(review_audio_request_key or ""),
+                        _dump_review_plan_materials(review_same_lesson_materials),
+                        version_id,
+                    ),
+                )
+            if status == REVIEW_PLAN_READY_STATUS and (plan_json or str(pdf_path or "").strip()):
+                conn.execute(
+                    """
+                    UPDATE review_plan_versions
+                    SET completed_at=COALESCE(NULLIF(completed_at, ''), datetime('now','localtime')),
+                        updated_at=datetime('now','localtime')
+                    WHERE id=?
+                    """,
+                    (version_id,),
+                )
+                conn.execute(
+                    """
+                    UPDATE lessons
+                    SET current_review_plan_version_id=?, updated_at=datetime('now','localtime')
+                    WHERE id=?
+                    """,
+                    (version_id, lesson_id),
+                )
+        return lesson_id
 
 
 def mark_lesson_transcription_succeeded(lesson_id: int, *, summary: str) -> None:
     with get_conn() as conn:
-        cur = conn.execute(
+        lesson = conn.execute("SELECT id FROM lessons WHERE id=?", (int(lesson_id),)).fetchone()
+        if not lesson:
+            raise LookupError("lesson not found")
+        version_id = _ensure_compat_review_plan_version(conn, lesson_id, status="generating")
+        conn.execute(
             """
             UPDATE lessons
-            SET summary=?, record_status='generating', generation_error=''
+            SET summary=?, updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            (summary, lesson_id),
+            (summary, int(lesson_id)),
         )
-        if cur.rowcount == 0:
-            raise LookupError("lesson not found")
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET status='generating', generation_error='', updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (version_id,),
+        )
 
 
 def mark_lesson_generation_succeeded(lesson_id: int, *, plan: dict, pdf_path: str) -> None:
-    plan_json = json.dumps(plan, ensure_ascii=False)
     with get_conn() as conn:
-        cur = conn.execute(
+        lesson = conn.execute("SELECT id FROM lessons WHERE id=?", (int(lesson_id),)).fetchone()
+        if not lesson:
+            raise LookupError("lesson not found")
+        version_id = _ensure_compat_review_plan_version(conn, lesson_id, status="generating")
+        plan_json = json.dumps(plan or {}, ensure_ascii=False)
+        conn.execute(
             """
-            UPDATE lessons
-            SET plan_json=?, pdf_path=?, record_status='ready', generation_error=''
+            UPDATE review_plan_versions
+            SET plan_json=?,
+                pdf_path=?,
+                status='ready',
+                generation_error='',
+                completed_at=datetime('now','localtime'),
+                updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            (plan_json, pdf_path, lesson_id),
+            (plan_json, str(pdf_path or ""), version_id),
         )
-        if cur.rowcount == 0:
-            raise LookupError("lesson not found")
+        conn.execute(
+            """
+            UPDATE lessons
+            SET current_review_plan_version_id=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (version_id, int(lesson_id)),
+        )
 
 
 def mark_lesson_generation_failed(lesson_id: int, error_message: str) -> None:
     with get_conn() as conn:
-        cur = conn.execute(
+        lesson = conn.execute("SELECT id FROM lessons WHERE id=?", (int(lesson_id),)).fetchone()
+        if not lesson:
+            raise LookupError("lesson not found")
+        version_id = _ensure_compat_review_plan_version(conn, lesson_id, status="generating")
+        conn.execute(
             """
-            UPDATE lessons
-            SET record_status='failed', generation_error=?
+            UPDATE review_plan_versions
+            SET status='failed',
+                generation_error=?,
+                updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            (error_message, lesson_id),
+            (str(error_message or ""), version_id),
         )
-        if cur.rowcount == 0:
-            raise LookupError("lesson not found")
 
 
 def requeue_lesson_generation(
@@ -4957,15 +5678,28 @@ def requeue_lesson_generation(
     review_chat_model: str = "",
 ) -> None:
     with get_conn() as conn:
-        cur = conn.execute(
+        lesson = conn.execute("SELECT id FROM lessons WHERE id=?", (int(lesson_id),)).fetchone()
+        if not lesson:
+            raise LookupError("lesson not found")
+        version_id = _ensure_compat_review_plan_version(
+            conn,
+            lesson_id,
+            status=str(record_status or "generating"),
+            request_key=review_request_key,
+            request_id=review_request_id,
+            chat_provider=review_chat_provider,
+            chat_model=review_chat_model,
+        )
+        conn.execute(
             """
-            UPDATE lessons
-            SET record_status=?,
+            UPDATE review_plan_versions
+            SET status=?,
                 generation_error='',
-                review_request_key=?,
-                review_request_id=?,
-                review_chat_provider=?,
-                review_chat_model=?
+                request_key=?,
+                request_id=?,
+                chat_provider=?,
+                chat_model=?,
+                updated_at=datetime('now','localtime')
             WHERE id=?
             """,
             (
@@ -4974,11 +5708,9 @@ def requeue_lesson_generation(
                 str(review_request_id or ""),
                 str(review_chat_provider or ""),
                 str(review_chat_model or ""),
-                int(lesson_id),
+                version_id,
             ),
         )
-        if cur.rowcount == 0:
-            raise LookupError("lesson not found")
 
 
 def _dump_review_plan_run_json(value: object, fallback: object) -> str:
@@ -5116,19 +5848,86 @@ def get_latest_review_plan_run_for_lesson(lesson_id: int) -> Optional[dict]:
         return run
 
 
+def _attach_review_plan_version_summary(conn: sqlite3.Connection, lesson: dict) -> dict:
+    lesson_id = int(lesson.get("id") or 0)
+    current_version = None
+    current_version_id = lesson.get("current_review_plan_version_id")
+    if current_version_id:
+        current_version = _review_plan_version_from_row(
+            conn.execute(
+                "SELECT * FROM review_plan_versions WHERE id=? AND lesson_id=?",
+                (int(current_version_id), lesson_id),
+            ).fetchone()
+        )
+    active_version = _review_plan_version_from_row(_get_latest_active_review_plan_version_row(conn, lesson_id))
+    latest_failed = _review_plan_version_from_row(
+        conn.execute(
+            """
+            SELECT *
+            FROM review_plan_versions
+            WHERE lesson_id=? AND status='failed'
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (lesson_id,),
+        ).fetchone()
+    )
+    latest_version = active_version or current_version or _review_plan_version_from_row(
+        _get_latest_review_plan_version_row(conn, lesson_id)
+    )
+
+    lesson["current_version"] = current_version
+    lesson["active_version"] = active_version
+    lesson["current_review_plan_version_id"] = current_version["id"] if current_version else None
+    lesson["current_version_id"] = current_version["id"] if current_version else None
+    lesson["current_version_no"] = current_version["version_no"] if current_version else None
+    lesson["current_generated_at"] = current_version["completed_at"] if current_version else ""
+    lesson["current_status"] = current_version["status"] if current_version else ""
+    lesson["has_version_generating"] = active_version is not None
+    lesson["active_version_status"] = active_version["status"] if active_version else ""
+    lesson["active_version_created_at"] = active_version["created_at"] if active_version else ""
+    lesson["latest_generation_error"] = (
+        (latest_failed or {}).get("generation_error")
+        or (active_version or {}).get("generation_error")
+        or ""
+    )
+
+    runtime_projection = active_version or current_version or latest_version
+    lesson["plan_json"] = (current_version or {}).get("plan_json", "")
+    lesson["plan"] = (current_version or {}).get("plan", {})
+    lesson["pdf_path"] = (current_version or {}).get("pdf_path", "")
+    if active_version:
+        lesson["record_status"] = active_version.get("status") or "pending"
+    elif current_version:
+        lesson["record_status"] = current_version.get("status") or REVIEW_PLAN_READY_STATUS
+    elif latest_version:
+        lesson["record_status"] = latest_version.get("status") or REVIEW_PLAN_FAILED_STATUS
+    else:
+        lesson["record_status"] = "pending"
+    lesson["generation_error"] = (
+        (active_version or {}).get("generation_error")
+        or (latest_failed or {}).get("generation_error")
+        or (current_version or {}).get("generation_error")
+        or ""
+    )
+    lesson["review_audio_path"] = (runtime_projection or {}).get("audio_path", "")
+    lesson["review_audio_request_key"] = (runtime_projection or {}).get("audio_request_key", "")
+    lesson["review_request_key"] = (runtime_projection or {}).get("request_key", "")
+    lesson["review_request_id"] = (runtime_projection or {}).get("request_id", "")
+    lesson["review_chat_provider"] = (runtime_projection or {}).get("chat_provider", "")
+    lesson["review_chat_model"] = (runtime_projection or {}).get("chat_model", "")
+    lesson["review_same_lesson_materials_json"] = (runtime_projection or {}).get("same_lesson_materials_json", "[]")
+    lesson["review_same_lesson_materials"] = (runtime_projection or {}).get("same_lesson_materials", [])
+    return lesson
+
+
 def get_lesson(lesson_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM lessons WHERE id=?", (lesson_id,)).fetchone()
         if not row:
             return None
         d = dict(row)
-        if d.get("plan_json"):
-            d["plan"] = json.loads(d["plan_json"])
-        try:
-            d["review_same_lesson_materials"] = json.loads(d.get("review_same_lesson_materials_json") or "[]")
-        except json.JSONDecodeError:
-            d["review_same_lesson_materials"] = []
-        return d
+        return _attach_review_plan_version_summary(conn, d)
 
 
 def list_lessons(month_str: str = "", class_id: int = 0) -> list:
@@ -5152,7 +5951,7 @@ def list_lessons(month_str: str = "", class_id: int = 0) -> list:
             rows = conn.execute(
                 "SELECT * FROM lessons ORDER BY created_at DESC, id DESC"
             ).fetchall()
-        return [dict(r) for r in rows]
+        return [_attach_review_plan_version_summary(conn, dict(r)) for r in rows]
 
 
 def delete_lesson(lesson_id: int):
@@ -6322,7 +7121,15 @@ def _build_student_profile_from_row(conn: sqlite3.Connection, row) -> dict:
         SELECT MIN(l.date) AS first_lesson_date, MAX(l.date) AS last_lesson_date
         FROM class_students cs
         JOIN lessons l ON l.class_id = cs.class_id
-        WHERE cs.student_id=? AND COALESCE(l.record_status, 'ready') != 'failed'
+        LEFT JOIN review_plan_versions current_v ON current_v.id=l.current_review_plan_version_id
+        LEFT JOIN review_plan_versions latest_v ON latest_v.id = (
+            SELECT rv.id
+            FROM review_plan_versions rv
+            WHERE rv.lesson_id=l.id
+            ORDER BY rv.version_no DESC, rv.id DESC
+            LIMIT 1
+        )
+        WHERE cs.student_id=? AND COALESCE(current_v.status, latest_v.status, 'ready') != 'failed'
         """,
         (student["id"],),
     ).fetchone()
@@ -6342,7 +7149,20 @@ def _build_student_profile_from_row(conn: sqlite3.Connection, row) -> dict:
             MAX(l.date) AS last_lesson_date
         FROM class_students cs
         JOIN classes c ON c.id = cs.class_id
-        LEFT JOIN lessons l ON l.class_id = c.id AND COALESCE(l.record_status, 'ready') != 'failed'
+        LEFT JOIN lessons l
+          ON l.class_id = c.id
+         AND COALESCE((
+             SELECT current_rv.status
+             FROM review_plan_versions current_rv
+             WHERE current_rv.id=l.current_review_plan_version_id
+             LIMIT 1
+         ), (
+             SELECT rv.status
+             FROM review_plan_versions rv
+             WHERE rv.lesson_id=l.id
+             ORDER BY rv.version_no DESC, rv.id DESC
+             LIMIT 1
+         ), 'ready') != 'failed'
         WHERE cs.student_id=?
         GROUP BY c.id
         ORDER BY c.subject COLLATE NOCASE, c.id
@@ -6593,16 +7413,20 @@ def list_student_review_tasks_for_student_account(account: dict, review_date: st
             """
             SELECT
                 l.*,
+                v.plan_json AS current_plan_json,
+                v.pdf_path AS current_pdf_path,
                 c.name AS class_name,
                 c.subject AS class_subject,
                 c.grade AS class_grade
             FROM lessons l
+            JOIN review_plan_versions v ON v.id=l.current_review_plan_version_id
             JOIN classes c ON c.id=l.class_id
             JOIN class_students cs ON cs.class_id=c.id
             WHERE cs.student_id=?
               AND c.organization_id=?
-              AND COALESCE(l.plan_json, '') <> ''
-              AND COALESCE(l.record_status, 'ready') = 'ready'
+              AND l.current_review_plan_version_id IS NOT NULL
+              AND COALESCE(v.plan_json, '') <> ''
+              AND COALESCE(v.status, 'ready') = 'ready'
             ORDER BY l.date DESC, l.id DESC
             """,
             (student_id, organization_id),
@@ -6611,12 +7435,12 @@ def list_student_review_tasks_for_student_account(account: dict, review_date: st
     tasks: list[dict] = []
     for row in rows:
         lesson = dict(row)
-        plan, day_plans = _load_review_plan_days(str(lesson.get("plan_json") or ""))
+        plan, day_plans = _load_review_plan_days(str(lesson.get("current_plan_json") or ""))
         lesson_info = plan.get("lesson_info") if isinstance(plan.get("lesson_info"), dict) else {}
         for day_index, day_plan in enumerate(day_plans):
             if _extract_review_day_date(day_plan) != review_date:
                 continue
-            pdf_path = str(lesson.get("pdf_path") or "").strip()
+            pdf_path = str(lesson.get("current_pdf_path") or "").strip()
             pdf_page, pdf_page_estimated = _extract_review_day_pdf_page(day_plan, day_index)
             lesson_id = int(lesson["id"])
             topic = str(lesson.get("topic") or lesson_info.get("topic") or "").strip()
@@ -8059,7 +8883,7 @@ def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int 
             params.append(f"{month_str}%")
         query_sql += " ORDER BY created_at DESC, id DESC"
         rows = conn.execute(query_sql, params).fetchall()
-    return [dict(row) for row in rows]
+        return [_attach_review_plan_version_summary(conn, dict(row)) for row in rows]
 
 
 def list_consultations_for_actor(
@@ -13064,8 +13888,8 @@ def get_lessons_by_week(class_id: int, week_str: str) -> list:
     lessons = []
     for r in rows:
         d = dict(r)
-        if d.get("plan_json"):
-            d["plan"] = json.loads(d["plan_json"])
+        with get_conn() as attach_conn:
+            d = _attach_review_plan_version_summary(attach_conn, d)
         lessons.append(d)
     return lessons
 

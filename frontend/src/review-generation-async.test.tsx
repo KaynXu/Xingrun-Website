@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+import {
+  canMakeReviewPlanVersionCurrent,
+  type ReviewPlanDetailRecord,
+  type ReviewPlanVersionRecord,
+} from './features/review-generation/reviewPlanVersions';
+
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const workspacePageContentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
@@ -25,8 +31,69 @@ test('review history source exposes regenerate action and immediate progress fee
   assert.match(reviewGenerationSource, /确定重新生成《\$\{getLessonTitle\(lesson\)\}》吗/);
   assert.match(reviewGenerationSource, /onTaskStarted\(lesson\.id, startedAtMs\);/);
   assert.match(reviewGenerationSource, /onFloatingNotice\(\{ type: 'info', text: `《\$\{getLessonTitle\(lesson\)\}》已开始重新生成。` \}\);/);
-  assert.match(reviewGenerationSource, /record_status: nextStatus, generation_error: ''/);
+  assert.match(reviewGenerationSource, /has_version_generating: true/);
+  assert.match(reviewGenerationSource, /active_version_status: nextStatus/);
   assert.match(reviewGenerationSource, /title="重新生成"/);
+});
+
+test('review history opens lightweight version detail view', () => {
+  assert.match(reviewGenerationSource, /selectedDetailLessonId/);
+  assert.match(reviewGenerationSource, /<ReviewPlanDetailView/);
+  assert.match(reviewGenerationSource, /title="详情"/);
+  assert.match(reviewGenerationSource, /onBack=\{\(\) => setSelectedDetailLessonId\(null\)\}/);
+});
+
+test('review plan detail source fetches versions and can make a ready version current', () => {
+  const detailSource = readFileSync(new URL('./features/review-generation/ReviewPlanDetailView.tsx', import.meta.url), 'utf8');
+  assert.match(detailSource, /apiFetch<unknown>\(`\/api\/review-plans\/\$\{lessonId\}`\)/);
+  assert.match(detailSource, /\/api\/review-plans\/\$\{lessonId\}\/versions\/\$\{version\.id\}\/make-current/);
+  assert.match(detailSource, /current_pdf_url/);
+  assert.match(detailSource, /版本历史/);
+  assert.match(detailSource, /iframe/);
+  assert.match(detailSource, /detail\?\.has_version_generating/);
+  assert.match(detailSource, /const timer = window\.setInterval\(\(\) => \{\s*void loadDetail\(true\);\s*\}, 3000\);/);
+  assert.match(detailSource, /return \(\) => window\.clearInterval\(timer\);/);
+});
+
+test('review plan version helper requires a ready version with an available PDF before make-current', () => {
+  const detail: ReviewPlanDetailRecord = {
+    id: 12,
+    date: '2026-05-02',
+    subject: '数学',
+    grade: '七年级',
+    topic: '整式',
+    summary: '',
+    weak_points: '',
+    created_at: '2026-05-02T12:00:00',
+    current_version_id: 31,
+    current_version_no: 1,
+    current_generated_at: '2026-05-02T12:20:00',
+    current_pdf_url: '/api/review-plans/12/versions/31/pdf',
+    current_download_url: '/api/review-plans/12/versions/31/download',
+    current_status: 'ready',
+    has_version_generating: false,
+    active_version_status: '',
+    latest_generation_error: '',
+    versions: [],
+  };
+  const baseVersion: ReviewPlanVersionRecord = {
+    id: 32,
+    lesson_id: 12,
+    version_no: 2,
+    status: 'ready',
+    pdf_available: true,
+    pdf_url: '/api/review-plans/12/versions/32/pdf',
+    download_url: '/api/review-plans/12/versions/32/download',
+    generation_error: '',
+    created_at: '2026-05-02T12:30:00',
+    updated_at: '2026-05-02T12:30:00',
+    completed_at: '2026-05-02T12:35:00',
+  };
+
+  assert.equal(canMakeReviewPlanVersionCurrent(detail, baseVersion), true);
+  assert.equal(canMakeReviewPlanVersionCurrent(detail, { ...baseVersion, id: 31 }), false);
+  assert.equal(canMakeReviewPlanVersionCurrent(detail, { ...baseVersion, pdf_available: false }), false);
+  assert.equal(canMakeReviewPlanVersionCurrent(detail, { ...baseVersion, status: 'failed' }), false);
 });
 
 test('review generation source keeps progress feedback in a bottom-right dock instead of inline color banners', () => {
