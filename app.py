@@ -2483,12 +2483,12 @@ def _serialize_review_plan_version_for_response(lesson_id: int, version: object)
     serialized["pdf_available"] = pdf_exists
     serialized["pdf_url"] = (
         f"/api/review-plans/{lesson_id}/versions/{serialized['id']}/pdf"
-        if is_ready and pdf_path
+        if is_ready and pdf_exists
         else ""
     )
     serialized["download_url"] = (
         f"/api/review-plans/{lesson_id}/versions/{serialized['id']}/download"
-        if is_ready and pdf_path
+        if is_ready and pdf_exists
         else ""
     )
     if not pdf_exists:
@@ -2517,12 +2517,12 @@ def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = F
     current_pdf_exists = bool(current_pdf_path and Path(current_pdf_path).exists())
     serialized["current_pdf_url"] = (
         f"/api/review-plans/{lesson_id}/versions/{current_version['id']}/pdf"
-        if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_path
+        if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_exists
         else ""
     )
     serialized["current_download_url"] = (
         f"/api/review-plans/{lesson_id}/versions/{current_version['id']}/download"
-        if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_path
+        if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_exists
         else ""
     )
     serialized["pdf_path"] = current_pdf_path if current_pdf_exists else ""

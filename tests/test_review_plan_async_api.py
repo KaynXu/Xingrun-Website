@@ -392,6 +392,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(thread_kwargs["same_lesson_materials"], ["补充材料"])
 
     def test_review_plan_list_uses_current_version_fields_and_time(self):
+        first_pdf_path = self.base / "first.pdf"
+        second_pdf_path = self.base / "second.pdf"
+        first_pdf_path.write_bytes(b"%PDF-1.4\nfirst\n%%EOF\n")
+        second_pdf_path.write_bytes(b"%PDF-1.4\nsecond\n%%EOF\n")
         first_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
             subject="数学",
@@ -405,7 +409,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         lesson_manager.complete_review_plan_version(
             first_version["id"],
             plan={"days": []},
-            pdf_path="/tmp/first.pdf",
+            pdf_path=str(first_pdf_path),
         )
         second_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-10",
@@ -420,7 +424,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         lesson_manager.complete_review_plan_version(
             second_version["id"],
             plan={"days": []},
-            pdf_path="/tmp/second.pdf",
+            pdf_path=str(second_pdf_path),
         )
 
         response = self.client.get(
