@@ -478,6 +478,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(payload["versions"][1]["status"], "ready")
 
     def test_make_current_switches_to_ready_old_version(self):
+        first_pdf_path = self.base / "v1.pdf"
+        second_pdf_path = self.base / "v2.pdf"
+        first_pdf_path.write_bytes(b"%PDF-1.4\nv1\n%%EOF\n")
+        second_pdf_path.write_bytes(b"%PDF-1.4\nv2\n%%EOF\n")
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",
             subject="数学",
@@ -491,13 +495,13 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         lesson_manager.complete_review_plan_version(
             first["id"],
             plan={"lesson_info": {"topic": "第一版"}, "days": []},
-            pdf_path="/tmp/v1.pdf",
+            pdf_path=str(first_pdf_path),
         )
         second = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
         lesson_manager.complete_review_plan_version(
             second["id"],
             plan={"lesson_info": {"topic": "第二版"}, "days": []},
-            pdf_path="/tmp/v2.pdf",
+            pdf_path=str(second_pdf_path),
         )
 
         response = self.client.post(
@@ -509,6 +513,42 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["current_version_id"], first["id"])
         lesson = lesson_manager.get_lesson(lesson_id)
         self.assertEqual(lesson["current_review_plan_version_id"], first["id"])
+
+    def test_make_current_rejects_ready_version_with_missing_pdf(self):
+        current_pdf_path = self.base / "current.pdf"
+        missing_pdf_path = self.base / "missing.pdf"
+        current_pdf_path.write_bytes(b"%PDF-1.4\ncurrent\n%%EOF\n")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        missing_pdf_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            missing_pdf_version["id"],
+            plan={"lesson_info": {"topic": "第一版"}, "days": []},
+            pdf_path=str(missing_pdf_path),
+        )
+        current_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            current_version["id"],
+            plan={"lesson_info": {"topic": "第二版"}, "days": []},
+            pdf_path=str(current_pdf_path),
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/versions/{missing_pdf_version['id']}/make-current",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("PDF 文件不存在", response.get_json()["error"])
+        lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(lesson["current_review_plan_version_id"], current_version["id"])
 
     def test_version_pdf_preview_and_download_use_specific_version(self):
         requested_pdf_path = self.base / "requested-version.pdf"
@@ -986,6 +1026,50 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(thread_kwargs["audio_request_key"], "audio-key")
         self.assertEqual(thread_kwargs["same_lesson_materials"], ["补充材料"])
         self.assertIn("request-id", app_module._AI_REQUEST_IN_FLIGHT)
+
+    @patch("app._start_review_plan_generation_thread")
+    def test_startup_recovery_fails_active_version_when_request_was_already_processed(self, mock_start_thread):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=0,
+            created_by_user_id=1,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=1,
+            request_key="request-key",
+            request_id="processed-request-id",
+            chat_provider="deepseek",
+            chat_model="deepseek-v4-flash",
+        )
+        lesson_manager.insert_ai_usage_row(
+            organization_id=1,
+            user_id=1,
+            feature_key="lesson_plan_generate",
+            provider="deepseek",
+            model="deepseek-v4-flash",
+            input_tokens=10,
+            output_tokens=5,
+            credit_cost_final=0,
+            source_record_type="lesson",
+            source_record_id=str(lesson_id),
+            request_id="processed-request-id",
+        )
+
+        recovered = app_module._recover_interrupted_review_plan_jobs()
+
+        self.assertEqual(recovered, 0)
+        mock_start_thread.assert_not_called()
+        saved_version = lesson_manager.get_review_plan_version(version["id"])
+        self.assertEqual(saved_version["status"], "failed")
+        self.assertEqual(saved_version["generation_error"], "生成任务已中断，请重新生成")
+        self.assertFalse(lesson_manager.lesson_has_active_review_plan_version(lesson_id))
 
     @patch("app._run_ai_feature_with_charge", side_effect=RuntimeError("boom"))
     def test_worker_writes_sanitized_ai_error_message(

@@ -1048,6 +1048,7 @@ def _recover_interrupted_review_plan_jobs() -> int:
                     )
                 except DuplicateAiRequestError:
                     logger.warning("Review plan recovery skipped for duplicate request %s", request_id)
+                    fail_review_plan_version(int(version["id"]), "生成任务已中断，请重新生成")
                     continue
             _start_review_plan_generation_thread(
                 lesson_id=int(lesson["id"]),
@@ -7778,6 +7779,14 @@ def api_review_plan_version_make_current(lesson_id, version_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
+    version = get_review_plan_version_for_lesson(lesson_id, version_id)
+    if not version:
+        return jsonify({"error": "not found"}), 404
+    if str(version.get("status") or "") != "ready":
+        return jsonify({"error": "review plan version must be ready"}), 400
+    pdf_path = str(version.get("pdf_path") or "")
+    if not pdf_path or not Path(pdf_path).exists():
+        return jsonify({"error": "当前版本的 PDF 文件不存在，无法设为当前版本"}), 400
     try:
         set_current_review_plan_version(lesson_id, version_id)
     except LookupError:
