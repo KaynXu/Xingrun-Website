@@ -32,6 +32,8 @@ type FloatingFilterBarProps<Key extends string = string> = {
   onAreaEnter: () => void;
   onAreaLeave: () => void;
   onActivate: (key: Key | null) => void;
+  onHoverActivate?: (key: Key) => void;
+  onClickActivate?: (key: Key | null, clickedKey: Key) => void;
   onClear: (key: Key) => void;
   onSelect: (value: FloatingFilterValue) => void;
 };
@@ -107,6 +109,8 @@ export function FloatingFilterBar<Key extends string = string>({
   onAreaEnter,
   onAreaLeave,
   onActivate,
+  onHoverActivate,
+  onClickActivate,
   onClear,
   onSelect,
 }: FloatingFilterBarProps<Key>) {
@@ -131,10 +135,17 @@ export function FloatingFilterBar<Key extends string = string>({
             type="button"
             onMouseEnter={() => {
               if (activateOnHover) {
-                onActivate(item.key);
+                (onHoverActivate || onActivate)(item.key);
               }
             }}
-            onClick={() => onActivate(activeKey === item.key ? null : item.key)}
+            onClick={() => {
+              const nextKey = activeKey === item.key ? null : item.key;
+              if (onClickActivate) {
+                onClickActivate(nextKey, item.key);
+              } else {
+                onActivate(nextKey);
+              }
+            }}
             className={cn(
               'inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition',
               compact && 'min-h-9 px-3 py-1.5',

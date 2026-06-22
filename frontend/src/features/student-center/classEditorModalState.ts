@@ -65,6 +65,18 @@ export function buildTeacherFilterContext(
   });
 }
 
+export function shouldShowTeacherResultsPanel({
+  searchText,
+  pinnedFilterLayer,
+  hoverActive,
+}: {
+  searchText: string;
+  pinnedFilterLayer: 'subject' | 'stage' | null;
+  hoverActive: boolean;
+}): boolean {
+  return Boolean(searchText.trim()) || pinnedFilterLayer !== null || hoverActive;
+}
+
 export function buildClassEditorModalState({
   expandedClassId,
   classes,

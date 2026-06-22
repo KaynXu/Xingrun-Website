@@ -1,6 +1,6 @@
 import { AlertCircle, Search, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FloatingFilterBar, type FloatingFilterOption } from '../../components/FloatingFilterBar';
 import {
   bridgeStageOptions,
@@ -9,6 +9,7 @@ import {
   serializeBridgeTarget,
 } from '../../domain/classNaming';
 import { getClassInviteCopyButtonLabel } from './classInviteRules';
+import { shouldShowTeacherResultsPanel } from './classEditorModalState';
 import {
   cn,
 } from '../../workspaceShared';
@@ -139,10 +140,23 @@ export function ClassEditorModal({
   const [copyingInviteClassId, setCopyingInviteClassId] = useState<number | null>(null);
   const [copiedInviteClassId, setCopiedInviteClassId] = useState<number | null>(null);
   const [activeTeacherFilterLayer, setActiveTeacherFilterLayer] = useState<TeacherFilterLayer | null>(null);
+  const [pinnedTeacherFilterLayer, setPinnedTeacherFilterLayer] = useState<TeacherFilterLayer | null>(null);
   const [teacherSubjectFilter, setTeacherSubjectFilter] = useState('全部学科');
   const [teacherStageFilter, setTeacherStageFilter] = useState('全部学段');
   const [teacherResultsOpen, setTeacherResultsOpen] = useState(false);
   const teacherSearchHasText = editing.teacherSearch.trim().length > 0;
+  const showTeacherResultsPanel = shouldShowTeacherResultsPanel({
+    searchText: editing.teacherSearch,
+    pinnedFilterLayer: pinnedTeacherFilterLayer,
+    hoverActive: teacherResultsOpen,
+  });
+  useEffect(() => {
+    setActiveTeacherFilterLayer(null);
+    setPinnedTeacherFilterLayer(null);
+    setTeacherResultsOpen(false);
+    setTeacherSubjectFilter('全部学科');
+    setTeacherStageFilter('全部学段');
+  }, [editingClass?.id]);
   const normalizedNewClassStudentSearch = newClassStudentSearch.trim().toLowerCase();
   const selectedNewClassStudents = useMemo(
     () => newClass.allStudents.filter((student) => newClass.form.selected_student_ids.includes(student.id)),
@@ -226,7 +240,8 @@ export function ClassEditorModal({
       setTeacherStageFilter('全部学段');
     }
     setActiveTeacherFilterLayer(null);
-    setTeacherResultsOpen(true);
+    setPinnedTeacherFilterLayer(null);
+    setTeacherResultsOpen(teacherSearchHasText);
   };
   const handleSelectTeacherFilter = (value: string | number) => {
     if (activeTeacherFilterLayer === 'subject') {
@@ -235,6 +250,7 @@ export function ClassEditorModal({
       setTeacherStageFilter(String(value));
     }
     setActiveTeacherFilterLayer(null);
+    setPinnedTeacherFilterLayer((current) => activeTeacherFilterLayer ?? current);
     setTeacherResultsOpen(true);
   };
   const updateBridgeTarget = (classId: number | 'new', fromStage: string, toStage: string) => {
@@ -656,6 +672,29 @@ export function ClassEditorModal({
                                   setActiveTeacherFilterLayer(key);
                                   if (key) {
                                     setTeacherResultsOpen(true);
+                                  } else {
+                                    setPinnedTeacherFilterLayer(null);
+                                    if (!teacherSearchHasText) {
+                                      setTeacherResultsOpen(false);
+                                    }
+                                  }
+                                }}
+                                onHoverActivate={(key) => {
+                                  if (pinnedTeacherFilterLayer === null) {
+                                    setActiveTeacherFilterLayer(key);
+                                    setTeacherResultsOpen(true);
+                                  }
+                                }}
+                                onClickActivate={(_, clickedKey) => {
+                                  const nextPinnedLayer = pinnedTeacherFilterLayer === clickedKey ? null : clickedKey;
+                                  setActiveTeacherFilterLayer(nextPinnedLayer);
+                                  setPinnedTeacherFilterLayer(nextPinnedLayer);
+                                  if (nextPinnedLayer) {
+                                    setTeacherResultsOpen(true);
+                                  } else {
+                                    if (!teacherSearchHasText) {
+                                      setTeacherResultsOpen(false);
+                                    }
                                   }
                                 }}
                                 onClear={handleClearTeacherFilter}
@@ -682,7 +721,7 @@ export function ClassEditorModal({
                         <div
                           className="relative"
                           onMouseLeave={() => {
-                            if (!teacherSearchHasText) {
+                            if (!teacherSearchHasText && pinnedTeacherFilterLayer === null) {
                               setTeacherResultsOpen(false);
                             }
                           }}
@@ -705,7 +744,7 @@ export function ClassEditorModal({
                             />
                           </label>
 
-                          {teacherResultsOpen || teacherSearchHasText ? (
+                          {showTeacherResultsPanel ? (
                           <div className="mt-4 min-h-24 rounded-2xl border border-slate-200 bg-white p-2 lg:absolute lg:left-[calc(100%+2rem)] lg:top-1/2 lg:z-30 lg:mt-0 lg:w-[320px] lg:-translate-y-1/2 dark:border-white/10 dark:bg-slate-900/95">
                             {users.length === 0 ? (
                               <div className="px-3 py-2 text-sm text-slate-400 dark:text-slate-500">当前暂无成员</div>
@@ -723,6 +762,7 @@ export function ClassEditorModal({
                                         if (!selected) {
                                           actions.onSelectTeacherForClass(editingClass.id, user.id);
                                         }
+                                        setPinnedTeacherFilterLayer(null);
                                         setTeacherResultsOpen(false);
                                       }}
                                       disabled={editing.teacherBindingSaving || classInteractionLocked}
