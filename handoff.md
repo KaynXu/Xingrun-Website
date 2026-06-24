@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-06-23
+最后更新：2026-06-24
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-24 已从生产库只读快照 `/tmp/xingrun-prod-20260623-he-shujian.db` 为何姝健老师 6 月 23 日学生上传错题生成“原图等宽方法提醒版”练习包：18 条上传全部纳入，按张格源 5 题、谢雨彤 6 题、吴靖萱 2 题、王睿博 5 题各出一份 PDF；版式为原图与图片框等宽、按比例自适应高度，并保留“方法提醒”和“箭头分析区”。成品目录：`output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/`，zip：`output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623.zip`。proof 已通过 `/tmp/xingrun_proof_he_0623_original_practice.py`：18 张原图、4 个 PDF、总页数 18、关键词齐全、zip 条目齐全，4 张样张 PyMuPDF 渲染非空。
 - 2026-06-23 已完成“复习计划详情页 PDF 预览过短”正式发布：发布内容提交为 `597d860c`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已拉取该提交并完成 `./scripts/deploy_backend.sh master`、`npm --prefix frontend run build`、`pm2 restart xingrun`；`pm2 status xingrun` 为 `online`，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。发布证明脚本：`/tmp/proof_release_master_20260623.sh`、`/tmp/deploy_master_20260623.sh`。
 - 2026-06-23 已完成“复习计划详情页 PDF 预览过短”修复：`frontend/src/features/review-generation/ReviewPlanDetailView.tsx` 已把详情页当前版本 PDF iframe 与 loading skeleton 从 `62vh / 420px` 提升到响应式 `70vh~76vh / 520px~640px`，桌面端预览高度明显增加。验证脚本：`/tmp/proof_review_plan_detail_preview_height_20260623.sh`。
 - 2026-06-23 已完成“复习计划版本历史与重新生成不覆盖”正式发布：`origin/master` 已更新到 `d21f434f`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已拉到同一提交；`./scripts/deploy_backend.sh master` 健康通过，`npm --prefix frontend run build` 成功，`pm2 status xingrun` 为 `online`，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。发布证明脚本：`/tmp/proof_release_master_20260623.sh`、`/tmp/deploy_master_20260623.sh`。
