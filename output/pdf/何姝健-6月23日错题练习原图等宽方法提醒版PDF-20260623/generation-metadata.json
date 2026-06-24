@@ -2,11 +2,11 @@
   "teacher_name": "何姝健",
   "date_start": "2026-06-23",
   "date_end_exclusive": "2026-06-24",
-  "generated_at": "2026-06-24T09:23:12",
+  "generated_at": "2026-06-24T15:02:34",
   "source_db": "/tmp/xingrun-prod-20260623-he-shujian.db",
   "output_dir": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623",
   "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623.zip",
-  "layout": "original-image-full-frame-width-proportional-height-method-reminder-arrow-analysis-space",
+  "layout": "original-image-full-frame-width-proportional-height-method-reminder-no-arrow-analysis",
   "total_upload_count": 18,
   "student_counts": {
     "吴靖萱": 2,
@@ -27,11 +27,11 @@
       "page_sizes_mm": [
         [
           210.0,
-          507.2
+          435.2
         ],
         [
           210.0,
-          625.8
+          553.8
         ],
         [
           210.0,
