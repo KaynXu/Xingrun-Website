@@ -1,0 +1,71 @@
+{
+  "proof_status": "passed",
+  "output_dir": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625",
+  "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625.zip",
+  "layout": "original-image-full-frame-width-proportional-height-method-reminder-no-arrow-analysis",
+  "pdf_count": 1,
+  "image_count": 9,
+  "total_pages": 9,
+  "student_counts": {
+    "张琨旎": 9
+  },
+  "status_counts": {
+    "ready/recognized": 9
+  },
+  "arrow_analysis_removed": true,
+  "pdf_checks": [
+    {
+      "file": "数学·初2025级·七年级·4班-张琨旎-6月25日错题练习原图等宽方法提醒版-20260625.pdf",
+      "pages": 9,
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    }
+  ],
+  "rendered_samples": [
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/proof/sample-1-数学·初2025级·七年级·4班-张琨旎-6月2.png",
+      "size_px": [
+        417,
+        590
+      ],
+      "gray_mean": 252.75,
+      "nonwhite_ratio": 0.1139
+    }
+  ]
+}

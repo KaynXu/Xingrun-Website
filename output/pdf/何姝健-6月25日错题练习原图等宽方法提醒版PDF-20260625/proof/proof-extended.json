@@ -1,0 +1,190 @@
+{
+  "proof_status": "passed",
+  "generic_proof": {
+    "proof_status": "passed",
+    "output_dir": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625",
+    "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625.zip",
+    "layout": "original-image-full-frame-width-proportional-height-method-reminder-no-arrow-analysis",
+    "pdf_count": 1,
+    "image_count": 9,
+    "total_pages": 9,
+    "student_counts": {
+      "张琨旎": 9
+    },
+    "status_counts": {
+      "ready/recognized": 9
+    },
+    "arrow_analysis_removed": true,
+    "pdf_checks": [
+      {
+        "file": "数学·初2025级·七年级·4班-张琨旎-6月25日错题练习原图等宽方法提醒版-20260625.pdf",
+        "pages": 9,
+        "page_sizes_mm": [
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ],
+          [
+            210.0,
+            297.0
+          ]
+        ]
+      }
+    ],
+    "rendered_samples": [
+      {
+        "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/proof/sample-1-数学·初2025级·七年级·4班-张琨旎-6月2.png",
+        "size_px": [
+          417,
+          590
+        ],
+        "gray_mean": 252.75,
+        "nonwhite_ratio": 0.1139
+      }
+    ]
+  },
+  "output_dir": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625",
+  "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625.zip",
+  "pdf_file": "数学·初2025级·七年级·4班-张琨旎-6月25日错题练习原图等宽方法提醒版-20260625.pdf",
+  "student_counts": {
+    "张琨旎": 9
+  },
+  "status_counts": {
+    "ready/recognized": 9
+  },
+  "total_pages": 9,
+  "method_reminder_count": 9,
+  "arrow_analysis_removed": true,
+  "image_equal_frame_width_and_ratio_height": true,
+  "image_geometry": [
+    {
+      "page": 1,
+      "record_id": "wechat-b3cca67bd01a2fae",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 66.67,
+      "expected_ratio_height_pt": 66.67
+    },
+    {
+      "page": 2,
+      "record_id": "wechat-fec11be2b38e6b43",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 178.76,
+      "expected_ratio_height_pt": 178.76
+    },
+    {
+      "page": 3,
+      "record_id": "wechat-165d45e000ebc3ea",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 124.4,
+      "expected_ratio_height_pt": 124.4
+    },
+    {
+      "page": 4,
+      "record_id": "wechat-a92838cad88039fd",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 191.27,
+      "expected_ratio_height_pt": 191.27
+    },
+    {
+      "page": 5,
+      "record_id": "wechat-009b8e473bffdbc4",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 497.13,
+      "expected_ratio_height_pt": 497.13
+    },
+    {
+      "page": 6,
+      "record_id": "wechat-05def4771c016b5a",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 250.21,
+      "expected_ratio_height_pt": 250.21
+    },
+    {
+      "page": 7,
+      "record_id": "wechat-07b815ee38b2334f",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 287.83,
+      "expected_ratio_height_pt": 287.83
+    },
+    {
+      "page": 8,
+      "record_id": "wechat-b2fa49f13ab7ed75",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 67.33,
+      "expected_ratio_height_pt": 67.33
+    },
+    {
+      "page": 9,
+      "record_id": "wechat-5b2a7eacaeab1031",
+      "image_width_pt": 521.57,
+      "expected_frame_width_pt": 521.57,
+      "image_height_pt": 395.68,
+      "expected_ratio_height_pt": 395.68
+    }
+  ],
+  "rendered_samples": [
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/proof/he-0625-page-1.png",
+      "size_px": [
+        417,
+        590
+      ],
+      "gray_mean": 252.75,
+      "nonwhite_ratio": 0.1139
+    },
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/proof/he-0625-page-5.png",
+      "size_px": [
+        417,
+        590
+      ],
+      "gray_mean": 249.18,
+      "nonwhite_ratio": 0.1679
+    },
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/proof/he-0625-page-9.png",
+      "size_px": [
+        417,
+        590
+      ],
+      "gray_mean": 250.81,
+      "nonwhite_ratio": 0.1512
+    }
+  ]
+}
