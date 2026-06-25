@@ -1,0 +1,263 @@
+{
+  "teacher_name": "何姝健",
+  "date_start": "2026-06-25",
+  "date_end_exclusive": "2026-06-26",
+  "generated_at": "2026-06-25T14:29:13",
+  "source_db": "/tmp/xingrun-prod-20260625-he-shujian.db",
+  "output_dir": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625",
+  "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625.zip",
+  "layout": "original-image-full-frame-width-proportional-height-method-reminder-no-arrow-analysis",
+  "total_upload_count": 9,
+  "student_counts": {
+    "张琨旎": 9
+  },
+  "status_counts": {
+    "ready/recognized": 9
+  },
+  "pdfs": [
+    {
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "question_count": 9,
+      "pdf_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/数学·初2025级·七年级·4班-张琨旎-6月25日错题练习原图等宽方法提醒版-20260625.pdf",
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    }
+  ],
+  "items": [
+    {
+      "task_id": 1002,
+      "record_id": "wechat-b3cca67bd01a2fae",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:01",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "通用审题",
+      "image_url": "https://xingrun.online/files/1782345481411-o9i1lx0wha.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/01-wechat-b3cca67bd01a2fae.jpg",
+      "image_size": [
+        1330,
+        170
+      ],
+      "question_text": "7. 估计 3(3+2) 的值应在（ ） A. 4 和 5 之间 B. 5 和 6 之间 C. 6 和 7 之间 D. 7 和 8 之间",
+      "method_reminders": [
+        "先圈关键词、已知条件和所求问题，把能直接使用的公式或性质写在旁边。",
+        "做题前先搭链条：已知条件 → 方法入口 → 关键中间量 → 答案。"
+      ]
+    },
+    {
+      "task_id": 1003,
+      "record_id": "wechat-fec11be2b38e6b43",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:01",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782345481850-slug2du8aw.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/02-wechat-fec11be2b38e6b43.jpg",
+      "image_size": [
+        1491,
+        511
+      ],
+      "question_text": "如图，在△ ABC中，AC的垂直平分线分别交AC、BC于点E、D，连接AD，∠ DAE = 30^°、DE = 3，△ ABD的周长为16，则△ ABC的周长为（ ）",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 1004,
+      "record_id": "wechat-165d45e000ebc3ea",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:02",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "通用审题",
+      "image_url": "https://xingrun.online/files/1782345482156-ecym9bp76df.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/03-wechat-165d45e000ebc3ea.jpg",
+      "image_size": [
+        1174,
+        280
+      ],
+      "question_text": "10. 若 x = 3 + 23 - 2, y = 3 - 23 + 2, 则 x^2 - 3xy + y^2 的值为（ ） A. 90 B. 91 C. 93 D. 95",
+      "method_reminders": [
+        "先圈关键词、已知条件和所求问题，把能直接使用的公式或性质写在旁边。",
+        "做题前先搭链条：已知条件 → 方法入口 → 关键中间量 → 答案。"
+      ]
+    },
+    {
+      "task_id": 1005,
+      "record_id": "wechat-a92838cad88039fd",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:02",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "通用审题",
+      "image_url": "https://xingrun.online/files/1782345482581-48fajkt19s.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/04-wechat-a92838cad88039fd.jpg",
+      "image_size": [
+        1448,
+        531
+      ],
+      "question_text": "如图，在△ ABC中，点D是AC边上一点，CD=2AD，连接BD，点E是BC边上一点，BE=3CE，连接AE，与BD交于点F，若S_△ ABF=9，则四边形CDFE的面积是（ ）",
+      "method_reminders": [
+        "先圈关键词、已知条件和所求问题，把能直接使用的公式或性质写在旁边。",
+        "做题前先搭链条：已知条件 → 方法入口 → 关键中间量 → 答案。"
+      ]
+    },
+    {
+      "task_id": 1006,
+      "record_id": "wechat-009b8e473bffdbc4",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:03",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782345483030-rgah5qfrq2i.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/05-wechat-009b8e473bffdbc4.jpg",
+      "image_size": [
+        832,
+        793
+      ],
+      "question_text": "如图，已知△ABC为等边三角形，点D为BC中点，点F在∠ACB的平分线上，点G在AC上，分别连接FG，AF，BF和CF，已知∠AFB=∠FGC=90°，BF=AF，过点A作AH∥FG，且AH=AC，连接HB，在BC上截取一点E，使得BE=AD，连接DF，FE，延长FD至点I使得FI=BF，下面结论：①∠FDE=45°；②S_△BDF=(2+3)S_△FEC；③HB+FC=BF；④BI=2FG；其中正确的个数是（ ）",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 1007,
+      "record_id": "wechat-05def4771c016b5a",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:03",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782345483382-zyotwtnoonk.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/06-wechat-05def4771c016b5a.jpg",
+      "image_size": [
+        838,
+        402
+      ],
+      "question_text": "如图，在△ADC中，DE是AC边上的高，在AD左侧作∠FAD = ∠CAD，点B为FA延长线上一点，连接BD，使得∠BAC = ∠BDC，若AC = (51)/(10)，AB = (61)/(20)，则AE = ______。",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 1008,
+      "record_id": "wechat-07b815ee38b2334f",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:03",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "通用审题",
+      "image_url": "https://xingrun.online/files/1782345483780-8nbcgju6e8.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/07-wechat-07b815ee38b2334f.jpg",
+      "image_size": [
+        839,
+        463
+      ],
+      "question_text": "25. 如图，在△ABE中，点D为AE上一点，连接BD，且AB=BD，点C为△ABE外一点，连接CE，CA，CB，∠ABD=∠CBE=∠EAC. (1) 求证：△BDE ≌ △BAC (2) 若∠ABD = 24°，∠ACE = 121°，求∠AEB的度数。",
+      "method_reminders": [
+        "先圈关键词、已知条件和所求问题，把能直接使用的公式或性质写在旁边。",
+        "做题前先搭链条：已知条件 → 方法入口 → 关键中间量 → 答案。"
+      ]
+    },
+    {
+      "task_id": 1009,
+      "record_id": "wechat-b2fa49f13ab7ed75",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:04",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "通用审题",
+      "image_url": "https://xingrun.online/files/1782345484095-ffr2w8my4pp.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/08-wechat-b2fa49f13ab7ed75.jpg",
+      "image_size": [
+        1317,
+        170
+      ],
+      "question_text": "7. 估计 3(3+2) 的值应在（ ） A. 4 和 5 之间 B. 5 和 6 之间 C. 6 和 7 之间 D. 7 和 8 之间",
+      "method_reminders": [
+        "先圈关键词、已知条件和所求问题，把能直接使用的公式或性质写在旁边。",
+        "做题前先搭链条：已知条件 → 方法入口 → 关键中间量 → 答案。"
+      ]
+    },
+    {
+      "task_id": 1010,
+      "record_id": "wechat-5b2a7eacaeab1031",
+      "student_name": "张琨旎",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-25 07:58:04",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782345484421-m6l0o81h7vc.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/images/original/09-wechat-5b2a7eacaeab1031.jpg",
+      "image_size": [
+        783,
+        594
+      ],
+      "question_text": "26. 如图，两个等腰△ABC、△ADE，满足 AB = AC，AD = ED，∠BAC = ∠ADE，它们有公共点 A，将△ADE绕点A进行旋转. (1) 如图1，当点D在BC边上，点E与点B重合时，若∠BAD = 3∠CAD，求∠BAD的度数； (2) 当△ADE旋转到如图2的位置时，连接BD、CE，延长DA交CE于点M，若此时有2∠ ABC + (1)/(2)∠ BDE = 180^°，求证：EM = CM",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    }
+  ]
+}
