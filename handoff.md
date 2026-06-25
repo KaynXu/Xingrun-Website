@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新：2026-06-24
+最后更新：2026-06-25
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-25 已把本次错题练习生成流程固化为本地 Codex skill：`~/.codex/skills/xingrun-wrong-question-practice/`。skill 默认生成“原图等宽方法提醒版”：每页一道题，原上传图片直接插入且与内容框等宽、高度按比例自适应，保留“方法提醒”，默认去掉“箭头分析区”；如需保留箭头区可在生成脚本加 `--include-arrow-analysis`。内含脚本 `scripts/generate_practice_package.py` 和 `scripts/proof_practice_package.py`，可从 SQLite 快照按教师/日期生成按学生拆分 PDF、zip、metadata，并校验页数、题数、原图、zip、方法提醒、箭头区是否移除和 PyMuPDF 样张非空。proof 已通过 `/tmp/proof_xingrun_wrong_question_skill_20260625.sh`，用何姝健 6 月 23 日包在 `/tmp/xingrun-skill-he-0623-no-arrow-proof/` 临时重渲染出 4 个 PDF、18 页、18 张原图，`arrow_analysis_removed=true`，skill `quick_validate.py` 通过。
 - 2026-06-24 已从生产库只读快照 `/tmp/xingrun-prod-20260623-he-shujian.db` 为何姝健老师 6 月 23 日学生上传错题生成“原图等宽方法提醒版”练习包：18 条上传全部纳入，按张格源 5 题、谢雨彤 6 题、吴靖萱 2 题、王睿博 5 题各出一份 PDF；版式为原图与图片框等宽、按比例自适应高度，并保留“方法提醒”，已去掉“箭头分析区”。成品目录：`output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/`，zip：`output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623.zip`。proof 已通过 `/tmp/xingrun_proof_he_0623_no_arrow.py`：18 张原图、4 个 PDF、总页数 18、方法提醒齐全、箭头分析区文本不存在、zip 条目齐全，4 张样张 PyMuPDF 渲染非空。
 - 2026-06-23 已完成“复习计划详情页 PDF 预览过短”正式发布：发布内容提交为 `597d860c`，生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已拉取该提交并完成 `./scripts/deploy_backend.sh master`、`npm --prefix frontend run build`、`pm2 restart xingrun`；`pm2 status xingrun` 为 `online`，`curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。发布证明脚本：`/tmp/proof_release_master_20260623.sh`、`/tmp/deploy_master_20260623.sh`。
 - 2026-06-23 已完成“复习计划详情页 PDF 预览过短”修复：`frontend/src/features/review-generation/ReviewPlanDetailView.tsx` 已把详情页当前版本 PDF iframe 与 loading skeleton 从 `62vh / 420px` 提升到响应式 `70vh~76vh / 520px~640px`，桌面端预览高度明显增加。验证脚本：`/tmp/proof_review_plan_detail_preview_height_20260623.sh`。
