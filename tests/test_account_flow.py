@@ -2160,6 +2160,101 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(labels_get_response.status_code, 404)
         self.assertEqual(labels_put_response.status_code, 404)
 
+    def test_class_commentary_task_access_follows_assigned_class_scope(self):
+        owner_token, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Class Commentary Access School",
+            owner_username="commentary_access_owner",
+            owner_display_name="Commentary Access Owner",
+            owner_password="ownerpass123",
+        )
+
+        assigned_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "commentary_assigned_member",
+                "display_name": "Commentary Assigned Member",
+                "password": "memberpass123",
+                "recovery_phone": "13800000001",
+            },
+        )
+        self.assertEqual(assigned_join.status_code, 201)
+
+        unrelated_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "commentary_unrelated_member",
+                "display_name": "Commentary Unrelated Member",
+                "password": "memberpass456",
+                "recovery_phone": "13800000002",
+            },
+        )
+        self.assertEqual(unrelated_join.status_code, 201)
+
+        assigned_login = self.client.post(
+            "/api/login",
+            json={"username": "commentary_assigned_member", "password": "memberpass123"},
+        )
+        self.assertEqual(assigned_login.status_code, 200)
+        assigned_token = assigned_login.get_json()["token"]
+        assigned_member_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(assigned_token),
+        ).get_json()["id"]
+
+        unrelated_login = self.client.post(
+            "/api/login",
+            json={"username": "commentary_unrelated_member", "password": "memberpass456"},
+        )
+        self.assertEqual(unrelated_login.status_code, 200)
+        unrelated_token = unrelated_login.get_json()["token"]
+
+        owner_me = self.client.get("/api/me", headers=self.auth_headers(owner_token))
+        self.assertEqual(owner_me.status_code, 200)
+        owner_payload = owner_me.get_json()
+        self.assertIsNotNone(owner_payload)
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(owner_token),
+            json={
+                "name": "课堂点评权限班",
+                "subject": "数学",
+                "grade": "七年级",
+            },
+        )
+        self.assertEqual(create_class.status_code, 201)
+        class_id = create_class.get_json()["id"]
+
+        assign_classes = self.client.put(
+            f"/api/admin/users/{assigned_member_id}/classes",
+            headers=self.auth_headers(owner_token),
+            json={"class_ids": [class_id]},
+        )
+        self.assertEqual(assign_classes.status_code, 200)
+
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=owner_payload["organization_id"],
+            class_id=class_id,
+            teacher_user_id=owner_payload["id"],
+            audio_path="/tmp/commentary-access.m4a",
+            audio_filename="commentary-access.m4a",
+        )
+
+        allowed_response = self.client.get(
+            f"/api/class-commentary/tasks/{task['id']}",
+            headers=self.auth_headers(assigned_token),
+        )
+        forbidden_response = self.client.get(
+            f"/api/class-commentary/tasks/{task['id']}",
+            headers=self.auth_headers(unrelated_token),
+        )
+
+        self.assertEqual(allowed_response.status_code, 200)
+        self.assertEqual(allowed_response.get_json()["id"], task["id"])
+        self.assertEqual(forbidden_response.status_code, 403)
+
     def test_feedback_endpoints_are_removed(self):
         owner_token = self.login_as_kayn()
         lesson_id = lesson_manager.save_lesson(
