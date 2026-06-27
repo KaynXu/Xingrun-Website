@@ -6830,6 +6830,23 @@ def create_class_commentary_task(
     transcription_request_key: str = "",
 ):
     with get_conn() as conn:
+        class_row = conn.execute(
+            "SELECT organization_id FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
+        if not class_row:
+            raise ValueError("class not found")
+        class_organization_id = int(class_row["organization_id"] or 0)
+        if int(organization_id or 0) != class_organization_id:
+            raise ValueError("organization_id must match class organization")
+        teacher_row = conn.execute(
+            "SELECT organization_id FROM users WHERE id=?",
+            (teacher_user_id,),
+        ).fetchone()
+        if not teacher_row:
+            raise ValueError("teacher_user_id not found")
+        if int(teacher_row["organization_id"] or 0) != class_organization_id:
+            raise ValueError("teacher_user_id must belong to class organization")
         cur = conn.execute(
             """
             INSERT INTO class_commentary_tasks (
@@ -8339,6 +8356,7 @@ def delete_organization(org_id: int) -> None:
             raise ValueError("不能删除默认机构")
         conn.execute("DELETE FROM monthly_plan_jobs WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE organization_id=?", (org_id,))
+        conn.execute("DELETE FROM class_commentary_tasks WHERE organization_id=?", (org_id,))
         # 1. lessons
         conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
         # 2. user_classes and class_students (via classes)

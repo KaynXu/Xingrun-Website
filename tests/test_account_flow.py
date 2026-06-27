@@ -1854,6 +1854,8 @@ class AccountFlowTestCase(unittest.TestCase):
                 "repeated_mistake_count": 1,
                 "high_priority_count": 1,
                 "pending_review_count": 2,
+                "unique_class_count": 2,
+                "unique_student_count": 2,
             },
         )
 
@@ -2079,7 +2081,7 @@ class AccountFlowTestCase(unittest.TestCase):
         lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
         lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
 
-        with patch("app.has_api_key", return_value=True), \
+        with patch("app.has_review_plan_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
              patch("app._start_review_plan_generation_thread"), \
@@ -2218,7 +2220,7 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertIsNotNone(class_payload)
         class_id = class_payload["id"]
 
-        with patch("app.has_api_key", return_value=True), \
+        with patch("app.has_review_plan_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
              patch("app._start_review_plan_generation_thread"), \
