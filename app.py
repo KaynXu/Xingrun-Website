@@ -88,6 +88,7 @@ from lesson_manager import (
     authenticate_student_account,
     bind_parent_to_student,
     complete_review_plan_version,
+    create_class_commentary_task,
     create_review_plan_version,
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
@@ -124,6 +125,7 @@ from lesson_manager import (
     find_active_wrong_question_practice_pack_job,
     fail_review_plan_version,
     get_class,
+    get_class_commentary_task,
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
@@ -204,6 +206,12 @@ from lesson_manager import (
     reset_organization_invite,
     remove_student_from_class,
     save_class,
+    save_class_commentary_generation_started,
+    save_class_commentary_generation_succeeded,
+    save_class_commentary_transcript,
+    mark_class_commentary_task_failed,
+    mark_class_commentary_task_transcribing,
+    mark_class_commentary_transcription_succeeded,
     mark_review_plan_version_transcription_succeeded,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
@@ -251,7 +259,8 @@ from lesson_manager import (
     student_account_can_access_lesson,
     update_user_avatar_preferences,
 )
-from ai_processor import parse_consultation_batch_text
+from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, transcribe_audio
+from class_commentary import list_colleague_skills, load_colleague_skill
 import smart_wrong_questions
 import master_data
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
@@ -1008,6 +1017,34 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
     threading.Thread(
         target=_run_review_plan_generation_job,
         kwargs=job_kwargs,
+        daemon=True,
+    ).start()
+
+
+def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dict) -> None:
+    try:
+        transcription = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="class_commentary_transcribe",
+            source_record_type="class_commentary_task",
+            source_record_id=task_id,
+            provider="local",
+            model="faster-whisper",
+            producer=lambda: _call_ai_helper_with_usage(transcribe_audio, audio_path),
+            claim_request_identity=False,
+        )
+        text = str(transcription or "").strip()
+        if not text:
+            raise ValueError("transcription returned empty text")
+        mark_class_commentary_transcription_succeeded(task_id, text)
+    except Exception as exc:
+        mark_class_commentary_task_failed(task_id, "transcription", str(exc))
+
+
+def _start_class_commentary_transcription_worker(task_id: int, audio_path: str, user: dict) -> None:
+    threading.Thread(
+        target=_run_class_commentary_transcription,
+        args=(task_id, audio_path, user),
         daemon=True,
     ).start()
 
@@ -2567,6 +2604,30 @@ def _serialize_lessons_for_response(lessons: object) -> list[dict]:
     )
 
 
+def _serialize_class_commentary_task_for_response(task: dict) -> dict:
+    return {
+        "id": int(task["id"]),
+        "organization_id": int(task["organization_id"]),
+        "class_id": int(task["class_id"]),
+        "class_name": str(task.get("class_name") or ""),
+        "teacher_user_id": int(task["teacher_user_id"]),
+        "status": str(task.get("status") or ""),
+        "failure_stage": str(task.get("failure_stage") or ""),
+        "audio_filename": str(task.get("audio_filename") or ""),
+        "transcript_text": str(task.get("transcript_text") or ""),
+        "confirmed_transcript_text": str(task.get("confirmed_transcript_text") or ""),
+        "transcribed_at": str(task.get("transcribed_at") or ""),
+        "skill_id": str(task.get("skill_id") or ""),
+        "skill_name": str(task.get("skill_name") or ""),
+        "skill_filename": Path(str(task.get("skill_path") or "")).name if task.get("skill_path") else "",
+        "feedback_text": str(task.get("feedback_text") or ""),
+        "transcription_error": str(task.get("transcription_error") or ""),
+        "generation_error": str(task.get("generation_error") or ""),
+        "created_at": str(task.get("created_at") or ""),
+        "updated_at": str(task.get("updated_at") or ""),
+    }
+
+
 _DASHBOARD_PENDING_REVIEW_STATUSES = {"pending", "queued", "processing", "transcribing", "generating"}
 _DASHBOARD_TERMINAL_CONSULTATION_STAGES = {"成功进班", "试听失败", "咨询结束"}
 
@@ -3462,6 +3523,16 @@ def _get_accessible_class_or_error(user: dict, class_id: int):
     if _filter_classes_for_user(user, [cls]):
         return cls, None
     return None, (jsonify({"error": "forbidden"}), 403)
+
+
+def _get_accessible_class_commentary_task_or_error(user: dict, task_id: int):
+    task = get_class_commentary_task(task_id)
+    if not task:
+        return None, (jsonify({"error": "not found"}), 404)
+    _, error = _get_accessible_class_or_error(user, int(task["class_id"]))
+    if error:
+        return None, error
+    return task, None
 
 
 def _member_can_read_student_profile(user: dict, student_id: int) -> bool:
@@ -7791,6 +7862,157 @@ def api_lesson_create():
             _release_ai_request_identity(request_id)
         raise
     return jsonify({"id": lesson_id, "version_id": int(version["id"]), "success": True, "status": response_status}), 202
+
+
+@app.route("/api/class-commentary/skills", methods=["GET"])
+def api_class_commentary_skills():
+    user, error = _require_auth()
+    if error:
+        return error
+    skill_dir = str(get_config().get("colleague_skill_dir") or "")
+    skills = list_colleague_skills(skill_dir)
+    return jsonify({"skills": skills, "configured": bool(skill_dir)})
+
+
+@app.route("/api/class-commentary/tasks", methods=["POST"])
+def api_class_commentary_tasks_create():
+    user, error = _require_auth()
+    if error:
+        return error
+    try:
+        class_id = int(request.form.get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    if class_id <= 0:
+        return jsonify({"error": "class_id is required"}), 400
+    cls, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
+    audio = request.files.get("audio")
+    if not audio or not audio.filename:
+        return jsonify({"error": "audio is required"}), 400
+    ext = Path(audio.filename).suffix.lower()
+    if ext not in {".mp3", ".m4a", ".mp4", ".wav", ".ogg", ".webm", ".flac"}:
+        return jsonify({"error": f"unsupported audio format: {ext}"}), 400
+    upload_dir = UPLOAD_DIR / "class-commentary"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    save_path = upload_dir / f"commentary_{ts}{ext}"
+    audio.save(str(save_path))
+    task = create_class_commentary_task(
+        organization_id=int(user["organization_id"]),
+        class_id=int(cls["id"]),
+        teacher_user_id=int(user["id"]),
+        audio_path=str(save_path),
+        audio_filename=audio.filename,
+        transcription_request_key=_current_audio_upload_request_key(),
+    )
+    task = mark_class_commentary_task_transcribing(int(task["id"]))
+    _start_class_commentary_transcription_worker(
+        int(task["id"]),
+        str(save_path),
+        {"id": int(user["id"]), "organization_id": int(user["organization_id"])},
+    )
+    return jsonify(_serialize_class_commentary_task_for_response(task)), 202
+
+
+@app.route("/api/class-commentary/tasks/<int:task_id>", methods=["GET"])
+def api_class_commentary_task_get(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    task, task_error = _get_accessible_class_commentary_task_or_error(user, task_id)
+    if task_error:
+        return task_error
+    return jsonify(_serialize_class_commentary_task_for_response(task))
+
+
+@app.route("/api/class-commentary/tasks/<int:task_id>/transcript", methods=["PUT"])
+def api_class_commentary_task_update_transcript(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    task, task_error = _get_accessible_class_commentary_task_or_error(user, task_id)
+    if task_error:
+        return task_error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    confirmed_transcript_text = str((data or {}).get("confirmed_transcript_text") or "").strip()
+    if not confirmed_transcript_text:
+        return jsonify({"error": "confirmed_transcript_text is required"}), 400
+    updated_task = save_class_commentary_transcript(int(task["id"]), confirmed_transcript_text)
+    return jsonify(_serialize_class_commentary_task_for_response(updated_task))
+
+
+@app.route("/api/class-commentary/tasks/<int:task_id>/generate", methods=["POST"])
+def api_class_commentary_task_generate(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    if not has_review_plan_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+    task, task_error = _get_accessible_class_commentary_task_or_error(user, task_id)
+    if task_error:
+        return task_error
+    if str(task.get("status") or "") not in {"transcribed", "failed", "ready"}:
+        return jsonify({"error": "task must be transcribed before generation"}), 400
+    confirmed_transcript_text = str(task.get("confirmed_transcript_text") or "").strip()
+    if not confirmed_transcript_text:
+        return jsonify({"error": "confirmed transcript is required before generation"}), 400
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    skill_id = str((data or {}).get("skill_id") or "").strip()
+    if not skill_id:
+        return jsonify({"error": "skill_id is required"}), 400
+    cls = get_class(int(task["class_id"]))
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    class_students = list_students_for_class(int(task["class_id"]))
+    skill_dir = str(get_config().get("colleague_skill_dir") or "")
+    try:
+        skill = load_colleague_skill(skill_dir, skill_id)
+    except FileNotFoundError:
+        return jsonify({"error": "skill not found"}), 404
+    request_key = _current_ai_request_key()
+    chat_provider = _review_plan_ai_provider_name()
+    chat_model = _review_plan_chat_model_name()
+    save_class_commentary_generation_started(
+        int(task["id"]),
+        skill_id=str(skill["id"]),
+        skill_name=str(skill["name"]),
+        skill_path=str(skill["path"]),
+        skill_content_snapshot=str(skill["content"]),
+        generation_request_key=request_key,
+        chat_provider=chat_provider,
+        chat_model=chat_model,
+    )
+    try:
+        feedback_text = _run_ai_feature_with_charge(
+            user={"id": int(user["id"]), "organization_id": int(user["organization_id"])},
+            feature_key="class_commentary_generate",
+            source_record_type="class_commentary_task",
+            source_record_id=int(task["id"]),
+            provider=chat_provider,
+            model=chat_model,
+            request_key=request_key,
+            producer=lambda: _call_ai_helper_with_usage(
+                generate_class_commentary_feedback,
+                class_record=cls,
+                students=class_students,
+                transcript_text=confirmed_transcript_text,
+                skill=skill,
+            ),
+        )
+        ready_task = save_class_commentary_generation_succeeded(int(task["id"]), str(feedback_text or ""))
+        return jsonify(_serialize_class_commentary_task_for_response(ready_task))
+    except Exception as exc:
+        failed_task = mark_class_commentary_task_failed(int(task["id"]), "generation", str(exc))
+        return jsonify({
+            "error": str(exc),
+            "task": _serialize_class_commentary_task_for_response(failed_task),
+        }), 500
 
 
 @app.route("/api/monthly", methods=["GET"])
