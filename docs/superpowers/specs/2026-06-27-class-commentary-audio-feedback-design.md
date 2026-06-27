@@ -74,6 +74,7 @@
 - `class_id`: integer not null
 - `teacher_user_id`: integer not null
 - `status`: text not null, allowed values `uploaded`, `transcribing`, `transcribed`, `generating`, `ready`, `failed`
+- `failure_stage`: text not null default empty, allowed values empty, `transcription`, `generation`
 - `audio_path`: text not null default empty
 - `audio_filename`: text not null default empty
 - `transcript_text`: text not null default empty
@@ -84,6 +85,7 @@
 - `skill_path`: text not null default empty
 - `skill_content_snapshot`: text not null default empty
 - `feedback_text`: text not null default empty
+- `transcription_error`: text not null default empty
 - `generation_error`: text not null default empty
 - `transcription_request_key`: text not null default empty
 - `generation_request_key`: text not null default empty
@@ -94,8 +96,9 @@
 
 Old tables to drop in migration:
 
+- `lesson_class_feedbacks`
 - `class_feedback_tasks`
-- `class_feedback_entries`
+- `class_feedback_student_entries`
 - `class_feedback_label_configs`
 
 If more tables match `class_feedback_%`, migration deletes them too. The old class-feedback database chain is not preserved.
@@ -118,6 +121,34 @@ Scanning rules:
 ## API
 
 Use `/api/class-commentary`.
+
+All task detail endpoints return the same task JSON shape:
+
+```json
+{
+  "id": 1,
+  "organization_id": 1,
+  "class_id": 8,
+  "class_name": "数学·七年级·4班",
+  "teacher_user_id": 12,
+  "status": "transcribed",
+  "failure_stage": "",
+  "audio_filename": "lesson-commentary.m4a",
+  "transcript_text": "小王今天计算有进步...",
+  "confirmed_transcript_text": "小王今天计算有进步...",
+  "transcribed_at": "2026-06-27 12:05:00",
+  "skill_id": "teacher-style-a",
+  "skill_name": "teacher-style-a",
+  "skill_filename": "teacher-style-a.skill",
+  "feedback_text": "小王:\n今天...",
+  "transcription_error": "",
+  "generation_error": "",
+  "created_at": "2026-06-27 12:00:00",
+  "updated_at": "2026-06-27 12:05:00"
+}
+```
+
+Fields not yet available return empty strings, not `null`. `audio_path`, `skill_path`, and `skill_content_snapshot` are stored server-side and are not returned to the frontend.
 
 ### `GET /api/class-commentary/skills`
 
@@ -149,10 +180,12 @@ Behavior:
 
 - Validates access to the class.
 - Saves the audio file.
-- Creates a task.
-- Runs faster-whisper transcription through existing AI charge wrapper.
-- Stores transcript text.
-- Returns task detail with `status=transcribed` on success or `status=failed` on transcription failure.
+- Creates a task with `status=uploaded`.
+- Enqueues background transcription through the existing AI charge wrapper and immediately moves the task to `status=transcribing`.
+- Returns task detail with `status=transcribing`.
+- The frontend polls `GET /api/class-commentary/tasks/<id>` until the task becomes `transcribed` or `failed`.
+- On transcription success, the worker stores `transcript_text`, copies it into `confirmed_transcript_text` as the initial editable value, sets `transcribed_at`, clears `failure_stage`, clears `transcription_error`, and sets `status=transcribed`.
+- On transcription failure, the worker sets `status=failed`, `failure_stage=transcription`, and `transcription_error`.
 
 ### `GET /api/class-commentary/tasks/<id>`
 
@@ -171,7 +204,8 @@ Body:
 Behavior:
 
 - Saves the teacher-confirmed transcript.
-- Sets task status to `transcribed` if it was failed only because generation failed.
+- Sets task status to `transcribed` if it was failed with `failure_stage=generation`.
+- Does not clear a transcription failure unless a successful new upload or transcription replaces the transcript.
 
 ### `POST /api/class-commentary/tasks/<id>/generate`
 
@@ -190,6 +224,8 @@ Behavior:
 - Loads selected `.skill`.
 - Calls AI API.
 - Saves `skill_content_snapshot`, `feedback_text`, provider, model, and request key.
+- On generation success, clears `failure_stage` and `generation_error`, then sets `status=ready`.
+- On generation failure, sets `status=failed`, `failure_stage=generation`, and `generation_error`.
 - Returns task detail.
 
 ## AI 合同
@@ -301,26 +337,30 @@ Remove old tests tied to old behavior and replace with new class-commentary test
 
 - Missing class: show class selection error.
 - Empty or unsupported audio: reject before task creation when possible.
-- Transcription failure: task status `failed`, keep audio metadata and error message.
-- Empty transcript: task status `failed`, teacher can upload again.
+- Transcription failure: task status `failed`, `failure_stage=transcription`, keep audio metadata and `transcription_error`.
+- Empty transcript: task status `failed`, `failure_stage=transcription`, teacher can upload again.
 - Missing skill directory: skills API returns empty list with a clear configuration message.
 - Missing selected skill during generation: return validation error, do not generate.
-- AI generation failure: task status `failed`, preserve confirmed transcript, allow retry.
+- AI generation failure: task status `failed`, `failure_stage=generation`, preserve confirmed transcript, store `generation_error`, allow retry.
 
 ## Verification Plan
 
 Backend:
 
-- Migration removes old `class_feedback_*` tables.
+- Migration removes old `lesson_class_feedbacks` and `class_feedback_*` tables.
 - Old `/api/class-feedback/*` routes are gone.
 - New `class_commentary_tasks` table exists.
+- New task detail response follows the documented JSON schema.
 - Skill scanner returns only `.skill` files.
 - Task creation validates class access and audio.
-- Transcription stores transcript and status.
+- Task creation returns `status=transcribing` and does not block on long audio.
+- Frontend or tests can poll task detail until transcription completes.
+- Transcription success stores transcript and status.
+- Transcription failure stores `failure_stage=transcription` and `transcription_error`.
 - Transcript confirmation stores teacher-edited text.
 - Generation prompt includes roster, confirmed transcript, skill snapshot, and output contract.
 - Generation stores result and skill snapshot.
-- Failed generation preserves transcript and can be retried.
+- Failed generation preserves transcript, stores `failure_stage=generation` and `generation_error`, and can be retried.
 
 Frontend:
 
@@ -336,6 +376,7 @@ Static cleanup:
 - No production code references old class-feedback storage functions.
 - No production code defines old class-feedback routes.
 - No production code reads or writes old class-feedback tables.
+- No schema creation remains for `lesson_class_feedbacks`, `class_feedback_tasks`, `class_feedback_student_entries`, or `class_feedback_label_configs`.
 
 Proof:
 
