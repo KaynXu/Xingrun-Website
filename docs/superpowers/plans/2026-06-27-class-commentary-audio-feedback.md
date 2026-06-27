@@ -100,6 +100,8 @@ export type ClassCommentaryTask = {
 };
 ```
 
+Frontend request helpers must use `apiFetch` and `apiUploadFormWithProgress` from `frontend/src/workspaceShared.ts`. Do not add a `token` parameter and do not read `currentUser.token`; `CurrentUser` has no token field.
+
 ### Task 1: Branch, Baseline, And shadcn Setup
 
 **Files:**
@@ -751,86 +753,181 @@ git commit -m "feat: add class commentary ai contract"
 
 - [ ] **Step 1: Write failing route tests**
 
-Create `tests/test_class_commentary_api.py` using the existing app test client pattern from nearby API tests. Include these tests:
+Create `tests/test_class_commentary_api.py` as a complete `unittest.TestCase` file:
 
 ```python
-def test_old_class_feedback_routes_are_removed(client, auth_headers):
-    response = client.get("/api/class-feedback/labels", headers=auth_headers)
-    assert response.status_code == 404
+import io
+import importlib
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import config_runtime
+import lesson_manager
+
+
+class ClassCommentaryApiTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp_dir.name)
+        self.old_db_path = lesson_manager.DB_PATH
+        self.old_cfg_path = config_runtime.CFG_PATH
+        lesson_manager.DB_PATH = self.base / "xingrun.db"
+        config_runtime.CFG_PATH = self.base / "config.json"
+        self.skill_dir = self.base / "skills"
+        self.skill_dir.mkdir(parents=True, exist_ok=True)
+        config_runtime.write_file_config({"colleague_skill_dir": str(self.skill_dir)})
+        lesson_manager.init_db()
+
+        self.app_module = importlib.import_module("app")
+        self.upload_patch = patch.object(self.app_module, "UPLOAD_DIR", self.base / "uploads")
+        self.upload_patch.start()
+        self.client = self.app_module.app.test_client()
+
+        login = self.client.post("/api/login", json={"username": "Kayn", "password": "xingrun2026"})
+        self.assertEqual(login.status_code, 200)
+        payload = login.get_json()
+        self.assertIsNotNone(payload)
+        self.owner = payload["user"]
+        self.owner_token = payload["token"]
+        self.headers = {"X-Auth-Token": self.owner_token}
+
+    def tearDown(self):
+        self.upload_patch.stop()
+        lesson_manager.DB_PATH = self.old_db_path
+        config_runtime.CFG_PATH = self.old_cfg_path
+        self.temp_dir.cleanup()
+
+    def _create_class_with_student(self) -> int:
+        class_id = lesson_manager.save_class(
+            "数学·七年级·4班",
+            subject="数学",
+            grade="七年级",
+            organization_id=self.owner["organization_id"],
+            teacher_user_id=self.owner["id"],
+        )
+        lesson_manager.create_student_for_class(class_id, "小王")
+        return class_id
+
+    def _create_transcribed_task(self, class_id: int, transcript: str) -> dict:
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=self.owner["id"],
+            audio_path=str(self.base / "audio.m4a"),
+            audio_filename="audio.m4a",
+        )
+        return lesson_manager.mark_class_commentary_transcription_succeeded(task["id"], transcript)
+
+    def test_old_class_feedback_routes_are_removed(self):
+        response = self.client.get("/api/class-feedback/labels", headers=self.headers)
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_task_returns_transcribing_without_running_transcription_inline(self):
+        class_id = self._create_class_with_student()
+        started = {}
+
+        def fake_start(task_id, audio_path, user):
+            started["task_id"] = task_id
+            started["audio_path"] = audio_path
+            started["user_id"] = user["id"]
+
+        with patch.object(self.app_module, "_start_class_commentary_transcription_worker", fake_start):
+            response = self.client.post(
+                "/api/class-commentary/tasks",
+                headers=self.headers,
+                data={"class_id": str(class_id), "audio": (io.BytesIO(b"fake audio"), "lesson.m4a")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["status"], "transcribing")
+        self.assertEqual(payload["audio_filename"], "lesson.m4a")
+        self.assertEqual(started["task_id"], payload["id"])
+        self.assertEqual(started["user_id"], self.owner["id"])
+
+    def test_worker_success_moves_task_to_transcribed(self):
+        class_id = self._create_class_with_student()
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=self.owner["id"],
+            audio_path=str(self.base / "audio.m4a"),
+            audio_filename="audio.m4a",
+        )
+
+        with patch.object(self.app_module, "_run_ai_feature_with_charge", return_value="小王今天计算有进步"):
+            self.app_module._run_class_commentary_transcription(
+                task["id"],
+                str(self.base / "audio.m4a"),
+                {"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+            )
+
+        saved = lesson_manager.get_class_commentary_task(task["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["status"], "transcribed")
+        self.assertEqual(saved["transcript_text"], "小王今天计算有进步")
+
+    def test_generate_saves_skill_snapshot_and_feedback(self):
+        class_id = self._create_class_with_student()
+        (self.skill_dir / "teacher-a.skill").write_text("warm direct style", encoding="utf-8")
+        task = self._create_transcribed_task(class_id, "小王今天计算有进步")
+
+        with patch.object(self.app_module, "has_review_plan_api_key", return_value=True), \
+             patch.object(self.app_module, "_run_ai_feature_with_charge", return_value="小王:\n今天计算有进步."):
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{task['id']}/generate",
+                headers=self.headers,
+                json={"skill_id": "teacher-a"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["skill_id"], "teacher-a")
+        self.assertEqual(payload["feedback_text"], "小王:\n今天计算有进步.")
+
+    def test_generate_failure_returns_500_with_failed_task_payload(self):
+        class_id = self._create_class_with_student()
+        (self.skill_dir / "teacher-a.skill").write_text("warm direct style", encoding="utf-8")
+        task = self._create_transcribed_task(class_id, "小王今天计算有进步")
+
+        with patch.object(self.app_module, "has_review_plan_api_key", return_value=True), \
+             patch.object(self.app_module, "_run_ai_feature_with_charge", side_effect=RuntimeError("model timeout")):
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{task['id']}/generate",
+                headers=self.headers,
+                json={"skill_id": "teacher-a"},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["error"], "model timeout")
+        self.assertEqual(payload["task"]["status"], "failed")
+        self.assertEqual(payload["task"]["failure_stage"], "generation")
+        self.assertEqual(payload["task"]["generation_error"], "model timeout")
+
+
+if __name__ == "__main__":
+    unittest.main()
 ```
-
-```python
-def test_create_task_returns_transcribing_without_running_transcription_inline(client, auth_headers, class_id, monkeypatch):
-    started = {}
-
-    def fake_start(task_id, audio_path, user):
-        started["task_id"] = task_id
-        started["audio_path"] = audio_path
-        started["user_id"] = user["id"]
-
-    monkeypatch.setattr(app, "_start_class_commentary_transcription_worker", fake_start)
-
-    response = client.post(
-        "/api/class-commentary/tasks",
-        headers=auth_headers,
-        data={"class_id": str(class_id), "audio": (io.BytesIO(b"fake audio"), "lesson.m4a")},
-        content_type="multipart/form-data",
-    )
-
-    assert response.status_code == 202
-    payload = response.get_json()
-    assert payload["status"] == "transcribing"
-    assert payload["audio_filename"] == "lesson.m4a"
-    assert started["task_id"] == payload["id"]
-```
-
-```python
-def test_worker_success_moves_task_to_transcribed(monkeypatch, user, class_id):
-    task = lesson_manager.create_class_commentary_task(
-        organization_id=user["organization_id"],
-        class_id=class_id,
-        teacher_user_id=user["id"],
-        audio_path="/tmp/audio.m4a",
-        audio_filename="audio.m4a",
-    )
-    monkeypatch.setattr(app, "_run_ai_feature_with_charge", lambda **kwargs: "小王今天计算有进步")
-
-    app._run_class_commentary_transcription(task["id"], "/tmp/audio.m4a", user)
-
-    saved = lesson_manager.get_class_commentary_task(task["id"])
-    assert saved["status"] == "transcribed"
-    assert saved["transcript_text"] == "小王今天计算有进步"
-```
-
-```python
-def test_generate_saves_skill_snapshot_and_feedback(client, auth_headers, class_id, skill_dir, monkeypatch):
-    (skill_dir / "teacher-a.skill").write_text("warm direct style", encoding="utf-8")
-    monkeypatch.setenv("XR_COLLEAGUE_SKILL_DIR", str(skill_dir))
-    monkeypatch.setattr(app, "has_review_plan_api_key", lambda: True)
-    monkeypatch.setattr(app, "_run_ai_feature_with_charge", lambda **kwargs: "小王:\n今天计算有进步.")
-    task = create_transcribed_task_for_api_test(class_id, "小王今天计算有进步")
-
-    response = client.post(
-        f"/api/class-commentary/tasks/{task['id']}/generate",
-        headers=auth_headers,
-        json={"skill_id": "teacher-a"},
-    )
-
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["status"] == "ready"
-    assert payload["skill_id"] == "teacher-a"
-    assert payload["feedback_text"] == "小王:\n今天计算有进步."
-```
-
-Use fixture helpers that create an owner/member user, auth token, organization, class, and active student by following the patterns already used in `tests/test_class_feedback_api.py` or `tests/test_account_flow.py`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run:
 
 ```bash
-python -m pytest tests/test_class_commentary_api.py -q
+python -m unittest tests.test_class_commentary_api -v
 ```
 
 Expected: failures mention missing `/api/class-commentary/*` routes.
@@ -910,7 +1007,7 @@ Add POST `/api/class-commentary/tasks/<int:task_id>/generate`:
 - Save generation started with provider/model from `_review_plan_ai_provider_name()` and `_review_plan_chat_model_name()`.
 - Run `_run_ai_feature_with_charge` synchronously for generation.
 - Save ready task and return serialized task.
-- On generation exception, call `mark_class_commentary_task_failed(task_id, "generation", str(exc))` and re-raise or return 500 according to existing API style. Prefer returning `{"error": str(exc), "task": serialized_task}` with status 500 for this route.
+- On generation exception, call `mark_class_commentary_task_failed(task_id, "generation", str(exc))` and return `jsonify({"error": str(exc), "task": _serialize_class_commentary_task_for_response(failed_task)}), 500`.
 
 - [ ] **Step 5: Add transcription worker**
 
@@ -951,7 +1048,7 @@ def _start_class_commentary_transcription_worker(task_id: int, audio_path: str, 
 Run:
 
 ```bash
-python -m pytest tests/test_class_commentary_api.py -q
+python -m unittest tests.test_class_commentary_api -v
 python -m py_compile app.py lesson_manager.py ai_processor.py class_commentary.py
 ```
 
@@ -1061,7 +1158,7 @@ Run:
 
 ```bash
 python /tmp/proof_class_feedback_backend_cleanup.py
-python -m pytest tests/test_class_commentary_store.py tests/test_class_commentary_ai.py tests/test_class_commentary_api.py -q
+python -m unittest tests.test_class_commentary_store tests.test_class_commentary_ai tests.test_class_commentary_api -v
 python -m py_compile app.py lesson_manager.py ai_processor.py class_commentary.py
 ```
 
@@ -1096,6 +1193,7 @@ Create `frontend/src/classCommentary.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   buildClassCommentaryTaskPath,
@@ -1103,6 +1201,8 @@ import {
   normalizeClassCommentaryTask,
   shouldPollClassCommentaryTask,
 } from './classCommentary';
+
+const source = readFileSync(new URL('./classCommentary.ts', import.meta.url), 'utf8');
 
 test('normalizes missing task fields to empty strings', () => {
   const task = normalizeClassCommentaryTask({
@@ -1140,6 +1240,15 @@ test('status labels are user-facing and stable', () => {
   assert.equal(classCommentaryStatusLabel('ready'), '已生成');
   assert.equal(classCommentaryStatusLabel('failed'), '失败');
 });
+
+test('request helpers use workspaceShared auth instead of explicit token parameters', () => {
+  assert.match(source, /import \{ apiFetch, apiUploadFormWithProgress \} from '\.\/workspaceShared';/);
+  assert.match(source, /apiFetch<\{ skills\?: unknown\[] \}>/);
+  assert.match(source, /apiUploadFormWithProgress<Record<string, unknown>>/);
+  assert.doesNotMatch(source, /X-Auth-Token/);
+  assert.doesNotMatch(source, /currentUser\.token/);
+  assert.doesNotMatch(source, /token: string/);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1157,6 +1266,8 @@ Expected: failure mentions missing `./classCommentary`.
 Add:
 
 ```ts
+import { apiFetch, apiUploadFormWithProgress } from './workspaceShared';
+
 export type ClassCommentaryStatus = 'uploaded' | 'transcribing' | 'transcribed' | 'generating' | 'ready' | 'failed';
 export type ClassCommentaryFailureStage = '' | 'transcription' | 'generation';
 
@@ -1249,71 +1360,56 @@ export function buildClassCommentaryTaskPath(taskId: number): string {
 Add request helpers:
 
 ```ts
-async function parseJsonResponse(response: Response): Promise<Record<string, unknown>> {
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = typeof payload.error === 'string' && payload.error ? payload.error : '请求失败';
-    throw new Error(error);
-  }
-  return payload;
+function normalizeClassCommentarySkill(item: unknown): ClassCommentarySkill {
+  const record = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+  return {
+    id: stringValue(record.id),
+    name: stringValue(record.name),
+    filename: stringValue(record.filename),
+    updated_at: stringValue(record.updated_at),
+  };
 }
 
-export async function fetchClassCommentarySkills(token: string): Promise<ClassCommentarySkill[]> {
-  const response = await fetch('/api/class-commentary/skills', {
-    headers: { 'X-Auth-Token': token },
-  });
-  const payload = await parseJsonResponse(response);
+export async function fetchClassCommentarySkills(): Promise<ClassCommentarySkill[]> {
+  const payload = await apiFetch<{ skills?: unknown[] }>('/api/class-commentary/skills');
   const skills = Array.isArray(payload.skills) ? payload.skills : [];
-  return skills.map((item) => {
-    const record = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-    return {
-      id: stringValue(record.id),
-      name: stringValue(record.name),
-      filename: stringValue(record.filename),
-      updated_at: stringValue(record.updated_at),
-    };
-  });
+  return skills.map((item) => normalizeClassCommentarySkill(item));
 }
 
-export async function createClassCommentaryTask(token: string, classId: number, audio: File): Promise<ClassCommentaryTask> {
+export async function createClassCommentaryTask(
+  classId: number,
+  audio: File,
+  onProgress: (progress: number) => void = () => {},
+): Promise<ClassCommentaryTask> {
   const body = new FormData();
   body.append('class_id', String(classId));
   body.append('audio', audio);
-  const response = await fetch('/api/class-commentary/tasks', {
-    method: 'POST',
-    headers: { 'X-Auth-Token': token },
-    body,
-  });
-  return normalizeClassCommentaryTask(await parseJsonResponse(response));
+  const payload = await apiUploadFormWithProgress<Record<string, unknown>>('/api/class-commentary/tasks', body, onProgress);
+  return normalizeClassCommentaryTask(payload);
 }
 
-export async function fetchClassCommentaryTask(token: string, taskId: number): Promise<ClassCommentaryTask> {
-  const response = await fetch(buildClassCommentaryTaskPath(taskId), {
-    headers: { 'X-Auth-Token': token },
-  });
-  return normalizeClassCommentaryTask(await parseJsonResponse(response));
+export async function fetchClassCommentaryTask(taskId: number): Promise<ClassCommentaryTask> {
+  return normalizeClassCommentaryTask(await apiFetch<Record<string, unknown>>(buildClassCommentaryTaskPath(taskId)));
 }
 
-export async function saveClassCommentaryTranscript(token: string, taskId: number, text: string): Promise<ClassCommentaryTask> {
-  const response = await fetch(`${buildClassCommentaryTaskPath(taskId)}/transcript`, {
+export async function saveClassCommentaryTranscript(taskId: number, text: string): Promise<ClassCommentaryTask> {
+  const payload = await apiFetch<Record<string, unknown>>(`${buildClassCommentaryTaskPath(taskId)}/transcript`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
     body: JSON.stringify({ confirmed_transcript_text: text }),
   });
-  return normalizeClassCommentaryTask(await parseJsonResponse(response));
+  return normalizeClassCommentaryTask(payload);
 }
 
-export async function generateClassCommentaryFeedback(token: string, taskId: number, skillId: string): Promise<ClassCommentaryTask> {
-  const response = await fetch(`${buildClassCommentaryTaskPath(taskId)}/generate`, {
+export async function generateClassCommentaryFeedback(taskId: number, skillId: string): Promise<ClassCommentaryTask> {
+  const payload = await apiFetch<Record<string, unknown>>(`${buildClassCommentaryTaskPath(taskId)}/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
     body: JSON.stringify({ skill_id: skillId }),
   });
-  return normalizeClassCommentaryTask(await parseJsonResponse(response));
+  return normalizeClassCommentaryTask(payload);
 }
 ```
 
-Each helper must use `X-Auth-Token` and throw `Error(payload.error || '请求失败')` on non-2xx response.
+Each helper must rely on `apiFetch` or `apiUploadFormWithProgress` for auth headers, JSON parsing, upload progress, 401 handling, and non-2xx errors.
 
 - [ ] **Step 4: Run frontend client proof**
 
@@ -1357,10 +1453,12 @@ const source = readFileSync(new URL('./features/class-feedback/ClassFeedbackGene
 
 test('class feedback generation page uses class-commentary api client', () => {
   assert.match(source, /from '..\\/..\\/classCommentary'/);
+  assert.match(source, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(source, /createClassCommentaryTask/);
   assert.match(source, /fetchClassCommentarySkills/);
   assert.match(source, /generateClassCommentaryFeedback/);
   assert.doesNotMatch(source, /api\\/class-feedback/);
+  assert.doesNotMatch(source, /currentUser\.token/);
 });
 
 test('class feedback generation page uses shadcn components for visible controls', () => {
@@ -1397,17 +1495,20 @@ Expected: tests fail because the current page is still the empty shell and impor
 - [ ] **Step 3: Implement page state and data loading**
 
 In `ClassFeedbackGenerationPage.tsx`:
-- Remove import from `../../workspaceShared`.
+- Import `apiFetch` from `../../workspaceShared`; do not import `workspaceCardClass`, `workspacePageClass`, `workspacePrimaryButtonClass`, `workspaceSecondaryButtonClass`, or `workspaceFieldClass`.
 - Import React state/effect hooks.
 - Import `Button`, `Card`, `CardContent`, `CardHeader`, `CardTitle`, `Select`, `Input`, `Textarea`, `Progress`, `Alert`, `Badge`, `Separator`, `ScrollArea`, `Skeleton`.
-- Use existing classes list available on `currentUser` only if present; otherwise fetch classes from existing class API already used elsewhere in the app.
-- On mount, call `fetchClassCommentarySkills(currentUser.token)`.
-- Store `selectedClassId`, `selectedSkillId`, `audioFile`, `task`, `confirmedTranscript`, `errorMessage`, `busy`, and `copied`.
+- Import `type { ClassItem, CurrentUser }` from `../../appTypes`.
+- Fetch classes with `apiFetch<ClassItem[]>('/api/classes')`.
+- On mount, call `fetchClassCommentarySkills()`.
+- Store `classes`, `skills`, `selectedClassId`, `selectedSkillId`, `audioFile`, `task`, `confirmedTranscript`, `errorMessage`, `busy`, `loadingInitial`, `uploadProgress`, and `copied`.
 - Poll every 2000 ms while `shouldPollClassCommentaryTask(task.status)`.
 
 State shape:
 
 ```ts
+const [classes, setClasses] = useState<ClassItem[]>([]);
+const [skills, setSkills] = useState<ClassCommentarySkill[]>([]);
 const [selectedClassId, setSelectedClassId] = useState('');
 const [selectedSkillId, setSelectedSkillId] = useState('');
 const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -1415,7 +1516,67 @@ const [task, setTask] = useState<ClassCommentaryTask | null>(null);
 const [confirmedTranscript, setConfirmedTranscript] = useState('');
 const [errorMessage, setErrorMessage] = useState('');
 const [busy, setBusy] = useState(false);
+const [loadingInitial, setLoadingInitial] = useState(true);
+const [uploadProgress, setUploadProgress] = useState(0);
 const [copied, setCopied] = useState(false);
+```
+
+Initial load code:
+
+```ts
+useEffect(() => {
+  let cancelled = false;
+  setLoadingInitial(true);
+  Promise.all([
+    apiFetch<ClassItem[]>('/api/classes'),
+    fetchClassCommentarySkills(),
+  ])
+    .then(([nextClasses, nextSkills]) => {
+      if (cancelled) return;
+      setClasses(nextClasses);
+      setSkills(nextSkills);
+      if (!selectedClassId && nextClasses.length) {
+        setSelectedClassId(String(nextClasses[0].id));
+      }
+      if (!selectedSkillId && nextSkills.length) {
+        setSelectedSkillId(nextSkills[0].id);
+      }
+    })
+    .catch((error) => {
+      if (!cancelled) {
+        setErrorMessage(error instanceof Error ? error.message : '加载失败');
+      }
+    })
+    .finally(() => {
+      if (!cancelled) {
+        setLoadingInitial(false);
+      }
+    });
+  return () => {
+    cancelled = true;
+  };
+}, []);
+```
+
+Polling code:
+
+```ts
+useEffect(() => {
+  if (!task || !shouldPollClassCommentaryTask(task.status)) {
+    return;
+  }
+  const timer = window.setInterval(() => {
+    fetchClassCommentaryTask(task.id)
+      .then((nextTask) => {
+        setTask(nextTask);
+        setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text);
+      })
+      .catch((error) => {
+        setErrorMessage(error instanceof Error ? error.message : '刷新任务状态失败');
+      });
+  }, 2000);
+  return () => window.clearInterval(timer);
+}, [task?.id, task?.status]);
 ```
 
 - [ ] **Step 4: Implement shadcn layout**
@@ -1463,8 +1624,9 @@ async function handleCreateTask() {
   }
   setBusy(true);
   setErrorMessage('');
+  setUploadProgress(0);
   try {
-    const nextTask = await createClassCommentaryTask(currentUser.token, Number(selectedClassId), audioFile);
+    const nextTask = await createClassCommentaryTask(Number(selectedClassId), audioFile, setUploadProgress);
     setTask(nextTask);
     setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text);
   } catch (error) {
@@ -1475,7 +1637,56 @@ async function handleCreateTask() {
 }
 ```
 
-Add equivalent `handleSaveTranscript`, `handleGenerate`, and `handleCopy` functions using helpers from `classCommentary.ts`.
+Add these remaining action functions:
+
+```ts
+async function handleSaveTranscript() {
+  if (!task) {
+    return;
+  }
+  if (!confirmedTranscript.trim()) {
+    setErrorMessage('请先确认转写文本');
+    return;
+  }
+  setBusy(true);
+  setErrorMessage('');
+  try {
+    const nextTask = await saveClassCommentaryTranscript(task.id, confirmedTranscript.trim());
+    setTask(nextTask);
+    setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text);
+  } catch (error) {
+    setErrorMessage(error instanceof Error ? error.message : '保存转写失败');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function handleGenerate() {
+  if (!task || !selectedSkillId) {
+    setErrorMessage('请选择同事风格后再生成');
+    return;
+  }
+  setBusy(true);
+  setErrorMessage('');
+  try {
+    const nextTask = await generateClassCommentaryFeedback(task.id, selectedSkillId);
+    setTask(nextTask);
+  } catch (error) {
+    setErrorMessage(error instanceof Error ? error.message : '生成失败');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function handleCopy() {
+  if (!task?.feedback_text) {
+    return;
+  }
+  await navigator.clipboard.writeText(task.feedback_text);
+  setCopied(true);
+  window.setTimeout(() => setCopied(false), 1600);
+}
+```
 
 - [ ] **Step 6: Run frontend page proof**
 
@@ -1518,7 +1729,7 @@ set -euo pipefail
 cd "/Users/ark.mini/Desktop/Desktop - Ark.1/Xingrun-Website"
 
 echo "== backend tests =="
-python -m pytest tests/test_class_commentary_store.py tests/test_class_commentary_ai.py tests/test_class_commentary_api.py -q
+python -m unittest tests.test_class_commentary_store tests.test_class_commentary_ai tests.test_class_commentary_api -v
 
 echo "== backend compile =="
 python -m py_compile app.py lesson_manager.py ai_processor.py class_commentary.py config_runtime.py
