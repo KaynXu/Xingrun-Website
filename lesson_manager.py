@@ -3605,63 +3605,6 @@ def init_db():
         ON ai_usage_ledger (organization_id, request_id)
         WHERE request_id <> '';
 
-        CREATE TABLE IF NOT EXISTS lesson_class_feedbacks (
-            lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
-            class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
-            merged_text         TEXT DEFAULT '',
-            student_index_json  TEXT DEFAULT '[]',
-            editor_state_json   TEXT DEFAULT '{}',
-            created_at          TEXT DEFAULT (datetime('now','localtime')),
-            updated_at          TEXT DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE TABLE IF NOT EXISTS class_feedback_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-            class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-            teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            teacher_name_snapshot TEXT NOT NULL DEFAULT '',
-            start_date TEXT NOT NULL,
-            end_date TEXT NOT NULL,
-            period_length_days INTEGER NOT NULL DEFAULT 1,
-            period_granularity TEXT NOT NULL DEFAULT 'daily',
-            period_label TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'draft',
-            class_summary_ai_draft TEXT NOT NULL DEFAULT '',
-            class_summary_final_text TEXT NOT NULL DEFAULT '',
-            class_status_tags_json TEXT NOT NULL DEFAULT '[]',
-            class_status_note TEXT NOT NULL DEFAULT '',
-            parent_feedback_note TEXT NOT NULL DEFAULT '',
-            teaching_focus_note TEXT NOT NULL DEFAULT '',
-            next_stage_preview_note TEXT NOT NULL DEFAULT '',
-            student_highlights_json TEXT NOT NULL DEFAULT '[]',
-            created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')),
-            confirmed_at TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS class_feedback_student_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id INTEGER NOT NULL REFERENCES class_feedback_tasks(id) ON DELETE CASCADE,
-            student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-            student_name_snapshot TEXT NOT NULL DEFAULT '',
-            ai_draft TEXT NOT NULL DEFAULT '',
-            final_text TEXT NOT NULL DEFAULT '',
-            checked_at TEXT,
-            updated_at TEXT DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE TABLE IF NOT EXISTS class_feedback_label_configs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            label_group TEXT NOT NULL,
-            label_text TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            is_system_default INTEGER NOT NULL DEFAULT 0
-        );
-
         CREATE TABLE IF NOT EXISTS class_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL,
@@ -3705,53 +3648,6 @@ def init_db():
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
 
-        legacy_feedback_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({LEGACY_LESSON_CLASS_FEEDBACK_TABLE})").fetchall()]
-        if legacy_feedback_cols:
-            if "class_id" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
-            if "merged_text" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN merged_text TEXT DEFAULT ''")
-            if "student_index_json" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN student_index_json TEXT DEFAULT '[]'")
-            if "editor_state_json" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN editor_state_json TEXT DEFAULT '{{}}'")
-            if "created_at" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-            if "updated_at" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
-
-        lesson_class_feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_class_feedbacks)").fetchall()]
-        if lesson_class_feedback_cols:
-            if "class_id" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
-            if "merged_text" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
-            if "student_index_json" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
-            if "editor_state_json" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
-            if "created_at" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-            if "updated_at" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
-
-        if legacy_feedback_cols:
-            conn.execute(
-                f"""
-                INSERT OR REPLACE INTO lesson_class_feedbacks
-                    (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
-                SELECT
-                    lesson_id,
-                    class_id,
-                    merged_text,
-                    student_index_json,
-                    editor_state_json,
-                    created_at,
-                    updated_at
-                FROM {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}
-                """
-            )
-            conn.execute(f"DROP TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}")
         old_feedback_tables = [
             "lesson_class_feedbacks",
             "class_feedback_tasks",
@@ -7194,6 +7090,7 @@ def save_class_commentary_transcript(task_id: int, confirmed_transcript_text: st
             SET status='transcribed',
                 failure_stage='',
                 confirmed_transcript_text=?,
+                transcription_error='',
                 generation_error='',
                 updated_at=datetime('now','localtime')
             WHERE id=?
@@ -7225,6 +7122,7 @@ def save_class_commentary_generation_started(
                 skill_path=?,
                 skill_content_snapshot=?,
                 feedback_text='',
+                transcription_error='',
                 generation_error='',
                 generation_request_key=?,
                 chat_provider=?,
@@ -7254,6 +7152,7 @@ def save_class_commentary_generation_succeeded(task_id: int, feedback_text: str)
             SET status='ready',
                 failure_stage='',
                 feedback_text=?,
+                transcription_error='',
                 generation_error='',
                 updated_at=datetime('now','localtime')
             WHERE id=?
@@ -7433,7 +7332,6 @@ def _count_student_profile_references(conn: sqlite3.Connection, student_id: int)
         "wrong_question_practice_sheets",
         "wrong_question_practice_pack_job_students",
         "weekly_wrong_question_followup_messages",
-        "class_feedback_student_entries",
     ]
     total = 0
     for table in reference_tables:
@@ -9318,15 +9216,12 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
         conn.execute("UPDATE class_invite_codes SET created_by_user_id=NULL WHERE created_by_user_id=?", (target_user_id,))
         conn.execute("UPDATE organization_credit_ledger SET operator_user_id=NULL WHERE operator_user_id=?", (target_user_id,))
         conn.execute("UPDATE xhs_order_redemptions SET redeemed_by_user_id=NULL WHERE redeemed_by_user_id=?", (target_user_id,))
-        conn.execute("UPDATE class_feedback_tasks SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET generated_by=NULL WHERE generated_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE created_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE teacher_user_id=? OR created_by=?", (target_user_id, target_user_id))
         conn.execute("DELETE FROM wrong_question_submissions WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE teacher_user_id=?", (target_user_id,))
-        conn.execute("DELETE FROM class_feedback_tasks WHERE created_by=?", (target_user_id,))
-        conn.execute("DELETE FROM class_feedback_label_configs WHERE owner_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM ai_usage_ledger WHERE user_id=?", (target_user_id,))
         conn.execute("DELETE FROM auth_sessions WHERE user_id=?", (target_user_id,))
         conn.execute("DELETE FROM monthly_plan_jobs WHERE user_id=?", (target_user_id,))
@@ -9708,7 +9603,6 @@ def delete_organization(org_id: int) -> None:
         )
         conn.execute("DELETE FROM wrong_question_submissions WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE organization_id=?", (org_id,))
-        conn.execute("DELETE FROM class_feedback_tasks WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM students WHERE organization_id=?", (org_id,))
         # 3. classes
         conn.execute("DELETE FROM classes WHERE organization_id=?", (org_id,))
