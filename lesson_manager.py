@@ -6337,6 +6337,7 @@ def delete_class(class_id: int):
 
         master_data.ensure_schema(conn)
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
+        conn.execute("DELETE FROM class_commentary_tasks WHERE class_id=?", (class_id,))
         conn.execute(
             """
             UPDATE wrong_question_mappings
@@ -7987,6 +7988,7 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
         conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE created_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE teacher_user_id=? OR created_by=?", (target_user_id, target_user_id))
         conn.execute("DELETE FROM wrong_question_submissions WHERE teacher_user_id=?", (target_user_id,))
+        conn.execute("DELETE FROM class_commentary_tasks WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM ai_usage_ledger WHERE user_id=?", (target_user_id,))
         conn.execute("DELETE FROM auth_sessions WHERE user_id=?", (target_user_id,))

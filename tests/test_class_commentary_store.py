@@ -207,6 +207,58 @@ class ClassCommentaryStoreTest(unittest.TestCase):
             org_row = conn.execute("SELECT id FROM organizations WHERE id=?", (org_id,)).fetchone()
         self.assertIsNone(org_row)
 
+    def test_delete_class_removes_commentary_tasks_before_deleting_class(self):
+        class_id = lesson_manager.save_class("数学·七年级·8班", organization_id=1, teacher_user_id=1)
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=1,
+            class_id=class_id,
+            teacher_user_id=1,
+            audio_path="/tmp/delete-class-audio.m4a",
+            audio_filename="delete-class-audio.m4a",
+        )
+
+        try:
+            lesson_manager.delete_class(class_id)
+        except sqlite3.IntegrityError as exc:
+            self.fail(f"delete_class raised IntegrityError: {exc}")
+
+        with lesson_manager.get_conn() as conn:
+            class_row = conn.execute("SELECT id FROM classes WHERE id=?", (class_id,)).fetchone()
+            task_row = conn.execute("SELECT id FROM class_commentary_tasks WHERE id=?", (task["id"],)).fetchone()
+        self.assertIsNone(class_row)
+        self.assertIsNone(task_row)
+
+    def test_delete_user_for_actor_removes_commentary_tasks_before_deleting_teacher(self):
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                ("commentary-teacher", "hash", "Commentary Teacher", "member", "active", 1),
+            )
+            teacher_user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        class_id = lesson_manager.save_class("数学·七年级·9班", organization_id=1, teacher_user_id=teacher_user_id)
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=1,
+            class_id=class_id,
+            teacher_user_id=teacher_user_id,
+            audio_path="/tmp/delete-user-audio.m4a",
+            audio_filename="delete-user-audio.m4a",
+        )
+
+        actor_user = lesson_manager.get_user_by_username("Kayn")
+        try:
+            lesson_manager.delete_user_for_actor(actor_user, teacher_user_id)
+        except sqlite3.IntegrityError as exc:
+            self.fail(f"delete_user_for_actor raised IntegrityError: {exc}")
+
+        with lesson_manager.get_conn() as conn:
+            user_row = conn.execute("SELECT id FROM users WHERE id=?", (teacher_user_id,)).fetchone()
+            task_row = conn.execute("SELECT id FROM class_commentary_tasks WHERE id=?", (task["id"],)).fetchone()
+        self.assertIsNone(user_row)
+        self.assertIsNone(task_row)
+
 
 if __name__ == "__main__":
     unittest.main()
