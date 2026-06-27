@@ -3752,40 +3752,58 @@ def init_db():
                 """
             )
             conn.execute(f"DROP TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}")
-        class_feedback_task_cols = [r[1] for r in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()]
-        if class_feedback_task_cols:
-            if "class_status_tags_json" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN class_status_tags_json TEXT NOT NULL DEFAULT '[]'")
-            if "class_status_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN class_status_note TEXT NOT NULL DEFAULT ''")
-            if "parent_feedback_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN parent_feedback_note TEXT NOT NULL DEFAULT ''")
-            if "teaching_focus_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN teaching_focus_note TEXT NOT NULL DEFAULT ''")
-            if "next_stage_preview_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN next_stage_preview_note TEXT NOT NULL DEFAULT ''")
-            if "student_highlights_json" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN student_highlights_json TEXT NOT NULL DEFAULT '[]'")
-            if "period_label" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN period_label TEXT NOT NULL DEFAULT ''")
-            unlabeled_task_rows = conn.execute(
-                """
-                SELECT id, start_date, end_date, period_granularity
-                FROM class_feedback_tasks
-                WHERE trim(coalesce(period_label, '')) = ''
-                """
+        old_feedback_tables = [
+            "lesson_class_feedbacks",
+            "class_feedback_tasks",
+            "class_feedback_student_entries",
+            "class_feedback_label_configs",
+        ]
+        old_feedback_tables.extend(
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'class_feedback_%'"
             ).fetchall()
-            for task_row in unlabeled_task_rows:
-                _, _, _, _, period_label = _resolve_class_feedback_period_selection(
-                    start_date=task_row["start_date"],
-                    end_date=task_row["end_date"],
-                    period_granularity=(task_row["period_granularity"] or "").strip() or "custom",
-                )
-                conn.execute(
-                    "UPDATE class_feedback_tasks SET period_label=? WHERE id=?",
-                    (period_label, task_row["id"]),
-                )
-        _ensure_class_feedback_task_integrity_guards(conn)
+        )
+        for table_name in sorted(set(old_feedback_tables)):
+            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS class_commentary_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id),
+                class_id INTEGER NOT NULL REFERENCES classes(id),
+                teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+                status TEXT NOT NULL DEFAULT 'uploaded',
+                failure_stage TEXT NOT NULL DEFAULT '',
+                audio_path TEXT NOT NULL DEFAULT '',
+                audio_filename TEXT NOT NULL DEFAULT '',
+                transcript_text TEXT NOT NULL DEFAULT '',
+                confirmed_transcript_text TEXT NOT NULL DEFAULT '',
+                transcribed_at TEXT NOT NULL DEFAULT '',
+                skill_id TEXT NOT NULL DEFAULT '',
+                skill_name TEXT NOT NULL DEFAULT '',
+                skill_path TEXT NOT NULL DEFAULT '',
+                skill_content_snapshot TEXT NOT NULL DEFAULT '',
+                feedback_text TEXT NOT NULL DEFAULT '',
+                transcription_error TEXT NOT NULL DEFAULT '',
+                generation_error TEXT NOT NULL DEFAULT '',
+                transcription_request_key TEXT NOT NULL DEFAULT '',
+                generation_request_key TEXT NOT NULL DEFAULT '',
+                chat_provider TEXT NOT NULL DEFAULT '',
+                chat_model TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                CHECK(status IN ('uploaded','transcribing','transcribed','generating','ready','failed')),
+                CHECK(failure_stage IN ('','transcription','generation'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_class_commentary_tasks_org_status
+            ON class_commentary_tasks (organization_id, status, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_class_commentary_tasks_class
+            ON class_commentary_tasks (class_id, updated_at);
+            """
+        )
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
         _ensure_review_plan_versions_schema(conn)
@@ -3794,8 +3812,6 @@ def init_db():
         _bootstrap_account_state(conn)
         default_org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
         _backfill_student_organization_scope(conn, default_org["id"])
-        _backfill_class_feedback_task_organization_scope(conn, default_org["id"])
-        _ensure_class_feedback_task_integrity_guards(conn)
         _ensure_column(conn, "wrong_question_submissions", "child_raw_reason_text", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "child_reason_transcript", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "child_reason_input_mode", "TEXT NOT NULL DEFAULT 'text'")
@@ -3882,9 +3898,6 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_consultations_organization_assigned_updated
             ON consultations (organization_id, assigned_user_id, updated_at);
-
-            CREATE INDEX IF NOT EXISTS idx_class_feedback_tasks_organization_status_updated
-            ON class_feedback_tasks (organization_id, status, updated_at);
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_submissions_organization_class_teacher_status
             ON wrong_question_submissions (organization_id, class_id, teacher_user_id, status);
@@ -7058,6 +7071,205 @@ def list_students_for_class(class_id: int) -> list:
             (class_id,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _class_commentary_task_select_sql() -> str:
+    return """
+        SELECT t.*, c.name AS class_name
+        FROM class_commentary_tasks t
+        JOIN classes c ON c.id = t.class_id
+    """
+
+
+def _serialize_class_commentary_task_row(row: sqlite3.Row) -> dict:
+    item = dict(row)
+    string_fields = (
+        "status",
+        "failure_stage",
+        "audio_path",
+        "audio_filename",
+        "transcript_text",
+        "confirmed_transcript_text",
+        "transcribed_at",
+        "skill_id",
+        "skill_name",
+        "skill_path",
+        "skill_content_snapshot",
+        "feedback_text",
+        "transcription_error",
+        "generation_error",
+        "transcription_request_key",
+        "generation_request_key",
+        "chat_provider",
+        "chat_model",
+        "created_at",
+        "updated_at",
+        "class_name",
+    )
+    for field_name in string_fields:
+        item[field_name] = item.get(field_name) or ""
+    return item
+
+
+def get_class_commentary_task(task_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            f"{_class_commentary_task_select_sql()} WHERE t.id=?",
+            (task_id,),
+        ).fetchone()
+    return _serialize_class_commentary_task_row(row) if row else None
+
+
+def create_class_commentary_task(
+    *,
+    organization_id: int,
+    class_id: int,
+    teacher_user_id: int,
+    audio_path: str,
+    audio_filename: str,
+    transcription_request_key: str = "",
+):
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO class_commentary_tasks (
+                organization_id, class_id, teacher_user_id, audio_path, audio_filename, transcription_request_key
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                organization_id,
+                class_id,
+                teacher_user_id,
+                audio_path or "",
+                audio_filename or "",
+                transcription_request_key or "",
+            ),
+        )
+        task_id = cur.lastrowid
+    return get_class_commentary_task(task_id)
+
+
+def _update_class_commentary_task_failure_state(task_id: int, status: str, failure_stage: str, transcription_error: str, generation_error: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status=?, failure_stage=?, transcription_error=?, generation_error=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (status, failure_stage, transcription_error, generation_error, task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def mark_class_commentary_task_transcribing(task_id: int):
+    return _update_class_commentary_task_failure_state(task_id, "transcribing", "", "", "")
+
+
+def mark_class_commentary_transcription_succeeded(task_id: int, transcript_text: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='transcribed',
+                failure_stage='',
+                transcript_text=?,
+                confirmed_transcript_text=?,
+                transcribed_at=datetime('now','localtime'),
+                transcription_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (transcript_text or "", transcript_text or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def save_class_commentary_transcript(task_id: int, confirmed_transcript_text: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='transcribed',
+                failure_stage='',
+                confirmed_transcript_text=?,
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (confirmed_transcript_text or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def save_class_commentary_generation_started(
+    task_id: int,
+    *,
+    skill_id: str,
+    skill_name: str,
+    skill_path: str,
+    skill_content_snapshot: str,
+    generation_request_key: str,
+    chat_provider: str,
+    chat_model: str,
+):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='generating',
+                failure_stage='',
+                skill_id=?,
+                skill_name=?,
+                skill_path=?,
+                skill_content_snapshot=?,
+                feedback_text='',
+                generation_error='',
+                generation_request_key=?,
+                chat_provider=?,
+                chat_model=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                skill_id or "",
+                skill_name or "",
+                skill_path or "",
+                skill_content_snapshot or "",
+                generation_request_key or "",
+                chat_provider or "",
+                chat_model or "",
+                task_id,
+            ),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def save_class_commentary_generation_succeeded(task_id: int, feedback_text: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='ready',
+                failure_stage='',
+                feedback_text=?,
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (feedback_text or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def mark_class_commentary_task_failed(task_id: int, failure_stage: str, error_message: str):
+    normalized_stage = (failure_stage or "").strip()
+    if normalized_stage == "transcription":
+        return _update_class_commentary_task_failure_state(task_id, "failed", "transcription", error_message or "", "")
+    if normalized_stage == "generation":
+        return _update_class_commentary_task_failure_state(task_id, "failed", "generation", "", error_message or "")
+    raise ValueError("failure_stage must be transcription or generation")
 
 
 def list_students_for_organization(organization_id: int | None = None, include_archived: bool = False) -> list:
