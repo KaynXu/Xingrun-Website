@@ -1084,11 +1084,18 @@ git commit -m "feat: add class commentary api"
 Create `/tmp/proof_class_feedback_backend_cleanup.py`:
 
 ```python
+import re
+import sys
+import tempfile
 from pathlib import Path
 
 root = Path("/Users/ark.mini/Desktop/Desktop - Ark.1/Xingrun-Website")
+if str(root) not in sys.path:
+    sys.path.insert(0, str(root))
+
 production_files = [root / "app.py", root / "lesson_manager.py", root / "ai_processor.py"]
-forbidden = [
+
+old_helper_tokens = [
     "generate_class_feedback_bundle",
     "create_class_feedback_task",
     "get_class_feedback_task",
@@ -1096,21 +1103,81 @@ forbidden = [
     "save_class_feedback_draft",
     "confirm_class_feedback_task",
     "list_class_feedback_label_configs",
+    "find_previous_confirmed_class_feedback_entry",
+    "list_recent_confirmed_class_feedback_summaries",
+    "_dashboard_get_class_feedback_tasks",
+    "_get_accessible_class_feedback_task_or_error",
+    "_build_class_feedback_generation_context",
+]
+
+old_table_tokens = [
+    "lesson_class_feedbacks",
     "class_feedback_tasks",
     "class_feedback_student_entries",
     "class_feedback_label_configs",
-    "lesson_class_feedbacks",
-    "/api/class-feedback",
 ]
+
+old_create_table_patterns = [
+    re.compile(r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+" + re.escape(table_name), re.IGNORECASE)
+    for table_name in old_table_tokens
+]
+
+
+def allowed_old_table_occurrence(path: Path, text: str, token: str, index: int) -> bool:
+    if path.name != "lesson_manager.py":
+        return False
+    window = text[max(0, index - 500): index + 500]
+    return (
+        "old_feedback_tables" in window
+        or "DROP TABLE IF EXISTS" in window
+        or "LIKE 'class_feedback_%'" in window
+    )
+
+
 hits = []
 for path in production_files:
     text = path.read_text(encoding="utf-8")
-    for token in forbidden:
+    for token in old_helper_tokens:
         if token in text:
             hits.append(f"{path.name}: {token}")
+    if "/api/class-feedback" in text:
+        hits.append(f"{path.name}: /api/class-feedback")
+    for pattern in old_create_table_patterns:
+        if pattern.search(text):
+            hits.append(f"{path.name}: {pattern.pattern}")
+    for token in old_table_tokens + ["class_feedback_%"]:
+        start = 0
+        while True:
+            index = text.find(token, start)
+            if index == -1:
+                break
+            if not allowed_old_table_occurrence(path, text, token, index):
+                hits.append(f"{path.name}: unexpected old table token {token}")
+                break
+            start = index + len(token)
 if hits:
     raise SystemExit("\n".join(hits))
-print("old backend class-feedback tokens absent")
+
+import lesson_manager
+
+with tempfile.TemporaryDirectory() as tmp:
+    old_db_path = lesson_manager.DB_PATH
+    try:
+        lesson_manager.DB_PATH = Path(tmp) / "cleanup-proof.db"
+        lesson_manager.init_db()
+        with lesson_manager.get_conn() as conn:
+            names = {
+                row["name"]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+    finally:
+        lesson_manager.DB_PATH = old_db_path
+
+legacy_tables = {name for name in names if name in set(old_table_tokens) or name.startswith("class_feedback_")}
+if legacy_tables:
+    raise SystemExit("legacy class-feedback tables still exist: " + ", ".join(sorted(legacy_tables)))
+
+print("old backend class-feedback cleanup proof passed")
 ```
 
 - [ ] **Step 2: Run cleanup proof to verify it fails before removal**
@@ -1121,7 +1188,7 @@ Run:
 python /tmp/proof_class_feedback_backend_cleanup.py
 ```
 
-Expected: output lists old class-feedback tokens.
+Expected: output lists old class-feedback routes, helpers, or legacy `CREATE TABLE` definitions. It must not fail only because `lesson_manager.py` contains old table names in the drop migration block.
 
 - [ ] **Step 3: Remove old imports, helpers, and routes**
 
@@ -1163,7 +1230,7 @@ python -m py_compile app.py lesson_manager.py ai_processor.py class_commentary.p
 ```
 
 Expected:
-- cleanup script prints `old backend class-feedback tokens absent`.
+- cleanup script prints `old backend class-feedback cleanup proof passed`.
 - tests pass.
 - compile succeeds.
 
@@ -1779,7 +1846,7 @@ bash /tmp/xingrun_class_commentary_full_proof.sh
 Expected output includes:
 - backend tests pass.
 - backend compile succeeds.
-- old backend cleanup scan prints `old backend class-feedback tokens absent`.
+- old backend cleanup scan prints `old backend class-feedback cleanup proof passed`.
 - frontend tests pass.
 - frontend lint passes.
 - frontend cleanup scan prints `frontend class-commentary cleanup scan passed`.
