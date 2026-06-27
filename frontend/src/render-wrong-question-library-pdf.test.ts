@@ -81,7 +81,7 @@ test('buildDocumentMarkup keeps non-empty question blocks for missing notes and 
   assert.equal((markup.match(/class="question-text-block"/g) || []).length, 1);
   assert.equal((markup.match(/class="geometry-card"/g) || []).length, 2);
   assert.match(markup, /向量 AB 长度为 √\(16\)/);
-  assert.match(markup, /class="katex"/);
+  assert.match(markup, /mjx-container/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
   assert.match(markup, /图片暂时无法载入，已保留原图记录。/);
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);

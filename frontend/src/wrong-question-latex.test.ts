@@ -26,10 +26,11 @@ test('parseWrongQuestionLatexSegments keeps prose and extracts inline/display fo
   assert.equal(parsed.errors.length, 0);
 });
 
-test('buildWrongQuestionLatexPreviewModel renders katex markup for valid formulas', () => {
+test('buildWrongQuestionLatexPreviewModel renders MathJax markup for valid formulas', () => {
   const preview = buildWrongQuestionLatexPreviewModel('计算 $x^2 + 1$，并化简：\n$$\\frac{x^2+1}{2}$$');
 
-  assert.match(preview.html, /katex/);
+  assert.match(preview.html, /mjx-container/);
+  assert.doesNotMatch(preview.html, /katex/);
   assert.match(preview.html, /xr-latex-display/);
   assert.equal(preview.errors.length, 0);
   assert.equal(hasWrongQuestionLatexErrors('计算 $x^2 + 1$'), false);
@@ -38,7 +39,7 @@ test('buildWrongQuestionLatexPreviewModel renders katex markup for valid formula
 test('buildWrongQuestionLatexPreviewModel supports bracket-style latex delimiters', () => {
   const preview = buildWrongQuestionLatexPreviewModel('计算 \\(x^2 + 1\\)，并化简：\\[\\frac{x^2+1}{2}\\]');
 
-  assert.match(preview.html, /katex/);
+  assert.match(preview.html, /mjx-container/);
   assert.doesNotMatch(preview.html, /\\\(|\\\)|\\\[|\\\]/);
   assert.doesNotMatch(preview.html, /\\frac/);
   assert.equal(preview.errors.length, 0);
@@ -89,8 +90,8 @@ test('parseWrongQuestionLatexSegments repairs right delimiters eaten by json esc
 
   assert.equal(rootPreview.errors.length, 0);
   assert.equal(absoluteValuePreview.errors.length, 0);
-  assert.match(rootPreview.html, /katex/);
-  assert.match(absoluteValuePreview.html, /katex/);
+  assert.match(rootPreview.html, /mjx-container/);
+  assert.match(absoluteValuePreview.html, /mjx-container/);
 });
 
 test('buildWrongQuestionLatexPreviewModel normalizes bare latex fragments inside prose', () => {
@@ -126,7 +127,7 @@ test('buildWrongQuestionLatexPreviewModel turns literal newline escapes back int
   assert.equal(preview.errors.length, 0);
   assert.doesNotMatch(preview.html, /\\n/);
   assert.match(preview.html, /<br \/><br \/>/);
-  assert.match(preview.html, /katex/);
+  assert.match(preview.html, /mjx-container/);
 });
 
 test('buildWrongQuestionLatexPreviewModel repairs malformed escape sequences and readable bare latex fragments', () => {

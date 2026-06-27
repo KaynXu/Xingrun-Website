@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "katex/dist/katex.min.css";
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
@@ -79,7 +78,7 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   word-break: break-word;
 }
 
-.xr-latex-preview .katex {
+.xr-latex-preview mjx-container {
   font-size: 1.05em;
 }
 

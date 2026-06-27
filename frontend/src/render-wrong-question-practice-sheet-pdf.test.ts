@@ -43,7 +43,7 @@ test('buildDocumentMarkup renders one merged writing card without extra preview 
   assert.match(markup, /订正区/);
   assert.doesNotMatch(markup, /重做这题/);
   assert.doesNotMatch(markup, /可选/);
-  assert.match(markup, /katex/);
+  assert.match(markup, /mjx-container/);
   assert.doesNotMatch(markup, /\\frac/);
   assert.match(markup, /xr-latex-preview/);
   assert.doesNotMatch(markup, /学生：|班级：|老师：|题目数量：/);
@@ -275,7 +275,7 @@ test('buildDocumentMarkup keeps non-empty question blocks for bare latex and geo
   assert.equal((markup.match(/class="question-latex-card"/g) || []).length, 1);
   assert.equal((markup.match(/class="geometry-card(?:\s|")/g) || []).length, 2);
   assert.match(markup, /向量 AB 长度为 √\(16\)/);
-  assert.match(markup, /class="katex"/);
+  assert.match(markup, /mjx-container/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
   assert.match(markup, /图片暂时无法载入，已保留原图记录。/);
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
@@ -347,7 +347,7 @@ test('buildDocumentMarkup renders generated diagram practice items with question
   });
 
   assert.match(markup, /函数/);
-  assert.match(markup, /class="katex"/);
+  assert.match(markup, /mjx-container/);
   assert.match(markup, /生成图像/);
   assert.match(markup, /src="data:image\/svg\+xml;base64,PHN2Zz48L3N2Zz4="/);
   assert.doesNotMatch(markup, /图片暂时无法载入/);
@@ -385,7 +385,7 @@ test('buildDocumentMarkup renders scheduled answer math through latex preview', 
   });
 
   const answerSection = markup.slice(markup.indexOf('答案与关键步骤'));
-  assert.match(answerSection, /class="katex"/);
+  assert.match(answerSection, /mjx-container/);
   assert.doesNotMatch(answerSection, /\$x=2\$/);
 });
 
@@ -463,7 +463,7 @@ test('buildDocumentMarkup renders latex inside scheduled error-review blanks', a
   });
 
   const reviewSection = markup.slice(markup.indexOf('挖空复盘'), markup.indexOf('订正区'));
-  assert.match(reviewSection, /class="katex"/);
+  assert.match(reviewSection, /mjx-container/);
   assert.doesNotMatch(reviewSection, /\$180\^\\circ/);
   assert.match(reviewSection, /blank-gap/);
 });
