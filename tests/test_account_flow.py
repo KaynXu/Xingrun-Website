@@ -2127,73 +2127,36 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(forbidden_class_response.status_code, 403)
         self.assertEqual(allowed_class_response.status_code, 202)
 
-    def test_member_class_feedback_task_access_requires_owned_class(self):
+    def test_class_feedback_task_endpoints_are_removed(self):
         owner_token = self.login_as_kayn()
 
-        target_member = self.approve_user(
-            owner_token=owner_token,
-            username="class_feedback_member",
-            display_name="Class Feedback Member",
-            password="member123",
-        )
-        other_member = self.approve_user(
-            owner_token=owner_token,
-            username="class_feedback_other",
-            display_name="Class Feedback Other",
-            password="member123",
-        )
-        target_member_id = target_member["user"]["id"]
-        other_member_id = other_member["user"]["id"]
-
-        owned_class_id = lesson_manager.save_class("Owned Feedback Class", subject="English", grade="Grade 6")
-        other_class_id = lesson_manager.save_class("Other Feedback Class", subject="English", grade="Grade 6")
-        lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
-        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
-
-        allowed_create = self.client.post(
+        create_response = self.client.post(
             "/api/class-feedback/tasks",
-            headers=self.auth_headers(target_member["token"]),
+            headers=self.auth_headers(owner_token),
             json={
-                "class_id": owned_class_id,
+                "class_id": 1,
                 "start_date": "2026-04-01",
                 "end_date": "2026-04-07",
             },
         )
-        self.assertEqual(allowed_create.status_code, 201)
-        allowed_payload = allowed_create.get_json()
-        self.assertIsNotNone(allowed_payload)
-
-        forbidden_create = self.client.post(
-            "/api/class-feedback/tasks",
-            headers=self.auth_headers(target_member["token"]),
-            json={
-                "class_id": other_class_id,
-                "start_date": "2026-04-01",
-                "end_date": "2026-04-07",
-            },
+        get_response = self.client.get(
+            "/api/class-feedback/tasks/1",
+            headers=self.auth_headers(owner_token),
         )
-        self.assertEqual(forbidden_create.status_code, 403)
-
-        allowed_get = self.client.get(
-            f"/api/class-feedback/tasks/{allowed_payload['id']}",
-            headers=self.auth_headers(target_member["token"]),
+        labels_get_response = self.client.get(
+            "/api/class-feedback/labels",
+            headers=self.auth_headers(owner_token),
         )
-        self.assertEqual(allowed_get.status_code, 200)
-
-        other_task = lesson_manager.create_class_feedback_task(
-            class_id=other_class_id,
-            teacher_user_id=other_member_id,
-            teacher_name_snapshot="Class Feedback Other",
-            start_date="2026-04-08",
-            end_date="2026-04-14",
-            created_by=other_member_id,
+        labels_put_response = self.client.put(
+            "/api/class-feedback/labels",
+            headers=self.auth_headers(owner_token),
+            json={"groups": []},
         )
 
-        forbidden_get = self.client.get(
-            f"/api/class-feedback/tasks/{other_task['id']}",
-            headers=self.auth_headers(target_member["token"]),
-        )
-        self.assertEqual(forbidden_get.status_code, 403)
+        self.assertEqual(create_response.status_code, 404)
+        self.assertEqual(get_response.status_code, 404)
+        self.assertEqual(labels_get_response.status_code, 404)
+        self.assertEqual(labels_put_response.status_code, 404)
 
     def test_feedback_endpoints_are_removed(self):
         owner_token = self.login_as_kayn()
