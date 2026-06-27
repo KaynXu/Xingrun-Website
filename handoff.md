@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新: 2026-06-25
+最后更新: 2026-06-27
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-27 已把前端 `class-feedback-generation` 教师/课堂反馈 tab 清成重构空壳: `frontend/src/features/class-feedback/ClassFeedbackGenerationPage.tsx` 只保留共享 workspace 壳和 "课堂反馈 / 重新设计中" 文案, 删除旧的 `frontend/src/ClassFeedbackGenerationWorkspace.tsx` 与 `frontend/src/classFeedbackGeneration.ts`, `frontend/src/class-feedback-generation.test.tsx` 改为锁定空壳和无旧 workflow 依赖。proof 已通过 `/tmp/xingrun_class_feedback_shell_proof.sh`: 目标前端测试 32 passed, 静态渲染确认无旧按钮/区域, 旧模块不存在, 非测试文件无旧引用, `npm --prefix frontend run lint` 通过。
 - 2026-06-25 已从生产库只读快照 `/tmp/xingrun-prod-20260625-he-shujian.db` 为何姝健老师 6 月 25 日学生上传错题生成“原图等宽方法提醒版”练习包：当天命中 9 条上传，全部为 `数学·初2025级·七年级·4班` 张琨旎，状态均为 `ready/recognized`；已生成 1 份 PDF、9 页、9 张原图。版式为原图直接插入、与内容框等宽、高度按原图比例自适应，并保留“方法提醒”，不含“箭头分析区”。成品目录：`output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625/`，zip：`output/pdf/何姝健-6月25日错题练习原图等宽方法提醒版PDF-20260625.zip`。proof 已通过 `/tmp/proof_he_0625_original_equal_width_practice.py`：题数/页数/zip/方法提醒/无箭头区均通过，逐页确认 PDF 内原图宽度为 `521.57pt` 等于内容框宽度，高度与原图比例一致，并渲染第 1/5/9 页样张非空。
 - 2026-06-25 已把本次错题练习生成流程固化为本地 Codex skill：`~/.codex/skills/xingrun-wrong-question-practice/`。skill 默认生成“原图等宽方法提醒版”：每页一道题，原上传图片直接插入且与内容框等宽、高度按比例自适应，保留“方法提醒”，默认去掉“箭头分析区”；如需保留箭头区可在生成脚本加 `--include-arrow-analysis`。内含脚本 `scripts/generate_practice_package.py` 和 `scripts/proof_practice_package.py`，可从 SQLite 快照按教师/日期生成按学生拆分 PDF、zip、metadata，并校验页数、题数、原图、zip、方法提醒、箭头区是否移除和 PyMuPDF 样张非空。proof 已通过 `/tmp/proof_xingrun_wrong_question_skill_20260625.sh`，用何姝健 6 月 23 日包在 `/tmp/xingrun-skill-he-0623-no-arrow-proof/` 临时重渲染出 4 个 PDF、18 页、18 张原图，`arrow_analysis_removed=true`，skill `quick_validate.py` 通过。
 - 2026-06-24 已把旧仓库中错题相关 LaTeX 预览和浏览器 PDF 渲染路径从 KaTeX 切到 MathJax SVG: `frontend/src/wrongQuestionLatex.js` 现在用 `mathjax-full` 做 TeX -> SVG, 两个错题 PDF 浏览器渲染脚本不再注入 KaTeX CSS, 前端全局样式不再导入 `katex/dist/katex.min.css`, package 依赖从 `katex` 换为 `mathjax-full`. ReportLab fallback 仍只做文本规范化, 不是独立 LaTeX 渲染器. 本轮临时 proof 通过 32 条相关 Node 测试, KaTeX 渲染残留扫描为空, `package-lock.json` 可解析. 受本机 git/index 读取问题影响, `npm --prefix frontend run build` 卡在 Vite 启动阶段未完成.
