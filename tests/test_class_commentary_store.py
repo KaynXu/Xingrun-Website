@@ -17,12 +17,52 @@ class ClassCommentaryStoreTest(unittest.TestCase):
         lesson_manager.DB_PATH = self.old_db
         self.tmp.cleanup()
 
-    def test_schema_drops_old_feedback_tables_and_creates_new_table(self):
+    def _table_names(self):
         with lesson_manager.get_conn() as conn:
-            names = {
+            return {
                 row["name"]
                 for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             }
+
+    def test_init_db_drops_legacy_feedback_tables_and_keeps_them_gone_on_second_run(self):
+        with lesson_manager.get_conn() as conn:
+            conn.executescript(
+                """
+                CREATE TABLE lesson_class_feedbacks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lesson_id INTEGER
+                );
+                CREATE TABLE class_feedback_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    class_id INTEGER,
+                    teacher_user_id INTEGER
+                );
+                CREATE TABLE class_feedback_student_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER,
+                    student_id INTEGER
+                );
+                CREATE TABLE class_feedback_label_configs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    owner_user_id INTEGER
+                );
+                CREATE TABLE class_feedback_shadow_table (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT
+                );
+                """
+            )
+
+        lesson_manager.init_db()
+        names = self._table_names()
+        self.assertIn("class_commentary_tasks", names)
+        self.assertNotIn("lesson_class_feedbacks", names)
+        self.assertNotIn("class_feedback_tasks", names)
+        self.assertNotIn("class_feedback_student_entries", names)
+        self.assertNotIn("class_feedback_label_configs", names)
+        self.assertFalse(any(name.startswith("class_feedback_") for name in names))
+
+        lesson_manager.init_db()
+        names = self._table_names()
         self.assertIn("class_commentary_tasks", names)
         self.assertNotIn("lesson_class_feedbacks", names)
         self.assertNotIn("class_feedback_tasks", names)
