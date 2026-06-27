@@ -24,33 +24,33 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_init_db_adds_direct_organization_columns_to_students_and_feedback_tasks(self):
+    def test_init_db_adds_direct_organization_columns_to_students_and_commentary_tasks(self):
         with lesson_manager.get_conn() as conn:
             student_columns = {
                 row["name"]: row for row in conn.execute("PRAGMA table_info(students)").fetchall()
             }
             task_columns = {
-                row["name"]: row for row in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()
+                row["name"]: row for row in conn.execute("PRAGMA table_info(class_commentary_tasks)").fetchall()
             }
             student_fk = {
                 row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(students)").fetchall()
             }
             task_fk = {
-                row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(class_feedback_tasks)").fetchall()
+                row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(class_commentary_tasks)").fetchall()
             }
 
         self.assertIn("organization_id", student_columns)
         self.assertIn("organization_id", task_columns)
-        self.assertIn("period_label", task_columns)
         self.assertEqual(student_columns["organization_id"]["notnull"], 1)
         self.assertEqual(task_columns["organization_id"]["notnull"], 1)
-        self.assertEqual(task_columns["period_label"]["type"], "TEXT")
         self.assertEqual(student_fk["organization_id"]["table"], "organizations")
         self.assertEqual(task_fk["organization_id"]["table"], "organizations")
         self.assertEqual(student_fk["organization_id"]["on_delete"], "CASCADE")
-        self.assertEqual(task_fk["organization_id"]["on_delete"], "CASCADE")
+        self.assertEqual(task_columns["audio_filename"]["type"], "TEXT")
+        self.assertEqual(task_fk["class_id"]["table"], "classes")
+        self.assertEqual(task_fk["teacher_user_id"]["table"], "users")
 
-    def test_init_db_backfills_student_and_feedback_task_organization_scope(self):
+    def test_init_db_backfills_student_organization_scope_and_drops_legacy_feedback_tables(self):
         conn = sqlite3.connect(lesson_manager.DB_PATH)
         try:
             conn.executescript(
@@ -125,8 +125,7 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                     class_summary_final_text TEXT NOT NULL DEFAULT '',
                     created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     created_at TEXT DEFAULT (datetime('now','localtime')),
-                    updated_at TEXT DEFAULT (datetime('now','localtime')),
-                    confirmed_at TEXT
+                    updated_at TEXT DEFAULT (datetime('now','localtime'))
                 );
 
                 INSERT INTO organizations (id, name) VALUES (1, 'Test Org');
@@ -155,30 +154,25 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
 
         with lesson_manager.get_conn() as conn:
             student_row = conn.execute("SELECT organization_id FROM students WHERE id=1").fetchone()
-            task_row = conn.execute("SELECT organization_id FROM class_feedback_tasks WHERE id=1").fetchone()
             student_columns = {
                 row["name"]: row for row in conn.execute("PRAGMA table_info(students)").fetchall()
-            }
-            task_columns = {
-                row["name"]: row for row in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()
             }
             student_fk = {
                 row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(students)").fetchall()
             }
-            task_fk = {
-                row["from"]: row for row in conn.execute("PRAGMA foreign_key_list(class_feedback_tasks)").fetchall()
+            legacy_task_row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='class_feedback_tasks'"
+            ).fetchone()
+            commentary_task_columns = {
+                row["name"]: row for row in conn.execute("PRAGMA table_info(class_commentary_tasks)").fetchall()
             }
 
         self.assertEqual(student_row["organization_id"], 1)
-        self.assertEqual(task_row["organization_id"], 1)
         self.assertEqual(student_columns["organization_id"]["notnull"], 1)
-        self.assertEqual(task_columns["organization_id"]["notnull"], 1)
-        self.assertIn("period_label", task_columns)
-        self.assertEqual(task_columns["period_label"]["type"], "TEXT")
         self.assertEqual(student_fk["organization_id"]["table"], "organizations")
-        self.assertEqual(task_fk["organization_id"]["table"], "organizations")
         self.assertEqual(student_fk["organization_id"]["on_delete"], "CASCADE")
-        self.assertEqual(task_fk["organization_id"]["on_delete"], "CASCADE")
+        self.assertIsNone(legacy_task_row)
+        self.assertIn("organization_id", commentary_task_columns)
 
     def test_init_db_creates_organization_leading_indexes(self):
         expected_indexes = {
@@ -195,7 +189,7 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                 "assigned_user_id",
                 "updated_at",
             ),
-            "idx_class_feedback_tasks_organization_status_updated": (
+            "idx_class_commentary_tasks_org_status": (
                 "organization_id",
                 "status",
                 "updated_at",
@@ -248,15 +242,10 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                     'wqs-41', 41, 'wechat_mp', 801, 901,
                     501, 601, 401, 'https://example.com/q.png', 'pending'
                 );
-                INSERT INTO class_feedback_tasks (
-                    id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                    start_date, end_date, period_length_days, period_granularity, status,
-                    class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
-                    class_status_note, parent_feedback_note, teaching_focus_note,
-                    next_stage_preview_note, student_highlights_json, created_by
+                INSERT INTO class_commentary_tasks (
+                    id, organization_id, class_id, teacher_user_id, audio_path, audio_filename
                 ) VALUES (
-                    701, 41, 501, 401, 'Delete Owner', '2026-04-01', '2026-04-01', 1, 'daily', 'draft',
-                    '', '', '[]', '', '', '', '', '[]', 401
+                    701, 41, 501, 401, '/tmp/delete-org-audio.m4a', 'delete-org-audio.m4a'
                 );
                 """
             )
@@ -282,7 +271,7 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                 "SELECT COUNT(*) AS c FROM wrong_question_submissions WHERE organization_id=41"
             ).fetchone()["c"]
             task_count = conn.execute(
-                "SELECT COUNT(*) AS c FROM class_feedback_tasks WHERE organization_id=41"
+                "SELECT COUNT(*) AS c FROM class_commentary_tasks WHERE organization_id=41"
             ).fetchone()["c"]
 
         self.assertEqual(organization_count, 0)
@@ -365,7 +354,7 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "multiple organizations"):
             lesson_manager.init_db()
 
-    def test_create_task_rejects_creator_from_other_organization(self):
+    def test_create_task_rejects_organization_id_from_other_organization(self):
         with lesson_manager.get_conn() as conn:
             conn.executescript(
                 """
@@ -381,14 +370,13 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
                 """
             )
 
-        with self.assertRaisesRegex(ValueError, "created_by must belong to class organization"):
-            lesson_manager.create_class_feedback_task(
+        with self.assertRaisesRegex(ValueError, "organization_id must match class organization"):
+            lesson_manager.create_class_commentary_task(
+                organization_id=12,
                 class_id=201,
                 teacher_user_id=101,
-                teacher_name_snapshot="Owner A",
-                start_date="2026-04-01",
-                end_date="2026-04-01",
-                created_by=102,
+                audio_path="/tmp/audio.m4a",
+                audio_filename="audio.m4a",
             )
 
     def test_create_task_rejects_teacher_from_other_organization(self):
@@ -407,13 +395,12 @@ class OrganizationRootedDBStructureTestCase(unittest.TestCase):
             )
 
         with self.assertRaisesRegex(ValueError, "teacher_user_id must belong to class organization"):
-            lesson_manager.create_class_feedback_task(
+            lesson_manager.create_class_commentary_task(
+                organization_id=21,
                 class_id=301,
                 teacher_user_id=202,
-                teacher_name_snapshot="Teacher B",
-                start_date="2026-04-01",
-                end_date="2026-04-01",
-                created_by=201,
+                audio_path="/tmp/audio.m4a",
+                audio_filename="audio.m4a",
             )
 
 

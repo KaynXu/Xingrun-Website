@@ -143,27 +143,6 @@ GRADE_NUMERAL_MAP = {
     11: "十一",
     12: "十二",
 }
-DEFAULT_CLASS_FEEDBACK_LABEL_GROUPS = [
-    {"group": "课堂状态", "labels": ["进入状态快", "注意力更集中", "注意力波动", "开口更主动", "开口偏少"]},
-    {"group": "学习表现", "labels": ["基础更稳", "知识点仍卡住", "纠错后保持更好", "完整表达有进步", "应用时还不稳定"]},
-    {"group": "课后执行", "labels": ["作业完成更稳", "作业拖延", "复习配合度提升", "家长跟进较积极", "家庭练习不足"]},
-    {"group": "阶段变化", "labels": ["进步明显", "有点回落", "变化不大", "情绪更稳定", "需要下阶段重点关注"]},
-]
-LEGACY_LESSON_CLASS_FEEDBACK_TABLE = "_".join(("lesson", "feedbacks"))
-CLASS_FEEDBACK_MONTH_LABELS = {
-    1: "一月",
-    2: "二月",
-    3: "三月",
-    4: "四月",
-    5: "五月",
-    6: "六月",
-    7: "七月",
-    8: "八月",
-    9: "九月",
-    10: "十月",
-    11: "十一月",
-    12: "十二月",
-}
 CONSULTATION_SOURCE_ALIASES = {
     "转介绍": {"转介绍", "介绍", "朋友介绍", "家长介绍", "熟人介绍", "亲友介绍", "老带新", "推荐介绍", "推荐"},
     "朋友圈": {"朋友圈", "微信朋友圈", "pyq"},
@@ -2343,36 +2322,6 @@ def _drop_legacy_table_if_exists(conn: sqlite3.Connection, table: str) -> None:
     if row:
         conn.execute(f"DROP TABLE {table}")
 
-
-def _drop_stale_index_if_bound_to_wrong_table(
-    conn: sqlite3.Connection, index_name: str, expected_table: str
-) -> None:
-    row = conn.execute(
-        "SELECT tbl_name FROM sqlite_master WHERE type='index' AND name=?",
-        (index_name,),
-    ).fetchone()
-    if row and row["tbl_name"] != expected_table:
-        conn.execute(f'DROP INDEX "{index_name}"')
-
-
-def _cleanup_class_feedback_student_entries_repair_legacy(conn: sqlite3.Connection) -> None:
-    legacy_table = "class_feedback_student_entries__repair_legacy"
-    _drop_stale_index_if_bound_to_wrong_table(
-        conn,
-        "idx_class_feedback_student_entries_task_student",
-        "class_feedback_student_entries",
-    )
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (legacy_table,),
-    ).fetchone()
-    if not row:
-        return
-    legacy_count = conn.execute(f'SELECT COUNT(*) AS c FROM "{legacy_table}"').fetchone()["c"]
-    if legacy_count == 0:
-        conn.execute(f'DROP TABLE "{legacy_table}"')
-
-
 def _rebuild_wrong_question_submissions_without_legacy_feedback_columns(conn: sqlite3.Connection) -> None:
     column_rows = conn.execute("PRAGMA table_info(wrong_question_submissions)").fetchall()
     columns = [row[1] for row in column_rows]
@@ -2870,22 +2819,6 @@ def _backfill_student_organization_scope(conn: sqlite3.Connection, fallback_orga
     _enforce_students_organization_contract(conn)
 
 
-def _backfill_class_feedback_task_organization_scope(conn: sqlite3.Connection, fallback_organization_id: int) -> None:
-    _ensure_column(conn, "class_feedback_tasks", "organization_id", "INTEGER REFERENCES organizations(id)")
-    conn.execute(
-        """
-        UPDATE class_feedback_tasks
-        SET organization_id=COALESCE(
-            (SELECT c.organization_id FROM classes c WHERE c.id = class_feedback_tasks.class_id),
-            ?
-        )
-        WHERE organization_id IS NULL
-        """,
-        (fallback_organization_id,),
-    )
-    _enforce_class_feedback_task_organization_contract(conn)
-
-
 def _has_strict_organization_fk(conn: sqlite3.Connection, table: str) -> bool:
     columns = {row["name"]: row for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     org_col = columns.get("organization_id")
@@ -2930,135 +2863,6 @@ def _enforce_students_organization_contract(conn: sqlite3.Connection) -> None:
         conn.commit()
     finally:
         conn.execute("PRAGMA foreign_keys = ON")
-
-
-def _enforce_class_feedback_task_organization_contract(conn: sqlite3.Connection) -> None:
-    if _has_strict_organization_fk(conn, "class_feedback_tasks"):
-        return
-    conn.commit()
-    conn.execute("PRAGMA foreign_keys = OFF")
-    try:
-        conn.execute("DROP TABLE IF EXISTS class_feedback_tasks__org_scope_legacy")
-        conn.execute("ALTER TABLE class_feedback_tasks RENAME TO class_feedback_tasks__org_scope_legacy")
-        conn.execute(
-            """
-            CREATE TABLE class_feedback_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-                class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-                teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-                teacher_name_snapshot TEXT NOT NULL DEFAULT '',
-                start_date TEXT NOT NULL,
-                end_date TEXT NOT NULL,
-                period_length_days INTEGER NOT NULL DEFAULT 1,
-                period_granularity TEXT NOT NULL DEFAULT 'daily',
-                period_label TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'draft',
-                class_summary_ai_draft TEXT NOT NULL DEFAULT '',
-                class_summary_final_text TEXT NOT NULL DEFAULT '',
-                class_status_tags_json TEXT NOT NULL DEFAULT '[]',
-                class_status_note TEXT NOT NULL DEFAULT '',
-                parent_feedback_note TEXT NOT NULL DEFAULT '',
-                teaching_focus_note TEXT NOT NULL DEFAULT '',
-                next_stage_preview_note TEXT NOT NULL DEFAULT '',
-                student_highlights_json TEXT NOT NULL DEFAULT '[]',
-                created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                created_at TEXT DEFAULT (datetime('now','localtime')),
-                updated_at TEXT DEFAULT (datetime('now','localtime')),
-                confirmed_at TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            INSERT INTO class_feedback_tasks (
-                id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity, period_label, status,
-                class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
-                class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
-                student_highlights_json, created_by, created_at, updated_at, confirmed_at
-            )
-            SELECT
-                id, organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity,
-                COALESCE(period_label, ''), status,
-                class_summary_ai_draft, class_summary_final_text, class_status_tags_json,
-                class_status_note, parent_feedback_note, teaching_focus_note, next_stage_preview_note,
-                student_highlights_json, created_by, created_at, updated_at, confirmed_at
-            FROM class_feedback_tasks__org_scope_legacy
-            """
-        )
-        conn.execute("DROP TABLE class_feedback_tasks__org_scope_legacy")
-        conn.commit()
-    finally:
-        conn.execute("PRAGMA foreign_keys = ON")
-
-
-def _ensure_class_feedback_task_integrity_guards(conn: sqlite3.Connection) -> None:
-    _cleanup_class_feedback_student_entries_repair_legacy(conn)
-    conn.execute(
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_class_feedback_student_entries_task_student
-        ON class_feedback_student_entries(task_id, student_id)
-        """
-    )
-    conn.executescript(
-        """
-        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_insert
-        BEFORE INSERT ON class_feedback_tasks
-        WHEN NEW.teacher_user_id IS NOT NULL
-        BEGIN
-            SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM user_classes uc
-                WHERE uc.class_id = NEW.class_id
-                  AND uc.user_id = NEW.teacher_user_id
-            );
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_tasks_teacher_binding_update
-        BEFORE UPDATE OF class_id, teacher_user_id ON class_feedback_tasks
-        WHEN NEW.teacher_user_id IS NOT NULL
-        BEGIN
-            SELECT RAISE(ABORT, 'teacher_user_id must match class binding')
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM user_classes uc
-                WHERE uc.class_id = NEW.class_id
-                  AND uc.user_id = NEW.teacher_user_id
-            );
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_insert
-        BEFORE INSERT ON class_feedback_student_entries
-        BEGIN
-            SELECT RAISE(ABORT, 'student_id must belong to task roster')
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM class_feedback_tasks t
-                JOIN class_students cs
-                  ON cs.class_id = t.class_id
-                 AND cs.student_id = NEW.student_id
-                WHERE t.id = NEW.task_id
-            );
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS trg_class_feedback_student_entries_roster_update
-        BEFORE UPDATE OF task_id, student_id ON class_feedback_student_entries
-        BEGIN
-            SELECT RAISE(ABORT, 'student_id must belong to task roster')
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM class_feedback_tasks t
-                JOIN class_students cs
-                  ON cs.class_id = t.class_id
-                 AND cs.student_id = NEW.student_id
-                WHERE t.id = NEW.task_id
-            );
-        END;
-        """
-    )
 
 
 def init_db():
@@ -3605,63 +3409,6 @@ def init_db():
         ON ai_usage_ledger (organization_id, request_id)
         WHERE request_id <> '';
 
-        CREATE TABLE IF NOT EXISTS lesson_class_feedbacks (
-            lesson_id           INTEGER PRIMARY KEY REFERENCES lessons(id) ON DELETE CASCADE,
-            class_id            INTEGER REFERENCES classes(id) ON DELETE SET NULL,
-            merged_text         TEXT DEFAULT '',
-            student_index_json  TEXT DEFAULT '[]',
-            editor_state_json   TEXT DEFAULT '{}',
-            created_at          TEXT DEFAULT (datetime('now','localtime')),
-            updated_at          TEXT DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE TABLE IF NOT EXISTS class_feedback_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-            class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-            teacher_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            teacher_name_snapshot TEXT NOT NULL DEFAULT '',
-            start_date TEXT NOT NULL,
-            end_date TEXT NOT NULL,
-            period_length_days INTEGER NOT NULL DEFAULT 1,
-            period_granularity TEXT NOT NULL DEFAULT 'daily',
-            period_label TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'draft',
-            class_summary_ai_draft TEXT NOT NULL DEFAULT '',
-            class_summary_final_text TEXT NOT NULL DEFAULT '',
-            class_status_tags_json TEXT NOT NULL DEFAULT '[]',
-            class_status_note TEXT NOT NULL DEFAULT '',
-            parent_feedback_note TEXT NOT NULL DEFAULT '',
-            teaching_focus_note TEXT NOT NULL DEFAULT '',
-            next_stage_preview_note TEXT NOT NULL DEFAULT '',
-            student_highlights_json TEXT NOT NULL DEFAULT '[]',
-            created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            created_at TEXT DEFAULT (datetime('now','localtime')),
-            updated_at TEXT DEFAULT (datetime('now','localtime')),
-            confirmed_at TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS class_feedback_student_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id INTEGER NOT NULL REFERENCES class_feedback_tasks(id) ON DELETE CASCADE,
-            student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-            student_name_snapshot TEXT NOT NULL DEFAULT '',
-            ai_draft TEXT NOT NULL DEFAULT '',
-            final_text TEXT NOT NULL DEFAULT '',
-            checked_at TEXT,
-            updated_at TEXT DEFAULT (datetime('now','localtime'))
-        );
-
-        CREATE TABLE IF NOT EXISTS class_feedback_label_configs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            label_group TEXT NOT NULL,
-            label_text TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            is_system_default INTEGER NOT NULL DEFAULT 0
-        );
-
         CREATE TABLE IF NOT EXISTS class_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL,
@@ -3705,87 +3452,58 @@ def init_db():
         if "class_id" not in cols:
             conn.execute("ALTER TABLE lessons ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
 
-        legacy_feedback_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({LEGACY_LESSON_CLASS_FEEDBACK_TABLE})").fetchall()]
-        if legacy_feedback_cols:
-            if "class_id" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
-            if "merged_text" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN merged_text TEXT DEFAULT ''")
-            if "student_index_json" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN student_index_json TEXT DEFAULT '[]'")
-            if "editor_state_json" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN editor_state_json TEXT DEFAULT '{{}}'")
-            if "created_at" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-            if "updated_at" not in legacy_feedback_cols:
-                conn.execute(f"ALTER TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE} ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
-
-        lesson_class_feedback_cols = [r[1] for r in conn.execute("PRAGMA table_info(lesson_class_feedbacks)").fetchall()]
-        if lesson_class_feedback_cols:
-            if "class_id" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL")
-            if "merged_text" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN merged_text TEXT DEFAULT ''")
-            if "student_index_json" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN student_index_json TEXT DEFAULT '[]'")
-            if "editor_state_json" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN editor_state_json TEXT DEFAULT '{}'")
-            if "created_at" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN created_at TEXT DEFAULT (datetime('now','localtime'))")
-            if "updated_at" not in lesson_class_feedback_cols:
-                conn.execute("ALTER TABLE lesson_class_feedbacks ADD COLUMN updated_at TEXT DEFAULT (datetime('now','localtime'))")
-
-        if legacy_feedback_cols:
-            conn.execute(
-                f"""
-                INSERT OR REPLACE INTO lesson_class_feedbacks
-                    (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
-                SELECT
-                    lesson_id,
-                    class_id,
-                    merged_text,
-                    student_index_json,
-                    editor_state_json,
-                    created_at,
-                    updated_at
-                FROM {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}
-                """
-            )
-            conn.execute(f"DROP TABLE {LEGACY_LESSON_CLASS_FEEDBACK_TABLE}")
-        class_feedback_task_cols = [r[1] for r in conn.execute("PRAGMA table_info(class_feedback_tasks)").fetchall()]
-        if class_feedback_task_cols:
-            if "class_status_tags_json" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN class_status_tags_json TEXT NOT NULL DEFAULT '[]'")
-            if "class_status_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN class_status_note TEXT NOT NULL DEFAULT ''")
-            if "parent_feedback_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN parent_feedback_note TEXT NOT NULL DEFAULT ''")
-            if "teaching_focus_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN teaching_focus_note TEXT NOT NULL DEFAULT ''")
-            if "next_stage_preview_note" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN next_stage_preview_note TEXT NOT NULL DEFAULT ''")
-            if "student_highlights_json" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN student_highlights_json TEXT NOT NULL DEFAULT '[]'")
-            if "period_label" not in class_feedback_task_cols:
-                conn.execute("ALTER TABLE class_feedback_tasks ADD COLUMN period_label TEXT NOT NULL DEFAULT ''")
-            unlabeled_task_rows = conn.execute(
-                """
-                SELECT id, start_date, end_date, period_granularity
-                FROM class_feedback_tasks
-                WHERE trim(coalesce(period_label, '')) = ''
-                """
+        old_feedback_tables = [
+            "lesson_class_feedbacks",
+            "class_feedback_tasks",
+            "class_feedback_student_entries",
+            "class_feedback_label_configs",
+        ]
+        old_feedback_tables.extend(
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'class_feedback_%'"
             ).fetchall()
-            for task_row in unlabeled_task_rows:
-                _, _, _, _, period_label = _resolve_class_feedback_period_selection(
-                    start_date=task_row["start_date"],
-                    end_date=task_row["end_date"],
-                    period_granularity=(task_row["period_granularity"] or "").strip() or "custom",
-                )
-                conn.execute(
-                    "UPDATE class_feedback_tasks SET period_label=? WHERE id=?",
-                    (period_label, task_row["id"]),
-                )
-        _ensure_class_feedback_task_integrity_guards(conn)
+        )
+        for table_name in sorted(set(old_feedback_tables)):
+            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS class_commentary_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id),
+                class_id INTEGER NOT NULL REFERENCES classes(id),
+                teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+                status TEXT NOT NULL DEFAULT 'uploaded',
+                failure_stage TEXT NOT NULL DEFAULT '',
+                audio_path TEXT NOT NULL DEFAULT '',
+                audio_filename TEXT NOT NULL DEFAULT '',
+                transcript_text TEXT NOT NULL DEFAULT '',
+                confirmed_transcript_text TEXT NOT NULL DEFAULT '',
+                transcribed_at TEXT NOT NULL DEFAULT '',
+                skill_id TEXT NOT NULL DEFAULT '',
+                skill_name TEXT NOT NULL DEFAULT '',
+                skill_path TEXT NOT NULL DEFAULT '',
+                skill_content_snapshot TEXT NOT NULL DEFAULT '',
+                feedback_text TEXT NOT NULL DEFAULT '',
+                transcription_error TEXT NOT NULL DEFAULT '',
+                generation_error TEXT NOT NULL DEFAULT '',
+                transcription_request_key TEXT NOT NULL DEFAULT '',
+                generation_request_key TEXT NOT NULL DEFAULT '',
+                chat_provider TEXT NOT NULL DEFAULT '',
+                chat_model TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                CHECK(status IN ('uploaded','transcribing','transcribed','generating','ready','failed')),
+                CHECK(failure_stage IN ('','transcription','generation'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_class_commentary_tasks_org_status
+            ON class_commentary_tasks (organization_id, status, updated_at);
+
+            CREATE INDEX IF NOT EXISTS idx_class_commentary_tasks_class
+            ON class_commentary_tasks (class_id, updated_at);
+            """
+        )
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
         _ensure_review_plan_versions_schema(conn)
@@ -3794,8 +3512,6 @@ def init_db():
         _bootstrap_account_state(conn)
         default_org = _ensure_organization(conn, DEFAULT_ORGANIZATION_NAME)
         _backfill_student_organization_scope(conn, default_org["id"])
-        _backfill_class_feedback_task_organization_scope(conn, default_org["id"])
-        _ensure_class_feedback_task_integrity_guards(conn)
         _ensure_column(conn, "wrong_question_submissions", "child_raw_reason_text", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "child_reason_transcript", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "wrong_question_submissions", "child_reason_input_mode", "TEXT NOT NULL DEFAULT 'text'")
@@ -3882,9 +3598,6 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_consultations_organization_assigned_updated
             ON consultations (organization_id, assigned_user_id, updated_at);
-
-            CREATE INDEX IF NOT EXISTS idx_class_feedback_tasks_organization_status_updated
-            ON class_feedback_tasks (organization_id, status, updated_at);
 
             CREATE INDEX IF NOT EXISTS idx_wrong_question_submissions_organization_class_teacher_status
             ON wrong_question_submissions (organization_id, class_id, teacher_user_id, status);
@@ -6624,6 +6337,7 @@ def delete_class(class_id: int):
 
         master_data.ensure_schema(conn)
         conn.execute("UPDATE lessons SET class_id=NULL WHERE class_id=?", (class_id,))
+        conn.execute("DELETE FROM class_commentary_tasks WHERE class_id=?", (class_id,))
         conn.execute(
             """
             UPDATE wrong_question_mappings
@@ -7060,6 +6774,225 @@ def list_students_for_class(class_id: int) -> list:
     return [dict(row) for row in rows]
 
 
+def _class_commentary_task_select_sql() -> str:
+    return """
+        SELECT t.*, c.name AS class_name
+        FROM class_commentary_tasks t
+        JOIN classes c ON c.id = t.class_id
+    """
+
+
+def _serialize_class_commentary_task_row(row: sqlite3.Row) -> dict:
+    item = dict(row)
+    string_fields = (
+        "status",
+        "failure_stage",
+        "audio_path",
+        "audio_filename",
+        "transcript_text",
+        "confirmed_transcript_text",
+        "transcribed_at",
+        "skill_id",
+        "skill_name",
+        "skill_path",
+        "skill_content_snapshot",
+        "feedback_text",
+        "transcription_error",
+        "generation_error",
+        "transcription_request_key",
+        "generation_request_key",
+        "chat_provider",
+        "chat_model",
+        "created_at",
+        "updated_at",
+        "class_name",
+    )
+    for field_name in string_fields:
+        item[field_name] = item.get(field_name) or ""
+    return item
+
+
+def get_class_commentary_task(task_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            f"{_class_commentary_task_select_sql()} WHERE t.id=?",
+            (task_id,),
+        ).fetchone()
+    return _serialize_class_commentary_task_row(row) if row else None
+
+
+def create_class_commentary_task(
+    *,
+    organization_id: int,
+    class_id: int,
+    teacher_user_id: int,
+    audio_path: str,
+    audio_filename: str,
+    transcription_request_key: str = "",
+):
+    with get_conn() as conn:
+        class_row = conn.execute(
+            "SELECT organization_id FROM classes WHERE id=?",
+            (class_id,),
+        ).fetchone()
+        if not class_row:
+            raise ValueError("class not found")
+        class_organization_id = int(class_row["organization_id"] or 0)
+        if int(organization_id or 0) != class_organization_id:
+            raise ValueError("organization_id must match class organization")
+        teacher_row = conn.execute(
+            "SELECT organization_id FROM users WHERE id=?",
+            (teacher_user_id,),
+        ).fetchone()
+        if not teacher_row:
+            raise ValueError("teacher_user_id not found")
+        if int(teacher_row["organization_id"] or 0) != class_organization_id:
+            raise ValueError("teacher_user_id must belong to class organization")
+        cur = conn.execute(
+            """
+            INSERT INTO class_commentary_tasks (
+                organization_id, class_id, teacher_user_id, audio_path, audio_filename, transcription_request_key
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                organization_id,
+                class_id,
+                teacher_user_id,
+                audio_path or "",
+                audio_filename or "",
+                transcription_request_key or "",
+            ),
+        )
+        task_id = cur.lastrowid
+    return get_class_commentary_task(task_id)
+
+
+def _update_class_commentary_task_failure_state(task_id: int, status: str, failure_stage: str, transcription_error: str, generation_error: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status=?, failure_stage=?, transcription_error=?, generation_error=?, updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (status, failure_stage, transcription_error, generation_error, task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def mark_class_commentary_task_transcribing(task_id: int):
+    return _update_class_commentary_task_failure_state(task_id, "transcribing", "", "", "")
+
+
+def mark_class_commentary_transcription_succeeded(task_id: int, transcript_text: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='transcribed',
+                failure_stage='',
+                transcript_text=?,
+                confirmed_transcript_text=?,
+                transcribed_at=datetime('now','localtime'),
+                transcription_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (transcript_text or "", transcript_text or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def save_class_commentary_transcript(task_id: int, confirmed_transcript_text: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='transcribed',
+                failure_stage='',
+                confirmed_transcript_text=?,
+                transcription_error='',
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (confirmed_transcript_text or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def save_class_commentary_generation_started(
+    task_id: int,
+    *,
+    skill_id: str,
+    skill_name: str,
+    skill_path: str,
+    skill_content_snapshot: str,
+    generation_request_key: str,
+    chat_provider: str,
+    chat_model: str,
+):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='generating',
+                failure_stage='',
+                skill_id=?,
+                skill_name=?,
+                skill_path=?,
+                skill_content_snapshot=?,
+                feedback_text='',
+                transcription_error='',
+                generation_error='',
+                generation_request_key=?,
+                chat_provider=?,
+                chat_model=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                skill_id or "",
+                skill_name or "",
+                skill_path or "",
+                skill_content_snapshot or "",
+                generation_request_key or "",
+                chat_provider or "",
+                chat_model or "",
+                task_id,
+            ),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def save_class_commentary_generation_succeeded(task_id: int, feedback_text: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='ready',
+                failure_stage='',
+                feedback_text=?,
+                transcription_error='',
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (feedback_text or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def mark_class_commentary_task_failed(task_id: int, failure_stage: str, error_message: str):
+    normalized_stage = (failure_stage or "").strip()
+    if normalized_stage == "transcription":
+        return _update_class_commentary_task_failure_state(task_id, "failed", "transcription", error_message or "", "")
+    if normalized_stage == "generation":
+        return _update_class_commentary_task_failure_state(task_id, "failed", "generation", "", error_message or "")
+    raise ValueError("failure_stage must be transcription or generation")
+
+
 def list_students_for_organization(organization_id: int | None = None, include_archived: bool = False) -> list:
     with get_conn() as conn:
         if organization_id is None:
@@ -7221,7 +7154,6 @@ def _count_student_profile_references(conn: sqlite3.Connection, student_id: int)
         "wrong_question_practice_sheets",
         "wrong_question_practice_pack_job_students",
         "weekly_wrong_question_followup_messages",
-        "class_feedback_student_entries",
     ]
     total = 0
     for table in reference_tables:
@@ -7615,1061 +7547,6 @@ def remove_student_from_class(class_id: int, student_id: int) -> bool:
     return removed
 
 
-def _last_day_of_month(year: int, month: int) -> int:
-    if month == 12:
-        next_month = date(year + 1, 1, 1)
-    else:
-        next_month = date(year, month + 1, 1)
-    return (next_month - timedelta(days=1)).day
-
-
-def _coerce_period_int(value, field_name: str) -> int:
-    if isinstance(value, bool) or value in (None, ""):
-        raise ValueError(f"{field_name} is required")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field_name} must be an integer") from exc
-
-
-def _format_legacy_custom_period_label(start_date: str, end_date: str) -> str:
-    return f"{start_date}至{end_date}"
-
-
-def _resolve_class_feedback_stage_dates(year: int, stage_name: str) -> tuple[date, date]:
-    normalized_stage_name = (stage_name or "").strip()
-    if not normalized_stage_name:
-        raise ValueError("stage_name is required")
-    if normalized_stage_name == "春季":
-        return date(year, 3, 1), date(year, 5, 31)
-    if normalized_stage_name in {"暑假", "夏季"}:
-        return date(year, 7, 1), date(year, 8, 31)
-    if normalized_stage_name == "秋季":
-        return date(year, 9, 1), date(year, 11, 30)
-    if normalized_stage_name in {"寒假", "冬季"}:
-        return date(year, 1, 1), date(year, 2, _last_day_of_month(year, 2))
-    raise ValueError("unsupported stage_name")
-
-
-def _infer_class_feedback_stage_name(start: date, end: date) -> Optional[str]:
-    for candidate in ("春季", "暑假", "秋季", "寒假"):
-        candidate_start, candidate_end = _resolve_class_feedback_stage_dates(start.year, candidate)
-        if start == candidate_start and end == candidate_end:
-            return candidate
-    return None
-
-
-def _parse_class_feedback_range(start_date: Optional[str], end_date: Optional[str]) -> tuple[date, date]:
-    normalized_start_date = (start_date or "").strip()
-    normalized_end_date = (end_date or "").strip()
-    if not normalized_start_date or not normalized_end_date:
-        raise ValueError("start_date and end_date are required")
-    start = date.fromisoformat(normalized_start_date)
-    end = date.fromisoformat(normalized_end_date)
-    if end < start:
-        raise ValueError("end_date must be on or after start_date")
-    return start, end
-
-
-def _resolve_class_feedback_period_selection(
-    *,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    period_granularity: Optional[str] = None,
-    anchor_date: Optional[str] = None,
-    year: Optional[int] = None,
-    week: Optional[int] = None,
-    month: Optional[int] = None,
-    stage_name: Optional[str] = None,
-) -> tuple[str, str, int, str, str]:
-    normalized_granularity = (period_granularity or "").strip()
-    normalized_anchor_date = (anchor_date or "").strip()
-
-    if not normalized_granularity:
-        start, end = _parse_class_feedback_range(start_date, end_date)
-        resolved_start_date = start.isoformat()
-        resolved_end_date = end.isoformat()
-        period_length_days = (end - start).days + 1
-        return (
-            resolved_start_date,
-            resolved_end_date,
-            period_length_days,
-            "custom",
-            _format_legacy_custom_period_label(resolved_start_date, resolved_end_date),
-        )
-
-    if normalized_granularity == "custom":
-        start, end = _parse_class_feedback_range(start_date, end_date)
-        resolved_start_date = start.isoformat()
-        resolved_end_date = end.isoformat()
-        period_length_days = (end - start).days + 1
-        return (
-            resolved_start_date,
-            resolved_end_date,
-            period_length_days,
-            "custom",
-            _format_legacy_custom_period_label(resolved_start_date, resolved_end_date),
-        )
-
-    if normalized_granularity == "daily":
-        if normalized_anchor_date:
-            selected_day = date.fromisoformat(normalized_anchor_date)
-        else:
-            start, end = _parse_class_feedback_range(start_date, end_date)
-            if start != end:
-                raise ValueError("daily period requires a single-day range")
-            selected_day = start
-        resolved_start_date = selected_day.isoformat()
-        return resolved_start_date, resolved_start_date, 1, "daily", resolved_start_date
-
-    if normalized_granularity == "weekly":
-        if normalized_anchor_date:
-            anchor = date.fromisoformat(normalized_anchor_date)
-            resolved_year, resolved_week, _ = anchor.isocalendar()
-            start = date.fromisocalendar(resolved_year, resolved_week, 1)
-            end = start + timedelta(days=6)
-            return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
-        if year not in (None, "") and week not in (None, ""):
-            resolved_year = _coerce_period_int(year, "year")
-            resolved_week = _coerce_period_int(week, "week")
-            start = date.fromisocalendar(resolved_year, resolved_week, 1)
-            end = start + timedelta(days=6)
-            return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
-
-        start, end = _parse_class_feedback_range(start_date, end_date)
-        if (end - start).days != 6:
-            raise ValueError("weekly period requires a 7-day range")
-        resolved_year, resolved_week, _ = start.isocalendar()
-        expected_end = start + timedelta(days=6)
-        if end != expected_end:
-            raise ValueError("weekly period requires a contiguous 7-day range")
-        return start.isoformat(), end.isoformat(), 7, "weekly", week_label(f"{resolved_year}-W{resolved_week:02d}")
-
-    if normalized_granularity == "monthly":
-        if normalized_anchor_date:
-            anchor = date.fromisoformat(normalized_anchor_date)
-            resolved_year = anchor.year
-            resolved_month = anchor.month
-        elif year not in (None, "") and month not in (None, ""):
-            resolved_year = _coerce_period_int(year, "year")
-            resolved_month = _coerce_period_int(month, "month")
-        else:
-            start, end = _parse_class_feedback_range(start_date, end_date)
-            resolved_year = start.year
-            resolved_month = start.month
-            if start.day != 1 or end.year != resolved_year or end.month != resolved_month:
-                raise ValueError("monthly period requires a full calendar month range")
-            if end.day != _last_day_of_month(resolved_year, resolved_month):
-                raise ValueError("monthly period requires a full calendar month range")
-            return (
-                start.isoformat(),
-                end.isoformat(),
-                (end - start).days + 1,
-                "monthly",
-                f"{resolved_year}{CLASS_FEEDBACK_MONTH_LABELS[resolved_month]}",
-            )
-        if resolved_month < 1 or resolved_month > 12:
-            raise ValueError("month must be between 1 and 12")
-        start = date(resolved_year, resolved_month, 1)
-        end = date(resolved_year, resolved_month, _last_day_of_month(resolved_year, resolved_month))
-        return (
-            start.isoformat(),
-            end.isoformat(),
-            (end - start).days + 1,
-            "monthly",
-            f"{resolved_year}{CLASS_FEEDBACK_MONTH_LABELS[resolved_month]}",
-        )
-
-    if normalized_granularity == "stage":
-        normalized_stage_name = (stage_name or "").strip()
-        if normalized_anchor_date:
-            resolved_year = date.fromisoformat(normalized_anchor_date).year
-        elif year not in (None, ""):
-            resolved_year = _coerce_period_int(year, "year")
-        else:
-            start, end = _parse_class_feedback_range(start_date, end_date)
-            inferred_stage_name = _infer_class_feedback_stage_name(start, end)
-            if inferred_stage_name is None:
-                raise ValueError("stage period requires valid stage_name")
-            return (
-                start.isoformat(),
-                end.isoformat(),
-                (end - start).days + 1,
-                "stage",
-                f"{start.year}{inferred_stage_name}",
-            )
-        start, end = _resolve_class_feedback_stage_dates(resolved_year, normalized_stage_name)
-        return (
-            start.isoformat(),
-            end.isoformat(),
-            (end - start).days + 1,
-            "stage",
-            f"{resolved_year}{normalized_stage_name}",
-        )
-
-    raise ValueError("unsupported period_granularity")
-
-
-def _load_json_list(value) -> list:
-    if isinstance(value, list):
-        return value
-    try:
-        parsed = json.loads(value or "[]")
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return []
-    return parsed if isinstance(parsed, list) else []
-
-
-def _normalize_class_feedback_student_highlights(
-    *,
-    task_row: sqlite3.Row,
-    conn: sqlite3.Connection,
-    student_highlights: list[dict] | None,
-) -> list[dict]:
-    if student_highlights is None:
-        student_highlights = []
-    if not isinstance(student_highlights, list):
-        raise ValueError("student_highlights must be a list")
-
-    roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
-    normalized_highlights: list[dict] = []
-    seen_student_ids: set[int] = set()
-    for item in student_highlights:
-        if not isinstance(item, dict):
-            raise ValueError("student_highlights must contain objects")
-        student_id = item.get("student_id")
-        if isinstance(student_id, bool) or not isinstance(student_id, int):
-            raise ValueError("student_highlights.student_id must be an integer")
-        if student_id in seen_student_ids:
-            continue
-        if student_id not in roster_by_id:
-            raise ValueError("student_highlights must belong to class roster")
-        labels = []
-        for label in item.get("labels") or []:
-            normalized_label = str(label or "").strip()
-            if normalized_label:
-                labels.append(normalized_label)
-        normalized_highlights.append(
-            {
-                "student_id": student_id,
-                "labels": labels,
-                "note": str(item.get("note") or "").strip(),
-            }
-        )
-        seen_student_ids.add(student_id)
-    return normalized_highlights
-
-
-def _normalize_class_feedback_task_notes(
-    *,
-    task_row: sqlite3.Row,
-    conn: sqlite3.Connection,
-    class_status_tags: list[str] | None,
-    class_status_note: str,
-    parent_feedback_note: str,
-    teaching_focus_note: str,
-    next_stage_preview_note: str,
-    student_highlights: list[dict] | None,
-) -> dict:
-    normalized_tags = [
-        str(tag or "").strip()
-        for tag in (class_status_tags or [])
-        if str(tag or "").strip()
-    ]
-    return {
-        "class_status_tags": normalized_tags,
-        "class_status_note": str(class_status_note or "").strip(),
-        "parent_feedback_note": str(parent_feedback_note or "").strip(),
-        "teaching_focus_note": str(teaching_focus_note or "").strip(),
-        "next_stage_preview_note": str(next_stage_preview_note or "").strip(),
-        "student_highlights": _normalize_class_feedback_student_highlights(
-            task_row=task_row,
-            conn=conn,
-            student_highlights=student_highlights,
-        ),
-    }
-
-
-def _ensure_class_feedback_student_entries_cover_current_roster(
-    *,
-    task_row: sqlite3.Row,
-    conn: sqlite3.Connection,
-    normalized_student_entries: list[dict],
-) -> None:
-    roster_student_ids = sorted(_get_class_feedback_student_roster(conn, task_row["class_id"]).keys())
-    if not roster_student_ids:
-        raise ValueError("当前班级还没有学生，无法生成课堂反馈")
-    provided_student_ids = sorted(item["student_id"] for item in normalized_student_entries)
-    if provided_student_ids != roster_student_ids:
-        raise ValueError("student_entries must match current class roster")
-
-
-def _serialize_class_feedback_task_row(row: sqlite3.Row, student_entries: Optional[list[dict]] = None) -> dict:
-    task = dict(row)
-    task["class_status_tags"] = _load_json_list(task.get("class_status_tags_json"))
-    task["student_highlights"] = _load_json_list(task.get("student_highlights_json"))
-    task.pop("class_status_tags_json", None)
-    task.pop("student_highlights_json", None)
-    task["period_label"] = task.get("period_label") or ""
-    task["class_status_note"] = task.get("class_status_note") or ""
-    task["parent_feedback_note"] = task.get("parent_feedback_note") or ""
-    task["teaching_focus_note"] = task.get("teaching_focus_note") or ""
-    task["next_stage_preview_note"] = task.get("next_stage_preview_note") or ""
-    task["student_entries"] = student_entries or []
-    return task
-
-
-def _load_class_feedback_task_row(conn: sqlite3.Connection, task_id: int):
-    task_row = conn.execute(
-        "SELECT * FROM class_feedback_tasks WHERE id=?",
-        (task_id,),
-    ).fetchone()
-    if not task_row:
-        raise LookupError("class feedback task not found")
-    return task_row
-
-
-def _get_class_feedback_student_roster(conn: sqlite3.Connection, class_id: int) -> dict[int, dict]:
-    rows = conn.execute(
-        """
-        SELECT s.id, s.name
-        FROM class_students cs
-        JOIN students s ON s.id = cs.student_id
-        WHERE cs.class_id=?
-        ORDER BY cs.id
-        """,
-        (class_id,),
-    ).fetchall()
-    return {row["id"]: dict(row) for row in rows}
-
-
-def _validate_class_feedback_teacher_binding(
-    conn: sqlite3.Connection,
-    *,
-    class_id: int,
-    teacher_user_id: Optional[int],
-) -> None:
-    if teacher_user_id is None:
-        return
-    row = conn.execute(
-        """
-        SELECT user_id
-        FROM user_classes
-        WHERE class_id=?
-        ORDER BY user_id
-        LIMIT 1
-        """,
-        (class_id,),
-    ).fetchone()
-    bound_teacher_user_id = row["user_id"] if row else None
-    if bound_teacher_user_id != teacher_user_id:
-        raise ValueError("teacher_user_id does not match class binding")
-
-
-def _get_class_feedback_task_student_ids(conn: sqlite3.Connection, task_id: int) -> list[int]:
-    rows = conn.execute(
-        """
-        SELECT student_id
-        FROM class_feedback_student_entries
-        WHERE task_id=?
-        ORDER BY student_id, id
-        """,
-        (task_id,),
-    ).fetchall()
-    return [row["student_id"] for row in rows]
-
-
-def _normalize_class_feedback_student_entries(
-    *,
-    task_row: sqlite3.Row,
-    conn: sqlite3.Connection,
-    student_entries: list[dict] | None,
-    require_final_text: bool = False,
-    require_checked_at: bool = False,
-) -> list[dict]:
-    if student_entries is None:
-        student_entries = []
-    if not isinstance(student_entries, list):
-        raise ValueError("student_entries must be a list")
-
-    roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
-    normalized_entries: list[dict] = []
-    for item in student_entries:
-        if not isinstance(item, dict):
-            raise ValueError("student_entries must contain objects")
-        student_id = item.get("student_id")
-        if isinstance(student_id, bool) or not isinstance(student_id, int):
-            raise ValueError("student_id must be an integer")
-        roster_student = roster_by_id.get(student_id)
-        if not roster_student:
-            raise ValueError("student must belong to class roster")
-
-        name_snapshot = (item.get("name") or roster_student["name"] or "").strip()
-        ai_draft = item.get("ai_draft", "") or ""
-        final_text = item.get("final_text", "") or ""
-        checked_at = item.get("checked_at")
-        if require_final_text:
-            final_text = final_text.strip()
-            if not final_text:
-                raise ValueError("final_text is required")
-        if require_checked_at:
-            if checked_at is None:
-                raise ValueError("checked_at is required")
-            checked_at = str(checked_at).strip()
-            if not checked_at:
-                raise ValueError("checked_at is required")
-
-        normalized_entries.append(
-            {
-                "student_id": student_id,
-                "student_name_snapshot": name_snapshot,
-                "ai_draft": ai_draft,
-                "final_text": final_text,
-                "checked_at": checked_at,
-            }
-        )
-    return normalized_entries
-
-
-def get_class_feedback_task(task_id: int):
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM class_feedback_tasks WHERE id=?",
-            (task_id,),
-        ).fetchone()
-        if not row:
-            return None
-        student_rows = conn.execute(
-            """
-            SELECT *
-            FROM class_feedback_student_entries
-            WHERE task_id=?
-            ORDER BY id
-            """,
-            (task_id,),
-        ).fetchall()
-    student_entries = [dict(student_row) for student_row in student_rows]
-    return _serialize_class_feedback_task_row(row, student_entries)
-
-
-def create_class_feedback_task(
-    *,
-    class_id: int,
-    teacher_user_id: Optional[int],
-    teacher_name_snapshot: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    period_granularity: Optional[str] = None,
-    anchor_date: Optional[str] = None,
-    year: Optional[int] = None,
-    week: Optional[int] = None,
-    month: Optional[int] = None,
-    stage_name: Optional[str] = None,
-    created_by: int,
-):
-    teacher_name_snapshot = (teacher_name_snapshot or "").strip()
-    if not teacher_name_snapshot:
-        raise ValueError("teacher_name_snapshot is required")
-    start_date, end_date, period_length_days, period_granularity, period_label = _resolve_class_feedback_period_selection(
-        start_date=start_date,
-        end_date=end_date,
-        period_granularity=period_granularity,
-        anchor_date=anchor_date,
-        year=year,
-        week=week,
-        month=month,
-        stage_name=stage_name,
-    )
-    with get_conn() as conn:
-        class_row = conn.execute("SELECT id, organization_id FROM classes WHERE id=?", (class_id,)).fetchone()
-        if not class_row:
-            raise LookupError("class not found")
-        creator_row = _fetch_user_row_by_id(conn, created_by)
-        if not creator_row:
-            raise LookupError("user not found")
-        if creator_row["organization_id"] != class_row["organization_id"]:
-            raise ValueError("created_by must belong to class organization")
-        if teacher_user_id is not None:
-            teacher_row = _fetch_user_row_by_id(conn, teacher_user_id)
-            if not teacher_row:
-                raise LookupError("user not found")
-            if teacher_row["organization_id"] != class_row["organization_id"]:
-                raise ValueError("teacher_user_id must belong to class organization")
-            _validate_class_feedback_teacher_binding(
-                conn,
-                class_id=class_id,
-                teacher_user_id=teacher_user_id,
-            )
-        cur = conn.execute(
-            """
-            INSERT INTO class_feedback_tasks (
-                organization_id, class_id, teacher_user_id, teacher_name_snapshot,
-                start_date, end_date, period_length_days, period_granularity, period_label,
-                status, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
-            """,
-            (
-                class_row["organization_id"],
-                class_id,
-                teacher_user_id,
-                teacher_name_snapshot,
-                start_date,
-                end_date,
-                period_length_days,
-                period_granularity,
-                period_label,
-                created_by,
-            ),
-        )
-        task_id = cur.lastrowid
-    return get_class_feedback_task(task_id)
-
-
-def save_class_feedback_generation_result(task_id: int, class_summary_ai_draft: str, student_entries: list[dict]):
-    with get_conn() as conn:
-        task_row = _load_class_feedback_task_row(conn, task_id)
-        if task_row["status"] == "confirmed":
-            raise ValueError("confirmed tasks cannot be regenerated")
-        normalized_student_entries = _normalize_class_feedback_student_entries(
-            task_row=task_row,
-            conn=conn,
-            student_entries=student_entries,
-        )
-        _ensure_class_feedback_student_entries_cover_current_roster(
-            task_row=task_row,
-            conn=conn,
-            normalized_student_entries=normalized_student_entries,
-        )
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            """
-            UPDATE class_feedback_tasks
-            SET class_summary_ai_draft=?, updated_at=datetime('now','localtime')
-            WHERE id=?
-            """,
-            (class_summary_ai_draft or "", task_id),
-        )
-        conn.execute("DELETE FROM class_feedback_student_entries WHERE task_id=?", (task_id,))
-        for item in normalized_student_entries:
-            conn.execute(
-                """
-                INSERT INTO class_feedback_student_entries (
-                    task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
-                ) VALUES (?, ?, ?, ?, '', NULL)
-                """,
-                (
-                    task_id,
-                    item["student_id"],
-                    item["student_name_snapshot"],
-                    item["ai_draft"],
-                ),
-            )
-    return get_class_feedback_task(task_id)
-
-
-def save_class_feedback_draft(task_id: int, class_summary_draft_text: str, student_entries: list[dict]):
-    with get_conn() as conn:
-        task_row = _load_class_feedback_task_row(conn, task_id)
-        if task_row["status"] == "confirmed":
-            raise ValueError("confirmed tasks cannot be edited as draft")
-        normalized_student_entries = _normalize_class_feedback_student_entries(
-            task_row=task_row,
-            conn=conn,
-            student_entries=student_entries,
-        )
-        _ensure_class_feedback_student_entries_cover_current_roster(
-            task_row=task_row,
-            conn=conn,
-            normalized_student_entries=normalized_student_entries,
-        )
-        existing_entries = {
-            row["student_id"]: dict(row)
-            for row in conn.execute(
-                """
-                SELECT *
-                FROM class_feedback_student_entries
-                WHERE task_id=?
-                """,
-                (task_id,),
-            ).fetchall()
-        }
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            """
-            UPDATE class_feedback_tasks
-            SET class_summary_ai_draft=?, updated_at=datetime('now','localtime')
-            WHERE id=?
-            """,
-            (class_summary_draft_text or "", task_id),
-        )
-        for item in normalized_student_entries:
-            existing_entry = existing_entries.get(item["student_id"])
-            if existing_entry:
-                conn.execute(
-                    """
-                    UPDATE class_feedback_student_entries
-                    SET student_name_snapshot=?,
-                        ai_draft=?,
-                        final_text=?,
-                        updated_at=datetime('now','localtime')
-                    WHERE task_id=? AND student_id=?
-                    """,
-                    (
-                        item["student_name_snapshot"],
-                        existing_entry.get("ai_draft") or "",
-                        item["final_text"],
-                        task_id,
-                        item["student_id"],
-                    ),
-                )
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO class_feedback_student_entries (
-                        task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
-                    ) VALUES (?, ?, ?, '', ?, NULL)
-                    """,
-                    (
-                        task_id,
-                        item["student_id"],
-                        item["student_name_snapshot"],
-                        item["final_text"],
-                    ),
-                )
-    return get_class_feedback_task(task_id)
-
-
-def confirm_class_feedback_task(task_id: int, class_summary_final_text: str, student_entries: list[dict]):
-    with get_conn() as conn:
-        task_row = _load_class_feedback_task_row(conn, task_id)
-        normalized_student_entries = _normalize_class_feedback_student_entries(
-            task_row=task_row,
-            conn=conn,
-            student_entries=student_entries,
-            require_final_text=True,
-        )
-        roster_by_id = _get_class_feedback_student_roster(conn, task_row["class_id"])
-        _ensure_class_feedback_student_entries_cover_current_roster(
-            task_row=task_row,
-            conn=conn,
-            normalized_student_entries=normalized_student_entries,
-        )
-        conn.execute("BEGIN IMMEDIATE")
-        checked_at_value = conn.execute(
-            "SELECT datetime('now','localtime') AS checked_at"
-        ).fetchone()["checked_at"]
-        if roster_by_id:
-            placeholders = ",".join("?" for _ in roster_by_id)
-            conn.execute(
-                f"DELETE FROM class_feedback_student_entries WHERE task_id=? AND student_id NOT IN ({placeholders})",
-                (task_id, *roster_by_id.keys()),
-            )
-        else:
-            conn.execute("DELETE FROM class_feedback_student_entries WHERE task_id=?", (task_id,))
-        conn.execute(
-            """
-            UPDATE class_feedback_tasks
-            SET class_summary_final_text=?, status='confirmed',
-                confirmed_at=datetime('now','localtime'),
-                updated_at=datetime('now','localtime')
-            WHERE id=?
-            """,
-            (class_summary_final_text or "", task_id),
-        )
-        for item in normalized_student_entries:
-            updated = conn.execute(
-                """
-                UPDATE class_feedback_student_entries
-                SET final_text=?, checked_at=?, updated_at=datetime('now','localtime')
-                WHERE task_id=? AND student_id=?
-                """,
-                (
-                    item["final_text"],
-                    checked_at_value,
-                    task_id,
-                    item["student_id"],
-                ),
-            )
-            if updated.rowcount == 0:
-                conn.execute(
-                    """
-                    INSERT INTO class_feedback_student_entries (
-                        task_id, student_id, student_name_snapshot, ai_draft, final_text, checked_at
-                    ) VALUES (?, ?, ?, '', ?, ?)
-                    """,
-                    (
-                        task_id,
-                        item["student_id"],
-                        roster_by_id[item["student_id"]]["name"],
-                        item["final_text"],
-                        checked_at_value,
-                    ),
-                )
-    return get_class_feedback_task(task_id)
-
-
-def save_class_feedback_task_notes(
-    task_id: int,
-    *,
-    class_status_tags: list[str] | None,
-    class_status_note: str = "",
-    parent_feedback_note: str = "",
-    teaching_focus_note: str = "",
-    next_stage_preview_note: str = "",
-    student_highlights: list[dict] | None = None,
-):
-    with get_conn() as conn:
-        task_row = _load_class_feedback_task_row(conn, task_id)
-        normalized_notes = _normalize_class_feedback_task_notes(
-            task_row=task_row,
-            conn=conn,
-            class_status_tags=class_status_tags,
-            class_status_note=class_status_note,
-            parent_feedback_note=parent_feedback_note,
-            teaching_focus_note=teaching_focus_note,
-            next_stage_preview_note=next_stage_preview_note,
-            student_highlights=student_highlights,
-        )
-        conn.execute(
-            """
-            UPDATE class_feedback_tasks
-            SET class_status_tags_json=?,
-                class_status_note=?,
-                parent_feedback_note=?,
-                teaching_focus_note=?,
-                next_stage_preview_note=?,
-                student_highlights_json=?,
-                updated_at=datetime('now','localtime')
-            WHERE id=?
-            """,
-            (
-                json.dumps(normalized_notes["class_status_tags"], ensure_ascii=False),
-                normalized_notes["class_status_note"],
-                normalized_notes["parent_feedback_note"],
-                normalized_notes["teaching_focus_note"],
-                normalized_notes["next_stage_preview_note"],
-                json.dumps(normalized_notes["student_highlights"], ensure_ascii=False),
-                task_id,
-            ),
-        )
-    return get_class_feedback_task(task_id)
-
-
-def find_previous_confirmed_class_feedback_entry(*, class_id: int, student_id: int, period_granularity: str, before_end_date: str):
-    with get_conn() as conn:
-        same_granularity_row = conn.execute(
-            """
-            SELECT
-                t.id AS task_id,
-                t.class_id,
-                t.teacher_user_id,
-                t.teacher_name_snapshot,
-                t.start_date,
-                t.end_date,
-                t.period_length_days,
-                t.period_granularity,
-                t.period_label,
-                t.status,
-                t.class_summary_final_text,
-                t.created_by,
-                t.created_at,
-                t.updated_at,
-                t.confirmed_at,
-                e.id AS entry_id,
-                e.student_id,
-                e.student_name_snapshot,
-                e.ai_draft,
-                e.final_text,
-                e.checked_at,
-                e.updated_at AS entry_updated_at
-            FROM class_feedback_student_entries e
-            JOIN class_feedback_tasks t ON t.id = e.task_id
-            WHERE t.class_id=?
-              AND e.student_id=?
-              AND t.status='confirmed'
-              AND t.end_date < ?
-              AND t.period_granularity=?
-              AND trim(coalesce(e.final_text, '')) <> ''
-              AND e.checked_at IS NOT NULL
-              AND trim(coalesce(e.checked_at, '')) <> ''
-            ORDER BY t.end_date DESC, t.id DESC, e.id DESC
-            LIMIT 1
-            """,
-            (class_id, student_id, before_end_date, period_granularity),
-        ).fetchone()
-        if same_granularity_row:
-            return dict(same_granularity_row)
-
-        fallback_row = conn.execute(
-            """
-            SELECT
-                t.id AS task_id,
-                t.class_id,
-                t.teacher_user_id,
-                t.teacher_name_snapshot,
-                t.start_date,
-                t.end_date,
-                t.period_length_days,
-                t.period_granularity,
-                t.period_label,
-                t.status,
-                t.class_summary_final_text,
-                t.created_by,
-                t.created_at,
-                t.updated_at,
-                t.confirmed_at,
-                e.id AS entry_id,
-                e.student_id,
-                e.student_name_snapshot,
-                e.ai_draft,
-                e.final_text,
-                e.checked_at,
-                e.updated_at AS entry_updated_at
-            FROM class_feedback_student_entries e
-            JOIN class_feedback_tasks t ON t.id = e.task_id
-            WHERE t.class_id=?
-              AND e.student_id=?
-              AND t.status='confirmed'
-              AND t.end_date < ?
-              AND trim(coalesce(e.final_text, '')) <> ''
-              AND e.checked_at IS NOT NULL
-              AND trim(coalesce(e.checked_at, '')) <> ''
-            ORDER BY t.end_date DESC, t.id DESC, e.id DESC
-            LIMIT 1
-            """,
-            (class_id, student_id, before_end_date),
-        ).fetchone()
-    return dict(fallback_row) if fallback_row else None
-
-
-def list_recent_confirmed_class_feedback_summaries(*, class_id: int, before_end_date: str, limit: int = 3) -> list[dict]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                id,
-                class_id,
-                teacher_user_id,
-                teacher_name_snapshot,
-                start_date,
-                end_date,
-                period_length_days,
-                period_granularity,
-                period_label,
-                class_summary_final_text,
-                confirmed_at
-            FROM class_feedback_tasks
-            WHERE class_id=?
-              AND status='confirmed'
-              AND end_date < ?
-              AND trim(coalesce(class_summary_final_text, '')) <> ''
-            ORDER BY end_date DESC, id DESC
-            LIMIT ?
-            """,
-            (class_id, before_end_date, limit),
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def list_class_feedback_label_configs(owner_user_id: int) -> list[dict]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT label_group, label_text, sort_order
-            FROM class_feedback_label_configs
-            WHERE owner_user_id=? AND is_active=1
-            ORDER BY sort_order ASC, id ASC
-            """,
-            (owner_user_id,),
-    ).fetchall()
-    if not rows:
-        return [
-            {"group": item["group"], "labels": list(item["labels"])}
-            for item in DEFAULT_CLASS_FEEDBACK_LABEL_GROUPS
-        ]
-
-    grouped: list[dict] = []
-    current_group = None
-    current_labels: list[str] = []
-    for row in rows:
-        label_group = row["label_group"]
-        label_text = row["label_text"]
-        if current_group != label_group:
-            if current_group is not None:
-                grouped.append({"group": current_group, "labels": current_labels})
-            current_group = label_group
-            current_labels = [label_text]
-        else:
-            current_labels.append(label_text)
-    if current_group is not None:
-        grouped.append({"group": current_group, "labels": current_labels})
-    return grouped
-
-
-def save_class_feedback_label_configs(owner_user_id: int, groups: list[dict]):
-    normalized_groups = []
-    for group_index, group in enumerate(groups or []):
-        if not isinstance(group, dict):
-            continue
-        label_group = (group.get("group") or "").strip()
-        if not label_group:
-            continue
-        labels = []
-        for label_index, label_text in enumerate(group.get("labels") or []):
-            normalized_label = str(label_text or "").strip()
-            if not normalized_label:
-                continue
-            labels.append((label_index, normalized_label))
-        normalized_groups.append((group_index, label_group, labels))
-
-    with get_conn() as conn:
-        user_row = conn.execute("SELECT id FROM users WHERE id=?", (owner_user_id,)).fetchone()
-        if not user_row:
-            raise LookupError("user not found")
-        conn.execute(
-            "DELETE FROM class_feedback_label_configs WHERE owner_user_id=?",
-            (owner_user_id,),
-        )
-        if not normalized_groups:
-            return [
-                {"group": item["group"], "labels": list(item["labels"])}
-                for item in DEFAULT_CLASS_FEEDBACK_LABEL_GROUPS
-            ]
-        for group_index, label_group, labels in normalized_groups:
-            for label_index, label_text in labels:
-                conn.execute(
-                    """
-                    INSERT INTO class_feedback_label_configs (
-                        owner_user_id, label_group, label_text, sort_order, is_active, is_system_default
-                    ) VALUES (?, ?, ?, ?, 1, 0)
-                    """,
-                    (
-                        owner_user_id,
-                        label_group,
-                        label_text,
-                        group_index * 100 + label_index,
-                    ),
-                )
-
-
-def save_lesson_class_feedback(
-    lesson_id: int,
-    class_id: int,
-    merged_text: str,
-    student_index: list,
-    editor_state: dict,
-) -> dict:
-    with get_conn() as conn:
-        lesson_row = conn.execute(
-            "SELECT id, class_id FROM lessons WHERE id=?",
-            (lesson_id,),
-        ).fetchone()
-        if not lesson_row:
-            raise LookupError("lesson not found")
-        lesson_class_id = lesson_row["class_id"]
-        conn.execute(
-            """
-            INSERT INTO lesson_class_feedbacks
-                (lesson_id, class_id, merged_text, student_index_json, editor_state_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
-            ON CONFLICT(lesson_id) DO UPDATE SET
-                class_id=excluded.class_id,
-                merged_text=excluded.merged_text,
-                student_index_json=excluded.student_index_json,
-                editor_state_json=excluded.editor_state_json,
-                updated_at=datetime('now','localtime')
-            """,
-            (
-                lesson_id,
-                lesson_class_id if lesson_class_id else None,
-                merged_text or "",
-                json.dumps(student_index or [], ensure_ascii=False),
-                json.dumps(editor_state or {}, ensure_ascii=False),
-            ),
-        )
-        row = conn.execute(
-            "SELECT * FROM lesson_class_feedbacks WHERE lesson_id=?",
-            (lesson_id,),
-        ).fetchone()
-    feedback = dict(row)
-    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
-    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
-    return feedback
-
-
-def get_lesson_class_feedback(lesson_id: int):
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM lesson_class_feedbacks WHERE lesson_id=?",
-            (lesson_id,),
-        ).fetchone()
-    if not row:
-        return None
-    feedback = dict(row)
-    feedback["student_index"] = json.loads(feedback.get("student_index_json") or "[]")
-    feedback["editor_state"] = json.loads(feedback.get("editor_state_json") or "{}")
-    return feedback
-
-
-def build_lesson_class_feedback_editor_state(lesson_id: int) -> dict:
-    lesson = get_lesson(lesson_id)
-    if not lesson:
-        raise LookupError("lesson not found")
-    saved_feedback = get_lesson_class_feedback(lesson_id) or {}
-    class_id = lesson.get("class_id")
-
-    roster = list_students_for_class(class_id) if class_id else []
-    roster_by_id = {student["id"]: student for student in roster}
-    saved_editor_state = saved_feedback.get("editor_state") or {}
-    saved_students = saved_editor_state.get("students")
-    if not isinstance(saved_students, list):
-        saved_students = []
-    saved_by_student_id = {
-        item.get("student_id"): item
-        for item in saved_students
-        if isinstance(item, dict) and item.get("student_id") is not None
-    }
-
-    hydrated_students = []
-    for student in roster:
-        saved_student_state = saved_by_student_id.get(student["id"], {})
-        hydrated_students.append(
-            {
-                "student_id": student["id"],
-                "name": student["name"],
-                "selected_template_id": saved_student_state.get("selected_template_id", "") or "",
-                "remark": saved_student_state.get("remark", "") or "",
-            }
-        )
-
-    custom_templates = saved_editor_state.get("custom_templates")
-    if not isinstance(custom_templates, list):
-        custom_templates = []
-    saved_student_index = saved_feedback.get("student_index")
-    if not isinstance(saved_student_index, list):
-        saved_student_index = []
-    filtered_student_index = []
-    for item in saved_student_index:
-        if not isinstance(item, dict):
-            continue
-        student_id = item.get("student_id")
-        if student_id in roster_by_id:
-            filtered_student_index.append(
-                {
-                    "student_id": student_id,
-                    "name": roster_by_id[student_id]["name"],
-                }
-            )
-
-    return {
-        "lesson_id": lesson_id,
-        "class_id": class_id,
-        "merged_text": saved_feedback.get("merged_text", "") or "",
-        "student_index": filtered_student_index,
-        "students": hydrated_students,
-        "custom_templates": custom_templates,
-        "updated_at": saved_feedback.get("updated_at"),
-    }
 def get_class_teacher_user_id(class_id: int) -> Optional[int]:
     with get_conn() as conn:
         row = conn.execute(
@@ -9106,15 +7983,13 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> None:
         conn.execute("UPDATE class_invite_codes SET created_by_user_id=NULL WHERE created_by_user_id=?", (target_user_id,))
         conn.execute("UPDATE organization_credit_ledger SET operator_user_id=NULL WHERE operator_user_id=?", (target_user_id,))
         conn.execute("UPDATE xhs_order_redemptions SET redeemed_by_user_id=NULL WHERE redeemed_by_user_id=?", (target_user_id,))
-        conn.execute("UPDATE class_feedback_tasks SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET teacher_user_id=NULL WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("UPDATE weekly_wrong_question_followup_messages SET generated_by=NULL WHERE generated_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE created_by=?", (target_user_id,))
         conn.execute("DELETE FROM wrong_question_practice_sheets WHERE teacher_user_id=? OR created_by=?", (target_user_id, target_user_id))
         conn.execute("DELETE FROM wrong_question_submissions WHERE teacher_user_id=?", (target_user_id,))
+        conn.execute("DELETE FROM class_commentary_tasks WHERE teacher_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE teacher_user_id=?", (target_user_id,))
-        conn.execute("DELETE FROM class_feedback_tasks WHERE created_by=?", (target_user_id,))
-        conn.execute("DELETE FROM class_feedback_label_configs WHERE owner_user_id=?", (target_user_id,))
         conn.execute("DELETE FROM ai_usage_ledger WHERE user_id=?", (target_user_id,))
         conn.execute("DELETE FROM auth_sessions WHERE user_id=?", (target_user_id,))
         conn.execute("DELETE FROM monthly_plan_jobs WHERE user_id=?", (target_user_id,))
@@ -9483,6 +8358,7 @@ def delete_organization(org_id: int) -> None:
             raise ValueError("不能删除默认机构")
         conn.execute("DELETE FROM monthly_plan_jobs WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE organization_id=?", (org_id,))
+        conn.execute("DELETE FROM class_commentary_tasks WHERE organization_id=?", (org_id,))
         # 1. lessons
         conn.execute("DELETE FROM lessons WHERE organization_id=?", (org_id,))
         # 2. user_classes and class_students (via classes)
@@ -9496,7 +8372,6 @@ def delete_organization(org_id: int) -> None:
         )
         conn.execute("DELETE FROM wrong_question_submissions WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM parent_student_bindings WHERE organization_id=?", (org_id,))
-        conn.execute("DELETE FROM class_feedback_tasks WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM students WHERE organization_id=?", (org_id,))
         # 3. classes
         conn.execute("DELETE FROM classes WHERE organization_id=?", (org_id,))

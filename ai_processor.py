@@ -18,6 +18,11 @@ import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from class_commentary import (
+    build_class_commentary_generation_payload,
+    normalize_class_commentary_feedback_text,
+    payload_to_json,
+)
 from config_runtime import get_runtime_config, normalize_chat_provider, normalize_vision_provider
 from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
 
@@ -2095,71 +2100,42 @@ def generate_teacher_feedback_draft(
         return merged_text, _usage_dict(response)
     return merged_text
 
-def generate_class_feedback_bundle(
+
+def generate_class_commentary_feedback(
     *,
-    class_name: str,
-    teacher_name: str,
-    start_date: str,
-    end_date: str,
-    source_summary: str,
-    stage_notes: dict,
+    class_record: dict,
     students: list[dict],
-) -> dict:
+    transcript_text: str,
+    skill: dict,
+    include_usage: bool = False,
+):
     client = _get_client()
-    recent_confirmed_summaries = stage_notes.get("recent_confirmed_class_summaries") or []
-    has_student_baseline = any(student.get("previous_baseline") for student in students)
-    cold_start_mode = not recent_confirmed_summaries and not has_student_baseline
-    history_readiness_level = "L0" if cold_start_mode else "L1+"
-    system_prompt = (
-        "你是一位负责教培班级反馈的老师助理。"
-        "请先完整阅读输入资料，再输出 JSON 对象。"
-        '返回格式必须是 {"class_summary":"...","student_entries":[{"student_id":1,"name":"张三","text":"..."}]}。'
-        "不要输出 Markdown，不要输出额外解释。"
-        "学生反馈应只基于提供的阶段课次、课后反馈、阶段备注和历史基线。"
-        "生成结果要像老师直接发给家长的消息，使用自然口吻，允许有温度、有观察感，但不要夸张。"
-        "班级总评也要像老师发给家长群的消息，不要写成公文式总结。"
-        "不要写成系统总结或阶段报告，不要使用过于生硬的分析腔。"
-        "即使历史资料不足，也要保持老师对家长说话的拟人化表达。"
-        "冷启动时，多写老师当下的课堂观察，像“这节课孩子愿意跟着往前走，只是一到完整句表达还是会卡一下”。"
-        "也可以写“目前孩子在阅读定位上能跟住，接下来我会继续带着他把会做题慢慢过渡到能顺口表达出来”。"
-        "班级总评少用“整体来看”“表现出一定不足”“能力提升”等抽象总结词，尽量改成老师会直接发在家长群里的自然说法。"
-        "少用“整体来看”“表现出一定不足”“能力提升”等抽象总结词。"
-        "只有在存在明确历史基线时，才允许使用“进步明显”“有点回落”“变化不大”等比较表达；"
-        "如果没有明确历史基线，请改用当前阶段的客观观察。"
-        "没有明确历史基线时，不要写“比上次”“相比之前”“延续前几周趋势”“和上阶段相比”等比较型说法。"
-        "历史不足时，可以写“这节课/这几天孩子...”“目前孩子...”“接下来我会继续...”这类自然表达。"
+    payload = build_class_commentary_generation_payload(
+        class_record=class_record,
+        students=students,
+        transcript_text=transcript_text,
+        skill=skill,
     )
-    user_prompt = json.dumps(
-        {
-            "class_name": class_name,
-            "teacher_name": teacher_name,
-            "start_date": start_date,
-            "end_date": end_date,
-            "cold_start_mode": cold_start_mode,
-            "history_readiness_level": history_readiness_level,
-            "source_summary": source_summary,
-            "stage_notes": stage_notes,
-            "students": students,
-        },
-        ensure_ascii=False,
+    system_prompt = (
+        "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
+        "Do not invent facts. Do not include roster students who are not clearly mentioned. "
+        "Use the supplied colleague skill only for voice, structure, and phrasing. "
+        "Return plain text only, with one block per mentioned student."
     )
     response = client.chat.completions.create(
         model=_get_chat_model(),
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": payload_to_json(payload)},
         ],
-        temperature=0.4,
-        response_format={"type": "json_object"},
+        temperature=0.35,
     )
-    content = (response.choices[0].message.content or "").strip()
-    bundle = _loads_model_json(content)
-    if not isinstance(bundle, dict):
-        raise ValueError("AI 返回格式不正确")
-    if not isinstance(bundle.get("student_entries"), list):
-        bundle["student_entries"] = []
-    bundle["class_summary"] = str(bundle.get("class_summary") or "").strip()
-    return bundle
+    text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
+    if include_usage:
+        return text, _usage_dict(response)
+    return text
+
+
 def generate_monthly_plan(lessons, month_str: str, *, include_usage: bool = False):
     """
     给定本月所有 lesson 记录列表，生成月度综合复习计划。
