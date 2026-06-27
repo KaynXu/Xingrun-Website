@@ -39,6 +39,7 @@ ENV_VAR_MAP = {
     "wrong_question_service_url": "XR_WRONG_QUESTION_SERVICE_URL",
     "wrong_question_service_token": "XR_WRONG_QUESTION_SERVICE_TOKEN",
     "wechat_service_token": "XR_WECHAT_SERVICE_TOKEN",
+    "colleague_skill_dir": "XR_COLLEAGUE_SKILL_DIR",
     "xhs_app_id": "XHS_APP_ID",
     "xhs_app_secret": "XHS_APP_SECRET",
 }
@@ -68,6 +69,7 @@ DEFAULTS = {
     "wrong_question_service_url": "",
     "wrong_question_service_token": "",
     "wechat_service_token": "",
+    "colleague_skill_dir": "",
 }
 
 
@@ -167,6 +169,7 @@ def get_runtime_config() -> dict:
     cfg["langfuse_base_url"] = str(cfg.get("langfuse_base_url") or "").strip()
     cfg["openai_model"] = str(cfg.get("openai_model") or "gpt-4o").strip() or "gpt-4o"
     cfg["openai_base_url"] = str(cfg.get("openai_base_url") or "").strip()
+    cfg["colleague_skill_dir"] = str(cfg.get("colleague_skill_dir") or "").strip()
     cfg["vision_provider"] = normalize_vision_provider(cfg.get("vision_provider"))
     return cfg
 

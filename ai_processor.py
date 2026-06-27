@@ -18,6 +18,11 @@ import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from class_commentary import (
+    build_class_commentary_generation_payload,
+    normalize_class_commentary_feedback_text,
+    payload_to_json,
+)
 from config_runtime import get_runtime_config, normalize_chat_provider, normalize_vision_provider
 from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
 
@@ -2094,6 +2099,42 @@ def generate_teacher_feedback_draft(
     if include_usage:
         return merged_text, _usage_dict(response)
     return merged_text
+
+
+def generate_class_commentary_feedback(
+    *,
+    class_record: dict,
+    students: list[dict],
+    transcript_text: str,
+    skill: dict,
+    include_usage: bool = False,
+):
+    client = _get_client()
+    payload = build_class_commentary_generation_payload(
+        class_record=class_record,
+        students=students,
+        transcript_text=transcript_text,
+        skill=skill,
+    )
+    system_prompt = (
+        "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
+        "Do not invent facts. Do not include roster students who are not clearly mentioned. "
+        "Use the supplied colleague skill only for voice, structure, and phrasing. "
+        "Return plain text only, with one block per mentioned student."
+    )
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": payload_to_json(payload)},
+        ],
+        temperature=0.35,
+    )
+    text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
+    if include_usage:
+        return text, _usage_dict(response)
+    return text
+
 
 def generate_monthly_plan(lessons, month_str: str, *, include_usage: bool = False):
     """
