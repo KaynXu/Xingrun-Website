@@ -37,6 +37,13 @@ type ClassFeedbackGenerationPageProps = {
   currentUser: CurrentUser;
 };
 
+function canUseTranscriptState(task: ClassCommentaryTask | null): boolean {
+  if (!task) {
+    return false;
+  }
+  return task.status === 'transcribed' || task.status === 'ready' || task.status === 'failed';
+}
+
 function getTaskProgress(task: ClassCommentaryTask | null, uploadProgress: number): number {
   if (!task) {
     return uploadProgress;
@@ -138,9 +145,14 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const selectedSkill = skills.find((item) => item.id === selectedSkillId) || null;
   const taskErrorMessage = getTaskErrorMessage(task, errorMessage);
   const taskProgress = getTaskProgress(task, uploadProgress);
+  const trimmedConfirmedTranscript = confirmedTranscript.trim();
+  const persistedTranscript = (task?.confirmed_transcript_text || task?.transcript_text).trim();
+  const hasTranscriptText = Boolean(trimmedConfirmedTranscript);
+  const transcriptDirty = Boolean(task) && trimmedConfirmedTranscript !== persistedTranscript;
+  const canUseTranscript = canUseTranscriptState(task);
   const canCreateTask = !loadingInitial && !busy && Boolean(selectedClassId && audioFile);
-  const canSaveTranscript = !busy && Boolean(task);
-  const canGenerate = !busy && Boolean(task && selectedSkillId);
+  const canSaveTranscript = !busy && canUseTranscript && hasTranscriptText;
+  const canGenerate = !busy && canUseTranscript && hasTranscriptText && Boolean(task && selectedSkillId);
 
   async function handleCreateTask() {
     if (!selectedClassId || !audioFile) {
@@ -188,10 +200,19 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
       setErrorMessage('请选择同事风格后再生成');
       return;
     }
+    if (!trimmedConfirmedTranscript) {
+      setErrorMessage('请先确认转写文本');
+      return;
+    }
     setBusy(true);
     setErrorMessage('');
     try {
-      const nextTask = await generateClassCommentaryFeedback(task.id, selectedSkillId);
+      const savedTask = transcriptDirty
+        ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript)
+        : task;
+      setTask(savedTask);
+      setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text);
+      const nextTask = await generateClassCommentaryFeedback(savedTask.id, selectedSkillId);
       setTask(nextTask);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '生成失败');

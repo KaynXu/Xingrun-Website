@@ -17,7 +17,13 @@ test('class feedback generation page uses class-commentary api client', () => {
 test('class feedback generation page uses shadcn components for visible controls', () => {
   assert.match(source, /@\/components\/ui\/button/);
   assert.match(source, /@\/components\/ui\/card/);
+  assert.match(source, /@\/components\/ui\/input/);
+  assert.match(source, /@\/components\/ui\/progress/);
   assert.match(source, /@\/components\/ui\/select/);
+  assert.match(source, /@\/components\/ui\/badge/);
+  assert.match(source, /@\/components\/ui\/separator/);
+  assert.match(source, /@\/components\/ui\/scroll-area/);
+  assert.match(source, /@\/components\/ui\/skeleton/);
   assert.match(source, /@\/components\/ui\/textarea/);
   assert.match(source, /@\/components\/ui\/alert/);
   assert.doesNotMatch(source, /workspaceCardClass/);
@@ -32,4 +38,10 @@ test('class feedback generation page exposes upload transcript and copy result w
   assert.match(source, /confirmedTranscript/);
   assert.match(source, /navigator\.clipboard\.writeText/);
   assert.match(source, /feedback_text/);
+});
+
+test('class feedback generation page saves transcript before generation', () => {
+  assert.match(source, /if \(!trimmedConfirmedTranscript\) \{\s*setErrorMessage\('请先确认转写文本'\);/);
+  assert.match(source, /const savedTask = transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task;/);
+  assert.match(source, /await generateClassCommentaryFeedback\(savedTask\.id, selectedSkillId\)/);
 });
