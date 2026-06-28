@@ -79,14 +79,14 @@ to:
 ```text
 class_id -> class roster
 audio_path -> Tencent ASR raw transcript
-raw transcript + roster + math terms -> LLM polished transcript
-save raw transcript, roster snapshot, and polished transcript
+raw transcript + sanitized roster allowlist + math terms -> LLM polished transcript
+save raw transcript, sanitized roster snapshot, and polished transcript
 ```
 
 The saved task should use:
 
 - `raw_transcript_text`: the direct Tencent ASR text.
-- `roster_snapshot`: JSON snapshot of the class roster used for transcript polish.
+- `roster_snapshot`: JSON snapshot of the sanitized class roster used for transcript polish.
 - `transcript_text`: the teacher-visible polished transcript if polishing succeeds, otherwise the raw ASR text.
 - `confirmed_transcript_text`: copied from `transcript_text` as the initial editable value.
 - `transcript_polish_error`: empty on success, otherwise the polish error message.
@@ -98,9 +98,22 @@ The saved task should use:
 
 ## Roster Constraint
 
-The transcript polish prompt must receive a roster payload built from `list_students_for_class(class_id)`.
+The transcript polish prompt must receive a minimal sanitized roster payload derived from `list_students_for_class(class_id)`.
 
-The exact roster payload used for a task must be stored in `roster_snapshot`. This is an audit field. It explains which names were legal at the time of polish even if the class roster changes later.
+Do not pass raw `list_students_for_class()` rows into the prompt or `roster_snapshot`. That function returns `s.*`, including fields such as `parent_contact`, `source`, `status`, and timestamps. The polish task only needs a name allowlist.
+
+The sanitized roster item shape is:
+
+```json
+{
+  "id": 123,
+  "name": "张梓恒"
+}
+```
+
+If implementation needs class-membership ids for ordering or debugging, it may add `class_student_id`, but it must not include parent contact, source, status, archived timestamp, created timestamp, or any other student metadata.
+
+The exact sanitized roster payload used for a task must be stored in `roster_snapshot`. This is an audit field. It explains which names were legal at the time of polish even if the class roster changes later.
 
 The prompt should enforce:
 
@@ -163,7 +176,7 @@ System intent:
 Extend `class_commentary_tasks` with:
 
 - `raw_transcript_text`: text not null default empty
-- `roster_snapshot`: text not null default empty
+- `roster_snapshot`: text not null default empty, containing only sanitized roster items
 - `transcript_polish_error`: text not null default empty
 - `transcript_polished_at`: text not null default empty
 
@@ -286,15 +299,16 @@ If implementation discovers a reason not to add `class_commentary_transcript_pol
 Backend tests should cover:
 
 - Upload task still returns the same response shape expected by the frontend.
-- Worker fetches the class roster before polishing.
+- Worker fetches the class roster before polishing and sanitizes it to minimal roster items before prompt/storage.
 - Successful ASR plus successful polish stores raw ASR separately and exposes polished text as `transcript_text` and `confirmed_transcript_text`.
-- Successful polish stores `roster_snapshot`.
+- Successful polish stores sanitized `roster_snapshot`.
 - Successful ASR plus polish failure falls back to raw ASR and still marks the task `transcribed`.
 - Polish failure clears `transcript_polished_at` and stores `transcript_polish_error`.
 - Manual transcript save preserves raw ASR, roster snapshot, and polish metadata.
 - ASR failure still marks `failure_stage=transcription`.
 - Feedback generation still uses `confirmed_transcript_text`.
 - Prompt payload includes class roster and math terms.
+- Prompt payload does not include `parent_contact`, `source`, `status`, `archived_at`, `created_at`, or other raw student metadata.
 - Prompt forbids inventing students outside the roster.
 - API task responses do not include `raw_transcript_text`, `roster_snapshot`, `transcript_polish_error`, or `transcript_polished_at`.
 
