@@ -27,6 +27,7 @@ Tencent ASR raw text -> LLM transcript polish with roster constraints -> teacher
 - Do not create or manage Tencent Cloud hotword tables in this phase.
 - The teacher-facing transcript box should show the LLM-polished transcript by default.
 - The raw Tencent ASR transcript should be stored server-side for audit/debugging.
+- Store a roster snapshot with each transcription attempt so later roster edits do not make the polish decision impossible to audit.
 - If transcript polishing fails after ASR succeeds, the task should still become `transcribed` with the raw ASR text visible, so teachers can manually edit and continue.
 - Feedback generation continues to use `confirmed_transcript_text`, not the raw ASR text.
 
@@ -79,12 +80,13 @@ to:
 class_id -> class roster
 audio_path -> Tencent ASR raw transcript
 raw transcript + roster + math terms -> LLM polished transcript
-save raw transcript and polished transcript
+save raw transcript, roster snapshot, and polished transcript
 ```
 
 The saved task should use:
 
 - `raw_transcript_text`: the direct Tencent ASR text.
+- `roster_snapshot`: JSON snapshot of the class roster used for transcript polish.
 - `transcript_text`: the teacher-visible polished transcript if polishing succeeds, otherwise the raw ASR text.
 - `confirmed_transcript_text`: copied from `transcript_text` as the initial editable value.
 - `transcript_polish_error`: empty on success, otherwise the polish error message.
@@ -97,6 +99,8 @@ The saved task should use:
 ## Roster Constraint
 
 The transcript polish prompt must receive a roster payload built from `list_students_for_class(class_id)`.
+
+The exact roster payload used for a task must be stored in `roster_snapshot`. This is an audit field. It explains which names were legal at the time of polish even if the class roster changes later.
 
 The prompt should enforce:
 
@@ -159,6 +163,7 @@ System intent:
 Extend `class_commentary_tasks` with:
 
 - `raw_transcript_text`: text not null default empty
+- `roster_snapshot`: text not null default empty
 - `transcript_polish_error`: text not null default empty
 - `transcript_polished_at`: text not null default empty
 
@@ -182,6 +187,15 @@ Existing API routes remain unchanged:
 
 Task response remains compatible with the current frontend. New raw/debug fields are not returned in this phase.
 
+Implementation must not rely on "do not use the fields in frontend" as privacy. The existing storage serializer reads `SELECT t.*`, so the API response serializer must be changed to an explicit allowlist or must explicitly remove these fields before `jsonify`:
+
+- `raw_transcript_text`
+- `roster_snapshot`
+- `transcript_polish_error`
+- `transcript_polished_at`
+
+Backend API tests must assert these fields are absent from task responses.
+
 If future debugging UI is needed, a separate admin-only endpoint can expose raw transcript fields later.
 
 ## Error Handling
@@ -201,9 +215,11 @@ If ASR succeeds and LLM polish fails:
 
 - `status=transcribed`
 - `raw_transcript_text=<raw ASR text>`
+- `roster_snapshot=<roster JSON used for polish>`
 - `transcript_text=<raw ASR text>`
 - `confirmed_transcript_text=<raw ASR text>`
 - `transcript_polish_error=<error>`
+- `transcript_polished_at=''`
 - `failure_stage=''`
 - `transcription_error=''`
 
@@ -213,20 +229,57 @@ The teacher can manually edit the raw text and continue.
 
 Treat empty polished text as a polish failure and fall back to raw ASR.
 
+## Field Lifecycle
+
+Each new transcription attempt for a task should treat raw ASR, roster snapshot, and polish metadata as one attempt-scoped set.
+
+On ASR success, before polish:
+
+- save `raw_transcript_text`
+- save `roster_snapshot`
+- clear `transcript_polish_error`
+- clear `transcript_polished_at`
+
+On polish success:
+
+- set `transcript_text=<polished text>`
+- set `confirmed_transcript_text=<polished text>`
+- clear `transcript_polish_error`
+- set `transcript_polished_at`
+
+On polish failure:
+
+- set `transcript_text=<raw ASR text>`
+- set `confirmed_transcript_text=<raw ASR text>`
+- set `transcript_polish_error=<error>`
+- clear `transcript_polished_at`
+
+When a teacher manually saves the transcript through `PUT /api/class-commentary/tasks/<id>/transcript`:
+
+- update only `confirmed_transcript_text` and normal task generation errors as today
+- preserve `raw_transcript_text`
+- preserve `roster_snapshot`
+- preserve `transcript_polish_error`
+- preserve `transcript_polished_at`
+
+Generation start and generation success must not clear raw ASR, roster snapshot, or polish metadata. They may continue clearing generation-specific error fields.
+
 ## AI Usage And Charging
 
 Transcription currently runs through the `class_commentary_transcribe` feature key.
 
-For first implementation, the ASR call and polish call can remain inside the same transcription worker, but usage attribution must be explicit:
+For implementation, the ASR call and polish call can remain inside the same transcription worker, but usage attribution must be explicit:
 
 - Tencent ASR usage: provider `tencent`, model like `flash-16k_zh`
 - Transcript polish usage: provider/model from the existing chat model config
 
-Preferred implementation is to call the polish helper through the existing charge/usage wrapper with a distinct feature key:
+The polish helper must use a distinct usage identity from the ASR call. The preferred and required first version is a distinct feature key:
 
 - `class_commentary_transcript_polish`
 
-If adding a new feature key would create too much unrelated pricing work, the implementation plan may keep it under `class_commentary_transcribe` but must still record provider/model usage clearly.
+Do not reuse `class_commentary_transcribe` with the same task id and request key for the polish call. The AI usage ledger has a unique `(organization_id, request_id)` constraint, and request ids include user, request key, feature key, source record type, and source record id. Reusing the same feature/source/id can collide with the ASR usage row.
+
+If implementation discovers a reason not to add `class_commentary_transcript_polish`, the alternative must still use an independent request identity, such as a distinct `source_record_type` or a distinct request key. That alternative must be called out explicitly in the implementation plan.
 
 ## Testing
 
@@ -235,11 +288,15 @@ Backend tests should cover:
 - Upload task still returns the same response shape expected by the frontend.
 - Worker fetches the class roster before polishing.
 - Successful ASR plus successful polish stores raw ASR separately and exposes polished text as `transcript_text` and `confirmed_transcript_text`.
+- Successful polish stores `roster_snapshot`.
 - Successful ASR plus polish failure falls back to raw ASR and still marks the task `transcribed`.
+- Polish failure clears `transcript_polished_at` and stores `transcript_polish_error`.
+- Manual transcript save preserves raw ASR, roster snapshot, and polish metadata.
 - ASR failure still marks `failure_stage=transcription`.
 - Feedback generation still uses `confirmed_transcript_text`.
 - Prompt payload includes class roster and math terms.
 - Prompt forbids inventing students outside the roster.
+- API task responses do not include `raw_transcript_text`, `roster_snapshot`, `transcript_polish_error`, or `transcript_polished_at`.
 
 No frontend tests are required unless the API response shape changes. The implementation should avoid changing that shape.
 
