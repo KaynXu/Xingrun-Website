@@ -49,6 +49,8 @@
   - Add prompt/payload tests for sanitized roster and polish helper contract.
 - Modify `tests/test_class_commentary_api.py`
   - Add worker, fallback, lifecycle, and response privacy tests.
+- Modify `tests/test_class_commentary_store.py`
+  - Add direct storage lifecycle tests if implementation needs store-only coverage beyond API tests; include it in final regression either way.
 - Modify `tests/test_credit_system.py`
   - Add pricing assertion for `class_commentary_transcript_polish`.
 - No frontend files should change.
@@ -947,10 +949,11 @@ python3 -m py_compile app.py ai_processor.py class_commentary.py lesson_manager.
 python3 -m pytest \
   tests/test_class_commentary_api.py \
   tests/test_class_commentary_ai.py \
+  tests/test_class_commentary_store.py \
   tests/test_credit_system.py::CreditSystemTestCase::test_class_commentary_feature_keys_are_configured \
   tests/test_runtime_config_hygiene.py \
   -q
-git diff --check -- app.py ai_processor.py class_commentary.py lesson_manager.py credit_manager.py tests/test_class_commentary_api.py tests/test_class_commentary_ai.py tests/test_credit_system.py
+git diff --check -- app.py ai_processor.py class_commentary.py lesson_manager.py credit_manager.py tests/test_class_commentary_api.py tests/test_class_commentary_ai.py tests/test_class_commentary_store.py tests/test_credit_system.py
 SH
 chmod +x /tmp/proof_class_commentary_transcript_polish_20260628.sh
 /tmp/proof_class_commentary_transcript_polish_20260628.sh
@@ -994,7 +997,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app.py ai_processor.py class_commentary.py lesson_manager.py credit_manager.py tests/test_class_commentary_api.py tests/test_class_commentary_ai.py tests/test_credit_system.py handoff.md
+git add app.py ai_processor.py class_commentary.py lesson_manager.py credit_manager.py tests/test_class_commentary_api.py tests/test_class_commentary_ai.py tests/test_class_commentary_store.py tests/test_credit_system.py handoff.md
 git commit -m "feat: polish class commentary transcripts"
 ```
 
