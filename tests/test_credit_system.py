@@ -316,6 +316,7 @@ class CreditSystemServiceTestCase(unittest.TestCase):
 
     def test_class_commentary_feature_keys_are_configured(self):
         self.assertEqual(credit_manager.max_configured_charge_for_feature("class_commentary_transcribe"), 4)
+        self.assertEqual(credit_manager.max_configured_charge_for_feature("class_commentary_transcript_polish"), 4)
         self.assertEqual(credit_manager.max_configured_charge_for_feature("class_commentary_generate"), 10)
 
     def test_claim_ai_request_identity_blocks_inflight_and_completed_duplicates(self):

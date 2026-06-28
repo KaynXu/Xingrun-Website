@@ -26,6 +26,7 @@ import urllib.request
 from pathlib import Path
 from class_commentary import (
     build_class_commentary_generation_payload,
+    build_class_commentary_transcript_polish_payload,
     normalize_class_commentary_feedback_text,
     payload_to_json,
 )
@@ -2280,6 +2281,43 @@ def generate_class_commentary_feedback(
         temperature=0.35,
     )
     text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
+    if include_usage:
+        return text, _usage_dict(response)
+    return text
+
+
+def polish_class_commentary_transcript(
+    *,
+    class_record: dict,
+    students: list[dict],
+    raw_transcript_text: str,
+    math_terms: list[str] | tuple[str, ...] | None = None,
+    include_usage: bool = False,
+):
+    client = _get_client()
+    payload = build_class_commentary_transcript_polish_payload(
+        class_record=class_record,
+        students=students,
+        raw_transcript_text=raw_transcript_text,
+        math_terms=math_terms,
+    )
+    system_prompt = (
+        "You are correcting ASR text for a teacher's spoken post-class student commentary. "
+        "Only correct recognition errors, punctuation, light sentence boundaries, and roster-name mistakes. "
+        "Do not rewrite this into parent feedback. "
+        "Do not change meaning, tone, praise, criticism, reminders, next actions, or factual claims. "
+        "Do not invent absent students or facts. "
+        "Return plain text only."
+    )
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": payload_to_json(payload)},
+        ],
+        temperature=0.1,
+    )
+    text = (response.choices[0].message.content or "").strip()
     if include_usage:
         return text, _usage_dict(response)
     return text
