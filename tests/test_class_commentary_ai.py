@@ -127,6 +127,61 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("Do not invent facts", messages[0]["content"])
         self.assertIn("小王", messages[1]["content"])
 
+    def test_polish_class_commentary_transcript_uses_roster_prompt_contract(self):
+        class FakeMessage:
+            content = "小王今天绝对值学得不错。"
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                self.kwargs = kwargs
+                return FakeResponse()
+
+        class FakeChat:
+            def __init__(self):
+                self.completions = FakeCompletions()
+
+        class FakeClient:
+            def __init__(self):
+                self.chat = FakeChat()
+
+        fake_client = FakeClient()
+        with patch.object(ai_processor, "_get_client", return_value=fake_client):
+            text, usage = ai_processor.polish_class_commentary_transcript(
+                class_record={"id": 7, "name": "数学·七年级·4班"},
+                students=[{
+                    "id": 1,
+                    "name": "小王",
+                    "parent_contact": "secret",
+                    "source": "wechat",
+                    "status": "active",
+                    "archived_at": "2026-06-01",
+                    "created_at": "2026-06-28",
+                    "extra_metadata": "private",
+                }],
+                raw_transcript_text="小汪今天绝对纸学得不错",
+                math_terms=["绝对值"],
+                include_usage=True,
+            )
+
+        self.assertEqual(text, "小王今天绝对值学得不错。")
+        self.assertEqual(usage["provider"], ai_processor._provider_name())
+        messages = fake_client.chat.completions.kwargs["messages"]
+        self.assertIn("correcting ASR text", messages[0]["content"])
+        self.assertIn("Do not rewrite", messages[0]["content"])
+        user_payload = messages[1]["content"]
+        self.assertIn("小王", user_payload)
+        self.assertIn("绝对值", user_payload)
+        for forbidden in ["parent_contact", "source", "status", "archived_at", "created_at", "extra_metadata"]:
+            self.assertNotIn(forbidden, user_payload)
+        self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 0.1)
+
     def test_runtime_config_reads_colleague_skill_dir_from_env(self):
         with patch.dict("os.environ", {"XR_COLLEAGUE_SKILL_DIR": "/srv/skills"}, clear=False):
             self.assertEqual(config_runtime.get_runtime_config()["colleague_skill_dir"], "/srv/skills")
