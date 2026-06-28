@@ -132,7 +132,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
       fetchClassCommentaryTask(task.id)
         .then((nextTask) => {
           setTask(nextTask);
-          setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text);
+          setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
         })
         .catch((error) => {
           setErrorMessage(error instanceof Error ? error.message : '刷新任务状态失败');
@@ -146,7 +146,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const taskErrorMessage = getTaskErrorMessage(task, errorMessage);
   const taskProgress = getTaskProgress(task, uploadProgress);
   const trimmedConfirmedTranscript = confirmedTranscript.trim();
-  const persistedTranscript = (task?.confirmed_transcript_text || task?.transcript_text).trim();
+  const persistedTranscript = (task?.confirmed_transcript_text || task?.transcript_text || '').trim();
   const hasTranscriptText = Boolean(trimmedConfirmedTranscript);
   const transcriptDirty = Boolean(task) && trimmedConfirmedTranscript !== persistedTranscript;
   const canUseTranscript = canUseTranscriptState(task);
@@ -166,7 +166,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     try {
       const nextTask = await createClassCommentaryTask(Number(selectedClassId), audioFile, setUploadProgress);
       setTask(nextTask);
-      setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text);
+      setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '上传失败');
     } finally {
@@ -187,7 +187,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     try {
       const nextTask = await saveClassCommentaryTranscript(task.id, confirmedTranscript.trim());
       setTask(nextTask);
-      setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text);
+      setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '保存转写失败');
     } finally {
@@ -211,7 +211,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
         ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript)
         : task;
       setTask(savedTask);
-      setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text);
+      setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text || '');
       const nextTask = await generateClassCommentaryFeedback(savedTask.id, selectedSkillId);
       setTask(nextTask);
     } catch (error) {

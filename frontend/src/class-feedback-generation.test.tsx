@@ -45,3 +45,7 @@ test('class feedback generation page saves transcript before generation', () => 
   assert.match(source, /const savedTask = transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task;/);
   assert.match(source, /await generateClassCommentaryFeedback\(savedTask\.id, selectedSkillId\)/);
 });
+
+test('class feedback generation page does not trim undefined persisted transcript', () => {
+  assert.match(source, /const persistedTranscript = \(task\?\.confirmed_transcript_text \|\| task\?\.transcript_text \|\| ''\)\.trim\(\);/);
+});
