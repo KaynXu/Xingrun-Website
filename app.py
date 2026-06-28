@@ -1062,8 +1062,8 @@ def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dic
         mark_class_commentary_raw_transcription_succeeded(task_id, raw_text, roster_snapshot)
 
         try:
-            chat_provider = _review_plan_ai_provider_name()
-            chat_model = _review_plan_chat_model_name()
+            chat_provider = _default_ai_provider_name()
+            chat_model = _default_chat_model_name()
             polished_text = _run_ai_feature_with_charge(
                 user=user,
                 feature_key="class_commentary_transcript_polish",

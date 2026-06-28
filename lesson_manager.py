@@ -6904,15 +6904,15 @@ def mark_class_commentary_raw_transcription_succeeded(task_id: int, raw_transcri
             UPDATE class_commentary_tasks
             SET raw_transcript_text=?,
                 roster_snapshot=?,
-                transcript_text=?,
-                confirmed_transcript_text=?,
+                transcript_text='',
+                confirmed_transcript_text='',
                 transcript_polish_error='',
                 transcript_polished_at='',
                 transcription_error='',
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            (raw_transcript_text or "", roster_snapshot or "", raw_transcript_text or "", raw_transcript_text or "", task_id),
+            (raw_transcript_text or "", roster_snapshot or "", task_id),
         )
     return get_class_commentary_task(task_id)
 
