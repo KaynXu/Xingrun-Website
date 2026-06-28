@@ -75,10 +75,11 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         class_id = self._create_class_with_student()
         started = {}
 
-        def fake_start(task_id, audio_path, user):
+        def fake_start(task_id, audio_path, user, request_key):
             started["task_id"] = task_id
             started["audio_path"] = audio_path
             started["user_id"] = user["id"]
+            started["request_key"] = request_key
 
         with patch.object(self.app_module, "_start_class_commentary_transcription_worker", fake_start):
             response = self.client.post(
@@ -95,6 +96,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["audio_filename"], "lesson.m4a")
         self.assertEqual(started["task_id"], payload["id"])
         self.assertEqual(started["user_id"], self.owner["id"])
+        self.assertTrue(started["request_key"])
 
     def test_worker_success_moves_task_to_transcribed(self):
         class_id = self._create_class_with_student()
@@ -106,17 +108,19 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
             audio_filename="audio.m4a",
         )
 
-        with patch.object(self.app_module, "_run_ai_feature_with_charge", return_value="小王今天计算有进步"):
+        with patch.object(self.app_module, "_run_ai_feature_with_charge", return_value="小王今天计算有进步") as charge:
             self.app_module._run_class_commentary_transcription(
                 task["id"],
                 str(self.base / "audio.m4a"),
                 {"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+                "saved-audio-request-key",
             )
 
         saved = lesson_manager.get_class_commentary_task(task["id"])
         self.assertIsNotNone(saved)
         self.assertEqual(saved["status"], "transcribed")
         self.assertEqual(saved["transcript_text"], "小王今天计算有进步")
+        self.assertEqual(charge.call_args.kwargs["request_key"], "saved-audio-request-key")
 
     def test_generate_saves_skill_snapshot_and_feedback(self):
         class_id = self._create_class_with_student()

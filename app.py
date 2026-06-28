@@ -1021,7 +1021,7 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
     ).start()
 
 
-def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dict) -> None:
+def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dict, request_key: str) -> None:
     try:
         transcription = _run_ai_feature_with_charge(
             user=user,
@@ -1031,6 +1031,7 @@ def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dic
             provider="local",
             model="faster-whisper",
             producer=lambda: _call_ai_helper_with_usage(transcribe_audio, audio_path),
+            request_key=request_key,
             claim_request_identity=False,
         )
         text = str(transcription or "").strip()
@@ -1041,10 +1042,10 @@ def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dic
         mark_class_commentary_task_failed(task_id, "transcription", str(exc))
 
 
-def _start_class_commentary_transcription_worker(task_id: int, audio_path: str, user: dict) -> None:
+def _start_class_commentary_transcription_worker(task_id: int, audio_path: str, user: dict, request_key: str) -> None:
     threading.Thread(
         target=_run_class_commentary_transcription,
-        args=(task_id, audio_path, user),
+        args=(task_id, audio_path, user, request_key),
         daemon=True,
     ).start()
 
@@ -7912,6 +7913,7 @@ def api_class_commentary_tasks_create():
         int(task["id"]),
         str(save_path),
         {"id": int(user["id"]), "organization_id": int(user["organization_id"])},
+        str(task.get("transcription_request_key") or ""),
     )
     return jsonify(_serialize_class_commentary_task_for_response(task)), 202
 
