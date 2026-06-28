@@ -154,6 +154,10 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(calls[0]["request_key"], "saved-audio-request-key")
         self.assertEqual(calls[1]["request_key"], "saved-audio-request-key")
         self.assertEqual(calls[1]["source_record_type"], "class_commentary_transcript_polish")
+        self.assertNotEqual(
+            (calls[0]["feature_key"], calls[0]["source_record_type"], calls[0]["source_record_id"]),
+            (calls[1]["feature_key"], calls[1]["source_record_type"], calls[1]["source_record_id"]),
+        )
         polish.assert_called_once()
 
     def test_worker_polish_failure_falls_back_to_raw_transcript(self):
