@@ -109,7 +109,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(started["user_id"], self.owner["id"])
         self.assertTrue(started["request_key"])
 
-    def test_worker_success_moves_task_to_transcribed(self):
+    def test_worker_success_stores_raw_and_polished_transcript(self):
         class_id = self._create_class_with_student()
         task = lesson_manager.create_class_commentary_task(
             organization_id=self.owner["organization_id"],
@@ -119,7 +119,20 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
             audio_filename="audio.m4a",
         )
 
-        with patch.object(self.app_module, "_run_ai_feature_with_charge", return_value="小王今天计算有进步") as charge:
+        calls = []
+
+        def fake_charge(**kwargs):
+            calls.append(kwargs)
+            if kwargs["feature_key"] == "class_commentary_transcribe":
+                return "小汪今天绝对纸学得不错"
+            if kwargs["feature_key"] == "class_commentary_transcript_polish":
+                producer_result = kwargs["producer"]()
+                self.assertEqual(producer_result[0], "小王今天绝对值学得不错")
+                return producer_result[0]
+            raise AssertionError(f"unexpected feature key: {kwargs['feature_key']}")
+
+        with patch.object(self.app_module, "_run_ai_feature_with_charge", side_effect=fake_charge), \
+             patch.object(self.app_module, "polish_class_commentary_transcript", return_value=("小王今天绝对值学得不错", {"provider": "test", "model": "chat"})) as polish:
             self.app_module._run_class_commentary_transcription(
                 task["id"],
                 str(self.base / "audio.m4a"),
@@ -130,8 +143,54 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         saved = lesson_manager.get_class_commentary_task(task["id"])
         self.assertIsNotNone(saved)
         self.assertEqual(saved["status"], "transcribed")
-        self.assertEqual(saved["transcript_text"], "小王今天计算有进步")
-        self.assertEqual(charge.call_args.kwargs["request_key"], "saved-audio-request-key")
+        self.assertEqual(saved["raw_transcript_text"], "小汪今天绝对纸学得不错")
+        self.assertEqual(saved["transcript_text"], "小王今天绝对值学得不错")
+        self.assertEqual(saved["confirmed_transcript_text"], "小王今天绝对值学得不错")
+        self.assertEqual(saved["transcript_polish_error"], "")
+        self.assertTrue(saved["transcript_polished_at"])
+        self.assertIn('"name": "小王"', saved["roster_snapshot"])
+        self.assertNotIn("parent_contact", saved["roster_snapshot"])
+        self.assertEqual([call["feature_key"] for call in calls], ["class_commentary_transcribe", "class_commentary_transcript_polish"])
+        self.assertEqual(calls[0]["request_key"], "saved-audio-request-key")
+        self.assertEqual(calls[1]["request_key"], "saved-audio-request-key")
+        self.assertEqual(calls[1]["source_record_type"], "class_commentary_transcript_polish")
+        polish.assert_called_once()
+
+    def test_worker_polish_failure_falls_back_to_raw_transcript(self):
+        class_id = self._create_class_with_student()
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=self.owner["id"],
+            audio_path=str(self.base / "audio.m4a"),
+            audio_filename="audio.m4a",
+        )
+
+        def fake_charge(**kwargs):
+            if kwargs["feature_key"] == "class_commentary_transcribe":
+                return "小汪今天绝对纸学得不错"
+            if kwargs["feature_key"] == "class_commentary_transcript_polish":
+                raise RuntimeError("polish timeout")
+            raise AssertionError(f"unexpected feature key: {kwargs['feature_key']}")
+
+        with patch.object(self.app_module, "_run_ai_feature_with_charge", side_effect=fake_charge):
+            self.app_module._run_class_commentary_transcription(
+                task["id"],
+                str(self.base / "audio.m4a"),
+                {"id": self.owner["id"], "organization_id": self.owner["organization_id"]},
+                "saved-audio-request-key",
+            )
+
+        saved = lesson_manager.get_class_commentary_task(task["id"])
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["status"], "transcribed")
+        self.assertEqual(saved["raw_transcript_text"], "小汪今天绝对纸学得不错")
+        self.assertEqual(saved["transcript_text"], "小汪今天绝对纸学得不错")
+        self.assertEqual(saved["confirmed_transcript_text"], "小汪今天绝对纸学得不错")
+        self.assertEqual(saved["transcript_polish_error"], "polish timeout")
+        self.assertEqual(saved["transcript_polished_at"], "")
+        self.assertEqual(saved["failure_stage"], "")
+        self.assertEqual(saved["transcription_error"], "")
 
     def test_task_response_hides_private_transcript_polish_fields(self):
         class_id = self._create_class_with_student()

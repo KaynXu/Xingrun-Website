@@ -211,7 +211,9 @@ from lesson_manager import (
     save_class_commentary_transcript,
     mark_class_commentary_task_failed,
     mark_class_commentary_task_transcribing,
-    mark_class_commentary_transcription_succeeded,
+    mark_class_commentary_raw_transcription_succeeded,
+    mark_class_commentary_transcript_polish_failed,
+    mark_class_commentary_transcript_polish_succeeded,
     mark_review_plan_version_transcription_succeeded,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
@@ -259,8 +261,8 @@ from lesson_manager import (
     student_account_can_access_lesson,
     update_user_avatar_preferences,
 )
-from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, transcribe_audio
-from class_commentary import list_colleague_skills, load_colleague_skill
+from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, transcribe_audio
+from class_commentary import list_colleague_skills, load_colleague_skill, payload_to_json, sanitize_class_commentary_roster
 import smart_wrong_questions
 import master_data
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
@@ -309,6 +311,16 @@ def _default_chat_model_name() -> str:
 
 def _review_plan_ai_provider_name() -> str:
     return resolve_review_plan_provider(get_config())
+
+
+def _audio_transcription_provider_name() -> str:
+    return str(get_config().get("audio_transcription_provider") or "local")
+
+
+def _audio_transcription_model_name() -> str:
+    if _audio_transcription_provider_name() == "tencent":
+        return f"flash-{get_config().get('tencent_asr_engine_type') or '16k_zh'}"
+    return "faster-whisper"
 
 
 def _review_plan_chat_model_name() -> str:
@@ -1028,16 +1040,52 @@ def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dic
             feature_key="class_commentary_transcribe",
             source_record_type="class_commentary_task",
             source_record_id=task_id,
-            provider="local",
-            model="faster-whisper",
+            provider=_audio_transcription_provider_name(),
+            model=_audio_transcription_model_name(),
             producer=lambda: _call_ai_helper_with_usage(transcribe_audio, audio_path),
             request_key=request_key,
             claim_request_identity=False,
         )
-        text = str(transcription or "").strip()
-        if not text:
+        raw_text = str(transcription or "").strip()
+        if not raw_text:
             raise ValueError("transcription returned empty text")
-        mark_class_commentary_transcription_succeeded(task_id, text)
+
+        task = get_class_commentary_task(task_id)
+        if not task:
+            raise LookupError("class commentary task not found")
+        cls = get_class(int(task["class_id"]))
+        if not cls:
+            raise LookupError("class not found")
+        class_students = list_students_for_class(int(task["class_id"]))
+        sanitized_roster = sanitize_class_commentary_roster(class_students)
+        roster_snapshot = payload_to_json({"students": sanitized_roster})
+        mark_class_commentary_raw_transcription_succeeded(task_id, raw_text, roster_snapshot)
+
+        try:
+            chat_provider = _review_plan_ai_provider_name()
+            chat_model = _review_plan_chat_model_name()
+            polished_text = _run_ai_feature_with_charge(
+                user=user,
+                feature_key="class_commentary_transcript_polish",
+                source_record_type="class_commentary_transcript_polish",
+                source_record_id=task_id,
+                provider=chat_provider,
+                model=chat_model,
+                producer=lambda: _call_ai_helper_with_usage(
+                    polish_class_commentary_transcript,
+                    class_record=cls,
+                    students=sanitized_roster,
+                    raw_transcript_text=raw_text,
+                ),
+                request_key=request_key,
+                claim_request_identity=False,
+            )
+            polished_text = str(polished_text or "").strip()
+            if not polished_text:
+                raise ValueError("transcript polish returned empty text")
+            mark_class_commentary_transcript_polish_succeeded(task_id, polished_text)
+        except Exception as polish_exc:
+            mark_class_commentary_transcript_polish_failed(task_id, raw_text, str(polish_exc))
     except Exception as exc:
         mark_class_commentary_task_failed(task_id, "transcription", str(exc))
 
