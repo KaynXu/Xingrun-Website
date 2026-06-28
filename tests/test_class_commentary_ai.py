@@ -42,6 +42,53 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("小王今天计算有进步", payload["transcript"])
         self.assertIn("warm concise style", payload["skill"]["content"])
 
+    def test_sanitize_class_commentary_roster_keeps_only_id_and_name(self):
+        roster = class_commentary.sanitize_class_commentary_roster([
+            {
+                "id": 1,
+                "name": " 小王 ",
+                "parent_contact": "secret",
+                "source": "wechat",
+                "status": "active",
+                "archived_at": "2026-06-01",
+                "created_at": "2026-06-28",
+                "extra_metadata": "private",
+            },
+            {"id": 2, "name": "   "},
+            {"id": "3", "name": "小李", "created_at": "2026-06-28", "extra_metadata": "private"},
+        ])
+
+        self.assertEqual(roster, [{"id": 1, "name": "小王"}, {"id": 3, "name": "小李"}])
+        serialized = str(roster)
+        for forbidden in ["parent_contact", "source", "status", "archived_at", "created_at", "extra_metadata"]:
+            self.assertNotIn(forbidden, serialized)
+
+    def test_transcript_polish_payload_uses_sanitized_roster_and_math_terms(self):
+        payload = class_commentary.build_class_commentary_transcript_polish_payload(
+            class_record={"id": 7, "name": "数学·七年级·4班"},
+            students=[{
+                "id": 1,
+                "name": "小王",
+                "parent_contact": "secret",
+                "source": "wechat",
+                "status": "active",
+                "archived_at": "2026-06-01",
+                "created_at": "2026-06-28",
+                "extra_metadata": "private",
+            }],
+            raw_transcript_text="小汪今天绝对纸学得不错",
+            math_terms=["绝对值", "整式"],
+        )
+
+        self.assertEqual(payload["class"], {"id": 7, "name": "数学·七年级·4班"})
+        self.assertEqual(payload["students"], [{"id": 1, "name": "小王"}])
+        self.assertEqual(payload["math_terms"], ["绝对值", "整式"])
+        self.assertIn("小汪今天", payload["raw_transcript"])
+        serialized_payload = class_commentary.payload_to_json(payload)
+        for forbidden in ["parent_contact", "source", "status", "archived_at", "created_at", "extra_metadata"]:
+            self.assertNotIn(forbidden, serialized_payload)
+        self.assertIn("Only correct student names to names in students.", payload["rules"])
+
     def test_generate_class_commentary_feedback_uses_plain_text_contract(self):
         class FakeMessage:
             content = "小王:\n今天计算有进步."
