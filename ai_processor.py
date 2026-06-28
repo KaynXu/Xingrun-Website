@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 AI 处理模块：
-  - 音频转录（faster-whisper）
+  - 音频转录（faster-whisper / Tencent Cloud ASR）
   - 课堂总结解析 → 结构化复习计划 JSON（DeepSeek）
   - 月度复习计划聚合
 """
@@ -10,16 +10,23 @@ AI 处理模块：
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
+import hmac
 import os
+import random
 import re
 import subprocess
 import tempfile
 import threading
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 from class_commentary import (
     build_class_commentary_generation_payload,
+    build_class_commentary_transcript_polish_payload,
     normalize_class_commentary_feedback_text,
     payload_to_json,
 )
@@ -253,6 +260,143 @@ def _transcribe_audio_path_locally(audio_path: str) -> str:
     transcript_text = _collect_local_transcript_text(segments)
     if not transcript_text:
         raise ValueError("audio transcription failed")
+    return transcript_text
+
+
+_TENCENT_FLASH_ASR_HOST = "asr.cloud.tencent.com"
+_TENCENT_FLASH_ASR_PATH_TEMPLATE = "/asr/flash/v1/{appid}"
+
+
+def _audio_transcription_provider() -> str:
+    provider = str(_load_config().get("audio_transcription_provider") or "local").strip().lower()
+    if provider == "tencent":
+        return "tencent"
+    return "local"
+
+
+def _tencent_asr_engine_type() -> str:
+    return str(_load_config().get("tencent_asr_engine_type") or "16k_zh").strip() or "16k_zh"
+
+
+def _tencent_asr_usage_dict() -> dict:
+    return {
+        "provider": "tencent",
+        "model": f"flash-{_tencent_asr_engine_type()}",
+        "input_tokens": 0,
+        "output_tokens": 0,
+    }
+
+
+def _tencent_asr_credentials() -> tuple[str, str, str]:
+    cfg = _load_config()
+    appid = str(cfg.get("tencentcloud_app_id") or os.environ.get("TENCENTCLOUD_APP_ID", "")).strip()
+    secret_id = str(cfg.get("tencentcloud_secret_id") or os.environ.get("TENCENTCLOUD_SECRET_ID", "")).strip()
+    secret_key = str(cfg.get("tencentcloud_secret_key") or os.environ.get("TENCENTCLOUD_SECRET_KEY", "")).strip()
+    if not appid or not secret_id or not secret_key:
+        raise RuntimeError(
+            "未找到腾讯云 ASR 配置，请设置 TENCENTCLOUD_APP_ID、TENCENTCLOUD_SECRET_ID、TENCENTCLOUD_SECRET_KEY。"
+        )
+    return appid, secret_id, secret_key
+
+
+def _tencent_voice_format(audio_path: Path) -> str:
+    suffix = audio_path.suffix.lower().lstrip(".")
+    mapping = {
+        "m4a": "m4a",
+        "mp3": "mp3",
+        "wav": "wav",
+        "aac": "aac",
+        "amr": "amr",
+        "silk": "silk",
+        "pcm": "pcm",
+        "ogg": "ogg-opus",
+    }
+    voice_format = mapping.get(suffix)
+    if not voice_format:
+        raise ValueError(f"腾讯云极速版暂不支持的音频格式：.{suffix or audio_path.suffix}")
+    return voice_format
+
+
+def _tencent_flash_asr_signature(*, appid: str, secret_key: str, params: dict[str, object]) -> str:
+    query_string = "&".join(f"{key}={params[key]}" for key in sorted(params))
+    sign_text = f"POST{_TENCENT_FLASH_ASR_HOST}{_TENCENT_FLASH_ASR_PATH_TEMPLATE.format(appid=appid)}?{query_string}"
+    digest = hmac.new(secret_key.encode("utf-8"), sign_text.encode("utf-8"), hashlib.sha1).digest()
+    return base64.b64encode(digest).decode("utf-8")
+
+
+def _extract_tencent_flash_transcript(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    if "Response" in payload and isinstance(payload["Response"], dict):
+        payload = payload["Response"]
+    if payload.get("Error"):
+        error = payload.get("Error") or {}
+        raise RuntimeError(str(error.get("Message") or error))
+    code = payload.get("code", payload.get("Code", 0))
+    if str(code) not in {"0", ""}:
+        raise RuntimeError(str(payload.get("message") or payload.get("Message") or payload))
+    result_blocks = payload.get("flash_result") or payload.get("FlashResult") or payload.get("result") or payload.get("Result")
+    if isinstance(result_blocks, str):
+        return result_blocks.strip()
+    if not isinstance(result_blocks, list):
+        return ""
+    parts: list[str] = []
+    for block in result_blocks:
+        if isinstance(block, dict):
+            sentence_list = block.get("sentence_list") or block.get("SentenceList")
+            if isinstance(sentence_list, list):
+                parts.extend(
+                    str(sentence.get("text") or sentence.get("Text") or "").strip()
+                    for sentence in sentence_list
+                    if isinstance(sentence, dict)
+                )
+            parts.append(str(block.get("text") or block.get("Text") or "").strip())
+        elif isinstance(block, str):
+            parts.append(block.strip())
+    return "".join(part for part in parts if part).strip()
+
+
+def _transcribe_audio_path_with_tencent_flash(audio_path: Path) -> str:
+    appid, secret_id, secret_key = _tencent_asr_credentials()
+    if audio_path.stat().st_size > 100 * 1024 * 1024:
+        raise ValueError("腾讯云极速版单个音频不能超过 100MB")
+    now = int(time.time())
+    params = {
+        "engine_type": _tencent_asr_engine_type(),
+        "voice_format": _tencent_voice_format(audio_path),
+        "secretid": secret_id,
+        "timestamp": now,
+        "expired": now + 24 * 60 * 60,
+        "nonce": random.randint(1, 2_147_483_647),
+        "filter_dirty": 0,
+        "filter_modal": 0,
+        "filter_punc": 0,
+        "convert_num_mode": 1,
+        "word_info": 0,
+    }
+    signature = _tencent_flash_asr_signature(appid=appid, secret_key=secret_key, params=params)
+    url = (
+        f"https://{_TENCENT_FLASH_ASR_HOST}{_TENCENT_FLASH_ASR_PATH_TEMPLATE.format(appid=appid)}?"
+        f"{urllib.parse.urlencode(params)}"
+    )
+    request = urllib.request.Request(
+        url,
+        data=audio_path.read_bytes(),
+        headers={
+            "Authorization": signature,
+            "Content-Type": "application/octet-stream",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"腾讯云 ASR 请求失败：HTTP {exc.code} {error_body}") from exc
+    transcript_text = _extract_tencent_flash_transcript(response_payload)
+    if not transcript_text:
+        raise ValueError("腾讯云 ASR 返回空转写文本")
     return transcript_text
 
 
@@ -2016,7 +2160,7 @@ CONSULTATION_BATCH_SYSTEM_PROMPT = f"""你是咨询记录整理助手。
 
 # ─── 音频转录 ──────────────────────────────────────────────────────────────────
 def transcribe_audio(audio_path: str, *, include_usage: bool = False):
-    """使用本地 faster-whisper 转录音频文件，返回转录文本。"""
+    """转录音频文件，返回转录文本。"""
     audio_path = Path(audio_path)
     if not audio_path.exists():
         raise FileNotFoundError(f"音频文件不存在：{audio_path}")
@@ -2025,11 +2169,17 @@ def transcribe_audio(audio_path: str, *, include_usage: bool = False):
     if audio_path.suffix.lower() not in supported:
         raise ValueError(f"不支持的音频格式：{audio_path.suffix}（支持：{', '.join(supported)}）")
     
+    provider = _audio_transcription_provider()
     print(f"正在转录音频：{audio_path.name} ...")
-    transcription = _transcribe_audio_path_locally(str(audio_path))
+    if provider == "tencent":
+        transcription = _transcribe_audio_path_with_tencent_flash(audio_path)
+        usage = _tencent_asr_usage_dict()
+    else:
+        transcription = _transcribe_audio_path_locally(str(audio_path))
+        usage = _local_whisper_usage_dict()
     print("转录完成。")
     if include_usage:
-        return transcription, _local_whisper_usage_dict()
+        return transcription, usage
     return transcription
 
 
@@ -2131,6 +2281,43 @@ def generate_class_commentary_feedback(
         temperature=0.35,
     )
     text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
+    if include_usage:
+        return text, _usage_dict(response)
+    return text
+
+
+def polish_class_commentary_transcript(
+    *,
+    class_record: dict,
+    students: list[dict],
+    raw_transcript_text: str,
+    math_terms: list[str] | tuple[str, ...] | None = None,
+    include_usage: bool = False,
+):
+    client = _get_client()
+    payload = build_class_commentary_transcript_polish_payload(
+        class_record=class_record,
+        students=students,
+        raw_transcript_text=raw_transcript_text,
+        math_terms=math_terms,
+    )
+    system_prompt = (
+        "You are correcting ASR text for a teacher's spoken post-class student commentary. "
+        "Only correct recognition errors, punctuation, light sentence boundaries, and roster-name mistakes. "
+        "Do not rewrite this into parent feedback. "
+        "Do not change meaning, tone, praise, criticism, reminders, next actions, or factual claims. "
+        "Do not invent absent students or facts. "
+        "Return plain text only."
+    )
+    response = client.chat.completions.create(
+        model=_get_chat_model(),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": payload_to_json(payload)},
+        ],
+        temperature=0.1,
+    )
+    text = (response.choices[0].message.content or "").strip()
     if include_usage:
         return text, _usage_dict(response)
     return text
