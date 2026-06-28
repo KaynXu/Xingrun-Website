@@ -1,4 +1,23 @@
-import katex from 'katex';
+import { liteAdaptor } from 'mathjax-full/js/adaptors/liteAdaptor.js';
+import { RegisterHTMLHandler } from 'mathjax-full/js/handlers/html.js';
+import { mathjax } from 'mathjax-full/js/mathjax.js';
+import { TeX } from 'mathjax-full/js/input/tex.js';
+import { AllPackages } from 'mathjax-full/js/input/tex/AllPackages.js';
+import { SVG } from 'mathjax-full/js/output/svg.js';
+
+const mathjaxAdaptor = liteAdaptor();
+RegisterHTMLHandler(mathjaxAdaptor);
+const mathjaxTexInput = new TeX({
+  packages: AllPackages,
+  formatError(_jax, error) {
+    throw error;
+  },
+});
+const mathjaxSvgOutput = new SVG({ fontCache: 'none' });
+const mathjaxDocument = mathjax.document('', {
+  InputJax: mathjaxTexInput,
+  OutputJax: mathjaxSvgOutput,
+});
 
 function escapeHtml(value) {
   return String(value)
@@ -314,12 +333,9 @@ export function buildWrongQuestionLatexPreviewModel(input) {
     }
 
     try {
-      const rendered = katex.renderToString(segment.value, {
-        displayMode: segment.displayMode,
-        output: 'html',
-        strict: 'ignore',
-        throwOnError: true,
-      });
+      const rendered = mathjaxAdaptor.outerHTML(
+        mathjaxDocument.convert(segment.value, { display: segment.displayMode }),
+      );
 
       return segment.displayMode
         ? `<div class="xr-latex-display">${rendered}</div>`

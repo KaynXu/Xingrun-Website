@@ -87,9 +87,8 @@ from lesson_manager import (
     add_existing_student_to_class,
     authenticate_student_account,
     bind_parent_to_student,
-    confirm_class_feedback_task,
     complete_review_plan_version,
-    create_class_feedback_task,
+    create_class_commentary_task,
     create_review_plan_version,
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
@@ -123,11 +122,10 @@ from lesson_manager import (
     delete_organization,
     delete_or_archive_student_profile,
     enter_consultation_class,
-    find_previous_confirmed_class_feedback_entry,
     find_active_wrong_question_practice_pack_job,
     fail_review_plan_version,
     get_class,
-    get_class_feedback_task,
+    get_class_commentary_task,
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
@@ -159,12 +157,10 @@ from lesson_manager import (
     get_user_class_ids,
     init_db,
     list_all_users,
-    list_class_feedback_label_configs,
     list_class_history,
     list_class_teacher_bindings,
     list_classes,
     list_classes_for_actor,
-    list_recent_confirmed_class_feedback_summaries,
     list_consultation_teachers,
     list_consultations_for_actor,
     list_course_calendar_custom_items_for_actor,
@@ -209,11 +205,13 @@ from lesson_manager import (
     reset_class_invite,
     reset_organization_invite,
     remove_student_from_class,
-    save_class_feedback_generation_result,
-    save_class_feedback_draft,
-    save_class_feedback_label_configs,
-    save_class_feedback_task_notes,
     save_class,
+    save_class_commentary_generation_started,
+    save_class_commentary_generation_succeeded,
+    save_class_commentary_transcript,
+    mark_class_commentary_task_failed,
+    mark_class_commentary_task_transcribing,
+    mark_class_commentary_transcription_succeeded,
     mark_review_plan_version_transcription_succeeded,
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
@@ -261,7 +259,8 @@ from lesson_manager import (
     student_account_can_access_lesson,
     update_user_avatar_preferences,
 )
-from ai_processor import parse_consultation_batch_text
+from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, transcribe_audio
+from class_commentary import list_colleague_skills, load_colleague_skill
 import smart_wrong_questions
 import master_data
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
@@ -277,7 +276,6 @@ from credit_manager import (
     redeem_xhs_order,
 )
 from xhs_open_platform import fetch_xhs_order_for_redemption
-from ai_processor import generate_class_feedback_bundle
 
 init_db()
 
@@ -1019,6 +1017,34 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
     threading.Thread(
         target=_run_review_plan_generation_job,
         kwargs=job_kwargs,
+        daemon=True,
+    ).start()
+
+
+def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dict) -> None:
+    try:
+        transcription = _run_ai_feature_with_charge(
+            user=user,
+            feature_key="class_commentary_transcribe",
+            source_record_type="class_commentary_task",
+            source_record_id=task_id,
+            provider="local",
+            model="faster-whisper",
+            producer=lambda: _call_ai_helper_with_usage(transcribe_audio, audio_path),
+            claim_request_identity=False,
+        )
+        text = str(transcription or "").strip()
+        if not text:
+            raise ValueError("transcription returned empty text")
+        mark_class_commentary_transcription_succeeded(task_id, text)
+    except Exception as exc:
+        mark_class_commentary_task_failed(task_id, "transcription", str(exc))
+
+
+def _start_class_commentary_transcription_worker(task_id: int, audio_path: str, user: dict) -> None:
+    threading.Thread(
+        target=_run_class_commentary_transcription,
+        args=(task_id, audio_path, user),
         daemon=True,
     ).start()
 
@@ -2578,6 +2604,30 @@ def _serialize_lessons_for_response(lessons: object) -> list[dict]:
     )
 
 
+def _serialize_class_commentary_task_for_response(task: dict) -> dict:
+    return {
+        "id": int(task["id"]),
+        "organization_id": int(task["organization_id"]),
+        "class_id": int(task["class_id"]),
+        "class_name": str(task.get("class_name") or ""),
+        "teacher_user_id": int(task["teacher_user_id"]),
+        "status": str(task.get("status") or ""),
+        "failure_stage": str(task.get("failure_stage") or ""),
+        "audio_filename": str(task.get("audio_filename") or ""),
+        "transcript_text": str(task.get("transcript_text") or ""),
+        "confirmed_transcript_text": str(task.get("confirmed_transcript_text") or ""),
+        "transcribed_at": str(task.get("transcribed_at") or ""),
+        "skill_id": str(task.get("skill_id") or ""),
+        "skill_name": str(task.get("skill_name") or ""),
+        "skill_filename": Path(str(task.get("skill_path") or "")).name if task.get("skill_path") else "",
+        "feedback_text": str(task.get("feedback_text") or ""),
+        "transcription_error": str(task.get("transcription_error") or ""),
+        "generation_error": str(task.get("generation_error") or ""),
+        "created_at": str(task.get("created_at") or ""),
+        "updated_at": str(task.get("updated_at") or ""),
+    }
+
+
 _DASHBOARD_PENDING_REVIEW_STATUSES = {"pending", "queued", "processing", "transcribing", "generating"}
 _DASHBOARD_TERMINAL_CONSULTATION_STAGES = {"成功进班", "试听失败", "咨询结束"}
 
@@ -2685,50 +2735,6 @@ def _dashboard_review_status_label(lesson: dict) -> str:
     return "待处理"
 
 
-def _dashboard_get_class_feedback_tasks(user: dict) -> list[dict]:
-    role = str(user.get("role") or "")
-    params: list[object] = []
-    query = """
-        SELECT *
-        FROM class_feedback_tasks
-    """
-    if role == "super_owner":
-        query += " ORDER BY updated_at DESC, id DESC"
-    elif role in {"owner", "admin"}:
-        query += " WHERE organization_id=? ORDER BY updated_at DESC, id DESC"
-        params.append(int(user.get("organization_id") or 0))
-    else:
-        owned_class_ids = [class_id for class_id in get_user_class_ids(int(user["id"])) if int(class_id or 0) > 0]
-        query += " WHERE teacher_user_id=?"
-        params.append(int(user["id"]))
-        if owned_class_ids:
-            placeholders = ",".join("?" for _ in owned_class_ids)
-            query += f" OR class_id IN ({placeholders})"
-            params.extend(owned_class_ids)
-        query += " ORDER BY updated_at DESC, id DESC"
-    with get_conn() as conn:
-        rows = conn.execute(query, tuple(params)).fetchall()
-    return [dict(row) for row in rows]
-
-
-def _dashboard_feedback_state(task: dict) -> str:
-    status = str(task.get("status") or "").strip()
-    if status == "confirmed":
-        return "confirmed"
-    if status in {"pending", "queued", "processing", "generating"}:
-        return "generating"
-    return "draft"
-
-
-def _dashboard_feedback_status_label(task: dict) -> str:
-    state = _dashboard_feedback_state(task)
-    if state == "confirmed":
-        return "已确认"
-    if state == "generating":
-        return "生成中"
-    return "待反馈"
-
-
 def _dashboard_time_label(schedule: dict) -> str:
     raw = str(schedule.get("time_block") or "").strip()
     if "-" in raw:
@@ -2780,15 +2786,12 @@ def _dashboard_build_member_payload(user: dict) -> dict:
     lessons = _dashboard_get_lessons(user)
     open_consultations = _dashboard_get_open_consultations(user)
     today_schedules = _dashboard_get_today_schedules(user, today_iso)
-    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
-
     pending_lessons = [
         lesson
         for lesson in lessons
         if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
     ]
     ready_lessons = [lesson for lesson in lessons if _dashboard_review_state(lesson) == "ready"]
-    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
     week_ready_lessons = [
         lesson
         for lesson in ready_lessons
@@ -2803,18 +2806,6 @@ def _dashboard_build_member_payload(user: dict) -> dict:
                 "title": _dashboard_lesson_title(lesson, class_name_by_id),
                 "meta": _dashboard_lesson_meta(lesson, class_name_by_id),
                 "status": _dashboard_review_status_label(lesson),
-                "action": "进入",
-            }
-        )
-    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation") and len(today_queue) < 3:
-        latest_feedback_task = active_feedback_tasks[0]
-        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
-        today_queue.append(
-            {
-                "page": "class-feedback-generation",
-                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
-                "meta": latest_feedback_class_name,
-                "status": _dashboard_feedback_status_label(latest_feedback_task),
                 "action": "进入",
             }
         )
@@ -2854,7 +2845,7 @@ def _dashboard_build_member_payload(user: dict) -> dict:
     weekly_stats = [
         {"label": "本周资料", "value": str(len(week_ready_lessons)), "note": "本周生成完成"},
         {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "含转写中和失败记录"},
-        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
+        {"label": "待跟进咨询", "value": str(len(open_consultations)), "note": "当前未结束咨询"},
     ]
 
     schedule = [
@@ -2893,13 +2884,11 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
     lessons = _dashboard_get_lessons(user)
     open_consultations = _dashboard_get_open_consultations(user)
     today_schedules = _dashboard_get_today_schedules(user, today_iso)
-    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
     pending_lessons = [
         lesson
         for lesson in lessons
         if _dashboard_review_state(lesson) in {"pending", "failed", "missing-output"}
     ]
-    active_feedback_tasks = [task for task in feedback_tasks if _dashboard_feedback_state(task) != "confirmed"]
     week_ready_lessons = [
         lesson
         for lesson in lessons
@@ -2928,18 +2917,6 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
                 "title": f"待处理复习资料 {len(pending_lessons)} 份",
                 "meta": "包含转写中、生成中和失败记录",
                 "status": "待处理",
-                "action": "进入",
-            }
-        )
-    if active_feedback_tasks and _dashboard_can_open_page(user, "class-feedback-generation"):
-        latest_feedback_task = active_feedback_tasks[0]
-        latest_feedback_class_name = class_name_by_id.get(int(latest_feedback_task.get("class_id") or 0), "未命名班级")
-        pending_items.append(
-            {
-                "page": "class-feedback-generation",
-                "title": f"待处理课堂反馈 {len(active_feedback_tasks)} 条",
-                "meta": latest_feedback_class_name,
-                "status": _dashboard_feedback_status_label(latest_feedback_task),
                 "action": "进入",
             }
         )
@@ -2980,20 +2957,11 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
         for lesson in pending_lessons
         if int(lesson.get("class_id") or 0) > 0
     }
-    feedback_by_class_id = {
-        int(task.get("class_id") or 0): task
-        for task in active_feedback_tasks
-        if int(task.get("class_id") or 0) > 0
-    }
     class_rows = []
     for schedule in today_schedules[:6]:
         class_id = int(schedule.get("class_id") or 0)
         linked_lesson = pending_by_class_id.get(class_id)
-        linked_feedback_task = feedback_by_class_id.get(class_id)
-        if linked_feedback_task is not None:
-            row_page = "class-feedback-generation"
-            row_status = _dashboard_feedback_status_label(linked_feedback_task)
-        elif linked_lesson is not None:
+        if linked_lesson is not None:
             row_page = "review-generation"
             row_status = _dashboard_review_status_label(linked_lesson)
         else:
@@ -3012,8 +2980,8 @@ def _dashboard_build_organization_payload(user: dict) -> dict:
     stats = [
         {"label": "今日排课", "value": str(len(today_schedules)), "note": "今天课程安排"},
         {"label": "待处理复习", "value": str(len(pending_lessons)), "note": "待完成资料记录"},
-        {"label": "待反馈", "value": str(len(active_feedback_tasks)), "note": "课堂反馈任务"},
         {"label": "待跟进咨询", "value": str(len(open_consultations)), "note": "当前未结束咨询"},
+        {"label": "本周资料", "value": str(len(week_ready_lessons)), "note": "本周已完成资料"},
         (
             {
                 "label": "积分余额",
@@ -3044,7 +3012,6 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
     organizations = list_organizations()
     lessons = _dashboard_get_lessons(user)
     users = list_users_for_actor(user)
-    feedback_tasks = _dashboard_get_class_feedback_tasks(user)
     open_consultations = _dashboard_get_open_consultations(user)
     pending_registration_requests = list_registration_requests_for_actor(user, "pending")
     pending_organization_requests = list_organization_requests()
@@ -3074,15 +3041,6 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         if organization_id <= 0:
             continue
         pending_registration_by_org[organization_id] = pending_registration_by_org.get(organization_id, 0) + 1
-
-    pending_feedback_by_org: dict[int, int] = {}
-    for task in feedback_tasks:
-        if _dashboard_feedback_state(task) == "confirmed":
-            continue
-        organization_id = int(task.get("organization_id") or 0)
-        if organization_id <= 0:
-            continue
-        pending_feedback_by_org[organization_id] = pending_feedback_by_org.get(organization_id, 0) + 1
 
     pending_consultations_by_org: dict[int, int] = {}
     for item in open_consultations:
@@ -3137,29 +3095,6 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         )
         if len(attention_items) >= 4:
             break
-
-    if len(attention_items) < 4:
-        feedback_organizations = sorted(
-            organizations,
-            key=lambda item: pending_feedback_by_org.get(int(item.get("id") or 0), 0),
-            reverse=True,
-        )
-        for organization in feedback_organizations:
-            organization_id = int(organization.get("id") or 0)
-            feedback_count = pending_feedback_by_org.get(organization_id, 0)
-            if feedback_count <= 0:
-                continue
-            attention_items.append(
-                {
-                    "organization": _dashboard_class_name(organization.get("name"), fallback="机构"),
-                    "issue": f"有 {feedback_count} 条课堂反馈任务待处理。",
-                    "status": "待反馈",
-                    "page": "class-feedback-generation",
-                    "action": "进入",
-                }
-            )
-            if len(attention_items) >= 4:
-                break
 
     if len(attention_items) < 4:
         consultation_organizations = sorted(
@@ -3264,13 +3199,10 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
         pending_count = pending_registration_by_org.get(organization_id, 0)
         today_output_count = today_output_by_org.get(organization_id, 0)
         week_output_count = week_output_by_org.get(organization_id, 0)
-        feedback_count = pending_feedback_by_org.get(organization_id, 0)
         consultation_count = pending_consultations_by_org.get(organization_id, 0)
         credit_balance = low_credit_by_org.get(organization_id)
         if pending_count > 0:
             status = f"待审批 {pending_count}"
-        elif feedback_count > 0:
-            status = f"待反馈 {feedback_count}"
         elif consultation_count > 0:
             status = f"待咨询 {consultation_count}"
         elif credit_balance is not None:
@@ -3286,7 +3218,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
                 "outputs": str(today_output_count),
                 "approvals": str(pending_count),
                 "status": status,
-                "page": "accounts" if pending_count > 0 else ("class-feedback-generation" if feedback_count > 0 else ("consultation" if consultation_count > 0 else ("credit" if credit_balance is not None else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes")))),
+                "page": "accounts" if pending_count > 0 else ("consultation" if consultation_count > 0 else ("credit" if credit_balance is not None else ("review-generation" if today_output_count > 0 or week_output_count > 0 else "classes"))),
             }
         )
 
@@ -3591,6 +3523,16 @@ def _get_accessible_class_or_error(user: dict, class_id: int):
     if _filter_classes_for_user(user, [cls]):
         return cls, None
     return None, (jsonify({"error": "forbidden"}), 403)
+
+
+def _get_accessible_class_commentary_task_or_error(user: dict, task_id: int):
+    task = get_class_commentary_task(task_id)
+    if not task:
+        return None, (jsonify({"error": "not found"}), 404)
+    _, error = _get_accessible_class_or_error(user, int(task["class_id"]))
+    if error:
+        return None, error
+    return task, None
 
 
 def _member_can_read_student_profile(user: dict, student_id: int) -> bool:
@@ -4028,168 +3970,6 @@ def api_credit_redeem_xhs():
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 502
     return jsonify(result)
-
-
-def _get_accessible_class_feedback_task_or_error(user: dict, task_id: int):
-    task = get_class_feedback_task(task_id)
-    if not task:
-        return None, (jsonify({"error": "not found"}), 404)
-
-    _, error = _get_accessible_class_or_error(user, task["class_id"])
-    if error:
-        return None, error
-    return task, None
-
-
-def _normalize_class_feedback_student_highlights(items: object) -> dict[int, dict]:
-    if not isinstance(items, list):
-        return {}
-
-    normalized: dict[int, dict] = {}
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        student_id = item.get("student_id")
-        if not isinstance(student_id, int):
-            continue
-        labels = [
-            str(label or "").strip()
-            for label in (item.get("labels") or [])
-            if str(label or "").strip()
-        ]
-        normalized[student_id] = {
-            "labels": labels,
-            "note": str(item.get("note") or "").strip(),
-        }
-    return normalized
-
-
-def _normalize_class_feedback_notes_payload(task: dict, data: dict) -> dict:
-    existing_highlights = _normalize_class_feedback_student_highlights(task.get("student_highlights"))
-    student_highlights = (
-        _normalize_class_feedback_student_highlights(data.get("student_highlights"))
-        if "student_highlights" in data
-        else existing_highlights
-    )
-    class_status_tags = (
-        [
-            str(tag or "").strip()
-            for tag in (data.get("class_status_tags") or [])
-            if str(tag or "").strip()
-        ]
-        if "class_status_tags" in data
-        else list(task.get("class_status_tags") or [])
-    )
-    return {
-        "class_status_tags": class_status_tags,
-        "class_status_note": (
-            str(data.get("class_status_note") or "").strip()
-            if "class_status_note" in data
-            else str(task.get("class_status_note") or "").strip()
-        ),
-        "parent_feedback_note": (
-            str(data.get("parent_feedback_note") or "").strip()
-            if "parent_feedback_note" in data
-            else str(task.get("parent_feedback_note") or "").strip()
-        ),
-        "teaching_focus_note": (
-            str(data.get("teaching_focus_note") or "").strip()
-            if "teaching_focus_note" in data
-            else str(task.get("teaching_focus_note") or "").strip()
-        ),
-        "next_stage_preview_note": (
-            str(data.get("next_stage_preview_note") or "").strip()
-            if "next_stage_preview_note" in data
-            else str(task.get("next_stage_preview_note") or "").strip()
-        ),
-        "student_highlights": [
-            {"student_id": student_id, **highlight}
-            for student_id, highlight in student_highlights.items()
-        ],
-    }
-
-
-def _build_class_feedback_generation_context(task: dict, user: dict) -> dict:
-    cls = get_class(task["class_id"]) or {}
-    all_lessons = list_lessons(class_id=task["class_id"])
-    source_lessons = []
-    for lesson in all_lessons:
-        lesson_date = str(lesson.get("date") or "").strip()
-        if not lesson_date or lesson_date < task["start_date"] or lesson_date > task["end_date"]:
-            continue
-
-        source_lessons.append(
-            {
-                "lesson_id": lesson["id"],
-                "date": lesson_date,
-                "topic": lesson.get("topic") or "",
-                "summary": lesson.get("summary") or "",
-                "weak_points": lesson.get("weak_points") or "",
-            }
-        )
-
-    if not source_lessons:
-        raise ValueError("所选时间范围内没有可用课次记录")
-
-    student_highlights_by_id = _normalize_class_feedback_student_highlights(task.get("student_highlights"))
-    recent_confirmed_summaries = list_recent_confirmed_class_feedback_summaries(
-        class_id=task["class_id"],
-        before_end_date=task["end_date"],
-        limit=3,
-    )
-    students = []
-    for roster_student in list_students_for_class(task["class_id"]):
-        baseline = find_previous_confirmed_class_feedback_entry(
-            class_id=task["class_id"],
-            student_id=roster_student["id"],
-            period_granularity=task["period_granularity"],
-            before_end_date=task["end_date"],
-        )
-        students.append(
-            {
-                "student_id": roster_student["id"],
-                "name": roster_student["name"],
-                "stage_highlight": student_highlights_by_id.get(
-                    roster_student["id"],
-                    {"labels": [], "note": ""},
-                ),
-                "previous_baseline": baseline,
-            }
-        )
-
-    if not students:
-        raise ValueError("当前班级还没有学生，无法生成课堂反馈")
-
-    source_summary = json.dumps(
-        {
-            "class_name": cls.get("name") or "",
-            "date_range": {"start_date": task["start_date"], "end_date": task["end_date"]},
-            "lessons": source_lessons,
-        },
-        ensure_ascii=False,
-    )
-
-    return {
-        "class_name": cls.get("name") or "",
-        "teacher_name": task.get("teacher_name_snapshot")
-        or cls.get("teacher_name")
-        or user.get("display_name")
-        or user.get("username")
-        or "",
-        "start_date": task["start_date"],
-        "end_date": task["end_date"],
-        "source_summary": source_summary,
-        "stage_notes": {
-            "class_status_tags": list(task.get("class_status_tags") or []),
-            "class_status_note": str(task.get("class_status_note") or ""),
-            "parent_feedback_note": str(task.get("parent_feedback_note") or ""),
-            "teaching_focus_note": str(task.get("teaching_focus_note") or ""),
-            "next_stage_preview_note": str(task.get("next_stage_preview_note") or ""),
-            "student_highlights": list(task.get("student_highlights") or []),
-            "recent_confirmed_class_summaries": recent_confirmed_summaries,
-        },
-        "students": students,
-    }
 
 
 @app.route("/api/me", methods=["GET"])
@@ -8084,221 +7864,155 @@ def api_lesson_create():
     return jsonify({"id": lesson_id, "version_id": int(version["id"]), "success": True, "status": response_status}), 202
 
 
-@app.route("/api/class-feedback/labels", methods=["GET"])
-def api_class_feedback_labels_get():
+@app.route("/api/class-commentary/skills", methods=["GET"])
+def api_class_commentary_skills():
     user, error = _require_auth()
     if error:
         return error
-    return jsonify({"groups": list_class_feedback_label_configs(user["id"])})
+    skill_dir = str(get_config().get("colleague_skill_dir") or "")
+    skills = list_colleague_skills(skill_dir)
+    return jsonify({"skills": skills, "configured": bool(skill_dir)})
 
 
-@app.route("/api/class-feedback/labels", methods=["PUT"])
-def api_class_feedback_labels_put():
+@app.route("/api/class-commentary/tasks", methods=["POST"])
+def api_class_commentary_tasks_create():
     user, error = _require_auth()
     if error:
         return error
-    data, error = _get_json_object_payload()
-    if error:
-        return error
-
-    groups = data.get("groups")
-    if not isinstance(groups, list):
-        groups = []
     try:
-        save_class_feedback_label_configs(user["id"], groups)
-    except LookupError:
-        return jsonify({"error": "not found"}), 404
-    return jsonify({"groups": list_class_feedback_label_configs(user["id"])})
-
-
-@app.route("/api/class-feedback/tasks", methods=["POST"])
-def api_class_feedback_task_create():
-    user, error = _require_auth()
-    if error:
-        return error
-    data, error = _get_json_object_payload()
-    if error:
-        return error
-
-    class_id = data.get("class_id")
-    if isinstance(class_id, bool) or not isinstance(class_id, int):
-        return jsonify({"error": "class_id must be an integer"}), 400
-    cls, error = _get_accessible_class_or_error(user, class_id)
-    if error:
-        return error
-
-    start_date = str(data.get("start_date") or "").strip()
-    end_date = str(data.get("end_date") or "").strip()
-    period_granularity = str(data.get("period_granularity") or "").strip()
-    anchor_date = str(data.get("anchor_date") or "").strip()
-    year = data.get("year")
-    week = data.get("week")
-    month = data.get("month")
-    stage_name = str(data.get("stage_name") or "").strip()
-    if not period_granularity and start_date and start_date == end_date:
-        period_granularity = "daily"
-        anchor_date = anchor_date or start_date
-    teacher_name_snapshot = (
-        str(cls.get("teacher_name") or "").strip()
-        or str(user.get("display_name") or "").strip()
-        or str(user.get("username") or "").strip()
-        or "未命名老师"
+        class_id = int(request.form.get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    if class_id <= 0:
+        return jsonify({"error": "class_id is required"}), 400
+    cls, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
+    audio = request.files.get("audio")
+    if not audio or not audio.filename:
+        return jsonify({"error": "audio is required"}), 400
+    ext = Path(audio.filename).suffix.lower()
+    if ext not in {".mp3", ".m4a", ".mp4", ".wav", ".ogg", ".webm", ".flac"}:
+        return jsonify({"error": f"unsupported audio format: {ext}"}), 400
+    upload_dir = UPLOAD_DIR / "class-commentary"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    save_path = upload_dir / f"commentary_{ts}{ext}"
+    audio.save(str(save_path))
+    task = create_class_commentary_task(
+        organization_id=int(user["organization_id"]),
+        class_id=int(cls["id"]),
+        teacher_user_id=int(user["id"]),
+        audio_path=str(save_path),
+        audio_filename=audio.filename,
+        transcription_request_key=_current_audio_upload_request_key(),
     )
+    task = mark_class_commentary_task_transcribing(int(task["id"]))
+    _start_class_commentary_transcription_worker(
+        int(task["id"]),
+        str(save_path),
+        {"id": int(user["id"]), "organization_id": int(user["organization_id"])},
+    )
+    return jsonify(_serialize_class_commentary_task_for_response(task)), 202
 
-    try:
-        task = create_class_feedback_task(
-            class_id=class_id,
-            teacher_user_id=cls.get("teacher_user_id"),
-            teacher_name_snapshot=teacher_name_snapshot,
-            start_date=start_date,
-            end_date=end_date,
-            period_granularity=period_granularity or None,
-            anchor_date=anchor_date or None,
-            year=year,
-            week=week,
-            month=month,
-            stage_name=stage_name or None,
-            created_by=user["id"],
-        )
-    except LookupError:
+
+@app.route("/api/class-commentary/tasks/<int:task_id>", methods=["GET"])
+def api_class_commentary_task_get(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    task, task_error = _get_accessible_class_commentary_task_or_error(user, task_id)
+    if task_error:
+        return task_error
+    return jsonify(_serialize_class_commentary_task_for_response(task))
+
+
+@app.route("/api/class-commentary/tasks/<int:task_id>/transcript", methods=["PUT"])
+def api_class_commentary_task_update_transcript(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    task, task_error = _get_accessible_class_commentary_task_or_error(user, task_id)
+    if task_error:
+        return task_error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    confirmed_transcript_text = str((data or {}).get("confirmed_transcript_text") or "").strip()
+    if not confirmed_transcript_text:
+        return jsonify({"error": "confirmed_transcript_text is required"}), 400
+    updated_task = save_class_commentary_transcript(int(task["id"]), confirmed_transcript_text)
+    return jsonify(_serialize_class_commentary_task_for_response(updated_task))
+
+
+@app.route("/api/class-commentary/tasks/<int:task_id>/generate", methods=["POST"])
+def api_class_commentary_task_generate(task_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    if not has_review_plan_api_key():
+        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+    task, task_error = _get_accessible_class_commentary_task_or_error(user, task_id)
+    if task_error:
+        return task_error
+    if str(task.get("status") or "") not in {"transcribed", "failed", "ready"}:
+        return jsonify({"error": "task must be transcribed before generation"}), 400
+    confirmed_transcript_text = str(task.get("confirmed_transcript_text") or "").strip()
+    if not confirmed_transcript_text:
+        return jsonify({"error": "confirmed transcript is required before generation"}), 400
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    skill_id = str((data or {}).get("skill_id") or "").strip()
+    if not skill_id:
+        return jsonify({"error": "skill_id is required"}), 400
+    cls = get_class(int(task["class_id"]))
+    if not cls:
         return jsonify({"error": "not found"}), 404
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify(task), 201
-
-
-@app.route("/api/class-feedback/tasks/<int:task_id>", methods=["GET"])
-def api_class_feedback_task_get(task_id: int):
-    user, error = _require_auth()
-    if error:
-        return error
-    task, error = _get_accessible_class_feedback_task_or_error(user, task_id)
-    if error:
-        return error
-    return jsonify(task)
-
-
-@app.route("/api/class-feedback/tasks/<int:task_id>/generate", methods=["POST"])
-def api_class_feedback_generate(task_id: int):
-    user, error = _require_auth()
-    if error:
-        return error
-    task, error = _get_accessible_class_feedback_task_or_error(user, task_id)
-    if error:
-        return error
-    data, error = _get_json_object_payload()
-    if error:
-        return error
-
-    if task.get("status") == "confirmed":
-        return jsonify({"error": "已确认任务不能重新生成，请先创建新任务"}), 409
-
-    provider = _default_ai_provider_name()
-    model = _default_chat_model_name()
-
+    class_students = list_students_for_class(int(task["class_id"]))
+    skill_dir = str(get_config().get("colleague_skill_dir") or "")
     try:
-        notes_payload = _normalize_class_feedback_notes_payload(task, data)
-        task = save_class_feedback_task_notes(task_id, **notes_payload)
-        context = _build_class_feedback_generation_context(task, user)
-        bundle = _run_ai_feature_with_charge(
-            user=user,
-            feature_key="class_feedback_generate",
-            source_record_type="class_feedback_task",
-            source_record_id=task_id,
+        skill = load_colleague_skill(skill_dir, skill_id)
+    except FileNotFoundError:
+        return jsonify({"error": "skill not found"}), 404
+    request_key = _current_ai_request_key()
+    chat_provider = _review_plan_ai_provider_name()
+    chat_model = _review_plan_chat_model_name()
+    save_class_commentary_generation_started(
+        int(task["id"]),
+        skill_id=str(skill["id"]),
+        skill_name=str(skill["name"]),
+        skill_path=str(skill["path"]),
+        skill_content_snapshot=str(skill["content"]),
+        generation_request_key=request_key,
+        chat_provider=chat_provider,
+        chat_model=chat_model,
+    )
+    try:
+        feedback_text = _run_ai_feature_with_charge(
+            user={"id": int(user["id"]), "organization_id": int(user["organization_id"])},
+            feature_key="class_commentary_generate",
+            source_record_type="class_commentary_task",
+            source_record_id=int(task["id"]),
+            provider=chat_provider,
+            model=chat_model,
+            request_key=request_key,
             producer=lambda: _call_ai_helper_with_usage(
-                generate_class_feedback_bundle,
-                **context,
+                generate_class_commentary_feedback,
+                class_record=cls,
+                students=class_students,
+                transcript_text=confirmed_transcript_text,
+                skill=skill,
             ),
-            provider=provider,
-            model=model,
         )
-        student_entries = []
-        for item in bundle.get("student_entries") or []:
-            if not isinstance(item, dict):
-                continue
-            student_id = item.get("student_id")
-            if not isinstance(student_id, int):
-                continue
-            student_entries.append(
-                {
-                    "student_id": student_id,
-                    "name": str(item.get("name") or "").strip(),
-                    "ai_draft": str(item.get("text") or "").strip(),
-                }
-            )
-        saved_task = save_class_feedback_generation_result(
-            task_id,
-            class_summary_ai_draft=str(bundle.get("class_summary") or "").strip(),
-            student_entries=student_entries,
-        )
-    except DuplicateAiRequestError as exc:
-        return jsonify({"error": str(exc)}), 409
-    except CreditBalanceError as exc:
-        return jsonify({"error": str(exc)}), 402
-    except LookupError:
-        return jsonify({"error": "not found"}), 404
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception:
-        logger.exception("Class feedback generation failed for task %s", task_id)
-        return jsonify({"error": "生成课堂反馈时发生错误，请稍后重试"}), 500
-    return jsonify(saved_task)
-
-
-@app.route("/api/class-feedback/tasks/<int:task_id>/draft", methods=["POST"])
-def api_class_feedback_save_draft(task_id: int):
-    user, error = _require_auth()
-    if error:
-        return error
-    _, error = _get_accessible_class_feedback_task_or_error(user, task_id)
-    if error:
-        return error
-    data, error = _get_json_object_payload()
-    if error:
-        return error
-
-    try:
-        draft_task = save_class_feedback_draft(
-            task_id,
-            class_summary_draft_text=str(data.get("class_summary_draft_text") or "").strip(),
-            student_entries=data.get("student_entries") or [],
-        )
-    except LookupError:
-        return jsonify({"error": "not found"}), 404
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception:
-        logger.exception("Class feedback draft save failed for task %s", task_id)
-        return jsonify({"error": "保存课堂反馈草稿时发生错误，请稍后重试"}), 500
-    return jsonify(draft_task)
-
-
-@app.route("/api/class-feedback/tasks/<int:task_id>/confirm", methods=["POST"])
-def api_class_feedback_confirm(task_id: int):
-    user, error = _require_auth()
-    if error:
-        return error
-    _, error = _get_accessible_class_feedback_task_or_error(user, task_id)
-    if error:
-        return error
-    data, error = _get_json_object_payload()
-    if error:
-        return error
-
-    try:
-        confirmed_task = confirm_class_feedback_task(
-            task_id,
-            class_summary_final_text=str(data.get("class_summary_final_text") or "").strip(),
-            student_entries=data.get("student_entries") or [],
-        )
-    except LookupError:
-        return jsonify({"error": "not found"}), 404
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception:
-        logger.exception("Class feedback confirm failed for task %s", task_id)
-        return jsonify({"error": "确认课堂反馈时发生错误，请稍后重试"}), 500
-    return jsonify(confirmed_task)
+        ready_task = save_class_commentary_generation_succeeded(int(task["id"]), str(feedback_text or ""))
+        return jsonify(_serialize_class_commentary_task_for_response(ready_task))
+    except Exception as exc:
+        failed_task = mark_class_commentary_task_failed(int(task["id"]), "generation", str(exc))
+        return jsonify({
+            "error": str(exc),
+            "task": _serialize_class_commentary_task_for_response(failed_task),
+        }), 500
 
 
 @app.route("/api/monthly", methods=["GET"])

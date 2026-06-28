@@ -2942,7 +2942,7 @@ test('SmartWrongQuestionsPage lets teachers edit local non-geometry question tex
       assert.equal(downloadLink?.getAttribute('href'), '/api/wechat/student-libraries/1?token=token-123');
       assert.equal(downloadLink?.getAttribute('download'), 'student-library.pdf');
       assert.equal(textarea.value, '计算 $2+3\\\\times4$ 的结果。');
-      assert.ok(domEnvironment.container.querySelector('.xr-latex-preview .katex'));
+      assert.ok(domEnvironment.container.querySelector('.xr-latex-preview mjx-container'));
     });
 
     const questionTextarea = domEnvironment.container.querySelector('textarea[placeholder="填写可直接进入错题库 PDF 的题目文本"]') as HTMLTextAreaElement | null;

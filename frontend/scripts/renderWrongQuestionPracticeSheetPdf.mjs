@@ -3,13 +3,9 @@ import { access, mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { chromium } from 'playwright';
-
 import { buildWrongQuestionLatexPreviewModel } from '../src/wrongQuestionLatex.js';
 
 const currentFilePath = fileURLToPath(import.meta.url);
-const currentDir = dirname(currentFilePath);
-const katexCssPath = resolve(currentDir, '../node_modules/katex/dist/katex.min.css');
 const COMMON_CHROMIUM_EXECUTABLE_PATHS = {
   darwin: [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -966,7 +962,6 @@ function buildScheduledBody(schedule, answerItems) {
 }
 
 export async function buildDocumentMarkup(payload) {
-  const katexCss = await readFile(katexCssPath, 'utf8');
   const title = escapeHtml(payload.title || `${payload.studentName || ''} 错题练习`);
   const items = Array.isArray(payload.items) ? payload.items : [];
   const schedule = Array.isArray(payload.schedule) ? payload.schedule : [];
@@ -980,8 +975,6 @@ export async function buildDocumentMarkup(payload) {
         <meta charset="utf-8" />
         <title>${title}</title>
         <style>
-          ${katexCss}
-
           @page {
             size: A4;
             margin: 12mm 12mm;
@@ -1187,7 +1180,7 @@ export async function buildDocumentMarkup(payload) {
             word-break: break-word;
           }
 
-          .xr-latex-preview .katex {
+          .xr-latex-preview mjx-container {
             font-size: 1.05em;
           }
 
@@ -1346,6 +1339,7 @@ async function main() {
 
   const payload = JSON.parse(await readFile(inputPath, 'utf8'));
   const documentMarkup = await buildDocumentMarkup(payload);
+  const { chromium } = await import('playwright');
   const browser = await chromium.launch(await resolveChromiumLaunchOptions());
 
   try {

@@ -1,0 +1,525 @@
+{
+  "teacher_name": "何姝健",
+  "date_start": "2026-06-23",
+  "date_end_exclusive": "2026-06-24",
+  "generated_at": "2026-06-24T15:02:34",
+  "source_db": "/tmp/xingrun-prod-20260623-he-shujian.db",
+  "output_dir": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623",
+  "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623.zip",
+  "layout": "original-image-full-frame-width-proportional-height-method-reminder-no-arrow-analysis",
+  "total_upload_count": 18,
+  "student_counts": {
+    "吴靖萱": 2,
+    "张格源": 5,
+    "王睿博": 5,
+    "谢雨彤": 6
+  },
+  "status_counts": {
+    "failed/failed": 1,
+    "ready/recognized": 17
+  },
+  "pdfs": [
+    {
+      "student_name": "张格源",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "question_count": 5,
+      "pdf_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/数学·初2020级·六年级·1班·小衔初-张格源-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "page_sizes_mm": [
+        [
+          210.0,
+          435.2
+        ],
+        [
+          210.0,
+          553.8
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    },
+    {
+      "student_name": "谢雨彤",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "question_count": 6,
+      "pdf_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/数学·初2020级·六年级·1班·小衔初-谢雨彤-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    },
+    {
+      "student_name": "吴靖萱",
+      "class_name": "数学·初2025级·七年级·4班",
+      "question_count": 2,
+      "pdf_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/数学·初2025级·七年级·4班-吴靖萱-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    },
+    {
+      "student_name": "王睿博",
+      "class_name": "数学·初2025级·七年级·5班",
+      "question_count": 5,
+      "pdf_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/数学·初2025级·七年级·5班-王睿博-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    }
+  ],
+  "items": [
+    {
+      "task_id": 957,
+      "record_id": "wechat-467465bbef907146",
+      "student_name": "张格源",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 15:39:25",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "代数定义",
+      "image_url": "https://xingrun.online/files/1782200365280-bdurjvtm1xi.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/01-wechat-467465bbef907146.jpg",
+      "image_size": [
+        923,
+        1792
+      ],
+      "question_text": "10. 对两个整式 x，x-3 进行如下操作： 第一次操作为：将 x，x-3 这两个整式的和记作 A_1，左边整式与右边整式的差记作 B_1； 第二次操作为：将 A_1，B_1 这两个整式的和记作 A_2，A_2 与 B_1 的差记作 B_2； 第三次操作为：将 A_2，B_2 这两个整式的和记作 A_3，A_3 与 B_2 的差记作 B_3；……（以此类推）。 有以下结论：①无论 x 取何值，B_5 的值不变；②当 x=2 时，B_2 + B_4 + B_6 + B_8 + B_10 = -62；③若 A_6 + B_5 = 20，则 x=1；④第 2026 次操作后，A_2025 - B_2026 = 3 × 2^1012。 以上结论中正确的个数为（ ） A. 4 个 B. 3 个 C. 2 个 D. 1 个",
+      "method_reminders": [
+        "先把题目定义翻译成式子，至少写出前两三步操作或前几个对象。",
+        "判断说法时逐条代入定义，别凭字面感觉；限制条件要单独圈出。"
+      ]
+    },
+    {
+      "task_id": 958,
+      "record_id": "wechat-01ba821bd9acba05",
+      "student_name": "张格源",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 15:39:26",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "代数定义",
+      "image_url": "https://xingrun.online/files/1782200366012-1axgl6kd6wq.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/02-wechat-01ba821bd9acba05.jpg",
+      "image_size": [
+        693,
+        1792
+      ],
+      "question_text": "16. 一个千位、百位、十位及个位数字分别为 a, b, c, d 的四位自然数 abcd（a, b, c, d 都是大于 0 且小于 10 的整数），若这个四位自然数满足 ab = bc + cd，则称这个四位自然数为“龙头数”。例如：数字 9725 满足 97 = 72 + 25，则 9725 为“龙头数”，又如数字 8531 中，85 53 + 31，则 8531 不是“龙头数”。若 6mn2（m, n 都是大于 0 且小于 10 的整数）是一个“龙头数”，则 m 的值为______；若去掉“龙头数”7xyz的个位上的数字得到的三位数与去掉这个“龙头数”千位上的数字得到的三位数的差除以 5，余数为 2，则满足条件的整数 x 的和为______。",
+      "method_reminders": [
+        "先把题目定义翻译成式子，至少写出前两三步操作或前几个对象。",
+        "判断说法时逐条代入定义，别凭字面感觉；限制条件要单独圈出。"
+      ]
+    },
+    {
+      "task_id": 959,
+      "record_id": "wechat-63fe34c0c37ba04c",
+      "student_name": "张格源",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 15:39:26",
+      "task_status": "failed",
+      "recognition_status": "failed",
+      "archive_status": "active",
+      "topic_label": "通用审题",
+      "image_url": "https://xingrun.online/files/1782200366538-2vzvcbygk6u.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/03-wechat-63fe34c0c37ba04c.jpg",
+      "image_size": [
+        1792,
+        654
+      ],
+      "question_text": "",
+      "method_reminders": [
+        "原题识别未完成，先直接看原图：圈出已知、所求、图形或表格信息。",
+        "用箭头写清“已知 → 可推出 → 目标”，再补演算，避免只抄答案。"
+      ]
+    },
+    {
+      "task_id": 960,
+      "record_id": "wechat-b3023a1bdcf3fc4d",
+      "student_name": "张格源",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 15:39:27",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "方程应用",
+      "image_url": "https://xingrun.online/files/1782200367311-ujx4l55961h.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/04-wechat-b3023a1bdcf3fc4d.jpg",
+      "image_size": [
+        1792,
+        1060
+      ],
+      "question_text": "24. 某人打算从电车和汽油车中选购一台新车，这两台车的部分信息如下表： | 车型 | 售价/万元 | 每 100 公里能耗 | 其他信息 | |------|-----------|------------------|----------| | 电车 | 12.52 | 25 度电 | 换电池 24480 元（使用 8 年后需换电池） | | 汽油车 | 10.99 | 6.8 升汽油 | 无需更换 | 当前电车充电电价为 0.68 元/度，汽油价格为 7.5 元/升。根据当地限行政策，此人用车计划如下：电车每年行驶 12000 公里（不限行），汽油车每年行驶 10000 公里（限行）。若只考虑车价、能耗费（电车的充电电费或汽油车的油费）和电车换电池的用车综合费用。请用所学数学知识解决下列问题： （1）若此人购买的新车使用 t 年（t 小于 8）： ① 请用含 t 的式子分别表示这两台车的综合费用； ② 当 t 为何值时，这两台车的综合费用相等？ （2）若此人打算使用所购买的新车 10 年以上且不超过 15 年，请为这个人设计综合费用更省钱的购车方案。",
+      "method_reminders": [
+        "先设未知数并列表：数量、单价、总价、速度、时间或路程要分别写清。",
+        "列方程前先写等量关系，解完要回到题目单位和限制条件检查。"
+      ]
+    },
+    {
+      "task_id": 961,
+      "record_id": "wechat-ffbf3aaf636d7c7a",
+      "student_name": "张格源",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 15:39:27",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782200367944-83nlbkdjnt2.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/05-wechat-ffbf3aaf636d7c7a.jpg",
+      "image_size": [
+        1792,
+        817
+      ],
+      "question_text": "25. 如图，点 O 是数轴上的原点，A，B 是数轴上的两个点，点 A 对应的数为 -9，点 B 对应的数为 3。 （1）若点 M 以每秒 4 个单位的速度从点 A 出发沿数轴向右运动，同时，点 N 以每秒 2 个单位的速度从点 B 出发沿数轴向右运动，运动时间为 t 秒，则当 t 为何值时，原点 O 为 MN 的中点； （2）若点 M 沿数轴从点 A 出发向右运动，同时点 N 沿数轴从点 B 出发向左运动，4 秒后，M，N 两点之间的距离为 2 个单位长度，已知 N 的速度是 M 的两倍，分别求出 M，N 两点的速度； （3）点 M，N，P 三个点同时开始运动：其中，点 M 以每秒 2 个单位的速度从点 A 出发沿数轴向右运动；点 N 以每秒 1 个单位的速度从点 B 出发沿数轴向左运动；点 P 以每秒 2 个单位的速度从点 O 出发沿数轴先向右运动，与点 N 相遇后立即以原来速度沿数轴向左运动，直到与点 M 相遇时三个点都停止运动，请直接写出 P，N 两点中一个点到原点的距离是另一个点到原点的距离的 2 倍时的运动时间。",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，箭头连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 962,
+      "record_id": "wechat-e74ca9d4325ded6d",
+      "student_name": "谢雨彤",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 19:11:40",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "有理数计算",
+      "image_url": "https://xingrun.online/files/1782213100454-a85m9a67v9d.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/06-wechat-e74ca9d4325ded6d.jpg",
+      "image_size": [
+        223,
+        77
+      ],
+      "question_text": "(2) -3^2 × |(1)/(3) - 1| - (-7) + 5",
+      "method_reminders": [
+        "计算顺序先乘方和绝对值，再乘除，最后加减；负号和括号单独标出来。",
+        "每一步只改一个运算，箭头标明符号变化，防止 -3^2 与 (-3)^2 混淆。"
+      ]
+    },
+    {
+      "task_id": 963,
+      "record_id": "wechat-17b855a9a1899ad6",
+      "student_name": "谢雨彤",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 19:11:41",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782213101041-hgddx3fmoyl.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/07-wechat-17b855a9a1899ad6.jpg",
+      "image_size": [
+        842,
+        647
+      ],
+      "question_text": "18. 如图，直线l与直线a,b分别交于点A,B，点C在直线a上，点D和点E在直线b上，连接AD,CE。若∠ 1+∠ 2=180^°，∠ 3=∠ 4，求证：AD ∥ CE。阅读下面的证明过程，并填空。 证明： ∠ 1+∠ 2=180^°（已知）， ∠ 1+∠ 5=180^°（邻补角的定义）， ∠ 2=∠ 5（__________）。 __________ ∥ BE（__________）。 ∠ 3+∠ ADE=180^°（__________）。 ∠ 3=∠ 4（已知）， ∠ 4+__________=180^°（等量代换）。 AD ∥ CE（同旁内角互补，两直线平行）。",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，箭头连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 964,
+      "record_id": "wechat-765ca6b134e6b818",
+      "student_name": "谢雨彤",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 19:11:41",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "方程应用",
+      "image_url": "https://xingrun.online/files/1782213101465-wx1rzsmi9qf.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/08-wechat-765ca6b134e6b818.jpg",
+      "image_size": [
+        884,
+        342
+      ],
+      "question_text": "19. 列方程解下列问题： 某电商用 22000 元从厂家购进了 A、B 两种商品共 500 件，其中 A 商品每件进价 80 元，B 商品每件进价 20 元. (1) 求购进 A、B 两种商品各多少件. (2) 该电商以每件 30 元的价格销售 B 商品，售出 (1)/(3) 后开展促销活动，剩下的 B 商品在原来售价基础上降价售完。已知 B 商品共获利 1800 元，求促销活动中，B 商品降价了多少元。",
+      "method_reminders": [
+        "先设未知数并列表：数量、单价、总价、速度、时间或路程要分别写清。",
+        "列方程前先写等量关系，解完要回到题目单位和限制条件检查。"
+      ]
+    },
+    {
+      "task_id": 965,
+      "record_id": "wechat-b98b7b93f3ffdfc6",
+      "student_name": "谢雨彤",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 19:11:41",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "程序逆推",
+      "image_url": "https://xingrun.online/files/1782213101924-6n6xdn8wp29.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/09-wechat-b98b7b93f3ffdfc6.jpg",
+      "image_size": [
+        1071,
+        394
+      ],
+      "question_text": "按下面的程序计算：当输入 x = 10 时，输出结果是 86；当输入 x = 5 时，输出结果是 122；如果输入 x 的值是正整数，输出结果是 158，那么满足条件的 x 的值最多有（ ） 程序流程如下： - 输入 x - 计算 3x - 1 的值 - 判断是否大于 81： - 如果是，输出结果 - 如果否，将结果作为新的 x 再次输入循环 A. 1 个 B. 2 个 C. 3 个 D. 4 个",
+      "method_reminders": [
+        "先把程序每一步写成代数式，再用已知输入输出反求参数或判断分支。",
+        "如果问最多值，从输出结果反推所有可能输入，再筛正整数限制。"
+      ]
+    },
+    {
+      "task_id": 966,
+      "record_id": "wechat-89ed6a2d752199bd",
+      "student_name": "谢雨彤",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 19:11:42",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "代数定义",
+      "image_url": "https://xingrun.online/files/1782213102396-32ob51zsw5o.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/10-wechat-89ed6a2d752199bd.jpg",
+      "image_size": [
+        1029,
+        384
+      ],
+      "question_text": "五、多选题 21. 已知关于 x,y 的代数式 A = 2x^3y + 2x^2 + xy + x，代数式 B = x^3y + x^2 - xy - x，下列说法正确的是（ ） A. 代数式 A 为三次四项式 B. 当 x = 2，y = -1 时，A + B = -12 C. 当 x = 2 时，|A + B| = 10，则 y = -(1)/(12) D. 若 A - 2B 与 x 无关，则 y = -1",
+      "method_reminders": [
+        "先把题目定义翻译成式子，至少写出前两三步操作或前几个对象。",
+        "判断说法时逐条代入定义，别凭字面感觉；限制条件要单独圈出。"
+      ]
+    },
+    {
+      "task_id": 967,
+      "record_id": "wechat-b16ccd8b139f6c8b",
+      "student_name": "谢雨彤",
+      "class_name": "数学·初2020级·六年级·1班·小衔初",
+      "created_at": "2026-06-23 19:11:42",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "方程应用",
+      "image_url": "https://xingrun.online/files/1782213102770-vem413d866q.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/11-wechat-b16ccd8b139f6c8b.jpg",
+      "image_size": [
+        862,
+        319
+      ],
+      "question_text": "26．列方程解决问题： 小维和小浩分别从甲、乙两地同时出发，小维骑自行车，小浩步行，沿同一条道路相向匀速而行，出发 0.5 小时后两人相遇。已知小维骑自行车比小浩步行每小时多行进 10 千米，甲、乙两地相距 7.5 千米。 (1)两人每小时分别行进多少千米？ (2)相遇后，两人保持原速度原方向继续前进，小维到达乙地后休息 0.4 小时，再沿原路以 15 千米/小时的速度返回甲地，求小维返回甲地时，小浩距离甲地的距离。",
+      "method_reminders": [
+        "先设未知数并列表：数量、单价、总价、速度、时间或路程要分别写清。",
+        "列方程前先写等量关系，解完要回到题目单位和限制条件检查。"
+      ]
+    },
+    {
+      "task_id": 968,
+      "record_id": "wechat-206d7bc20640ae55",
+      "student_name": "吴靖萱",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-23 21:38:33",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782221913130-8mri1nskz7.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/12-wechat-206d7bc20640ae55.jpg",
+      "image_size": [
+        1792,
+        1067
+      ],
+      "question_text": "26. 如图，两个等腰△ABC、△ADE，满足 AB = AC，AD = ED，∠ BAC = ∠ ADE，它们有公共点 A，将△ADE 绕点 A 进行旋转。 (1) 如图 1，当点 D 在 BC 边上，点 E 与点 B 重合时，若 ∠ BAD = 3∠ CAD，求 ∠ BAD 的度数； (2) 当△ADE 旋转到如图 2 的位置时，连接 BD、CE，延长 DA 交 CE 于点 M，若此时有 2∠ ABC + (1)/(2)∠ BDE = 180^°，求证：EM = CM",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，箭头连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 969,
+      "record_id": "wechat-71ea5c0904317ea9",
+      "student_name": "吴靖萱",
+      "class_name": "数学·初2025级·七年级·4班",
+      "created_at": "2026-06-23 21:38:33",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782221913653-yfyk3ovbqcf.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/13-wechat-71ea5c0904317ea9.jpg",
+      "image_size": [
+        1792,
+        644
+      ],
+      "question_text": "如图，在△ ABC中，AC的垂直平分线分别交AC、BC于点E、D，连接AD，∠ DAE = 30^°，DE = 3，△ ABD的周长为16，则△ ABC的周长为（ ）",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，箭头连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 970,
+      "record_id": "wechat-cfbecc930f858d4e",
+      "student_name": "王睿博",
+      "class_name": "数学·初2025级·七年级·5班",
+      "created_at": "2026-06-23 22:25:59",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782224758631-a2tp290e7hh.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/14-wechat-cfbecc930f858d4e.jpg",
+      "image_size": [
+        1080,
+        835
+      ],
+      "question_text": "27. 在 △ ABC 中，点 D 是 △ ABC 的边 BC 的中点. （1）如图 1，连接 AD，过点 D 作 DE ⊥ AB 交 AB 延长线于点 E，若 △ ABC 的面积是 12，AB = 4，求线段 DE 的长； （2）如图 2，点 F 是线段 AC 上一点，连接 FD 并延长交 AB 延长线于 G。若 CF = AB，∠ AFD = ∠ ABD，求证：DG = DF + BC； （3）如图 3，点 M 是 AB 延长线上一点，连接 CM，连接 DM，点 H 为 DM 所在直线上一点，连接 CH，将 △ BCH 沿 CH 翻折至 △ ABC 所在平面内得到 △ B'CH，连接 B'M，若 = 56，当线段 B'M 最大时，直接写出 的值。",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，箭头连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 971,
+      "record_id": "wechat-ed95eb03b6cc354a",
+      "student_name": "王睿博",
+      "class_name": "数学·初2025级·七年级·5班",
+      "created_at": "2026-06-23 22:25:59",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782224759396-k1ook1e71b.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/15-wechat-ed95eb03b6cc354a.jpg",
+      "image_size": [
+        994,
+        198
+      ],
+      "question_text": "在△ABC中，∠C = 20°，AD为BC边上的高，且∠DAB = 30°，则∠BAC的度数为______",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，箭头连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    },
+    {
+      "task_id": 972,
+      "record_id": "wechat-f2063f206f8f9407",
+      "student_name": "王睿博",
+      "class_name": "数学·初2025级·七年级·5班",
+      "created_at": "2026-06-23 22:25:59",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "方程应用",
+      "image_url": "https://xingrun.online/files/1782224759751-kvq7htn837l.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/16-wechat-f2063f206f8f9407.jpg",
+      "image_size": [
+        978,
+        446
+      ],
+      "question_text": "19. 学校计划购买办公椅和会议桌共 140 件，以改善教师办公环境。计划中，办公椅每把 120 元，会议桌每张 200 元，总预算 21600 元。实际采购时，商家给予优惠：办公椅打九折，会议桌降价出售且降价幅度不超过原价的 5%。最终，办公椅的购买量增加，会议桌数量不变，实际支出比计划多 240 元。则学校实际购买了办公椅 ________ 把。",
+      "method_reminders": [
+        "先设未知数并列表：数量、单价、总价、速度、时间或路程要分别写清。",
+        "列方程前先写等量关系，解完要回到题目单位和限制条件检查。"
+      ]
+    },
+    {
+      "task_id": 973,
+      "record_id": "wechat-b9210e61f9876c71",
+      "student_name": "王睿博",
+      "class_name": "数学·初2025级·七年级·5班",
+      "created_at": "2026-06-23 22:26:00",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "代数定义",
+      "image_url": "https://xingrun.online/files/1782224760116-9l7o2xwm4c.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/17-wechat-b9210e61f9876c71.jpg",
+      "image_size": [
+        1040,
+        725
+      ],
+      "question_text": "12. 三个不完全相同的非负整数 a, b, c, 记为 L_0 = (a,b,c), 进行如下操作：将其中最大的数减去 7 再取绝对值，另两个数分别加上 1，得到对应的三个新数 a_1, b_1, c_1, 第一次操作的结果记为 L_1 = (a_1,b_1,c_1), 若有两个相等的最大数，则取最后面的最大数减 7 再取绝对值，另两个数分别加 1；将 L_1 按上述方式再做一次操作，得到第二次操作的结果 L_2 = (a_2,b_2,c_2), 以此类推，当三个数相等时，停止操作。例如，当 L_0 = (3,5,1) 时，L_1 = (4,2,2), L_2 = (3,3,3), 即第二次操作后停止。下列说法： ① 当 L_0 = (3,7,7) 时，经过 3 次操作后停止； ② 当 L_0 = (a,b,c), a+b+c 为奇数，且经过三次操作后停止，则 a_3 一定为偶数； ③ 若 L_0 = (2025,2026,2027), 则 L_217 = (1,2,5). 其中正确的个数是（ ） A. 0 B. 1 C. 2 D. 3",
+      "method_reminders": [
+        "先把题目定义翻译成式子，至少写出前两三步操作或前几个对象。",
+        "判断说法时逐条代入定义，别凭字面感觉；限制条件要单独圈出。"
+      ]
+    },
+    {
+      "task_id": 974,
+      "record_id": "wechat-f0ae68eb3d06c896",
+      "student_name": "王睿博",
+      "class_name": "数学·初2025级·七年级·5班",
+      "created_at": "2026-06-23 22:26:00",
+      "task_status": "ready",
+      "recognition_status": "recognized",
+      "archive_status": "active",
+      "topic_label": "几何关系",
+      "image_url": "https://xingrun.online/files/1782224760387-uxeswwcwsp.jpg",
+      "local_image_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/images/original/18-wechat-f0ae68eb3d06c896.jpg",
+      "image_size": [
+        817,
+        229
+      ],
+      "question_text": "2. 下列调查中，适合采用抽样调查的是（ ） A. 调查国内外观众对电影《哪吒之魔童闹海》的喜爱度 B. 了解全班同学的视力情况 C. 检测“神舟十八号”飞船的零部件 D. 对乘坐高铁的所有乘客进行安检",
+      "method_reminders": [
+        "先在图上标等边、等角、垂直、中点或旋转关系，再决定用全等、角追或辅助线。",
+        "证明题先从目标反推需要的关系，箭头连接“已知条件 → 中间结论 → 所求结论”。"
+      ]
+    }
+  ]
+}

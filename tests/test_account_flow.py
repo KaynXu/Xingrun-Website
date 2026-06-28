@@ -1854,6 +1854,8 @@ class AccountFlowTestCase(unittest.TestCase):
                 "repeated_mistake_count": 1,
                 "high_priority_count": 1,
                 "pending_review_count": 2,
+                "unique_class_count": 2,
+                "unique_student_count": 2,
             },
         )
 
@@ -2079,7 +2081,7 @@ class AccountFlowTestCase(unittest.TestCase):
         lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
         lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
 
-        with patch("app.has_api_key", return_value=True), \
+        with patch("app.has_review_plan_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
              patch("app._start_review_plan_generation_thread"), \
@@ -2127,73 +2129,131 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertEqual(forbidden_class_response.status_code, 403)
         self.assertEqual(allowed_class_response.status_code, 202)
 
-    def test_member_class_feedback_task_access_requires_owned_class(self):
+    def test_class_feedback_task_endpoints_are_removed(self):
         owner_token = self.login_as_kayn()
 
-        target_member = self.approve_user(
-            owner_token=owner_token,
-            username="class_feedback_member",
-            display_name="Class Feedback Member",
-            password="member123",
-        )
-        other_member = self.approve_user(
-            owner_token=owner_token,
-            username="class_feedback_other",
-            display_name="Class Feedback Other",
-            password="member123",
-        )
-        target_member_id = target_member["user"]["id"]
-        other_member_id = other_member["user"]["id"]
-
-        owned_class_id = lesson_manager.save_class("Owned Feedback Class", subject="English", grade="Grade 6")
-        other_class_id = lesson_manager.save_class("Other Feedback Class", subject="English", grade="Grade 6")
-        lesson_manager.set_class_teacher_user_id(owned_class_id, target_member_id)
-        lesson_manager.set_class_teacher_user_id(other_class_id, other_member_id)
-
-        allowed_create = self.client.post(
+        create_response = self.client.post(
             "/api/class-feedback/tasks",
-            headers=self.auth_headers(target_member["token"]),
+            headers=self.auth_headers(owner_token),
             json={
-                "class_id": owned_class_id,
+                "class_id": 1,
                 "start_date": "2026-04-01",
                 "end_date": "2026-04-07",
             },
         )
-        self.assertEqual(allowed_create.status_code, 201)
-        allowed_payload = allowed_create.get_json()
-        self.assertIsNotNone(allowed_payload)
+        get_response = self.client.get(
+            "/api/class-feedback/tasks/1",
+            headers=self.auth_headers(owner_token),
+        )
+        labels_get_response = self.client.get(
+            "/api/class-feedback/labels",
+            headers=self.auth_headers(owner_token),
+        )
+        labels_put_response = self.client.put(
+            "/api/class-feedback/labels",
+            headers=self.auth_headers(owner_token),
+            json={"groups": []},
+        )
 
-        forbidden_create = self.client.post(
-            "/api/class-feedback/tasks",
-            headers=self.auth_headers(target_member["token"]),
+        self.assertEqual(create_response.status_code, 404)
+        self.assertEqual(get_response.status_code, 404)
+        self.assertEqual(labels_get_response.status_code, 404)
+        self.assertEqual(labels_put_response.status_code, 404)
+
+    def test_class_commentary_task_access_follows_assigned_class_scope(self):
+        owner_token, invite_payload = self.create_approved_organization_with_invite(
+            organization_name="Class Commentary Access School",
+            owner_username="commentary_access_owner",
+            owner_display_name="Commentary Access Owner",
+            owner_password="ownerpass123",
+        )
+
+        assigned_join = self.client.post(
+            "/api/join-by-invite-code",
             json={
-                "class_id": other_class_id,
-                "start_date": "2026-04-01",
-                "end_date": "2026-04-07",
+                "invite_code": invite_payload["invite_code"],
+                "username": "commentary_assigned_member",
+                "display_name": "Commentary Assigned Member",
+                "password": "memberpass123",
+                "recovery_phone": "13800000001",
             },
         )
-        self.assertEqual(forbidden_create.status_code, 403)
+        self.assertEqual(assigned_join.status_code, 201)
 
-        allowed_get = self.client.get(
-            f"/api/class-feedback/tasks/{allowed_payload['id']}",
-            headers=self.auth_headers(target_member["token"]),
+        unrelated_join = self.client.post(
+            "/api/join-by-invite-code",
+            json={
+                "invite_code": invite_payload["invite_code"],
+                "username": "commentary_unrelated_member",
+                "display_name": "Commentary Unrelated Member",
+                "password": "memberpass456",
+                "recovery_phone": "13800000002",
+            },
         )
-        self.assertEqual(allowed_get.status_code, 200)
+        self.assertEqual(unrelated_join.status_code, 201)
 
-        other_task = lesson_manager.create_class_feedback_task(
-            class_id=other_class_id,
-            teacher_user_id=other_member_id,
-            teacher_name_snapshot="Class Feedback Other",
-            start_date="2026-04-08",
-            end_date="2026-04-14",
-            created_by=other_member_id,
+        assigned_login = self.client.post(
+            "/api/login",
+            json={"username": "commentary_assigned_member", "password": "memberpass123"},
+        )
+        self.assertEqual(assigned_login.status_code, 200)
+        assigned_token = assigned_login.get_json()["token"]
+        assigned_member_id = self.client.get(
+            "/api/me",
+            headers=self.auth_headers(assigned_token),
+        ).get_json()["id"]
+
+        unrelated_login = self.client.post(
+            "/api/login",
+            json={"username": "commentary_unrelated_member", "password": "memberpass456"},
+        )
+        self.assertEqual(unrelated_login.status_code, 200)
+        unrelated_token = unrelated_login.get_json()["token"]
+
+        owner_me = self.client.get("/api/me", headers=self.auth_headers(owner_token))
+        self.assertEqual(owner_me.status_code, 200)
+        owner_payload = owner_me.get_json()
+        self.assertIsNotNone(owner_payload)
+
+        create_class = self.client.post(
+            "/api/classes",
+            headers=self.auth_headers(owner_token),
+            json={
+                "name": "课堂点评权限班",
+                "subject": "数学",
+                "grade": "七年级",
+            },
+        )
+        self.assertEqual(create_class.status_code, 201)
+        class_id = create_class.get_json()["id"]
+
+        assign_classes = self.client.put(
+            f"/api/admin/users/{assigned_member_id}/classes",
+            headers=self.auth_headers(owner_token),
+            json={"class_ids": [class_id]},
+        )
+        self.assertEqual(assign_classes.status_code, 200)
+
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=owner_payload["organization_id"],
+            class_id=class_id,
+            teacher_user_id=owner_payload["id"],
+            audio_path="/tmp/commentary-access.m4a",
+            audio_filename="commentary-access.m4a",
         )
 
-        forbidden_get = self.client.get(
-            f"/api/class-feedback/tasks/{other_task['id']}",
-            headers=self.auth_headers(target_member["token"]),
+        allowed_response = self.client.get(
+            f"/api/class-commentary/tasks/{task['id']}",
+            headers=self.auth_headers(assigned_token),
         )
-        self.assertEqual(forbidden_get.status_code, 403)
+        forbidden_response = self.client.get(
+            f"/api/class-commentary/tasks/{task['id']}",
+            headers=self.auth_headers(unrelated_token),
+        )
+
+        self.assertEqual(allowed_response.status_code, 200)
+        self.assertEqual(allowed_response.get_json()["id"], task["id"])
+        self.assertEqual(forbidden_response.status_code, 403)
 
     def test_feedback_endpoints_are_removed(self):
         owner_token = self.login_as_kayn()
@@ -2255,7 +2315,7 @@ class AccountFlowTestCase(unittest.TestCase):
         self.assertIsNotNone(class_payload)
         class_id = class_payload["id"]
 
-        with patch("app.has_api_key", return_value=True), \
+        with patch("app.has_review_plan_api_key", return_value=True), \
              patch("app.ensure_feature_credits_available"), \
              patch("app.finalize_ai_charge", return_value={}), \
              patch("app._start_review_plan_generation_thread"), \

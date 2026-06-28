@@ -1,0 +1,155 @@
+{
+  "proof_status": "passed",
+  "output_dir": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623",
+  "zip_path": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623.zip",
+  "pdf_count": 4,
+  "image_count": 18,
+  "total_pages": 18,
+  "student_counts": {
+    "吴靖萱": 2,
+    "张格源": 5,
+    "王睿博": 5,
+    "谢雨彤": 6
+  },
+  "status_counts": {
+    "failed/failed": 1,
+    "ready/recognized": 17
+  },
+  "arrow_analysis_removed": true,
+  "pdf_checks": [
+    {
+      "file": "数学·初2020级·六年级·1班·小衔初-张格源-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "pages": 5,
+      "page_sizes_mm": [
+        [
+          210.0,
+          435.2
+        ],
+        [
+          210.0,
+          553.8
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    },
+    {
+      "file": "数学·初2020级·六年级·1班·小衔初-谢雨彤-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "pages": 6,
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    },
+    {
+      "file": "数学·初2025级·七年级·4班-吴靖萱-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "pages": 2,
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    },
+    {
+      "file": "数学·初2025级·七年级·5班-王睿博-6月23日错题练习原图等宽方法提醒版-20260623.pdf",
+      "pages": 5,
+      "page_sizes_mm": [
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ],
+        [
+          210.0,
+          297.0
+        ]
+      ]
+    }
+  ],
+  "rendered_samples": [
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/proof/no-arrow-zhang-page-1-tall.png",
+      "size_px": [
+        417,
+        864
+      ],
+      "gray_mean": 246.08,
+      "nonwhite_ratio": 0.161
+    },
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/proof/no-arrow-zhang-page-3-failed-original.png",
+      "size_px": [
+        417,
+        590
+      ],
+      "gray_mean": 251.51,
+      "nonwhite_ratio": 0.1321
+    },
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/proof/no-arrow-xie-page-1-normal.png",
+      "size_px": [
+        417,
+        590
+      ],
+      "gray_mean": 251.42,
+      "nonwhite_ratio": 0.1325
+    },
+    {
+      "sample": "/Users/xiaodi/Desktop/01_星润与复习计划/xingrun.web/output/pdf/何姝健-6月23日错题练习原图等宽方法提醒版PDF-20260623/proof/no-arrow-wang-page-1-normal.png",
+      "size_px": [
+        417,
+        590
+      ],
+      "gray_mean": 250.9,
+      "nonwhite_ratio": 0.151
+    }
+  ]
+}
