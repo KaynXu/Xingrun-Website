@@ -15,6 +15,13 @@ import lesson_manager
 
 
 class ClassCommentaryApiTestCase(unittest.TestCase):
+    PRIVATE_TRANSCRIPT_POLISH_FIELDS = {
+        "raw_transcript_text",
+        "roster_snapshot",
+        "transcript_polish_error",
+        "transcript_polished_at",
+    }
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
@@ -66,6 +73,10 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
             audio_filename="audio.m4a",
         )
         return lesson_manager.mark_class_commentary_transcription_succeeded(task["id"], transcript)
+
+    def assertPrivateTranscriptPolishFieldsHidden(self, payload: dict):
+        for field_name in self.PRIVATE_TRANSCRIPT_POLISH_FIELDS:
+            self.assertNotIn(field_name, payload)
 
     def test_old_class_feedback_routes_are_removed(self):
         response = self.client.get("/api/class-feedback/labels", headers=self.headers)
@@ -121,6 +132,64 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(saved["status"], "transcribed")
         self.assertEqual(saved["transcript_text"], "小王今天计算有进步")
         self.assertEqual(charge.call_args.kwargs["request_key"], "saved-audio-request-key")
+
+    def test_task_response_hides_private_transcript_polish_fields(self):
+        class_id = self._create_class_with_student()
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=self.owner["id"],
+            audio_path=str(self.base / "audio.m4a"),
+            audio_filename="audio.m4a",
+        )
+        lesson_manager.mark_class_commentary_raw_transcription_succeeded(
+            task["id"],
+            "小汪今天计算有进步",
+            '[{"id": 1, "name": "小王"}]',
+        )
+        lesson_manager.mark_class_commentary_transcript_polish_succeeded(
+            task["id"],
+            "小王今天计算有进步",
+        )
+
+        response = self.client.get(
+            f"/api/class-commentary/tasks/{task['id']}",
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["transcript_text"], "小王今天计算有进步")
+        self.assertPrivateTranscriptPolishFieldsHidden(payload)
+
+    def test_manual_transcript_save_preserves_private_polish_fields(self):
+        class_id = self._create_class_with_student()
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=self.owner["id"],
+            audio_path=str(self.base / "audio.m4a"),
+            audio_filename="audio.m4a",
+        )
+        lesson_manager.mark_class_commentary_raw_transcription_succeeded(
+            task["id"],
+            "小汪今天计算有进步",
+            '[{"id": 1, "name": "小王"}]',
+        )
+        lesson_manager.mark_class_commentary_transcript_polish_failed(
+            task["id"],
+            "小汪今天计算有进步",
+            "model timeout",
+        )
+
+        updated = lesson_manager.save_class_commentary_transcript(task["id"], "小王今天计算有进步")
+
+        self.assertEqual(updated["confirmed_transcript_text"], "小王今天计算有进步")
+        self.assertEqual(updated["raw_transcript_text"], "小汪今天计算有进步")
+        self.assertEqual(updated["roster_snapshot"], '[{"id": 1, "name": "小王"}]')
+        self.assertEqual(updated["transcript_polish_error"], "model timeout")
+        self.assertEqual(updated["transcript_polished_at"], "")
 
     def test_generate_saves_skill_snapshot_and_feedback(self):
         class_id = self._create_class_with_student()

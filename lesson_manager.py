@@ -3478,6 +3478,10 @@ def init_db():
                 audio_path TEXT NOT NULL DEFAULT '',
                 audio_filename TEXT NOT NULL DEFAULT '',
                 transcript_text TEXT NOT NULL DEFAULT '',
+                raw_transcript_text TEXT NOT NULL DEFAULT '',
+                roster_snapshot TEXT NOT NULL DEFAULT '',
+                transcript_polish_error TEXT NOT NULL DEFAULT '',
+                transcript_polished_at TEXT NOT NULL DEFAULT '',
                 confirmed_transcript_text TEXT NOT NULL DEFAULT '',
                 transcribed_at TEXT NOT NULL DEFAULT '',
                 skill_id TEXT NOT NULL DEFAULT '',
@@ -3504,6 +3508,10 @@ def init_db():
             ON class_commentary_tasks (class_id, updated_at);
             """
         )
+        _ensure_column(conn, "class_commentary_tasks", "raw_transcript_text", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "class_commentary_tasks", "roster_snapshot", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "class_commentary_tasks", "transcript_polish_error", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "class_commentary_tasks", "transcript_polished_at", "TEXT NOT NULL DEFAULT ''")
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
         _ensure_review_plan_versions_schema(conn)
@@ -6790,6 +6798,10 @@ def _serialize_class_commentary_task_row(row: sqlite3.Row) -> dict:
         "audio_path",
         "audio_filename",
         "transcript_text",
+        "raw_transcript_text",
+        "roster_snapshot",
+        "transcript_polish_error",
+        "transcript_polished_at",
         "confirmed_transcript_text",
         "transcribed_at",
         "skill_id",
@@ -6885,7 +6897,27 @@ def mark_class_commentary_task_transcribing(task_id: int):
     return _update_class_commentary_task_failure_state(task_id, "transcribing", "", "", "")
 
 
-def mark_class_commentary_transcription_succeeded(task_id: int, transcript_text: str):
+def mark_class_commentary_raw_transcription_succeeded(task_id: int, raw_transcript_text: str, roster_snapshot: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET raw_transcript_text=?,
+                roster_snapshot=?,
+                transcript_text=?,
+                confirmed_transcript_text=?,
+                transcript_polish_error='',
+                transcript_polished_at='',
+                transcription_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (raw_transcript_text or "", roster_snapshot or "", raw_transcript_text or "", raw_transcript_text or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def mark_class_commentary_transcript_polish_succeeded(task_id: int, polished_transcript_text: str):
     with get_conn() as conn:
         conn.execute(
             """
@@ -6895,13 +6927,41 @@ def mark_class_commentary_transcription_succeeded(task_id: int, transcript_text:
                 transcript_text=?,
                 confirmed_transcript_text=?,
                 transcribed_at=datetime('now','localtime'),
+                transcript_polish_error='',
+                transcript_polished_at=datetime('now','localtime'),
                 transcription_error='',
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
-            (transcript_text or "", transcript_text or "", task_id),
+            (polished_transcript_text or "", polished_transcript_text or "", task_id),
         )
     return get_class_commentary_task(task_id)
+
+
+def mark_class_commentary_transcript_polish_failed(task_id: int, raw_transcript_text: str, error_message: str):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='transcribed',
+                failure_stage='',
+                transcript_text=?,
+                confirmed_transcript_text=?,
+                transcribed_at=datetime('now','localtime'),
+                transcript_polish_error=?,
+                transcript_polished_at='',
+                transcription_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (raw_transcript_text or "", raw_transcript_text or "", error_message or "", task_id),
+        )
+    return get_class_commentary_task(task_id)
+
+
+def mark_class_commentary_transcription_succeeded(task_id: int, transcript_text: str):
+    mark_class_commentary_raw_transcription_succeeded(task_id, transcript_text or "", "")
+    return mark_class_commentary_transcript_polish_succeeded(task_id, transcript_text or "")
 
 
 def save_class_commentary_transcript(task_id: int, confirmed_transcript_text: str):
