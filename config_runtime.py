@@ -40,6 +40,11 @@ ENV_VAR_MAP = {
     "wrong_question_service_token": "XR_WRONG_QUESTION_SERVICE_TOKEN",
     "wechat_service_token": "XR_WECHAT_SERVICE_TOKEN",
     "colleague_skill_dir": "XR_COLLEAGUE_SKILL_DIR",
+    "audio_transcription_provider": "XR_AUDIO_TRANSCRIPTION_PROVIDER",
+    "tencentcloud_secret_id": "TENCENTCLOUD_SECRET_ID",
+    "tencentcloud_secret_key": "TENCENTCLOUD_SECRET_KEY",
+    "tencentcloud_app_id": "TENCENTCLOUD_APP_ID",
+    "tencent_asr_engine_type": "XR_TENCENT_ASR_ENGINE_TYPE",
     "xhs_app_id": "XHS_APP_ID",
     "xhs_app_secret": "XHS_APP_SECRET",
 }
@@ -70,6 +75,8 @@ DEFAULTS = {
     "wrong_question_service_token": "",
     "wechat_service_token": "",
     "colleague_skill_dir": "",
+    "audio_transcription_provider": "local",
+    "tencent_asr_engine_type": "16k_zh",
 }
 
 
@@ -149,6 +156,13 @@ def normalize_vision_provider(value: object) -> str:
     return "qwen"
 
 
+def normalize_audio_transcription_provider(value: object) -> str:
+    provider = str(value or "").strip().lower()
+    if provider == "tencent":
+        return "tencent"
+    return "local"
+
+
 def get_runtime_config() -> dict:
     cfg = dict(DEFAULTS)
     cfg.update(load_file_config())
@@ -171,6 +185,13 @@ def get_runtime_config() -> dict:
     cfg["openai_base_url"] = str(cfg.get("openai_base_url") or "").strip()
     cfg["colleague_skill_dir"] = str(cfg.get("colleague_skill_dir") or "").strip()
     cfg["vision_provider"] = normalize_vision_provider(cfg.get("vision_provider"))
+    cfg["audio_transcription_provider"] = normalize_audio_transcription_provider(
+        cfg.get("audio_transcription_provider")
+    )
+    cfg["tencentcloud_secret_id"] = str(cfg.get("tencentcloud_secret_id") or "").strip()
+    cfg["tencentcloud_secret_key"] = str(cfg.get("tencentcloud_secret_key") or "").strip()
+    cfg["tencentcloud_app_id"] = str(cfg.get("tencentcloud_app_id") or "").strip()
+    cfg["tencent_asr_engine_type"] = str(cfg.get("tencent_asr_engine_type") or "16k_zh").strip() or "16k_zh"
     return cfg
 
 

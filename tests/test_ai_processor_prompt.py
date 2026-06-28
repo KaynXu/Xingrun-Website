@@ -105,6 +105,20 @@ class _FakeWhisperModel:
         return [_FakeSegment(" 我把单位换算漏掉了 "), _FakeSegment(" ")], type("Info", (), {})()
 
 
+class _FakeTencentAsrResponse:
+    def __init__(self, payload: dict):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload, ensure_ascii=False).encode("utf-8")
+
+
 class AiProcessorPromptTestCase(unittest.TestCase):
     def setUp(self):
         ai_processor._LOCAL_WHISPER_MODEL = None
@@ -666,6 +680,73 @@ class AiProcessorPromptTestCase(unittest.TestCase):
                 "output_tokens": 0,
             },
         )
+
+    def test_transcribe_audio_can_use_tencent_flash_asr(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            captured["headers"] = dict(request.header_items())
+            captured["body"] = request.data
+            return _FakeTencentAsrResponse(
+                {
+                    "code": 0,
+                    "request_id": "req-test",
+                    "flash_result": [
+                        {"channel_id": 0, "text": " 汪峻宇今天计算更稳了 "},
+                        {"channel_id": 0, "text": " 刘雨恩课堂表达清楚 "},
+                    ],
+                }
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "lesson.m4a"
+            audio_path.write_bytes(b"fake-tencent-audio")
+            with patch.object(
+                ai_processor,
+                "_load_config",
+                return_value={
+                    "audio_transcription_provider": "tencent",
+                    "tencentcloud_app_id": "123456",
+                    "tencentcloud_secret_id": "secret-id",
+                    "tencentcloud_secret_key": "secret-key",
+                    "tencent_asr_engine_type": "16k_zh",
+                },
+            ), patch.object(ai_processor.time, "time", return_value=1_000), patch.object(
+                ai_processor.random,
+                "randint",
+                return_value=123,
+            ), patch.object(
+                ai_processor.urllib.request,
+                "urlopen",
+                side_effect=fake_urlopen,
+            ):
+                transcription, usage = ai_processor.transcribe_audio(str(audio_path), include_usage=True)
+
+        self.assertEqual(transcription, "汪峻宇今天计算更稳了刘雨恩课堂表达清楚")
+        self.assertEqual(usage["provider"], "tencent")
+        self.assertEqual(usage["model"], "flash-16k_zh")
+        self.assertIn("asr.cloud.tencent.com/asr/flash/v1/123456", captured["url"])
+        self.assertIn("engine_type=16k_zh", captured["url"])
+        self.assertEqual(captured["headers"]["Content-type"], "application/octet-stream")
+        self.assertTrue(captured["headers"]["Authorization"])
+        self.assertEqual(captured["body"], b"fake-tencent-audio")
+        self.assertEqual(captured["timeout"], 180)
+
+    def test_transcribe_audio_requires_tencent_credentials_when_enabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "lesson.m4a"
+            audio_path.write_bytes(b"fake-audio")
+            with patch.object(
+                ai_processor,
+                "_load_config",
+                return_value={"audio_transcription_provider": "tencent"},
+            ):
+                with self.assertRaises(RuntimeError) as context:
+                    ai_processor.transcribe_audio(str(audio_path), include_usage=True)
+
+        self.assertIn("TENCENTCLOUD_APP_ID", str(context.exception))
 
 
 if __name__ == "__main__":
