@@ -174,15 +174,21 @@ def review_plan_langfuse_enabled() -> bool:
 
 def _ensure_langfuse_env() -> None:
     cfg = get_runtime_config()
-    public_key = str(cfg.get("langfuse_public_key") or "").strip()
-    secret_key = str(cfg.get("langfuse_secret_key") or "").strip()
-    base_url = str(cfg.get("langfuse_base_url") or os.environ.get("LANGFUSE_HOST") or "").strip()
+    public_key = str(cfg.get("langfuse_public_key") or os.environ.get("LANGFUSE_PUBLIC_KEY") or "").strip()
+    secret_key = str(cfg.get("langfuse_secret_key") or os.environ.get("LANGFUSE_SECRET_KEY") or "").strip()
+    base_url = str(
+        cfg.get("langfuse_base_url")
+        or os.environ.get("LANGFUSE_BASE_URL")
+        or os.environ.get("LANGFUSE_HOST")
+        or ""
+    ).strip()
     if public_key:
         os.environ.setdefault("LANGFUSE_PUBLIC_KEY", public_key)
     if secret_key:
         os.environ.setdefault("LANGFUSE_SECRET_KEY", secret_key)
     if base_url:
         os.environ.setdefault("LANGFUSE_BASE_URL", base_url)
+        os.environ.setdefault("LANGFUSE_HOST", base_url)
 
 
 def get_langfuse_client() -> Any | None:
