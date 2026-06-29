@@ -52,11 +52,17 @@ def _usage_dict(response, *, provider: str | None = None, model_fallback: str = 
     }
 
 
-def _get_client():
+def _get_client(
+    provider: str | None = None,
+    *,
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: dict | None = None,
+):
     """返回当前配置的 AI 服务商客户端（兼容 OpenAI SDK）。"""
     from openai import OpenAI
     cfg = _load_config()
-    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
+    provider = normalize_chat_provider(provider or cfg.get("provider", "deepseek"))
 
     if provider == "deepseek":
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
@@ -64,17 +70,20 @@ def _get_client():
             raise RuntimeError("未找到 DeepSeek API Key，请在设置页面配置。")
         return OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
 
-    key = cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
+    key = openai_api_key or cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key:
         raise RuntimeError(
             "未找到 OpenAI API Key。\n"
             "请在设置页面配置 openai_api_key，"
             "或设置环境变量 OPENAI_API_KEY。"
         )
-    base_url = str(cfg.get("openai_base_url") or "").strip()
+    base_url = str(openai_base_url or cfg.get("openai_base_url") or "").strip()
+    kwargs = {"api_key": key}
+    if openai_headers:
+        kwargs["default_headers"] = openai_headers
     if base_url:
-        return OpenAI(api_key=key, base_url=base_url)
-    return OpenAI(api_key=key)
+        kwargs["base_url"] = base_url
+    return OpenAI(**kwargs)
 
 
 def _get_vision_client():
@@ -98,13 +107,37 @@ def _get_vision_client():
     return _get_client()
 
 
-def _get_chat_model() -> str:
+def _get_chat_model(provider: str | None = None, model_override: str = "") -> str:
     """返回当前服务商对应的对话模型名称。"""
+    if model_override:
+        return str(model_override)
     cfg = _load_config()
-    provider = normalize_chat_provider(cfg.get("provider", "deepseek"))
+    provider = normalize_chat_provider(provider or cfg.get("provider", "deepseek"))
     if provider == "deepseek":
         return cfg.get("deepseek_model", "deepseek-v4-pro")
-    return "gpt-4o"
+    return cfg.get("openai_model", "gpt-4o")
+
+
+def _class_commentary_openai_headers(raw_headers: str = "") -> dict:
+    raw = str(raw_headers or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("XR_CLASS_COMMENTARY_OPENAI_HEADERS must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError("XR_CLASS_COMMENTARY_OPENAI_HEADERS must be a JSON object")
+    return {str(key): str(value) for key, value in parsed.items()}
+
+
+def _get_class_commentary_client(provider: str, openai_api_key: str = "", openai_base_url: str = "", openai_headers: str = ""):
+    return _get_client(
+        provider,
+        openai_api_key=openai_api_key,
+        openai_base_url=openai_base_url,
+        openai_headers=_class_commentary_openai_headers(openai_headers),
+    )
 
 
 def _get_structured_generation_model() -> str:
@@ -2257,9 +2290,16 @@ def generate_class_commentary_feedback(
     students: list[dict],
     transcript_text: str,
     skill: dict,
+    provider: str = "",
+    model: str = "",
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: str = "",
     include_usage: bool = False,
 ):
-    client = _get_client()
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_class_commentary_client(provider, openai_api_key, openai_base_url, openai_headers)
     payload = build_class_commentary_generation_payload(
         class_record=class_record,
         students=students,
@@ -2273,7 +2313,7 @@ def generate_class_commentary_feedback(
         "Return plain text only, with one block per mentioned student."
     )
     response = client.chat.completions.create(
-        model=_get_chat_model(),
+        model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": payload_to_json(payload)},
@@ -2282,7 +2322,7 @@ def generate_class_commentary_feedback(
     )
     text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
     if include_usage:
-        return text, _usage_dict(response)
+        return text, _usage_dict(response, provider=provider, model_fallback=model)
     return text
 
 
@@ -2292,9 +2332,16 @@ def polish_class_commentary_transcript(
     students: list[dict],
     raw_transcript_text: str,
     math_terms: list[str] | tuple[str, ...] | None = None,
+    provider: str = "",
+    model: str = "",
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: str = "",
     include_usage: bool = False,
 ):
-    client = _get_client()
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_class_commentary_client(provider, openai_api_key, openai_base_url, openai_headers)
     payload = build_class_commentary_transcript_polish_payload(
         class_record=class_record,
         students=students,
@@ -2310,7 +2357,7 @@ def polish_class_commentary_transcript(
         "Return plain text only."
     )
     response = client.chat.completions.create(
-        model=_get_chat_model(),
+        model=model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": payload_to_json(payload)},
@@ -2319,7 +2366,7 @@ def polish_class_commentary_transcript(
     )
     text = (response.choices[0].message.content or "").strip()
     if include_usage:
-        return text, _usage_dict(response)
+        return text, _usage_dict(response, provider=provider, model_fallback=model)
     return text
 
 

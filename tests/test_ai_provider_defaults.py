@@ -159,6 +159,38 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertEqual(app._review_plan_writer_ai_provider_name(), "openai")
                 self.assertEqual(app._review_plan_writer_chat_model_name(), "gpt-4.1-mini")
 
+    def test_class_commentary_model_can_be_overridden_independently(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_config = Path(tmpdir) / "config.json"
+            with patch.object(config_runtime, "CFG_PATH", missing_config), patch.dict(
+                os.environ,
+                {
+                    "XR_CLASS_COMMENTARY_PROVIDER": "openai",
+                    "XR_CLASS_COMMENTARY_MODEL": "gpt-5.5",
+                    "XR_CLASS_COMMENTARY_OPENAI_BASE_URL": "https://api.iiiiitoken.com",
+                    "XR_CLASS_COMMENTARY_OPENAI_API_KEY": "sk-class-test",
+                    "XR_CLASS_COMMENTARY_OPENAI_HEADERS": '{"X-Trace":"aimami"}',
+                },
+                clear=True,
+            ):
+                cfg = config_runtime.get_runtime_config()
+                self.assertEqual(cfg["provider"], "deepseek")
+                self.assertEqual(cfg["class_commentary_provider"], "openai")
+                self.assertEqual(cfg["class_commentary_model"], "gpt-5.5")
+                self.assertEqual(cfg["class_commentary_openai_base_url"], "https://api.iiiiitoken.com")
+                self.assertEqual(cfg["class_commentary_openai_api_key"], "sk-class-test")
+                self.assertEqual(cfg["class_commentary_openai_headers"], '{"X-Trace":"aimami"}')
+                self.assertEqual(app._default_ai_provider_name(), "deepseek")
+                self.assertEqual(app._default_chat_model_name(), "deepseek-v4-pro")
+                self.assertEqual(app._review_plan_ai_provider_name(), "deepseek")
+                self.assertEqual(app._review_plan_chat_model_name(), "deepseek-v4-pro")
+                self.assertEqual(app._class_commentary_ai_provider_name(fallback=app._default_ai_provider_name()), "openai")
+                self.assertEqual(app._class_commentary_chat_model_name("openai", fallback_model=app._default_chat_model_name()), "gpt-5.5")
+                self.assertEqual(app._class_commentary_openai_base_url(), "https://api.iiiiitoken.com")
+                self.assertEqual(app._class_commentary_openai_headers(), '{"X-Trace":"aimami"}')
+                self.assertFalse(app.has_review_plan_api_key())
+                self.assertTrue(app.has_class_commentary_api_key())
+
     def test_unknown_chat_provider_falls_back_to_deepseek_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             missing_config = Path(tmpdir) / "config.json"

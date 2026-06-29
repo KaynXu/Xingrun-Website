@@ -127,6 +127,56 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("Do not invent facts", messages[0]["content"])
         self.assertIn("小王", messages[1]["content"])
 
+    def test_generate_class_commentary_feedback_uses_class_commentary_openai_override(self):
+        class FakeMessage:
+            content = "小王:\n今天计算有进步."
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                self.kwargs = kwargs
+                return FakeResponse()
+
+        class FakeChat:
+            def __init__(self):
+                self.completions = FakeCompletions()
+
+        class FakeClient:
+            def __init__(self):
+                self.chat = FakeChat()
+
+        fake_client = FakeClient()
+        with patch.object(ai_processor, "_get_client", return_value=fake_client) as get_client:
+            text, usage = ai_processor.generate_class_commentary_feedback(
+                class_record={"id": 7, "name": "数学·七年级·4班"},
+                students=[{"id": 1, "name": "小王"}],
+                transcript_text="小王今天计算有进步",
+                skill={"id": "teacher-a", "name": "Teacher A", "content": "warm concise style"},
+                provider="openai",
+                model="gpt-5.5",
+                openai_api_key="sk-class-test",
+                openai_base_url="https://api.iiiiitoken.com",
+                openai_headers='{"X-Trace":"aimami"}',
+                include_usage=True,
+            )
+
+        self.assertEqual(text, "小王:\n今天计算有进步.")
+        self.assertEqual(usage["provider"], "openai")
+        self.assertEqual(usage["model"], "gpt-5.5")
+        self.assertEqual(fake_client.chat.completions.kwargs["model"], "gpt-5.5")
+        get_client.assert_called_once_with(
+            "openai",
+            openai_api_key="sk-class-test",
+            openai_base_url="https://api.iiiiitoken.com",
+            openai_headers={"X-Trace": "aimami"},
+        )
+
     def test_polish_class_commentary_transcript_uses_roster_prompt_contract(self):
         class FakeMessage:
             content = "小王今天绝对值学得不错。"

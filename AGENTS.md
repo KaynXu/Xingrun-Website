@@ -5,6 +5,48 @@
 - Do not leave deployable project changes in a long-lived uncommitted state unless the user explicitly asks for WIP only.
 - When a working folder is not itself a git repository, call that out clearly before assuming its files can be versioned.
 
+## Strict Git Development Workflow
+
+Follow this Git workflow unless the user explicitly says otherwise.
+
+### Branch Strategy
+
+- All daily development, fixes, and small changes must start from a new feature branch based on `develop`.
+- Do not develop directly on `master` or `develop`.
+- New branch names should clearly describe the task.
+
+### Pre-Work Checks
+
+- Before each development task, confirm the local code is current with the remote repository.
+- Fetch the latest remote metadata and verify local `develop` is synchronized with `origin/develop`.
+- If local `develop` is not synchronized with `origin/develop`, synchronize it before creating a new branch or making changes.
+
+### Development And Merge Flow
+
+- After the task is complete, merge the changes back into `develop` first.
+- The default target branch is always `develop`, not `master`.
+- Merges to `master` must never be automated; they require manual human confirmation and action.
+
+### Master Rules
+
+- Do not automatically merge a feature branch into `master`.
+- Do not modify, push, or merge `master` without explicit human confirmation.
+- If the workflow reaches a `master` step, stop and wait for human handling.
+
+### Worktree Rules
+
+- If the task uses a `worktree`, close and clean up that worktree after the branch is complete and merged back into `develop`.
+- Do not leave unused worktrees behind at the end of a task.
+
+### Execution Checklist
+
+- Check remote freshness before starting development.
+- Create a new branch from `develop`.
+- Merge completed work back into `develop`.
+- Leave `master` for manual human merges only.
+- Close any worktree after the merge.
+- Before any development operation, self-check this workflow. If an action would violate these rules, stop and warn the user first.
+
 ## Global Collaboration Rules
 
 ### Working Habits
@@ -43,16 +85,16 @@ Do not be verbose and do not generate a long report.
 
 ## Workspace Layout
 
-- Workspace root and main repo: `/Users/ark.mini/Desktop/Xingrun-Website`
+- Workspace root and main repo: the directory containing this `AGENTS.md`.
 - This folder is a git repository.
-- Deploy scripts: `/Users/ark.mini/Desktop/Xingrun-Website/scripts/`
-- Server cheat sheet: `/Users/ark.mini/Desktop/Xingrun-Website/server deploy.md`
+- Deploy scripts: `scripts/`
+- Server cheat sheet: `server deploy.md`
 
 ## Production Server
 
 - Public production server: `49.234.185.86`
 - SSH: `ubuntu@49.234.185.86`
-- Password: `***REMOVED-ROTATED-SSH-PASSWORD***`
+- SSH password: do not store credentials here; retrieve it from the approved secret store or ask the user.
 - Remote repo path: `/home/ubuntu/Xingrun-Website`
 - PM2 service name: `xingrun`
 - `47.108.29.108` is an old secondary server reference only; do not use it as the default production target.
@@ -98,7 +140,7 @@ Xingrun-Website/
 
 ## Working Rules
 
-- Before editing project code, `cd /Users/ark.mini/Desktop/Xingrun-Website`.
+- Before editing project code, `cd` to the project root, which is the directory containing this `AGENTS.md`.
 - Keep commits focused. Do not mix local runtime files like `config.json` or `data/*.db` into normal code commits unless explicitly intended.
 - After meaningful changes, verify first, then commit.
 - The user has very low tolerance for a messy workspace. Keep branches, worktrees, staged files, runtime noise, and uncommitted state as clean and short-lived as possible.
@@ -107,8 +149,9 @@ Xingrun-Website/
 
 - `master` is the main release branch and must only be updated by a manual merge from `develop`.
 - `develop` is the default integration branch.
-- Small changes can be done directly on `develop`.
-- Medium changes must branch from `develop`, be completed and verified on that short-lived branch, then merge back into `develop`.
+- All daily development, fixes, and small changes must branch from `develop`; do not commit directly on `develop` or `master` unless the user explicitly overrides this rule.
+- Before creating a branch, fetch remote metadata and confirm local `develop` is synchronized with `origin/develop`. If it is not synchronized, synchronize it first.
+- Complete and verify work on the short-lived feature branch, then merge the branch back into `develop`.
 - Large changes must branch from `develop` in a dedicated worktree. After the branch is merged back into `develop`, delete the branch and close the worktree promptly.
 - Only merge `develop` back into `master` manually when the user is ready. Do not auto-merge or directly commit feature work onto `master`.
 - If the goal is to preserve real commit counts such as `+4` on the feature branch, still `+4` after merging into `develop`, and still `+4` after `develop` is merged into `master`, do not squash those commits. Use a merge flow that keeps the original feature commits in history.
@@ -118,8 +161,7 @@ Xingrun-Website/
 - One AI conversation can use one branch, but that branch should stay short-lived and focused on one scoped task.
 - If a branch is still in progress, treat it as a draft branch and do not merge it directly just because the conversation is finished.
 - Do not let multiple AI branches edit the same file set or the same business chain in parallel unless one of them is explicitly rebased or refreshed first.
-- For small changes, working directly on `develop` is acceptable if the scope is truly tiny and low-risk.
-- For medium changes, create a focused branch from `develop`, finish the work there, then merge it back into `develop`.
+- For all scoped changes, including small changes, create a focused branch from `develop`, finish the work there, then merge it back into `develop`.
 - For large changes, create a focused branch from `develop` and do the work in a separate worktree so the main workspace stays clean.
 - Before merging any non-trivial branch back to `develop`, first check branch freshness with `git rev-list --left-right --count develop...<branch>`.
 - If the branch has fallen behind `develop` enough that a direct merge would replay old behavior or revert newer work, do not merge it directly; rebase it onto latest `develop`, or cherry-pick / manually transplant the intended commits into a fresh branch.
