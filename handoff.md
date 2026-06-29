@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新: 2026-06-28
+最后更新: 2026-06-29
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-29 Updated `~/.codex/AGENTS.md` from Chinese to English while preserving the strict Git workflow: fetch and sync `develop` with `origin/develop`, branch from `develop`, merge completed work back into `develop`, never auto-merge or push `master`, and clean up worktrees after use. Updated project `AGENTS.md` to include the same English workflow, removed the old allowance for direct small changes on `develop`, and changed workspace paths to repository-relative wording so the file stays English-only. Remaining note: `~/.codex` is not a git repository, so the global AGENTS change is local-only and cannot be included in the project commit.
 - 2026-06-28 已读取并转写 `/Users/xiaodi/Downloads/万象三路6号.m4a`，按固定 5 个分散复习节点生成“万象三路6号考前试卷复盘”课后复习计划。转写稿：`review_plan_templates/source_transcripts/wanxiangsanlu_6_transcript_20260628.txt`；生成脚本：`lingshiwenjian/generate_wanxiangsanlu6_review_plan_20260628.py`；成品 PDF：`lingshiwenjian/20260628-万象三路6号考前试卷复盘-课后复习计划-20260628-191034.pdf`；源文件：`lingshiwenjian/20260628-万象三路6号考前试卷复盘-复习计划源文件-20260628-191034.md`。proof 已通过 `/tmp/proof_wanxiangsanlu6_review_plan.py`：脚本可编译，PDF 12 页、702990 bytes、7550 抽取字符，关键词“应得分/看错/写漏/算错/九套试卷/四套新卷/错因”和 5 个日期节点齐全，转写稿 11184 字符，首末页渲染非空。
 - 2026-06-28 已完成 class-commentary 转写校对增强生产发布: `develop` 已推到 `8a3ffb59`, `master` 已合并并推到 `c34432fa`, 生产机 `49.234.185.86:/home/ubuntu/Xingrun-Website` 已 fast-forward 到同一提交. 本地发布前 proof: `/tmp/proof_class_commentary_transcript_polish_20260628.sh` 30 passed, `npm --prefix frontend run build` 成功. 生产部署完成 `npm --prefix frontend run build`, `bash ./scripts/deploy_backend.sh master`, `pm2 restart xingrun`; `pm2 status xingrun` 为 `online`, `curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`.
 - 2026-06-28 已完成 class-commentary transcript polish branch 最终 code review 修复: `lesson_manager.mark_class_commentary_raw_transcription_succeeded()` 现在只写 private `raw_transcript_text` 和 `roster_snapshot`, 在 polish 成功或失败前保持 public `transcript_text / confirmed_transcript_text` 为空, 避免前端轮询提前露出 raw ASR; `app.py` 的 transcript polish 计费 metadata 现改为使用默认 chat provider/model, 与 `ai_processor.polish_class_commentary_transcript()` 实际 `_get_client() / _get_chat_model()` 路径一致. 新增 regression 覆盖中间态隐私和 config divergence billing. proof 已通过: `python3 -m pytest tests/test_class_commentary_api.py -q` 10 passed, `python3 -m pytest tests/test_class_commentary_store.py -q` 7 passed, `/tmp/proof_class_commentary_transcript_polish_20260628.sh` 30 passed.
