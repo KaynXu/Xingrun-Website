@@ -94,7 +94,7 @@ Do not be verbose and do not generate a long report.
 
 - Public production server: `49.234.185.86`
 - SSH: `ubuntu@49.234.185.86`
-- Password: `***REMOVED-ROTATED-SSH-PASSWORD***`
+- SSH password: do not store credentials here; retrieve it from the approved secret store or ask the user.
 - Remote repo path: `/home/ubuntu/Xingrun-Website`
 - PM2 service name: `xingrun`
 - `47.108.29.108` is an old secondary server reference only; do not use it as the default production target.
