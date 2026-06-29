@@ -93,6 +93,24 @@ class ReviewPlanObservabilityTestCase(unittest.TestCase):
             "LANGFUSE_BASE_URL": "https://cloud.langfuse.com",
         }
 
+    def test_langfuse_env_sets_host_alias_for_sdk_compatibility(self):
+        fake_client = FakeLangfuseClient()
+        with patch.dict(
+            os.environ,
+            {
+                "XR_REVIEW_PLAN_LANGFUSE_ENABLED": "true",
+                "LANGFUSE_PUBLIC_KEY": "pk-lf-test",
+                "LANGFUSE_SECRET_KEY": "sk-lf-test",
+                "LANGFUSE_BASE_URL": "https://us.cloud.langfuse.com",
+            },
+            clear=True,
+        ), patch.dict(sys.modules, {"langfuse": fake_langfuse_module(fake_client)}):
+            client = observability.get_langfuse_client()
+            self.assertEqual(os.environ.get("LANGFUSE_BASE_URL"), "https://us.cloud.langfuse.com")
+            self.assertEqual(os.environ.get("LANGFUSE_HOST"), "https://us.cloud.langfuse.com")
+
+        self.assertIs(client, fake_client)
+
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_emits_langfuse_trace_without_full_classroom_text(self, mock_generate_plan):
         fake_client = FakeLangfuseClient()

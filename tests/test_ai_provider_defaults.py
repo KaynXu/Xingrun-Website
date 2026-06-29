@@ -117,7 +117,7 @@ class AiProviderDefaultsTest(unittest.TestCase):
                     "XR_REVIEW_PLAN_LANGFUSE_ENABLED": "true",
                     "LANGFUSE_PUBLIC_KEY": "pk-lf-test",
                     "LANGFUSE_SECRET_KEY": "sk-lf-test",
-                    "LANGFUSE_BASE_URL": "https://cloud.langfuse.com",
+                    "LANGFUSE_BASE_URL": "https://us.cloud.langfuse.com",
                 },
                 clear=True,
             ):
@@ -125,7 +125,7 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertTrue(cfg["review_plan_langfuse_enabled"])
                 self.assertEqual(cfg["langfuse_public_key"], "pk-lf-test")
                 self.assertEqual(cfg["langfuse_secret_key"], "sk-lf-test")
-                self.assertEqual(cfg["langfuse_base_url"], "https://cloud.langfuse.com")
+                self.assertEqual(cfg["langfuse_base_url"], "https://us.cloud.langfuse.com")
 
     def test_review_plan_writer_key_is_required_when_chain_uses_openai(self):
         with tempfile.TemporaryDirectory() as tmpdir:
