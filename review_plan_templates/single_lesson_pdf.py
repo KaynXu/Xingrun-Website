@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from review_plan_workflow.schemas import normalize_final_review_plan
-from review_plan_templates.generate_review_pdfs import build_lesson_filename_part, normalize_portable_text_preserving_latex, render_review_plan_pdf
+from review_plan_templates.generate_review_pdfs import make_safe_filename_part, normalize_portable_text_preserving_latex, render_review_plan_pdf
 
 
 DEFAULT_FINAL_REMINDERS = [
@@ -26,6 +26,33 @@ BAD_QUOTE_PATTERNS = (
     "正确率>=",
     "填空题全部正确",
     "能独立",
+)
+GENERIC_TOPICS = {
+    "",
+    "课后",
+    "课程",
+    "复习",
+    "课后复习",
+    "本课内容",
+    "数学课程",
+    "数学",
+    "语文",
+    "英语",
+    "物理",
+    "化学",
+    "生物",
+    "历史",
+    "地理",
+    "政治",
+}
+QUESTION_TASK_PREFIXES = ("选择题", "填空题", "判断题", "简答题", "计算题", "解答题", "口述题", "选择诊断")
+QUESTION_TASK_PATTERNS = (
+    "下列说法正确的是",
+    "下列理解",
+    "以下正确的是",
+    "以下错误的是",
+    "下列哪",
+    "关于“",
 )
 
 
@@ -72,6 +99,23 @@ def _append_task_once(tasks: list[str], text: object) -> None:
     clean_text = _clean_text(text)
     if clean_text and clean_text not in tasks:
         tasks.append(clean_text)
+
+
+def _looks_like_question_stem(value: object) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    stripped = text.lstrip("-•· ").strip()
+    if stripped.startswith(QUESTION_TASK_PREFIXES):
+        return True
+    return ("（ ）" in stripped or "( )" in stripped) and any(pattern in stripped for pattern in QUESTION_TASK_PATTERNS)
+
+
+def _append_execution_task_once(tasks: list[str], text: object) -> None:
+    clean_text = _clean_text(text)
+    if not clean_text or _is_completion_standard(clean_text) or _looks_like_question_stem(clean_text):
+        return
+    _append_task_once(tasks, clean_text)
 
 
 def _is_completion_standard(value: object) -> bool:
@@ -183,17 +227,50 @@ def _lesson_title_from_topic(topic: str) -> str:
     return f"{clean_topic}复习计划"
 
 
+def _strip_review_plan_suffix(value: object) -> str:
+    return re.sub(r"(课后)?复习计划$", "", _clean_text(value)).strip()
+
+
+def _is_generic_topic(value: object) -> bool:
+    return _strip_review_plan_suffix(value).replace(" ", "") in GENERIC_TOPICS
+
+
+def _first_non_generic_line(values: object) -> str:
+    for text in _dedupe_clean_lines(values):
+        if not _is_generic_topic(text):
+            return text
+    return ""
+
+
+def _resolve_lesson_topic(plan_data: dict, lesson_info: dict) -> str:
+    for value in (
+        lesson_info.get("topic"),
+        plan_data.get("topic"),
+        plan_data.get("lesson_topic"),
+        plan_data.get("plan_title"),
+        plan_data.get("title"),
+    ):
+        topic = _strip_review_plan_suffix(value)
+        if topic and not _is_generic_topic(topic):
+            return topic
+    topic = _first_non_generic_line(lesson_info.get("key_categories")) or _first_non_generic_line(plan_data.get("full_review_topics"))
+    if topic:
+        return topic
+    subject = _clean_text(lesson_info.get("subject") or plan_data.get("subject"), "课程")
+    return f"{subject}复习"
+
+
 def _append_explicit_tasks(tasks: list[str], day_data: dict) -> None:
     for field in ("tasks", "task_list", "checklist", "execution_checklist"):
         values = day_data.get(field)
         if isinstance(values, list):
             for value in values:
                 if isinstance(value, dict):
-                    _append_task_once(tasks, value.get("text") or value.get("task") or value.get("instruction"))
+                    _append_execution_task_once(tasks, value.get("text") or value.get("task") or value.get("instruction"))
                 else:
-                    _append_task_once(tasks, value)
+                    _append_execution_task_once(tasks, value)
         else:
-            _append_task_once(tasks, values)
+            _append_execution_task_once(tasks, values)
 
 
 def _synthesized_tasks(day_data: dict, topic: str, method_cards: list[str], choices: list[dict]) -> list[str]:
@@ -291,14 +368,14 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
             if item.get("type") == "fill" and text:
                 _append_blank_once(blanks, text, item.get("answer"))
             elif item.get("type") == "body" and _is_printable_task(text, meta_texts):
-                tasks.append(text)
+                _append_execution_task_once(tasks, text)
 
     for item in day_data.get("items", []):
         text = _clean_text(item.get("text"))
         if item.get("type") == "fill" and text:
             _append_blank_once(blanks, text, item.get("answer"))
         elif _is_printable_task(text, meta_texts):
-            tasks.append(text)
+            _append_execution_task_once(tasks, text)
 
     for blank in day_data.get("blanks", []) if isinstance(day_data.get("blanks"), list) else []:
         if isinstance(blank, dict):
@@ -315,7 +392,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 
     phrase = _clean_text(day_data.get("self_test_phrase"))
     if phrase and not _is_completion_standard(phrase):
-        tasks.append(phrase)
+        _append_execution_task_once(tasks, phrase)
 
     explicit_choices: list[dict] = []
     for choice in day_data.get("choices", []) if isinstance(day_data.get("choices"), list) else []:
@@ -362,7 +439,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], list[str]]:
     plan_data = normalize_final_review_plan(plan_data)
     lesson_info = plan_data.get("lesson_info", {})
-    topic = _clean_text(lesson_info.get("topic") or plan_data.get("topic"), "课后")
+    topic = _resolve_lesson_topic(plan_data, lesson_info)
     weak_points = _clean_text(plan_data.get("weak_points_summary"))
     full_review_topics = _dedupe_clean_lines(lesson_info.get("key_categories"))
     for text in _dedupe_clean_lines(plan_data.get("full_review_topics")):
@@ -371,6 +448,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
     lesson = {
         "title": _lesson_title_from_topic(topic),
         "subtitle": "",
+        "subject": _clean_text(lesson_info.get("subject") or plan_data.get("subject")),
         "audience": "老师发给学生使用",
         "duration": "每次 10-20 分钟",
         "base_date": _clean_text(lesson_info.get("date") or plan_data.get("lesson_date")),
@@ -403,7 +481,10 @@ def generate_single_lesson_pdf(plan_data: dict, output_path: str) -> str:
 
 def build_single_lesson_pdf_filename(plan_data: dict, *, suffix: str = "") -> str:
     lesson, _, _ = adapt_plan_to_review_template(plan_data)
-    stem = build_lesson_filename_part(lesson)
+    title = _strip_review_plan_suffix(lesson.get("title"))
+    if _is_generic_topic(title):
+        title = f"{_clean_text(lesson.get('subject'), '课程')}复习计划"
+    stem = make_safe_filename_part(title, "课程复习计划", 36)
     suffix = str(suffix or "").strip()
     if suffix:
         stem = f"{stem}-{suffix}"

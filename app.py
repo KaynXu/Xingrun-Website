@@ -834,6 +834,38 @@ def _get_or_create_compat_review_plan_version_for_job(
     )
 
 
+def _review_plan_quality_failure_message(lesson_id: int) -> str:
+    try:
+        latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
+    except Exception:
+        logger.exception("Failed to read review plan quality run for lesson %s", lesson_id)
+        return ""
+    if not latest_run or str(latest_run.get("status") or "") != "succeeded":
+        return ""
+
+    quality = latest_run.get("quality_review")
+    if not isinstance(quality, dict):
+        return ""
+    must_revise = quality.get("must_revise") is True
+    failed = quality.get("passed") is False
+    if not (must_revise or failed):
+        return ""
+
+    raw_score = quality.get("score")
+    score_text = f"（得分 {raw_score}）" if isinstance(raw_score, int) else ""
+    first_issue = ""
+    issues = quality.get("issues")
+    if isinstance(issues, list):
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            description = str(issue.get("description") or "").strip()
+            if description:
+                first_issue = f"：{description.rstrip('。.')}"
+                break
+    return f"复习计划质量门禁未通过{score_text}{first_issue}。请补充课程主题或重新生成。"
+
+
 def _run_review_plan_generation_job(
     *,
     lesson_id: int,
@@ -997,6 +1029,15 @@ def _run_review_plan_generation_job(
             return
         if isinstance(plan, tuple) and len(plan) == 2 and isinstance(plan[1], dict):
             plan = plan[0]
+
+        quality_error = _review_plan_quality_failure_message(lesson_id)
+        if quality_error:
+            logger.warning("Review plan quality gate blocked lesson %s: %s", lesson_id, quality_error)
+            try:
+                fail_review_plan_version(version_id, quality_error)
+            except LookupError:
+                logger.exception("Failed to mark lesson %s as failed after quality gate error", lesson_id)
+            return
 
         from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
