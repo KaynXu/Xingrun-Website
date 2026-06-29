@@ -340,12 +340,29 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(polish_charge["usage"]["model"], "deepseek-v4-pro")
 
     def test_generate_saves_skill_snapshot_and_feedback(self):
+        config_runtime.write_file_config(
+            {
+                "colleague_skill_dir": str(self.skill_dir),
+                "provider": "deepseek",
+                "deepseek_model": "deepseek-v4-pro",
+                "class_commentary_provider": "openai",
+                "class_commentary_model": "gpt-5.5",
+                "class_commentary_openai_api_key": "sk-class-test",
+                "class_commentary_openai_base_url": "https://api.iiiiitoken.com",
+                "class_commentary_openai_headers": '{"X-Trace":"aimami"}',
+            }
+        )
         class_id = self._create_class_with_student()
         (self.skill_dir / "teacher-a.skill").write_text("warm direct style", encoding="utf-8")
         task = self._create_transcribed_task(class_id, "小王今天计算有进步")
+        charged = []
 
-        with patch.object(self.app_module, "has_review_plan_api_key", return_value=True), \
-             patch.object(self.app_module, "_run_ai_feature_with_charge", return_value="小王:\n今天计算有进步."):
+        with patch.object(self.app_module, "has_class_commentary_api_key", return_value=True), \
+             patch.object(
+                 self.app_module,
+                 "_run_ai_feature_with_charge",
+                 side_effect=lambda **kwargs: charged.append(kwargs) or "小王:\n今天计算有进步.",
+             ):
             response = self.client.post(
                 f"/api/class-commentary/tasks/{task['id']}/generate",
                 headers=self.headers,
@@ -358,13 +375,18 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["status"], "ready")
         self.assertEqual(payload["skill_id"], "teacher-a")
         self.assertEqual(payload["feedback_text"], "小王:\n今天计算有进步.")
+        self.assertEqual(charged[0]["provider"], "openai")
+        self.assertEqual(charged[0]["model"], "gpt-5.5")
+        stored = lesson_manager.get_class_commentary_task(task["id"])
+        self.assertEqual(stored["chat_provider"], "openai")
+        self.assertEqual(stored["chat_model"], "gpt-5.5")
 
     def test_generate_failure_returns_500_with_failed_task_payload(self):
         class_id = self._create_class_with_student()
         (self.skill_dir / "teacher-a.skill").write_text("warm direct style", encoding="utf-8")
         task = self._create_transcribed_task(class_id, "小王今天计算有进步")
 
-        with patch.object(self.app_module, "has_review_plan_api_key", return_value=True), \
+        with patch.object(self.app_module, "has_class_commentary_api_key", return_value=True), \
              patch.object(self.app_module, "_run_ai_feature_with_charge", side_effect=RuntimeError("model timeout")):
             response = self.client.post(
                 f"/api/class-commentary/tasks/{task['id']}/generate",
