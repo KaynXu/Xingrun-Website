@@ -125,7 +125,12 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertEqual(text, "小王:\n今天计算有进步.")
         messages = fake_client.chat.completions.kwargs["messages"]
         self.assertIn("Do not invent facts", messages[0]["content"])
+        self.assertIn("primary working instructions", messages[0]["content"])
+        self.assertNotIn("only for voice, structure, and phrasing", messages[0]["content"])
         self.assertIn("小王", messages[1]["content"])
+        self.assertIn("primary working contract", messages[1]["content"])
+        self.assertIn("facts only from the transcript and roster", messages[1]["content"])
+        self.assertNotIn("only as expression style and feedback framing", messages[1]["content"])
 
     def test_generate_class_commentary_feedback_uses_class_commentary_openai_override(self):
         class FakeMessage:

@@ -2309,7 +2309,8 @@ def generate_class_commentary_feedback(
     system_prompt = (
         "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
         "Do not invent facts. Do not include roster students who are not clearly mentioned. "
-        "Use the supplied colleague skill only for voice, structure, and phrasing. "
+        "Treat the supplied colleague skill as the primary working instructions for judgment focus, feedback structure, tone, and phrasing. "
+        "Use the transcript and roster as the only source of student facts. "
         "Return plain text only, with one block per mentioned student."
     )
     response = client.chat.completions.create(
