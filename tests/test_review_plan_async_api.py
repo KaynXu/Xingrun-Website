@@ -1098,6 +1098,74 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(saved["record_status"], "failed")
         self.assertEqual(saved["generation_error"], "AI 生成失败，请稍后重试")
 
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_blocks_review_plan_when_quality_gate_still_requires_revision(
+        self,
+        mock_run_with_charge,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="",
+            summary="课堂总结文本",
+            weak_points="",
+            class_id=0,
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="")
+
+        def run_with_low_quality_trace(**_kwargs):
+            lesson_manager.save_review_plan_run(
+                lesson_id=lesson_id,
+                organization_id=1,
+                trace_id="quality-blocked-trace",
+                status="succeeded",
+                subject="math",
+                provider="openai",
+                model="gpt-5.4",
+                prompt_version="prompt.v1",
+                style_version="physics-master-style.v2",
+                schema_version="review-plan-schema.v1",
+                warnings=[{"code": "quality_revision_required", "message": "仍需复核", "severity": "high"}],
+                quality_review={
+                    "score": 25,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [
+                        {
+                            "severity": "high",
+                            "category": "pdf_readiness",
+                            "description": "lesson_info.topic 为空或退回通用“课后”，PDF 会生成空壳标题。",
+                            "suggested_fix": "补齐 lesson_info.topic。",
+                        }
+                    ],
+                },
+                node_outputs={},
+                logs=[],
+            )
+            return plan
+
+        mock_run_with_charge.side_effect = run_with_low_quality_trace
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-5.4",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        versions = lesson_manager.list_review_plan_versions(lesson_id)
+        self.assertEqual(saved["record_status"], "failed")
+        self.assertIn("复习计划质量门禁未通过", saved["generation_error"])
+        self.assertIn("得分 25", saved["generation_error"])
+        self.assertEqual(versions[0]["status"], "failed")
+        self.assertEqual(saved["current_review_plan_version_id"], None)
+        mock_generate_pdf.assert_not_called()
+
     @patch("app._run_ai_feature_with_charge", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
     def test_worker_writes_credit_balance_error_message(
         self,

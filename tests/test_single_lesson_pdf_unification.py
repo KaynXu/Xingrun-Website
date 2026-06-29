@@ -172,7 +172,69 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(days[0]["blanks"][0], ("已知 x>0,y>0，且 1/x+2/y=1，则 x+2y 的最小值是______。", "9"))
         self.assertEqual(days[0]["choices"][0]["question"], "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。")
         self.assertTrue(any("解函数不等式时，第一步先判断" in task for task in days[0]["tasks"]))
+        self.assertFalse(any("下列函数中" in task for task in days[0]["tasks"]))
         self.assertTrue(reminders)
+
+    def test_adapt_plan_to_review_template_keeps_question_stems_out_of_execution_checklist(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = {
+            "subject": "数学",
+            "plan_title": "试卷评讲混合专题复盘复习计划",
+            "lesson_info": {"topic": "", "key_categories": []},
+            "full_review_topics": ["等式判断推导习惯", "审题列式语义转化", "无图几何分类讨论"],
+            "days": [
+                {
+                    "day": 1,
+                    "goal": "把整节课的知识框架重新搭起来。",
+                    "focus": "框架搭建。",
+                    "items": [
+                        {"type": "body", "text": "选择题：下列说法正确的是（ ）"},
+                        {"type": "body", "text": "选择题：关于“无图有偶”的说法，下列理解错误的是（ ）"},
+                        {"type": "body", "text": "填空题正确率≥80%，能复述绝对值相等的两种可能。"},
+                    ],
+                    "blanks": [
+                        {"text": "若 a²=b²，则 a 与 b 的关系是______。", "answer": "相等或互为相反数"},
+                        {"text": "分式取倒数前必须先检查______。", "answer": "分母不为0"},
+                    ],
+                    "choices": [
+                        {
+                            "question": "下列说法正确的是（ ）",
+                            "options": ["A. 直接取倒数", "B. 先看分母", "C. 忽略范围", "D. 只看答案"],
+                            "answer": "B",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(lesson["title"], "试卷评讲混合专题复盘复习计划")
+        self.assertTrue(any("完成选择题" in task for task in days[0]["tasks"]))
+        self.assertFalse(any(task.startswith("选择题") for task in days[0]["tasks"]))
+        self.assertFalse(any("下列说法正确的是" in task for task in days[0]["tasks"]))
+        self.assertFalse(any("正确率≥80%" in task for task in days[0]["tasks"]))
+
+    def test_build_single_lesson_pdf_filename_prefers_short_plan_title(self):
+        from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename
+
+        plan = {
+            "subject": "数学",
+            "plan_title": "试卷评讲混合专题复盘复习计划",
+            "lesson_info": {"topic": "", "key_categories": []},
+            "full_review_topics": [
+                "等式判断推导习惯-由若到则逐步检查，取倒数需分母",
+                "平方相等与绝对值相等的结论边界",
+                "审题列式语义转化-应用题中翻译理想购买数量",
+            ],
+            "days": [{"day": 1, "goal": "复盘试卷评讲。", "blanks": [{"text": "a²=b² 推出 a______b。", "answer": "=或=-"}]}],
+        }
+
+        filename = build_single_lesson_pdf_filename(plan, suffix="80-v1")
+
+        self.assertEqual(filename, "试卷评讲混合专题复盘-80-v1.pdf")
+        self.assertNotIn("等式判断推导习惯", filename)
 
     def test_adapt_plan_to_review_template_promotes_active_recall_into_printable_day_content(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
