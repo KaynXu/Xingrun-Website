@@ -21,6 +21,11 @@ ENV_VAR_MAP = {
     "review_plan_writer_temperature": "XR_REVIEW_PLAN_WRITER_TEMPERATURE",
     "review_plan_repair_temperature": "XR_REVIEW_PLAN_REPAIR_TEMPERATURE",
     "review_plan_reviewer_temperature": "XR_REVIEW_PLAN_REVIEWER_TEMPERATURE",
+    "class_commentary_provider": "XR_CLASS_COMMENTARY_PROVIDER",
+    "class_commentary_model": "XR_CLASS_COMMENTARY_MODEL",
+    "class_commentary_openai_api_key": "XR_CLASS_COMMENTARY_OPENAI_API_KEY",
+    "class_commentary_openai_base_url": "XR_CLASS_COMMENTARY_OPENAI_BASE_URL",
+    "class_commentary_openai_headers": "XR_CLASS_COMMENTARY_OPENAI_HEADERS",
     "review_plan_langfuse_enabled": "XR_REVIEW_PLAN_LANGFUSE_ENABLED",
     "langfuse_public_key": "LANGFUSE_PUBLIC_KEY",
     "langfuse_secret_key": "LANGFUSE_SECRET_KEY",
@@ -60,6 +65,11 @@ DEFAULTS = {
     "review_plan_writer_temperature": 0.35,
     "review_plan_repair_temperature": 0.1,
     "review_plan_reviewer_temperature": 0.1,
+    "class_commentary_provider": "",
+    "class_commentary_model": "",
+    "class_commentary_openai_api_key": "",
+    "class_commentary_openai_base_url": "",
+    "class_commentary_openai_headers": "",
     "review_plan_langfuse_enabled": False,
     "langfuse_public_key": "",
     "langfuse_secret_key": "",
@@ -177,6 +187,11 @@ def get_runtime_config() -> dict:
     cfg["review_plan_writer_temperature"] = normalize_temperature(cfg.get("review_plan_writer_temperature"), 0.35)
     cfg["review_plan_repair_temperature"] = normalize_temperature(cfg.get("review_plan_repair_temperature"), 0.1)
     cfg["review_plan_reviewer_temperature"] = normalize_temperature(cfg.get("review_plan_reviewer_temperature"), 0.1)
+    cfg["class_commentary_provider"] = normalize_optional_chat_provider(cfg.get("class_commentary_provider"))
+    cfg["class_commentary_model"] = str(cfg.get("class_commentary_model") or "").strip()
+    cfg["class_commentary_openai_api_key"] = str(cfg.get("class_commentary_openai_api_key") or "").strip()
+    cfg["class_commentary_openai_base_url"] = str(cfg.get("class_commentary_openai_base_url") or "").strip()
+    cfg["class_commentary_openai_headers"] = str(cfg.get("class_commentary_openai_headers") or "").strip()
     cfg["review_plan_langfuse_enabled"] = normalize_bool_flag(cfg.get("review_plan_langfuse_enabled"))
     cfg["langfuse_public_key"] = str(cfg.get("langfuse_public_key") or "").strip()
     cfg["langfuse_secret_key"] = str(cfg.get("langfuse_secret_key") or "").strip()
@@ -259,3 +274,18 @@ def resolve_review_plan_repair_temperature(cfg: Optional[dict] = None) -> float:
 def resolve_review_plan_reviewer_temperature(cfg: Optional[dict] = None) -> float:
     runtime = cfg or get_runtime_config()
     return normalize_temperature(runtime.get("review_plan_reviewer_temperature"), 0.1)
+
+
+def resolve_class_commentary_provider(cfg: Optional[dict] = None, fallback: object = "") -> str:
+    runtime = cfg or get_runtime_config()
+    return normalize_chat_provider(runtime.get("class_commentary_provider") or fallback or runtime.get("provider") or "deepseek")
+
+
+def resolve_class_commentary_model(cfg: Optional[dict] = None, provider: object = "", fallback_model: object = "") -> str:
+    runtime = cfg or get_runtime_config()
+    model = str(runtime.get("class_commentary_model") or "").strip()
+    if model:
+        return model
+    if fallback_model:
+        return str(fallback_model)
+    return chat_model_for_provider(provider or resolve_class_commentary_provider(runtime), runtime)

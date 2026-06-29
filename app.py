@@ -35,6 +35,8 @@ from config_runtime import (
     normalize_chat_provider,
     normalize_reasoning_effort,
     normalize_temperature,
+    resolve_class_commentary_model,
+    resolve_class_commentary_provider,
     resolve_review_plan_model,
     resolve_review_plan_provider,
     resolve_review_plan_reasoning_effort,
@@ -326,6 +328,36 @@ def _audio_transcription_model_name() -> str:
 def _review_plan_chat_model_name() -> str:
     provider = _review_plan_ai_provider_name()
     return resolve_review_plan_model(get_config(), provider=provider)
+
+
+def _class_commentary_ai_provider_name(fallback: str = "") -> str:
+    return resolve_class_commentary_provider(get_config(), fallback=fallback)
+
+
+def _class_commentary_chat_model_name(provider: str = "", fallback_model: str = "") -> str:
+    return resolve_class_commentary_model(
+        get_config(),
+        provider=provider or _class_commentary_ai_provider_name(),
+        fallback_model=fallback_model,
+    )
+
+
+def _class_commentary_openai_api_key() -> str:
+    cfg = get_config()
+    return str(
+        cfg.get("class_commentary_openai_api_key")
+        or cfg.get("openai_api_key")
+        or os.environ.get("OPENAI_API_KEY", "")
+    ).strip()
+
+
+def _class_commentary_openai_base_url() -> str:
+    cfg = get_config()
+    return str(cfg.get("class_commentary_openai_base_url") or cfg.get("openai_base_url") or "").strip()
+
+
+def _class_commentary_openai_headers() -> str:
+    return str(get_config().get("class_commentary_openai_headers") or "").strip()
 
 
 def _review_plan_reasoning_effort() -> str:
@@ -1103,8 +1135,8 @@ def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dic
         mark_class_commentary_raw_transcription_succeeded(task_id, raw_text, roster_snapshot)
 
         try:
-            chat_provider = _default_ai_provider_name()
-            chat_model = _default_chat_model_name()
+            chat_provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
+            chat_model = _class_commentary_chat_model_name(chat_provider, fallback_model=_default_chat_model_name())
             polished_text = _run_ai_feature_with_charge(
                 user=user,
                 feature_key="class_commentary_transcript_polish",
@@ -1117,6 +1149,11 @@ def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dic
                     class_record=cls,
                     students=sanitized_roster,
                     raw_transcript_text=raw_text,
+                    provider=chat_provider,
+                    model=chat_model,
+                    openai_api_key=_class_commentary_openai_api_key(),
+                    openai_base_url=_class_commentary_openai_base_url(),
+                    openai_headers=_class_commentary_openai_headers(),
                 ),
                 request_key=request_key,
                 claim_request_identity=False,
@@ -1861,6 +1898,13 @@ def has_api_key():
 def has_review_plan_api_key():
     providers = {_review_plan_ai_provider_name(), _review_plan_writer_ai_provider_name()}
     return all(_has_api_key_for_provider(provider) for provider in providers)
+
+
+def has_class_commentary_api_key():
+    provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
+    if provider == "openai":
+        return bool(_class_commentary_openai_api_key())
+    return _has_api_key_for_provider(provider)
 
 
 def _extract_field(text, field):
@@ -8041,7 +8085,7 @@ def api_class_commentary_task_generate(task_id: int):
     user, error = _require_auth()
     if error:
         return error
-    if not has_review_plan_api_key():
+    if not has_class_commentary_api_key():
         return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
     task, task_error = _get_accessible_class_commentary_task_or_error(user, task_id)
     if task_error:
@@ -8067,8 +8111,8 @@ def api_class_commentary_task_generate(task_id: int):
     except FileNotFoundError:
         return jsonify({"error": "skill not found"}), 404
     request_key = _current_ai_request_key()
-    chat_provider = _review_plan_ai_provider_name()
-    chat_model = _review_plan_chat_model_name()
+    chat_provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
+    chat_model = _class_commentary_chat_model_name(chat_provider, fallback_model=_default_chat_model_name())
     save_class_commentary_generation_started(
         int(task["id"]),
         skill_id=str(skill["id"]),
@@ -8094,6 +8138,11 @@ def api_class_commentary_task_generate(task_id: int):
                 students=class_students,
                 transcript_text=confirmed_transcript_text,
                 skill=skill,
+                provider=chat_provider,
+                model=chat_model,
+                openai_api_key=_class_commentary_openai_api_key(),
+                openai_base_url=_class_commentary_openai_base_url(),
+                openai_headers=_class_commentary_openai_headers(),
             ),
         )
         ready_task = save_class_commentary_generation_succeeded(int(task["id"]), str(feedback_text or ""))
