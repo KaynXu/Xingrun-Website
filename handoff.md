@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新: 2026-06-30
+最后更新: 2026-07-01
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-07-01 已调整 class-commentary 教师反馈生成口径: 生成 prompt 不再强制每个学生压成 one sendable paragraph, 改为跟随所选 colleague skill 的 feedback structure, paragraph rhythm, tone, phrasing, emoji habits; 多个反馈点时要求 2-4 short paragraphs, 并保留 `[呲牙]` / `[破涕为笑]` 这类 bracket-style emojis; `generate_class_commentary_feedback()` temperature 固定从 `0.35` 调到 `0.55`. proof 已通过 `/tmp/proof_class_commentary_style_format_20260701.sh`: `py_compile class_commentary.py ai_processor.py`, 31 条 class-commentary 后端 tests, `git diff --check`.
 - 2026-06-30 已把本地完整 colleague skill 包同步到生产机: 从 `/Users/ark.mini/.codex/skills/` 上传 7 个老师目录到 `/home/ubuntu/Xingrun-Website/data/colleague-skills`, 服务器原目录备份为 `data/colleague-skills.backup-before-full-packages-20260630-194303`; loader smoke 显示 7 个老师现在全部从目录型 `SKILL.md` 读取, 文件名分别为 `colleague-cao-xi-lin/SKILL.md`, `colleague-cui-junbo/SKILL.md`, `colleague-deng-yuhong/SKILL.md`, `colleague-he-shujian/SKILL.md`, `colleague-he-tian-lan/SKILL.md`, `colleague-hua-ao-xin/SKILL.md`, `colleague-li-sen/SKILL.md`, 且每个加载内容都包含 `work.md` 和 `persona.md`. 旧 `.skill` 文件保留但不再优先生效.
 - 2026-06-30 已部署 class-commentary 目录型 colleague skill package loader 到生产: 生产机 `/home/ubuntu/Xingrun-Website` 已更新到 `develop@f60278df`, `.env.runtime` 现在显式设置 `XR_COLLEAGUE_SKILL_DIR=/home/ubuntu/Xingrun-Website/data/colleague-skills` 并已备份为 `.env.runtime.backup-before-restore-colleague-skill-dir-20260630-194122`; loader smoke 显示 7 个 skill, 其中 `colleague-cao-xi-lin` 和 `colleague-cui-junbo` 已从 `SKILL.md` 目录包列出, `colleague-cao-xi-lin` 加载内容确认包含 `work.md` 与 `persona.md`; 其他同事继续使用旧 `.skill`. `pm2 restart xingrun --update-env` 后 `pm2 status xingrun` 为 online, `curl -I http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`. 曾尝试浅克隆 `titanwings/colleague-skill` 到 `/home/ubuntu/colleague-skill`, 但该公开仓库是生成工具/模板仓库, 不含成品 `colleagues/` 输出, 因此生产配置未指向它.
 - 2026-06-30 已让 class-commentary 教师反馈支持读取目录型 colleague skill package: `XR_COLLEAGUE_SKILL_DIR` 现在可指向旧 `*.skill` 单文件目录、`colleagues/` 目录或 `titanwings/colleague-skill` repo 根目录; 后端会列出包含 `SKILL.md` 的同事目录, 从 `meta.json` 取显示名, 并把 `SKILL.md + work.md + persona.md` 合并为生成时的 skill content, 旧 `.skill` 兼容不变. proof 已通过 `/tmp/proof_colleague_skill_package_loader_20260630.sh`: `py_compile class_commentary.py`, 31 条 class-commentary 后端测试, `git diff --check`.

@@ -169,10 +169,14 @@ def build_class_commentary_generation_payload(
             "Do not include unmentioned students.",
             "Feedback can include praise, problem, reminder, next action, or suggestion.",
             "Do not invent facts not supported by the transcript.",
-            "Use the selected skill as the primary working contract for judgment focus, feedback structure, tone, and phrasing.",
+            "Use the selected skill as the primary working contract for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits.",
             "Use facts only from the transcript and roster; do not treat the skill as a source of student facts.",
-            "Output one plain text block.",
-            "Format each block exactly as: student name, colon, newline, one sendable paragraph.",
+            "Output plain text only.",
+            "Use each mentioned student name as a visible section label, but do not force a single long paragraph.",
+            "When a student has multiple feedback points, write 2-4 short paragraphs instead of squeezing everything into one paragraph.",
+            "Each paragraph should focus on one idea, such as current state, concrete problem, next action, or parent cooperation.",
+            "If the selected skill uses bracket-style emojis such as [呲牙] or [破涕为笑], preserve that emoji style and use it as the skill would, especially to soften direct criticism or mark good news.",
+            "Do not over-polish into formal report language; keep the selected colleague's live parent-group speaking style.",
         ],
     }
 

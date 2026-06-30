@@ -76,7 +76,14 @@ class ClassCommentaryAiTest(unittest.TestCase):
         )
         self.assertEqual(payload["class"]["name"], "数学·七年级·4班")
         self.assertEqual(payload["students"], [{"id": 1, "name": "小王"}, {"id": 2, "name": "小李"}])
-        self.assertIn("Only include students", "\n".join(payload["output_rules"]))
+        output_rules = "\n".join(payload["output_rules"])
+        self.assertIn("Only include students", output_rules)
+        self.assertIn("feedback structure", output_rules)
+        self.assertIn("2-4 short paragraphs", output_rules)
+        self.assertIn("emoji habits", output_rules)
+        self.assertIn("[呲牙]", output_rules)
+        self.assertIn("[破涕为笑]", output_rules)
+        self.assertNotIn("one sendable paragraph", output_rules)
         self.assertIn("小王今天计算有进步", payload["transcript"])
         self.assertIn("warm concise style", payload["skill"]["content"])
 
@@ -164,11 +171,17 @@ class ClassCommentaryAiTest(unittest.TestCase):
         messages = fake_client.chat.completions.kwargs["messages"]
         self.assertIn("Do not invent facts", messages[0]["content"])
         self.assertIn("primary working instructions", messages[0]["content"])
+        self.assertIn("paragraph rhythm", messages[0]["content"])
+        self.assertIn("emoji habits", messages[0]["content"])
+        self.assertNotIn("with one block per mentioned student", messages[0]["content"])
         self.assertNotIn("only for voice, structure, and phrasing", messages[0]["content"])
         self.assertIn("小王", messages[1]["content"])
         self.assertIn("primary working contract", messages[1]["content"])
         self.assertIn("facts only from the transcript and roster", messages[1]["content"])
+        self.assertIn("2-4 short paragraphs", messages[1]["content"])
+        self.assertIn("[呲牙]", messages[1]["content"])
         self.assertNotIn("only as expression style and feedback framing", messages[1]["content"])
+        self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 0.55)
 
     def test_generate_class_commentary_feedback_uses_class_commentary_openai_override(self):
         class FakeMessage:
