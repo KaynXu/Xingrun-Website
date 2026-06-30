@@ -24,6 +24,13 @@ import {
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
 import { ReviewPlanDetailView } from './ReviewPlanDetailView';
+import { ReviewPlanRegenerateDialog } from './ReviewPlanRegenerateDialog';
+import {
+  DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  buildGenerationOptionsPayload,
+  formValueFromGenerationOptions,
+  type ReviewPlanGenerationOptionsFormValue,
+} from './reviewPlanGenerationOptions';
 
 type ReviewPlanCreateResult = {
   id: number;
@@ -314,6 +321,10 @@ function ReviewDocumentHistory({
   const [historyPage, setHistoryPage] = useState(1);
   const [regeneratingLessonIds, setRegeneratingLessonIds] = useState<Set<number>>(() => new Set());
   const [selectedDetailLessonId, setSelectedDetailLessonId] = useState<number | null>(null);
+  const [regenerateTarget, setRegenerateTarget] = useState<ReviewLessonRecord | null>(null);
+  const [regenerateOptions, setRegenerateOptions] = useState<ReviewPlanGenerationOptionsFormValue>({
+    ...DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  });
 
   const load = useCallback((quiet = false) => {
     if (!quiet) {
@@ -377,11 +388,19 @@ function ReviewDocumentHistory({
     void load();
   };
 
-  const handleRegenerate = async (lesson: ReviewLessonRecord) => {
+  const openRegenerateDialog = (lesson: ReviewLessonRecord) => {
     if (isReviewLessonPending(lesson) || regeneratingLessonIds.has(lesson.id)) {
       return;
     }
-    if (!window.confirm(`确定重新生成《${getLessonTitle(lesson)}》吗？这会重新消耗一次复习计划生成额度。`)) {
+    setRegenerateTarget(lesson);
+    setRegenerateOptions(formValueFromGenerationOptions(lesson.review_generation_options));
+  };
+
+  const handleRegenerate = async (
+    lesson: ReviewLessonRecord,
+    options: ReviewPlanGenerationOptionsFormValue,
+  ) => {
+    if (isReviewLessonPending(lesson) || regeneratingLessonIds.has(lesson.id)) {
       return;
     }
 
@@ -390,6 +409,9 @@ function ReviewDocumentHistory({
     try {
       const payload = await apiFetch<ReviewPlanCreateResult>(`/api/review-plans/${lesson.id}/regenerate`, {
         method: 'POST',
+        body: JSON.stringify({
+          generation_options: buildGenerationOptionsPayload(options),
+        }),
       });
       const nextStatus = payload.status || 'generating';
       onTaskStarted(lesson.id, startedAtMs);
@@ -407,6 +429,7 @@ function ReviewDocumentHistory({
           : item
       )));
       onFloatingNotice({ type: 'info', text: `《${getLessonTitle(lesson)}》已开始重新生成。` });
+      setRegenerateTarget(null);
       void load(true);
     } catch (error) {
       onFloatingNotice({
@@ -429,7 +452,7 @@ function ReviewDocumentHistory({
         lessonId={selectedDetailLessonId}
         onBack={() => setSelectedDetailLessonId(null)}
         onChanged={() => void load(true)}
-        onRegenerate={() => selectedLesson ? handleRegenerate(selectedLesson) : Promise.resolve()}
+        onRegenerate={(options) => selectedLesson ? handleRegenerate(selectedLesson, options) : Promise.resolve()}
       />
     );
   }
@@ -553,7 +576,7 @@ function ReviewDocumentHistory({
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleRegenerate(lesson)}
+                        onClick={() => openRegenerateDialog(lesson)}
                         disabled={status.state === 'pending' || regeneratingLessonIds.has(lesson.id)}
                         className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-sky-200 hover:text-sky-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-sky-500/10 dark:hover:text-sky-200"
                         title="重新生成"
@@ -600,6 +623,16 @@ function ReviewDocumentHistory({
             </div>
           </div>
         </div>
+      )}
+      {regenerateTarget && (
+        <ReviewPlanRegenerateDialog
+          title={getLessonTitle(regenerateTarget)}
+          value={regenerateOptions}
+          onChange={setRegenerateOptions}
+          onCancel={() => setRegenerateTarget(null)}
+          onSubmit={() => void handleRegenerate(regenerateTarget, regenerateOptions)}
+          submitting={regeneratingLessonIds.has(regenerateTarget.id)}
+        />
       )}
     </div>
   );

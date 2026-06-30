@@ -419,7 +419,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
 
     return {
         "offset": day_number,
-        "day": f"第{day_number}天",
+        "day": _clean_text(day_data.get("label") or day_data.get("day_label"), f"第{day_number}天"),
         "focus": _clean_text(
             day_data.get("focus") or day_data.get("review_focus") or day_data.get("theme") or day_data.get("label"),
             f"聚焦复习{topic or '本课内容'}",

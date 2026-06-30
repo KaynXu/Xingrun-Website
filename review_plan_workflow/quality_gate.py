@@ -269,10 +269,17 @@ def _choice_options_are_complete(choice: dict[str, Any]) -> bool:
     return True
 
 
-def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> QualityReview:
+def review_single_lesson_plan(
+    plan: dict[str, Any],
+    *,
+    subject: str = "",
+    required_review_days: list[int] | None = None,
+    schedule_mode: str = "standard",
+) -> QualityReview:
     normalized_plan = normalize_final_review_plan(plan)
     issues: list[QualityIssue] = []
     subject_key = subject.lower()
+    required_days = required_review_days or [1, 2, 7, 14, 30]
     _, schema_errors = validate_final_review_plan(normalized_plan)
     if schema_errors:
         issues.append(
@@ -280,19 +287,21 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
                 severity="high",
                 category="schema",
                 description="复习计划结构未通过 schema 校验：" + "；".join(schema_errors[:3]),
-                suggested_fix="补齐 lesson_info 与 1/2/7/14/30 复习日结构。",
+                suggested_fix=f"补齐 lesson_info 与 {required_days} 复习日结构。",
             )
         )
 
     days = normalized_plan.get("days") if isinstance(normalized_plan.get("days"), list) else []
     day_numbers = {int(day.get("day") or 0) for day in days if isinstance(day, dict)}
-    if {1, 2, 7, 14, 30} - day_numbers:
+    missing_days = set(required_days) - day_numbers
+    extra_days = day_numbers - set(required_days)
+    if missing_days or extra_days:
         issues.append(
             QualityIssue(
                 severity="high",
                 category="completeness",
-                description="缺少固定 5 个复习日中的一个或多个。",
-                suggested_fix="输出 day=1,2,7,14,30 的完整数组。",
+                description="复习日没有严格匹配本次生成设置。",
+                suggested_fix=f"days 必须且只能输出 {required_days}。",
             )
         )
 
@@ -414,6 +423,18 @@ def review_single_lesson_plan(plan: dict[str, Any], *, subject: str = "") -> Qua
                         suggested_fix="把每道选择题改成 4 个完整选项字符串，例如 A. 具体表达；禁止只输出 A/B/C/D。",
                     )
                 )
+
+    if schedule_mode == "compressed" and len(required_days) == 1 and days:
+        unique_fills, unique_choices, _raw_fills = _collect_day_unique_question_counts(days[0])
+        if unique_fills + unique_choices < 5:
+            issues.append(
+                QualityIssue(
+                    severity="high",
+                    category="task_actionability",
+                    description="压缩 1 天计划的可打印题目密度不足，无法承载整节课复习。",
+                    suggested_fix="压缩 1 天时至少提供 5 个不重复的可打印填空/选择/口述任务，并覆盖主要错因。",
+                )
+            )
 
     plan_strings = _iter_strings(normalized_plan)
     bad_math_strings = [text for text in plan_strings if _has_bad_math_transport(text)]

@@ -2,6 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Download, Eye, RefreshCw, RotateCcw } from 'lucide-react';
 
 import { apiFetch, cn, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
+import { ReviewPlanRegenerateDialog } from './ReviewPlanRegenerateDialog';
+import {
+  DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  formValueFromGenerationOptions,
+  type ReviewPlanGenerationOptionsFormValue,
+} from './reviewPlanGenerationOptions';
 import {
   authedReviewPlanUrl,
   canMakeReviewPlanVersionCurrent,
@@ -15,7 +21,7 @@ type ReviewPlanDetailViewProps = {
   lessonId: number;
   onBack: () => void;
   onChanged: () => void;
-  onRegenerate: () => Promise<void>;
+  onRegenerate: (options: ReviewPlanGenerationOptionsFormValue) => Promise<void>;
 };
 
 function getDetailTitle(detail: ReviewPlanDetailRecord): string {
@@ -66,6 +72,10 @@ export function ReviewPlanDetailView({
   const [error, setError] = useState('');
   const [makingCurrentVersionId, setMakingCurrentVersionId] = useState<number | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
+  const [regenerateOptions, setRegenerateOptions] = useState<ReviewPlanGenerationOptionsFormValue>({
+    ...DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  });
 
   const loadDetail = useCallback((quiet = false) => {
     if (!quiet) {
@@ -123,6 +133,14 @@ export function ReviewPlanDetailView({
     }
   };
 
+  const openRegenerateDialog = () => {
+    if (!detail || regenerating) {
+      return;
+    }
+    setRegenerateOptions(formValueFromGenerationOptions(detail.review_generation_options));
+    setRegenerateDialogOpen(true);
+  };
+
   const handleRegenerate = async () => {
     if (regenerating) {
       return;
@@ -131,7 +149,8 @@ export function ReviewPlanDetailView({
     setRegenerating(true);
     setError('');
     try {
-      await onRegenerate();
+      await onRegenerate(regenerateOptions);
+      setRegenerateDialogOpen(false);
       await loadDetail(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '重新生成失败，请稍后重试');
@@ -169,7 +188,7 @@ export function ReviewPlanDetailView({
         </div>
         <button
           type="button"
-          onClick={() => void handleRegenerate()}
+          onClick={openRegenerateDialog}
           disabled={loading || regenerating}
           className={cn(workspacePrimaryButtonClass, 'h-10 px-4 py-2 text-sm')}
         >
@@ -231,7 +250,7 @@ export function ReviewPlanDetailView({
               <iframe
                 src={currentPdfUrl}
                 title="当前复习计划 PDF"
-                className="mt-4 h-[70vh] min-h-[520px] w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5 sm:h-[76vh] sm:min-h-[640px]"
+                className="mt-4 h-[82vh] min-h-[680px] w-full rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5"
               />
             ) : (
               <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-5 py-12 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
@@ -321,6 +340,16 @@ export function ReviewPlanDetailView({
             )}
           </section>
         </div>
+      )}
+      {regenerateDialogOpen && detail && (
+        <ReviewPlanRegenerateDialog
+          title={getDetailTitle(detail)}
+          value={regenerateOptions}
+          onChange={setRegenerateOptions}
+          onCancel={() => setRegenerateDialogOpen(false)}
+          onSubmit={() => void handleRegenerate()}
+          submitting={regenerating}
+        />
       )}
     </div>
   );

@@ -110,6 +110,8 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(version["status"], "generating")
         self.assertEqual(version["lesson_id"], lesson_id)
         self.assertEqual(lesson["summary"], "课堂总结文本")
+        self.assertEqual(version["generation_options"]["schedule_mode"], "standard")
+        self.assertEqual(version["generation_options"]["review_days"], [1, 2, 7, 14, 30])
 
         mock_start_thread.assert_called_once()
         thread_kwargs = mock_start_thread.call_args.kwargs
@@ -126,6 +128,71 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertNotIn("topic", thread_kwargs)
         self.assertNotIn("weak_points", thread_kwargs)
         self.assertNotIn("raw_text", thread_kwargs)
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_post_review_plan_persists_generation_options(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        response = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "初二",
+                "topic": "一次函数",
+                "summary_text": "课堂总结文本",
+                "input_type": "text",
+                "generation_options": {
+                    "schedule_mode": "custom",
+                    "review_days": "5, 1, 5",
+                    "user_requirements": "明天考试前压缩题量",
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        version = lesson_manager.get_review_plan_version(payload["version_id"])
+        self.assertEqual(version["generation_options"]["schedule_mode"], "custom")
+        self.assertEqual(version["generation_options"]["review_days"], [1, 5])
+        self.assertEqual(version["generation_options"]["user_requirements"], "明天考试前压缩题量")
+        self.assertEqual(version["generation_summary"], "自定义 1,5")
+        thread_kwargs = mock_start_thread.call_args.kwargs
+        self.assertEqual(thread_kwargs["generation_options"], version["generation_options"])
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_post_review_plan_rejects_invalid_generation_options(
+        self,
+        _mock_has_api_key,
+        mock_ensure_credits,
+        mock_start_thread,
+    ):
+        response = self.client.post(
+            "/api/review-plans",
+            headers=self._auth_headers(self.owner_token),
+            json={
+                "date": "2026-04-09",
+                "subject": "数学",
+                "grade": "初二",
+                "topic": "一次函数",
+                "summary_text": "课堂总结文本",
+                "input_type": "text",
+                "generation_options": {"schedule_mode": "daily", "daily_count": "1,2,3"},
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("生成设置无效", response.get_json()["error"])
+        mock_ensure_credits.assert_not_called()
+        mock_start_thread.assert_not_called()
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
@@ -350,6 +417,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
             lesson_id=lesson_id,
             status="generating",
             same_lesson_materials=["补充材料"],
+            generation_options={"schedule_mode": "daily", "daily_count": 2},
         )
         lesson_manager.complete_review_plan_version(
             first["id"],
@@ -379,6 +447,9 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(second["chat_provider"], "openai")
         self.assertEqual(second["chat_model"], "gpt-5.4")
         self.assertTrue(second["request_id"])
+        self.assertEqual(second["generation_options"]["schedule_mode"], "daily")
+        self.assertEqual(second["generation_options"]["review_days"], [1, 2])
+        self.assertEqual(second["generation_options"]["source"], "regenerate")
 
         mock_start_thread.assert_called_once()
         thread_kwargs = mock_start_thread.call_args.kwargs
@@ -390,6 +461,46 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(thread_kwargs["request_key"], "header:regenerate-review-plan")
         self.assertEqual(thread_kwargs["request_id"], second["request_id"])
         self.assertEqual(thread_kwargs["same_lesson_materials"], ["补充材料"])
+        self.assertEqual(thread_kwargs["generation_options"], second["generation_options"])
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_regenerate_review_plan_accepts_new_generation_options(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            created_by_user_id=1,
+        )
+        first = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            first["id"],
+            plan={"lesson_info": {"topic": "旧计划"}, "days": []},
+            pdf_path="/tmp/old-review.pdf",
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/regenerate",
+            headers=self._auth_headers(self.owner_token),
+            json={"generation_options": {"schedule_mode": "compressed", "user_requirements": "只生成一天冲刺"}},
+        )
+
+        self.assertEqual(response.status_code, 202)
+        second = lesson_manager.get_review_plan_version(response.get_json()["version_id"])
+        self.assertEqual(second["generation_options"]["schedule_mode"], "compressed")
+        self.assertEqual(second["generation_options"]["review_days"], [1])
+        self.assertEqual(second["generation_options"]["user_requirements"], "只生成一天冲刺")
+        self.assertEqual(second["generation_options"]["source"], "regenerate")
+        self.assertEqual(mock_start_thread.call_args.kwargs["generation_options"], second["generation_options"])
 
     def test_review_plan_list_uses_current_version_fields_and_time(self):
         first_pdf_path = self.base / "first.pdf"
@@ -476,6 +587,9 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual([version["id"] for version in payload["versions"]], [second["id"], first["id"]])
         self.assertEqual(payload["versions"][0]["status"], "failed")
         self.assertEqual(payload["versions"][1]["status"], "ready")
+        self.assertIn("generation_options", payload["versions"][1])
+        self.assertIn("generation_summary", payload["versions"][1])
+        self.assertNotIn("generation_options_json", payload["versions"][1])
 
     def test_make_current_switches_to_ready_old_version(self):
         first_pdf_path = self.base / "v1.pdf"

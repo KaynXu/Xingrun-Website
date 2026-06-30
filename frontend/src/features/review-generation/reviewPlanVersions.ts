@@ -1,4 +1,5 @@
 import { buildAuthedPath } from '../../workspaceShared';
+import type { StoredReviewPlanGenerationOptions } from './reviewPlanGenerationOptions';
 
 export type ReviewPlanVersionStatus =
   | ''
@@ -20,6 +21,8 @@ export type ReviewPlanVersionRecord = {
   pdf_url: string;
   download_url: string;
   generation_error: string;
+  generation_options: StoredReviewPlanGenerationOptions | null;
+  generation_summary: string;
   created_at: string;
   updated_at: string;
   completed_at: string;
@@ -43,6 +46,8 @@ export type ReviewPlanDetailRecord = {
   has_version_generating: boolean;
   active_version_status: ReviewPlanVersionStatus;
   latest_generation_error: string;
+  review_generation_options: StoredReviewPlanGenerationOptions | null;
+  review_generation_summary: string;
   versions: ReviewPlanVersionRecord[];
 };
 
@@ -75,6 +80,10 @@ function pickStatus(value: unknown): ReviewPlanVersionStatus {
   return '';
 }
 
+function pickRecord(value: unknown): StoredReviewPlanGenerationOptions | null {
+  return isRecord(value) ? value : null;
+}
+
 function normalizeReviewPlanVersion(item: unknown): ReviewPlanVersionRecord | null {
   if (!isRecord(item) || typeof item.id !== 'number' || !Number.isFinite(item.id)) {
     return null;
@@ -89,6 +98,8 @@ function normalizeReviewPlanVersion(item: unknown): ReviewPlanVersionRecord | nu
     pdf_url: pickString(item.pdf_url),
     download_url: pickString(item.download_url),
     generation_error: pickString(item.generation_error),
+    generation_options: pickRecord(item.generation_options),
+    generation_summary: pickString(item.generation_summary),
     created_at: pickString(item.created_at),
     updated_at: pickString(item.updated_at),
     completed_at: pickString(item.completed_at),
@@ -125,6 +136,8 @@ export function normalizeReviewPlanDetail(payload: unknown): ReviewPlanDetailRec
     has_version_generating: payload.has_version_generating === true,
     active_version_status: pickStatus(payload.active_version_status),
     latest_generation_error: pickString(payload.latest_generation_error),
+    review_generation_options: pickRecord(payload.review_generation_options),
+    review_generation_summary: pickString(payload.review_generation_summary),
     versions,
   };
 }

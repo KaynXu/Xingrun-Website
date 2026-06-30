@@ -18,7 +18,21 @@ class ReviewPlanInput(BaseModel):
     topic: str = ""
     weak_points: str = ""
     lesson_date: str = ""
+    schedule_mode: str = "standard"
+    review_days: list[int] = Field(default_factory=lambda: [1, 2, 7, 14, 30])
+    daily_count: Optional[int] = None
+    user_requirements: str = ""
     output_language: str = "zh-CN"
+
+    @field_validator("review_days")
+    @classmethod
+    def validate_review_days(cls, value: list[int]) -> list[int]:
+        if not value:
+            raise ValueError("review_days must not be empty")
+        for day in value:
+            if isinstance(day, bool) or not isinstance(day, int) or day <= 0:
+                raise ValueError("review_days must contain positive integers")
+        return value
 
 
 class NormalizedBrief(BaseModel):
@@ -104,8 +118,8 @@ class AgenticDayStrategy(BaseModel):
     @field_validator("day")
     @classmethod
     def validate_review_day(cls, value: int) -> int:
-        if value not in {1, 2, 7, 14, 30}:
-            raise ValueError("agentic day strategy must target day 1, 2, 7, 14, or 30")
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError("agentic day strategy must target a positive day integer")
         return value
 
 
@@ -185,8 +199,8 @@ class ReviewPlanDay(BaseModel):
     @field_validator("day")
     @classmethod
     def validate_review_day(cls, value: int) -> int:
-        if value not in {1, 2, 7, 14, 30}:
-            raise ValueError("single lesson review day must be one of 1, 2, 7, 14, 30")
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError("single lesson review day must be a positive integer")
         return value
 
     @model_validator(mode="after")

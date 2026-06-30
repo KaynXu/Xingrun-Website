@@ -267,6 +267,7 @@ from ai_processor import generate_class_commentary_feedback, parse_consultation_
 from class_commentary import list_colleague_skills, load_colleague_skill, payload_to_json, sanitize_class_commentary_roster
 import smart_wrong_questions
 import master_data
+from review_plan_workflow.generation_options import normalize_generation_options
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
     CreditBalanceError,
@@ -845,6 +846,7 @@ def _get_or_create_compat_review_plan_version_for_job(
     audio_path: str = "",
     audio_request_key: str | None = None,
     same_lesson_materials: list[str] | None = None,
+    generation_options: object | None = None,
 ) -> dict | None:
     active_version = lesson.get("active_version")
     if isinstance(active_version, dict) and active_version.get("id"):
@@ -863,6 +865,7 @@ def _get_or_create_compat_review_plan_version_for_job(
         chat_provider=chat_provider or str(lesson.get("review_chat_provider") or ""),
         chat_model=chat_model or str(lesson.get("review_chat_model") or ""),
         same_lesson_materials=same_lesson_materials or lesson.get("review_same_lesson_materials") or [],
+        generation_options=generation_options or lesson.get("review_generation_options"),
     )
 
 
@@ -910,6 +913,7 @@ def _run_review_plan_generation_job(
     audio_path: str = "",
     audio_request_key: str | None = None,
     same_lesson_materials: list[str] | None = None,
+    generation_options: object | None = None,
 ) -> None:
     try:
         lesson = get_lesson(lesson_id)
@@ -929,6 +933,7 @@ def _run_review_plan_generation_job(
                 audio_path=audio_path,
                 audio_request_key=audio_request_key,
                 same_lesson_materials=same_lesson_materials,
+                generation_options=generation_options,
             )
             version_id = int((version or {}).get("id") or 0)
         if not version:
@@ -938,6 +943,10 @@ def _run_review_plan_generation_job(
                 lesson_id,
             )
             return
+        generation_options = normalize_generation_options(
+            generation_options or version.get("generation_options"),
+            source=str((version.get("generation_options") or {}).get("source") or "create"),
+        )
 
         record_status = str(version.get("status") or "")
         if record_status == "transcribing":
@@ -1027,6 +1036,7 @@ def _run_review_plan_generation_job(
                     topic=topic,
                     weak_points=weak_points,
                     lesson_date=lesson_date,
+                    generation_options=generation_options,
                     provider=chat_provider,
                     model=chat_model,
                     lesson_id=lesson_id,
@@ -1217,6 +1227,7 @@ def _recover_interrupted_review_plan_jobs() -> int:
                 audio_path=audio_path,
                 audio_request_key=str(version.get("audio_request_key") or ""),
                 same_lesson_materials=version.get("same_lesson_materials") or [],
+                generation_options=version.get("generation_options"),
             )
             recovered_count += 1
     return recovered_count
@@ -2638,6 +2649,7 @@ def _serialize_review_plan_version_for_response(lesson_id: int, version: object)
         return None
     serialized = dict(version)
     serialized.pop("plan_json", None)
+    serialized.pop("generation_options_json", None)
     pdf_path = str(serialized.get("pdf_path") or "")
     is_ready = str(serialized.get("status") or "") == "ready"
     pdf_exists = bool(pdf_path and Path(pdf_path).exists())
@@ -7732,6 +7744,14 @@ def api_lesson_regenerate(lesson_id):
     raw_text = str(lesson.get("summary") or "").strip()
     if not raw_text:
         return jsonify({"error": "这份记录缺少课堂内容，无法重新生成"}), 400
+    current_version = get_current_review_plan_version(lesson_id)
+    generation_options, generation_options_error = _extract_generation_options_or_error(
+        request.json if request.is_json else (request.form or {}),
+        source="regenerate",
+        fallback=(current_version or {}).get("generation_options"),
+    )
+    if generation_options_error:
+        return generation_options_error
 
     organization_id = int(user["organization_id"])
     request_key = _current_ai_request_key()
@@ -7753,7 +7773,6 @@ def api_lesson_regenerate(lesson_id):
             organization_id=organization_id,
             feature_key="lesson_plan_generate",
         )
-        current_version = get_current_review_plan_version(lesson_id)
         version = create_review_plan_version(
             lesson_id=lesson_id,
             status="generating",
@@ -7763,6 +7782,8 @@ def api_lesson_regenerate(lesson_id):
             chat_provider=chat_provider,
             chat_model=chat_model,
             same_lesson_materials=(current_version or {}).get("same_lesson_materials") or [],
+            generation_options=generation_options,
+            generation_options_source="regenerate",
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
@@ -7776,6 +7797,7 @@ def api_lesson_regenerate(lesson_id):
             request_key=request_key,
             request_id=str(version.get("request_id") or request_id),
             same_lesson_materials=version.get("same_lesson_materials") or [],
+            generation_options=version.get("generation_options"),
         )
     except DuplicateAiRequestError as exc:
         return jsonify({"error": str(exc)}), 409
@@ -7813,6 +7835,36 @@ def _extract_same_lesson_materials(data) -> list[str]:
             if text:
                 materials.append(text)
     return materials
+
+
+def _extract_generation_options_payload(data) -> object | None:
+    if hasattr(data, "get") and data.get("generation_options") not in (None, ""):
+        return data.get("generation_options")
+    if not isinstance(data, dict) and not hasattr(data, "get"):
+        return None
+
+    payload: dict[str, object] = {}
+    for key in ("schedule_mode", "daily_count", "user_requirements"):
+        value = data.get(key)
+        if value not in (None, ""):
+            payload[key] = value
+    if hasattr(data, "getlist"):
+        values = [value for value in data.getlist("review_days") if value not in (None, "")]
+        if values:
+            payload["review_days"] = values if len(values) > 1 else values[0]
+    else:
+        value = data.get("review_days") if isinstance(data, dict) else None
+        if value not in (None, ""):
+            payload["review_days"] = value
+    return payload or None
+
+
+def _extract_generation_options_or_error(data, *, source: str, fallback: object | None = None):
+    payload = _extract_generation_options_payload(data)
+    try:
+        return normalize_generation_options(payload if payload is not None else fallback, source=source), None
+    except ValueError as exc:
+        return None, (jsonify({"error": f"生成设置无效：{exc}"}), 400)
 
 
 def _merge_review_plan_materials(primary_text: str, same_lesson_materials: list[str]) -> str:
@@ -7855,6 +7907,9 @@ def api_lesson_create():
     topic       = data.get("topic", "").strip()
     weak_points = data.get("weak_points", "").strip()
     same_lesson_materials = _extract_same_lesson_materials(data)
+    generation_options, generation_options_error = _extract_generation_options_or_error(data, source="create")
+    if generation_options_error:
+        return generation_options_error
     
     input_type = data.get("input_type", "text")
     raw_text = ""
@@ -7971,6 +8026,8 @@ def api_lesson_create():
             chat_provider=chat_provider,
             chat_model=chat_model,
             same_lesson_materials=same_lesson_materials,
+            generation_options=generation_options,
+            generation_options_source="create",
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
@@ -7986,6 +8043,7 @@ def api_lesson_create():
             audio_path=audio_path,
             audio_request_key=audio_request_key,
             same_lesson_materials=same_lesson_materials,
+            generation_options=generation_options,
         )
     except Exception:
         if lesson_id:

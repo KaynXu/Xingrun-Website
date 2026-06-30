@@ -30,6 +30,10 @@ from pathlib import Path
 from typing import Optional
 
 from config_runtime import get_runtime_config
+from review_plan_workflow.generation_options import (
+    generation_options_summary,
+    normalize_generation_options,
+)
 
 # ─── 路径配置 ──────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -4556,6 +4560,14 @@ def _review_plan_version_from_row(row) -> Optional[dict]:
     except json.JSONDecodeError:
         materials = []
     version["same_lesson_materials"] = materials if isinstance(materials, list) else []
+    try:
+        raw_options = json.loads(version.get("generation_options_json") or "{}")
+        options_source = str((raw_options if isinstance(raw_options, dict) else {}).get("source") or "create")
+        generation_options = normalize_generation_options(raw_options, source=options_source)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        generation_options = normalize_generation_options(None)
+    version["generation_options"] = generation_options
+    version["generation_summary"] = generation_options_summary(generation_options)
     return version
 
 
@@ -4578,6 +4590,14 @@ def _dump_review_plan_materials(value: Optional[list[str]]) -> str:
         return "[]"
 
 
+def _dump_generation_options(value: object | None, *, source: str = "create") -> str:
+    try:
+        options = normalize_generation_options(value, source=source)
+    except ValueError:
+        options = normalize_generation_options(None, source=source)
+    return json.dumps(options, ensure_ascii=False)
+
+
 def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -4596,6 +4616,7 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
             chat_provider    TEXT NOT NULL DEFAULT '',
             chat_model       TEXT NOT NULL DEFAULT '',
             same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
+            generation_options_json TEXT NOT NULL DEFAULT '{}',
             created_by_user_id INTEGER NOT NULL DEFAULT 0,
             completed_at     TEXT NOT NULL DEFAULT '',
             created_at       TEXT DEFAULT (datetime('now','localtime')),
@@ -4618,6 +4639,7 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "review_plan_versions", "chat_provider", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "chat_model", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "same_lesson_materials_json", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(conn, "review_plan_versions", "generation_options_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "review_plan_versions", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "review_plan_versions", "completed_at", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "created_at", "TEXT NOT NULL DEFAULT ''")
@@ -4685,6 +4707,7 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
                 chat_provider    TEXT NOT NULL DEFAULT '',
                 chat_model       TEXT NOT NULL DEFAULT '',
                 same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
+                generation_options_json TEXT NOT NULL DEFAULT '{}',
                 created_by_user_id INTEGER NOT NULL DEFAULT 0,
                 completed_at     TEXT NOT NULL DEFAULT '',
                 created_at       TEXT DEFAULT (datetime('now','localtime')),
@@ -4708,15 +4731,33 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
             "chat_provider",
             "chat_model",
             "same_lesson_materials_json",
+            "generation_options_json",
             "created_by_user_id",
             "completed_at",
             "created_at",
             "updated_at",
         ]
+        source_columns = _review_plan_version_columns(conn)
+        column_fallbacks = {
+            "id": "NULL",
+            "lesson_id": "0",
+            "version_no": "1",
+            "status": "'pending'",
+            "same_lesson_materials_json": "'[]'",
+            "generation_options_json": "'{}'",
+            "created_by_user_id": "0",
+            "completed_at": "''",
+            "created_at": "datetime('now','localtime')",
+            "updated_at": "datetime('now','localtime')",
+        }
+        select_exprs = [
+            _column_expr(source_columns, column, column_fallbacks.get(column, "''"))
+            for column in copy_columns
+        ]
         conn.execute(
             f"""
             INSERT INTO review_plan_versions__completed_at_rebuild ({", ".join(copy_columns)})
-            SELECT {", ".join(copy_columns)}
+            SELECT {", ".join(select_exprs)}
             FROM review_plan_versions
             """
         )
@@ -4789,9 +4830,9 @@ def _migrate_legacy_review_plan_columns(conn: sqlite3.Connection) -> None:
                 lesson_id, version_no, status, plan_json, pdf_path, generation_error,
                 audio_path, audio_request_key, request_key, request_id, chat_provider,
                 chat_model, same_lesson_materials_json, created_by_user_id,
-                completed_at, created_at, updated_at
+                generation_options_json, completed_at, created_at, updated_at
             )
-            VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
             """,
             (
                 lesson_id,
@@ -4807,6 +4848,7 @@ def _migrate_legacy_review_plan_columns(conn: sqlite3.Connection) -> None:
                 str(row["chat_model"] or ""),
                 str(row["same_lesson_materials_json"] or "[]"),
                 int(row["created_by_user_id"] or 0),
+                _dump_generation_options(None, source="legacy"),
                 completed_at,
                 str(row["created_at"] or ""),
             ),
@@ -4941,6 +4983,8 @@ def create_review_plan_version(
     chat_provider: str = "",
     chat_model: str = "",
     same_lesson_materials: Optional[list[str]] = None,
+    generation_options: object | None = None,
+    generation_options_source: str = "create",
 ) -> dict:
     normalized_status = str(status or "pending").strip() or "pending"
     with get_conn() as conn:
@@ -4967,9 +5011,9 @@ def create_review_plan_version(
             INSERT INTO review_plan_versions (
                 lesson_id, version_no, status, created_by_user_id, audio_path,
                 audio_request_key, request_key, request_id, chat_provider, chat_model,
-                same_lesson_materials_json
+                same_lesson_materials_json, generation_options_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(lesson_id),
@@ -4983,6 +5027,7 @@ def create_review_plan_version(
                 str(chat_provider or ""),
                 str(chat_model or ""),
                 _dump_review_plan_materials(same_lesson_materials),
+                _dump_generation_options(generation_options, source=generation_options_source),
             ),
         )
         if normalized_status == REVIEW_PLAN_READY_STATUS:
@@ -4995,6 +5040,25 @@ def create_review_plan_version(
             (cur.lastrowid,),
         ).fetchone()
         return _review_plan_version_from_row(row)
+
+
+def update_review_plan_version_generation_options(version_id: int, generation_options: object | None) -> None:
+    with get_conn() as conn:
+        row = _get_review_plan_version_for_update(conn, version_id)
+        if not row:
+            raise LookupError("review plan version not found")
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET generation_options_json=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                _dump_generation_options(generation_options, source="regenerate"),
+                int(version_id),
+            ),
+        )
 
 
 def mark_review_plan_version_transcription_succeeded(version_id: int, *, summary: str) -> None:
@@ -5151,9 +5215,24 @@ def _ensure_compat_review_plan_version(
     request_id: str = "",
     chat_provider: str = "",
     chat_model: str = "",
+    generation_options: object | None = None,
+    generation_options_source: str = "create",
 ) -> int:
     active = _get_latest_active_review_plan_version_row(conn, lesson_id)
     if active:
+        if generation_options is not None:
+            conn.execute(
+                """
+                UPDATE review_plan_versions
+                SET generation_options_json=?,
+                    updated_at=datetime('now','localtime')
+                WHERE id=?
+                """,
+                (
+                    _dump_generation_options(generation_options, source=generation_options_source),
+                    int(active["id"]),
+                ),
+            )
         return int(active["id"])
     latest = conn.execute(
         "SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version_no FROM review_plan_versions WHERE lesson_id=?",
@@ -5162,9 +5241,10 @@ def _ensure_compat_review_plan_version(
     cur = conn.execute(
         """
         INSERT INTO review_plan_versions (
-            lesson_id, version_no, status, request_key, request_id, chat_provider, chat_model
+            lesson_id, version_no, status, request_key, request_id, chat_provider, chat_model,
+            generation_options_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             int(lesson_id),
@@ -5174,6 +5254,7 @@ def _ensure_compat_review_plan_version(
             str(request_id or ""),
             str(chat_provider or ""),
             str(chat_model or ""),
+            _dump_generation_options(generation_options, source=generation_options_source),
         ),
     )
     return int(cur.lastrowid)
@@ -5217,6 +5298,7 @@ def create_pending_lesson(
     review_chat_provider: str = "",
     review_chat_model: str = "",
     review_same_lesson_materials: Optional[list[str]] = None,
+    review_generation_options: object | None = None,
 ) -> int:
     """Create a lesson record in pending state before AI generation completes."""
     with get_conn() as conn:
@@ -5257,7 +5339,7 @@ def create_pending_lesson(
                 review_chat_provider,
                 review_chat_model,
             )
-        ) or record_status not in {"", "pending"} or bool(plan)
+        ) or record_status not in {"", "pending"} or bool(plan) or review_generation_options is not None
         if needs_runtime_version:
             status = str(record_status or "pending").strip() or "pending"
             version_id = _ensure_compat_review_plan_version(
@@ -5268,6 +5350,7 @@ def create_pending_lesson(
                 request_id=review_request_id,
                 chat_provider=review_chat_provider,
                 chat_model=review_chat_model,
+                generation_options=review_generation_options,
             )
             plan_json = json.dumps(plan or {}, ensure_ascii=False) if plan else ""
             if plan_json or pdf_path or review_audio_path or review_audio_request_key or review_same_lesson_materials:
@@ -5639,6 +5722,11 @@ def _attach_review_plan_version_summary(conn: sqlite3.Connection, lesson: dict) 
     lesson["review_chat_model"] = (runtime_projection or {}).get("chat_model", "")
     lesson["review_same_lesson_materials_json"] = (runtime_projection or {}).get("same_lesson_materials_json", "[]")
     lesson["review_same_lesson_materials"] = (runtime_projection or {}).get("same_lesson_materials", [])
+    lesson["review_generation_options"] = (runtime_projection or {}).get("generation_options", normalize_generation_options(None))
+    lesson["review_generation_summary"] = (runtime_projection or {}).get(
+        "generation_summary",
+        generation_options_summary(normalize_generation_options(None)),
+    )
     return lesson
 
 
