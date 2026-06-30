@@ -116,6 +116,47 @@ class ClassCommentaryStoreTest(unittest.TestCase):
         self.assertEqual(ready["generation_error"], "")
         self.assertEqual(ready["feedback_text"], "小王:\n今天计算更稳了.")
 
+    def test_list_class_commentary_tasks_for_organization_returns_recent_first(self):
+        class_id = lesson_manager.save_class("数学·七年级·4班", organization_id=1, teacher_user_id=1)
+        with lesson_manager.get_conn() as conn:
+            conn.execute("INSERT INTO organizations (name) VALUES (?)", ("Other Org",))
+            other_org_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                ("other-teacher", "hash", "Other Teacher", "member", "active", other_org_id),
+            )
+            other_teacher_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        other_class_id = lesson_manager.save_class("数学·八年级·1班", organization_id=other_org_id, teacher_user_id=other_teacher_id)
+        first = lesson_manager.create_class_commentary_task(
+            organization_id=1,
+            class_id=class_id,
+            teacher_user_id=1,
+            audio_path="/tmp/first.m4a",
+            audio_filename="first.m4a",
+        )
+        second = lesson_manager.create_class_commentary_task(
+            organization_id=1,
+            class_id=class_id,
+            teacher_user_id=1,
+            audio_path="/tmp/second.m4a",
+            audio_filename="second.m4a",
+        )
+        lesson_manager.create_class_commentary_task(
+            organization_id=other_org_id,
+            class_id=other_class_id,
+            teacher_user_id=other_teacher_id,
+            audio_path="/tmp/other.m4a",
+            audio_filename="other.m4a",
+        )
+
+        items = lesson_manager.list_class_commentary_tasks_for_organization(1, limit=10)
+
+        self.assertEqual([item["id"] for item in items], [second["id"], first["id"]])
+        self.assertEqual(items[0]["class_name"], "数学·七年级·4班")
+
     def test_failed_generation_can_return_to_transcribed_by_saving_transcript(self):
         class_id = lesson_manager.save_class("数学·七年级·4班", organization_id=1, teacher_user_id=1)
         task = lesson_manager.create_class_commentary_task(

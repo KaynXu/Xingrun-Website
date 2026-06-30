@@ -160,6 +160,7 @@ from lesson_manager import (
     init_db,
     list_all_users,
     list_class_history,
+    list_class_commentary_tasks_for_organization,
     list_class_teacher_bindings,
     list_classes,
     list_classes_for_actor,
@@ -8107,6 +8108,21 @@ def api_class_commentary_tasks_create():
         str(task.get("transcription_request_key") or ""),
     )
     return jsonify(_serialize_class_commentary_task_for_response(task)), 202
+
+
+@app.route("/api/class-commentary/tasks", methods=["GET"])
+def api_class_commentary_tasks_list():
+    user, error = _require_auth()
+    if error:
+        return error
+    tasks = list_class_commentary_tasks_for_organization(int(user["organization_id"]), limit=30)
+    accessible_class_ids = {int(item["id"]) for item in list_classes_for_actor(user)}
+    visible_tasks = [
+        _serialize_class_commentary_task_for_response(task)
+        for task in tasks
+        if int(task["class_id"]) in accessible_class_ids
+    ]
+    return jsonify({"tasks": visible_tasks})
 
 
 @app.route("/api/class-commentary/tasks/<int:task_id>", methods=["GET"])

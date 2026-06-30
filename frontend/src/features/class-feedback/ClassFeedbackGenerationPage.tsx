@@ -24,6 +24,7 @@ import {
   classCommentaryStatusLabel,
   createClassCommentaryTask,
   fetchClassCommentarySkills,
+  fetchClassCommentaryTasks,
   fetchClassCommentaryTask,
   generateClassCommentaryFeedback,
   saveClassCommentaryTranscript,
@@ -79,9 +80,31 @@ function getTaskErrorMessage(task: ClassCommentaryTask | null, errorMessage: str
   return '任务失败';
 }
 
+function formatClassCommentaryTime(value: string): string {
+  if (!value) {
+    return '-';
+  }
+  const parsed = new Date(value.replace(' ', 'T'));
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function mergeHistoryTask(historyTasks: ClassCommentaryTask[], nextTask: ClassCommentaryTask): ClassCommentaryTask[] {
+  return [nextTask, ...historyTasks.filter((item) => item.id !== nextTask.id)].slice(0, 30);
+}
+
 export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: ClassFeedbackGenerationPageProps) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [skills, setSkills] = useState<ClassCommentarySkill[]>([]);
+  const [historyTasks, setHistoryTasks] = useState<ClassCommentaryTask[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedSkillId, setSelectedSkillId] = useState('');
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -99,13 +122,15 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     Promise.all([
       apiFetch<ClassItem[]>('/api/classes'),
       fetchClassCommentarySkills(),
+      fetchClassCommentaryTasks(),
     ])
-      .then(([nextClasses, nextSkills]) => {
+      .then(([nextClasses, nextSkills, nextHistoryTasks]) => {
         if (cancelled) {
           return;
         }
         setClasses(nextClasses);
         setSkills(nextSkills);
+        setHistoryTasks(nextHistoryTasks);
         setSelectedClassId((currentValue) => currentValue || (nextClasses[0] ? String(nextClasses[0].id) : ''));
         setSelectedSkillId((currentValue) => currentValue || (nextSkills[0]?.id || ''));
       })
@@ -132,6 +157,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
       fetchClassCommentaryTask(task.id)
         .then((nextTask) => {
           setTask(nextTask);
+          setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
           setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
         })
         .catch((error) => {
@@ -166,6 +192,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     try {
       const nextTask = await createClassCommentaryTask(Number(selectedClassId), audioFile, setUploadProgress);
       setTask(nextTask);
+      setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
       setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '上传失败');
@@ -187,6 +214,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     try {
       const nextTask = await saveClassCommentaryTranscript(task.id, confirmedTranscript.trim());
       setTask(nextTask);
+      setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
       setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '保存转写失败');
@@ -211,9 +239,11 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
         ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript)
         : task;
       setTask(savedTask);
+      setHistoryTasks((current) => mergeHistoryTask(current, savedTask));
       setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text || '');
       const nextTask = await generateClassCommentaryFeedback(savedTask.id, selectedSkillId);
       setTask(nextTask);
+      setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '生成失败');
     } finally {
@@ -236,6 +266,15 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     setUploadProgress(0);
     setCopied(false);
     setErrorMessage('');
+  }
+
+  function handleSelectHistoryTask(nextTask: ClassCommentaryTask) {
+    setTask(nextTask);
+    setSelectedClassId(String(nextTask.class_id));
+    setSelectedSkillId(nextTask.skill_id || selectedSkillId);
+    setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
+    setErrorMessage('');
+    setCopied(false);
   }
 
   return (
@@ -420,6 +459,54 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>生成历史</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingInitial ? (
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : historyTasks.length ? (
+            <ScrollArea className="h-72 rounded-lg border border-border/70">
+              <div className="flex flex-col">
+                {historyTasks.map((historyTask, index) => (
+                  <div key={historyTask.id}>
+                    <button
+                      type="button"
+                      className="flex w-full flex-col gap-2 px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => handleSelectHistoryTask(historyTask)}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-sm font-medium text-foreground">{historyTask.class_name || '未命名班级'}</span>
+                          <Badge variant={historyTask.status === 'failed' ? 'destructive' : historyTask.status === 'ready' ? 'secondary' : 'outline'}>
+                            {classCommentaryStatusLabel(historyTask.status)}
+                          </Badge>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{formatClassCommentaryTime(historyTask.updated_at || historyTask.created_at)}</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="truncate">{historyTask.skill_name || '未选择风格'}</span>
+                        <span>{historyTask.audio_filename || '未记录文件名'}</span>
+                      </div>
+                    </button>
+                    {index < historyTasks.length - 1 ? <Separator /> : null}
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          ) : (
+            <div className="rounded-lg border border-border/70 px-3 py-6 text-sm text-muted-foreground">
+              最近还没有生成记录
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

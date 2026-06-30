@@ -262,6 +262,32 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["transcript_text"], "小王今天计算有进步")
         self.assertPrivateTranscriptPolishFieldsHidden(payload)
 
+    def test_task_list_returns_accessible_recent_history(self):
+        class_id = self._create_class_with_student()
+        older = self._create_transcribed_task(class_id, "小王今天计算有进步")
+        newer = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=self.owner["id"],
+            audio_path=str(self.base / "newer.m4a"),
+            audio_filename="newer.m4a",
+        )
+        lesson_manager.mark_class_commentary_raw_transcription_succeeded(
+            newer["id"],
+            "小汪今天计算更稳",
+            '[{"id": 1, "name": "小王"}]',
+        )
+
+        response = self.client.get("/api/class-commentary/tasks", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual([item["id"] for item in payload["tasks"][:2]], [newer["id"], older["id"]])
+        self.assertEqual(payload["tasks"][0]["class_name"], "数学·七年级·4班")
+        self.assertEqual(payload["tasks"][0]["transcript_text"], "")
+        self.assertPrivateTranscriptPolishFieldsHidden(payload["tasks"][0])
+
     def test_manual_transcript_save_preserves_private_polish_fields(self):
         class_id = self._create_class_with_student()
         task = lesson_manager.create_class_commentary_task(

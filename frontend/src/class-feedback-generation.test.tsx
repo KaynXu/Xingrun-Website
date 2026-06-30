@@ -8,6 +8,7 @@ test('class feedback generation page uses class-commentary api client', () => {
   assert.match(source, /from '..\/..\/classCommentary'/);
   assert.match(source, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(source, /createClassCommentaryTask/);
+  assert.match(source, /fetchClassCommentaryTasks/);
   assert.match(source, /fetchClassCommentarySkills/);
   assert.match(source, /generateClassCommentaryFeedback/);
   assert.doesNotMatch(source, /api\/class-feedback/);
@@ -38,6 +39,14 @@ test('class feedback generation page exposes upload transcript and copy result w
   assert.match(source, /confirmedTranscript/);
   assert.match(source, /navigator\.clipboard\.writeText/);
   assert.match(source, /feedback_text/);
+});
+
+test('class feedback generation page exposes generated task history', () => {
+  assert.match(source, /const \[historyTasks, setHistoryTasks\] = useState<ClassCommentaryTask\[]>\(\[]\);/);
+  assert.match(source, /<CardTitle>生成历史<\/CardTitle>/);
+  assert.match(source, /handleSelectHistoryTask/);
+  assert.match(source, /historyTasks\.map/);
+  assert.match(source, /最近还没有生成记录/);
 });
 
 test('class feedback generation page saves transcript before generation', () => {

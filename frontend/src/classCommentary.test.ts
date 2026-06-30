@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   buildClassCommentaryTaskPath,
   classCommentaryStatusLabel,
+  fetchClassCommentaryTasks,
   normalizeClassCommentaryTask,
   shouldPollClassCommentaryTask,
 } from './classCommentary';
@@ -50,8 +51,13 @@ test('status labels are user-facing and stable', () => {
 test('request helpers use workspaceShared auth instead of explicit token parameters', () => {
   assert.match(source, /import \{ apiFetch, apiUploadFormWithProgress \} from '\.\/workspaceShared';/);
   assert.match(source, /apiFetch<\{ skills\?: unknown\[] \}>/);
+  assert.match(source, /apiFetch<\{ tasks\?: unknown\[] \}>/);
   assert.match(source, /apiUploadFormWithProgress<Record<string, unknown>>/);
   assert.doesNotMatch(source, /X-Auth-Token/);
   assert.doesNotMatch(source, /currentUser\.token/);
   assert.doesNotMatch(source, /token: string/);
+});
+
+test('fetchClassCommentaryTasks exposes the class-commentary task list helper', () => {
+  assert.equal(typeof fetchClassCommentaryTasks, 'function');
 });
