@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新: 2026-06-29
+最后更新: 2026-06-30
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-06-30 已完成“复习计划生成选项与老师本次要求”设计稿，文件为 `docs/superpowers/specs/2026-06-30-review-plan-generation-options-design.md`。设计结论：新建弹窗加入“生成设置”，支持标准 5 次、压缩 1 天、连续每日 N 天和自定义日期点；重新生成从 `window.confirm` 改为设置弹窗，默认沿用当前版本设置但允许修改；后端新增 version-level `generation_options_json`，创建和重新生成 API 都传入并存储；工作流、prompt、revision、quality gate 改为按 `review_days` 参数生成和校验；老师“本次生成要求”作为低于结构和质量底线、高于默认偏好的 prompt 约束进入链路。当前尚未实现代码，下一步需要在该设计通过后写 implementation plan，再分步实现和验证。
 - 2026-06-29 已把复习计划工作流 Langfuse 观测链路补到可用状态并完成本地启用：`review_plan_workflow/observability.py` 现会同时兼容 `LANGFUSE_BASE_URL` 与 `LANGFUSE_HOST`，并在运行时把 host 别名一并补齐，避免 SDK 只认 host 时“已配置但无 trace”；`.env.runtime.example` 已同步更新为 `https://us.cloud.langfuse.com` 并补 `LANGFUSE_HOST` 示例；新增回归覆盖 `tests/test_review_plan_observability.py` 与 `tests/test_ai_provider_defaults.py`。本地未跟踪 `.env.runtime` 已写入真实 Langfuse key、`XR_REVIEW_PLAN_LANGFUSE_ENABLED=true`、`LANGFUSE_BASE_URL/HOST=https://us.cloud.langfuse.com`。proof：`python3 -m unittest tests.test_review_plan_observability tests.test_ai_provider_defaults` 16 tests OK，`PYTHONDONTWRITEBYTECODE=1` 导入 proof OK，环境存在性检查返回 5 个 Langfuse 变量均 `present`。当前尚未推送 GitHub 或部署生产：本轮运行环境禁止写 `.git/FETCH_HEAD`，因此无法完成 fetch / branch / commit / push；待恢复正常 Git 权限后，应从 `develop` 开分支提交，再合入并把同样的 Langfuse 环境变量写到生产 `.env.runtime` 后重启 `xingrun`。
 - 2026-06-29 已将复习计划质量门禁与 PDF 命名修复发布到生产：`develop` 已推送并合入 `master`, 生产机 `/home/ubuntu/Xingrun-Website` 已更新到 `master@d488cfab0`，服务 `xingrun` 重启后在线，健康检查 `curl http://127.0.0.1:5001/` 返回 `HTTP/1.1 302 FOUND`。发布前后 proof：定向后端 unittest 共 82 tests OK，本地和服务器 `npm --prefix frontend run build` 均成功，`scripts/deploy_backend.sh master` 返回 Backend is healthy。Langfuse 当前仍未真正启用：生产 `.env.runtime` 中 `XR_REVIEW_PLAN_LANGFUSE_ENABLED / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_BASE_URL` 均缺失；为避免假开启，本轮未写入空凭证。下一步需要提供 Langfuse 项目的 public key、secret key、base URL，之后再配置环境变量并重启 `xingrun`。
 - 2026-06-29 已定位并修复 lesson 80 这类纯文字稿复习计划生成质量事故链路：生产当前未启用 Langfuse，工作流 trace 写入本地 `review_plan_runs`；该次 run 质量分 `25`、`passed=false`、`must_revise=true`，但旧 worker 仍把版本标为 ready 并生成 PDF。现在 worker 会在交付前读取最新质量门禁结果，未通过则把版本标为 failed、不生成 PDF、不覆盖当前版本；PDF 适配器不再把“选择题/填空题”题干和正确率标准塞进执行清单，而是兜底生成动作清单；topic 为空时优先用 `plan_title`/非通用主题，下载文件名改为短标题形式，如 `试卷评讲混合专题复盘-80-v1.pdf`。验证通过：临时脚本打印标题/文件名/执行清单/质量阻断文案并 `RESULT: ok`；`python3 -m unittest tests.test_single_lesson_pdf_unification tests.test_review_plan_async_api` 50 tests OK。待发布到生产后，新生成的低质量版本会显示 failed，旧 lesson 80 已生成的历史 PDF 不会被自动改写。
