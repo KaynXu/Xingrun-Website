@@ -1,10 +1,18 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
-import { AlertCircle, CheckCheck, Copy, FileAudio, Sparkles, Upload } from 'lucide-react';
+import { AlertCircle, CheckCheck, Copy, FileAudio, History, Sparkles, Upload } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -115,6 +123,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -275,20 +284,77 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
     setErrorMessage('');
     setCopied(false);
+    setHistoryDialogOpen(false);
   }
 
   return (
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">课堂反馈</Badge>
-          {task ? <Badge variant="secondary">{classCommentaryStatusLabel(task.status)}</Badge> : null}
-          {copied ? <Badge>已复制</Badge> : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">课堂反馈</Badge>
+            {task ? <Badge variant="secondary">{classCommentaryStatusLabel(task.status)}</Badge> : null}
+            {copied ? <Badge>已复制</Badge> : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">课堂录音反馈包</h2>
+            <p className="text-sm text-muted-foreground">上传录音, 确认转写, 选择同事风格后生成可复制反馈文本.</p>
+          </div>
         </div>
-        <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">课堂录音反馈包</h2>
-          <p className="text-sm text-muted-foreground">上传录音, 确认转写, 选择同事风格后生成可复制反馈文本.</p>
-        </div>
+        <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+          <DialogTrigger asChild>
+            <Button type="button" variant="outline">
+              <History className="size-4" />
+              生成历史
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>生成历史</DialogTitle>
+              <DialogDescription>查看最近生成记录, 点击一条载入对应转写和反馈结果.</DialogDescription>
+            </DialogHeader>
+            {loadingInitial ? (
+              <div className="flex flex-col gap-3">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ) : historyTasks.length ? (
+              <ScrollArea className="h-[60vh] rounded-lg border border-border/70">
+                <div className="flex flex-col">
+                  {historyTasks.map((historyTask, index) => (
+                    <div key={historyTask.id}>
+                      <button
+                        type="button"
+                        className="flex w-full flex-col gap-2 px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => handleSelectHistoryTask(historyTask)}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-sm font-medium text-foreground">{historyTask.class_name || '未命名班级'}</span>
+                            <Badge variant={historyTask.status === 'failed' ? 'destructive' : historyTask.status === 'ready' ? 'secondary' : 'outline'}>
+                              {classCommentaryStatusLabel(historyTask.status)}
+                            </Badge>
+                          </div>
+                          <span className="text-xs text-muted-foreground">{formatClassCommentaryTime(historyTask.updated_at || historyTask.created_at)}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="truncate">{historyTask.skill_name || '未选择风格'}</span>
+                          <span>{historyTask.audio_filename || '未记录文件名'}</span>
+                        </div>
+                      </button>
+                      {index < historyTasks.length - 1 ? <Separator /> : null}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            ) : (
+              <div className="rounded-lg border border-border/70 px-3 py-6 text-sm text-muted-foreground">
+                最近还没有生成记录
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
 
       {taskErrorMessage ? (
@@ -459,54 +525,6 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>生成历史</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loadingInitial ? (
-            <div className="flex flex-col gap-3">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ) : historyTasks.length ? (
-            <ScrollArea className="h-72 rounded-lg border border-border/70">
-              <div className="flex flex-col">
-                {historyTasks.map((historyTask, index) => (
-                  <div key={historyTask.id}>
-                    <button
-                      type="button"
-                      className="flex w-full flex-col gap-2 px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => handleSelectHistoryTask(historyTask)}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="truncate text-sm font-medium text-foreground">{historyTask.class_name || '未命名班级'}</span>
-                          <Badge variant={historyTask.status === 'failed' ? 'destructive' : historyTask.status === 'ready' ? 'secondary' : 'outline'}>
-                            {classCommentaryStatusLabel(historyTask.status)}
-                          </Badge>
-                        </div>
-                        <span className="text-xs text-muted-foreground">{formatClassCommentaryTime(historyTask.updated_at || historyTask.created_at)}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span className="truncate">{historyTask.skill_name || '未选择风格'}</span>
-                        <span>{historyTask.audio_filename || '未记录文件名'}</span>
-                      </div>
-                    </button>
-                    {index < historyTasks.length - 1 ? <Separator /> : null}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          ) : (
-            <div className="rounded-lg border border-border/70 px-3 py-6 text-sm text-muted-foreground">
-              最近还没有生成记录
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

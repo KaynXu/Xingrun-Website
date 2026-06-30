@@ -22,6 +22,7 @@ test('class feedback generation page uses shadcn components for visible controls
   assert.match(source, /@\/components\/ui\/progress/);
   assert.match(source, /@\/components\/ui\/select/);
   assert.match(source, /@\/components\/ui\/badge/);
+  assert.match(source, /@\/components\/ui\/dialog/);
   assert.match(source, /@\/components\/ui\/separator/);
   assert.match(source, /@\/components\/ui\/scroll-area/);
   assert.match(source, /@\/components\/ui\/skeleton/);
@@ -43,10 +44,14 @@ test('class feedback generation page exposes upload transcript and copy result w
 
 test('class feedback generation page exposes generated task history', () => {
   assert.match(source, /const \[historyTasks, setHistoryTasks\] = useState<ClassCommentaryTask\[]>\(\[]\);/);
-  assert.match(source, /<CardTitle>生成历史<\/CardTitle>/);
+  assert.match(source, /<DialogTrigger asChild>/);
+  assert.match(source, /<Button type="button" variant="outline">/);
+  assert.match(source, /<DialogTitle>生成历史<\/DialogTitle>/);
+  assert.match(source, /<DialogDescription>/);
   assert.match(source, /handleSelectHistoryTask/);
   assert.match(source, /historyTasks\.map/);
   assert.match(source, /最近还没有生成记录/);
+  assert.doesNotMatch(source, /<CardTitle>生成历史<\/CardTitle>/);
 });
 
 test('class feedback generation page saves transcript before generation', () => {
