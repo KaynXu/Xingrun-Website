@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 
 from config_runtime import get_runtime_config
+from review_plan_workflow.generation_options import generation_options_trace_summary, normalize_generation_options
 
 
 _LANGFUSE_CLIENT: Any | None = None
@@ -124,6 +125,16 @@ def summarize_review_input(review_input: object) -> dict[str, Any]:
         "weak_points": _text_summary(data.get("weak_points", "")),
         "summary_text": _text_summary(data.get("summary_text", "")),
         "lesson_date": str(data.get("lesson_date") or "")[:40],
+        "generation_options": generation_options_trace_summary(
+            normalize_generation_options(
+                {
+                    "schedule_mode": data.get("schedule_mode") or "standard",
+                    "review_days": data.get("review_days") or [1, 2, 7, 14, 30],
+                    "daily_count": data.get("daily_count"),
+                    "user_requirements": data.get("user_requirements") or "",
+                }
+            )
+        ),
     }
 
 

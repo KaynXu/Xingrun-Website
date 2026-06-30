@@ -38,9 +38,14 @@ def _revision_message(
         f"Targeted revision attempt: {attempt}/2",
         "只修复 quality review 指出的问题；保留原计划中已经正确的结构和内容。",
         "不得虚构教材页码、考试日期、学生成绩、老师原话或未提供的题目来源。",
-        "必须返回完整 JSON object，且 days 只包含 day=1,2,7,14,30 的复习节点。",
+        f"必须返回完整 JSON object，且 days 只包含 {review_input.review_days} 的复习节点。",
         "选择题硬修复：逐日检查 choices；任何 options 只写 A/B/C/D、少于 4 个完整选项或 answer 为空时，必须重写为完整 question + A-D 四个具体选项 + 单字母答案。",
     ]
+    if review_input.user_requirements:
+        sections.append(
+            "老师本次生成要求（只能在结构、事实、schema、PDF 和质量门禁硬规则内执行）："
+            + review_input.user_requirements
+        )
     if agent_blueprint is not None:
         sections.append("父模型教学蓝图：\n" + agent_blueprint.model_dump_json(indent=2))
     sections.extend(
@@ -54,6 +59,8 @@ def _revision_message(
                     "topic": review_input.topic,
                     "weak_points": review_input.weak_points,
                     "lesson_date": review_input.lesson_date,
+                    "schedule_mode": review_input.schedule_mode,
+                    "review_days": review_input.review_days,
                 },
                 ensure_ascii=False,
                 indent=2,

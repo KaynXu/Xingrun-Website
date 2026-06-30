@@ -10,6 +10,13 @@ import {
   workspaceGhostButtonClass,
   workspacePrimaryButtonClass,
 } from '../../workspaceShared';
+import { ReviewPlanGenerationOptionsFields } from './ReviewPlanGenerationOptionsFields';
+import {
+  DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  buildGenerationOptionsPayload,
+  getGenerationOptionsFormSummary,
+  type ReviewPlanGenerationOptionsFormValue,
+} from './reviewPlanGenerationOptions';
 
 type ReviewPlanCreateResponse = {
   id: number;
@@ -88,6 +95,9 @@ export function LessonInput({
   const [weakPoints, setWeakPoints] = useState('');
   const [summaryText, setSummaryText] = useState('');
   const [sameLessonMaterials, setSameLessonMaterials] = useState('');
+  const [generationOptions, setGenerationOptions] = useState<ReviewPlanGenerationOptionsFormValue>({
+    ...DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  });
   const [inputType, setInputType] = useState<'text' | 'file'>('text');
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -204,6 +214,7 @@ export function LessonInput({
             weak_points: weakPoints,
             summary_text: summaryText,
             same_lesson_materials: sameLessonMaterials,
+            generation_options: buildGenerationOptionsPayload(generationOptions),
           }),
         });
       } else {
@@ -215,6 +226,7 @@ export function LessonInput({
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         formData.append('same_lesson_materials', sameLessonMaterials);
+        formData.append('generation_options', JSON.stringify(buildGenerationOptionsPayload(generationOptions)));
         if (file) formData.append('upload_file', file);
         result = await apiUploadFormWithProgress<ReviewPlanCreateResponse>('/api/review-plans', formData, setUploadProgress);
       }
@@ -392,6 +404,13 @@ export function LessonInput({
                     />
                   </div>
                 </section>
+
+                <section className={reviewFormSectionClass}>
+                  <ReviewPlanGenerationOptionsFields
+                    value={generationOptions}
+                    onChange={setGenerationOptions}
+                  />
+                </section>
               </div>
 
               <aside className="xl:border-l xl:border-slate-200/80 xl:pl-6 dark:xl:border-white/10">
@@ -419,6 +438,12 @@ export function LessonInput({
                       <span>材料来源</span>
                       <span className="text-right font-medium text-slate-900 dark:text-white">
                         {inputType === 'text' ? '文字笔记' : file?.name || '上传文件'}
+                      </span>
+                    </div>
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
+                      <span>生成节奏</span>
+                      <span className="text-right font-medium text-slate-900 dark:text-white">
+                        {getGenerationOptionsFormSummary(generationOptions)}
                       </span>
                     </div>
                   </div>

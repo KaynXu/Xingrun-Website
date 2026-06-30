@@ -61,6 +61,18 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertTrue(output_path.exists())
         self.assertGreater(output_path.stat().st_size, 0)
 
+    def test_adapt_plan_preserves_custom_day_label(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["label"] = "考前当天冲刺"
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(days[0]["day"], "考前当天冲刺")
+
     def test_adapt_plan_to_review_template_normalizes_wechat_unstable_symbols(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
 

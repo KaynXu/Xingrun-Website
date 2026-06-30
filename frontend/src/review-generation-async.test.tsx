@@ -9,6 +9,7 @@ import {
 } from './features/review-generation/reviewPlanVersions';
 
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
+const reviewPlanRegenerateDialogSource = readFileSync(new URL('./features/review-generation/ReviewPlanRegenerateDialog.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const workspacePageContentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
@@ -28,12 +29,17 @@ test('review history source normalizes malformed task polling responses', () => 
 
 test('review history source exposes regenerate action and immediate progress feedback', () => {
   assert.match(reviewGenerationSource, /\/api\/review-plans\/\$\{lesson\.id\}\/regenerate/);
-  assert.match(reviewGenerationSource, /确定重新生成《\$\{getLessonTitle\(lesson\)\}》吗/);
+  assert.match(reviewGenerationSource, /<ReviewPlanRegenerateDialog/);
+  assert.match(reviewPlanRegenerateDialogSource, /重新生成设置/);
+  assert.match(reviewPlanRegenerateDialogSource, /<ReviewPlanGenerationOptionsFields/);
+  assert.match(reviewGenerationSource, /generation_options: buildGenerationOptionsPayload\(options\)/);
+  assert.match(reviewGenerationSource, /openRegenerateDialog\(lesson\)/);
   assert.match(reviewGenerationSource, /onTaskStarted\(lesson\.id, startedAtMs\);/);
   assert.match(reviewGenerationSource, /onFloatingNotice\(\{ type: 'info', text: `《\$\{getLessonTitle\(lesson\)\}》已开始重新生成。` \}\);/);
   assert.match(reviewGenerationSource, /has_version_generating: true/);
   assert.match(reviewGenerationSource, /active_version_status: nextStatus/);
   assert.match(reviewGenerationSource, /title="重新生成"/);
+  assert.doesNotMatch(reviewGenerationSource, /确定重新生成《/);
 });
 
 test('review history opens lightweight version detail view', () => {
@@ -74,6 +80,8 @@ test('review plan version helper requires a ready version with an available PDF 
     has_version_generating: false,
     active_version_status: '',
     latest_generation_error: '',
+    review_generation_options: null,
+    review_generation_summary: '',
     versions: [],
   };
   const baseVersion: ReviewPlanVersionRecord = {
@@ -85,6 +93,8 @@ test('review plan version helper requires a ready version with an available PDF 
     pdf_url: '/api/review-plans/12/versions/32/pdf',
     download_url: '/api/review-plans/12/versions/32/download',
     generation_error: '',
+    generation_options: null,
+    generation_summary: '',
     created_at: '2026-05-02T12:30:00',
     updated_at: '2026-05-02T12:30:00',
     completed_at: '2026-05-02T12:35:00',

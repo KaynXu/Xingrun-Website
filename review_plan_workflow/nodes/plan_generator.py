@@ -38,6 +38,12 @@ def _user_message(
         meta_parts.append(f"学生薄弱点：{review_input.weak_points}")
     if review_input.lesson_date:
         meta_parts.append(f"上课日期：{review_input.lesson_date}")
+    meta_parts.append(f"生成节奏：{review_input.schedule_mode}；复习日必须且只能覆盖 {review_input.review_days}")
+    if review_input.user_requirements:
+        meta_parts.append(
+            "老师本次生成要求（优先于默认偏好，但不得覆盖结构、事实、schema、PDF 和质量门禁硬规则）："
+            + review_input.user_requirements
+        )
 
     sections = [
         "\n".join(meta_parts),
@@ -52,6 +58,7 @@ def _user_message(
         [
             "课堂总结：\n" + review_input.summary_text,
             "硬性选择题契约：所有 choices 必须有完整 question、4 个完整 options 和 answer；options 不能只写 A/B/C/D，必须写成 A. 具体选项内容；answer 只能是 A/B/C/D。",
+            f"硬性复习日契约：days 必须且只能覆盖 {review_input.review_days}；不得额外生成 1/2/7/14/30 中未被指定的日期。",
             "硬性覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；不能只写本节课标题，不能只写“本节课内容/综合复习”。",
             "硬性课堂金句契约：quotes 只保留课堂文本中老师真实强调过的方法句；没有证据就返回空数组，禁止把使用说明、完成标准、正确率要求或“每一个复习日都要完整复习整节课内容”写成金句。",
             "硬性数学公式契约：数学公式、分式、根式、对数、分段函数、区间和不等式链必须写成 `$...$` LaTeX；JSON 反斜杠要正确转义，禁止 begincases/endcases/sqrt[/log_( 等坏文本。",
@@ -83,12 +90,13 @@ def _repair_message(
     original_message: str,
     invalid_plan: dict[str, Any] | None,
     errors: list[str],
+    review_input: ReviewPlanInput,
     parse_error: str = "",
 ) -> str:
     sections = [
         "上一轮复习计划 JSON 未通过结构检查。请只修复 JSON/schema 问题，不扩写未提供的信息。",
         "必须返回完整 JSON object，不要 Markdown，不要解释。",
-        "days 必须且只能覆盖 day=1,2,7,14,30；每个 day 必须有可打印的复习任务。",
+        f"days 必须且只能覆盖 {review_input.review_days}；每个 day 必须有可打印的复习任务。",
         "所有 choices 必须包含完整 question、4 个完整 options 和 answer；禁止 options 只写 A/B/C/D。",
     ]
     if parse_error:
@@ -163,6 +171,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
                     original_message=user_message,
                     invalid_plan=plan,
                     errors=errors,
+                    review_input=review_input,
                     parse_error=parse_error,
                 ),
                 provider=writer_provider,
