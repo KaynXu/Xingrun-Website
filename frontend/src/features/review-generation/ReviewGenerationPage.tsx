@@ -60,11 +60,14 @@ export type ReviewGenerationFloatingNotice = {
 };
 
 export type ReviewGenerationTaskControls = {
+  lessons: ReviewLessonRecord[];
+  notice: ReviewGenerationFloatingNotice | null;
   progressNow: number;
   taskStartedAtById: Record<number, number>;
   onLessonsChange: (lessons: ReviewLessonRecord[]) => void;
   onTaskStarted: (lessonId: number, startedAtMs: number) => void;
   onFloatingNotice: (notice: ReviewGenerationFloatingNotice) => void;
+  onDismissNotice: () => void;
 };
 
 const REVIEW_HISTORY_PAGE_SIZE = 12;
@@ -210,12 +213,14 @@ export function ReviewGenerationTaskDock({
   onDismissNotice,
   progressNow,
   taskStartedAtById,
+  placement = 'floating',
 }: {
   lessons: ReviewLessonRecord[];
   notice: ReviewGenerationFloatingNotice | null;
   onDismissNotice: () => void;
   progressNow: number;
   taskStartedAtById: Record<number, number>;
+  placement?: 'floating' | 'inline';
 }) {
   const reduceMotion = useReducedMotion();
   const dockLessons = lessons.filter((lesson) => {
@@ -224,7 +229,11 @@ export function ReviewGenerationTaskDock({
   }).slice(0, 4);
   const activeCount = lessons.filter(isReviewLessonPending).length;
 
-  if (typeof document === 'undefined' || (!notice && dockLessons.length === 0)) {
+  if (!notice && dockLessons.length === 0) {
+    return null;
+  }
+
+  if (placement === 'floating' && typeof document === 'undefined') {
     return null;
   }
 
@@ -236,14 +245,19 @@ export function ReviewGenerationTaskDock({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
         transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
-        className="fixed bottom-5 right-5 z-[65] w-[calc(100vw-2.5rem)] max-w-[24rem] rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100"
+        className={cn(
+          'rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100',
+          placement === 'floating'
+            ? 'fixed bottom-5 right-5 z-[65] w-[calc(100vw-2.5rem)] max-w-[24rem]'
+            : 'w-full',
+        )}
         aria-live="polite"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold">复习计划生成</p>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              {activeCount > 0 ? `${activeCount} 个任务进行中，可先去处理其他页面` : '任务状态会在这里更新'}
+              {activeCount > 0 ? `${activeCount} 个任务进行中` : '任务状态会在这里更新'}
             </p>
           </div>
           {notice && (
@@ -304,7 +318,7 @@ export function ReviewGenerationTaskDock({
     </AnimatePresence>
   );
 
-  return createPortal(dock, document.body);
+  return placement === 'floating' ? createPortal(dock, document.body) : dock;
 }
 
 function ReviewDocumentHistory({
@@ -698,6 +712,15 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControl
           新建
         </button>
       </div>
+
+      <ReviewGenerationTaskDock
+        placement="inline"
+        lessons={taskControls.lessons}
+        notice={taskControls.notice}
+        onDismissNotice={taskControls.onDismissNotice}
+        progressNow={taskControls.progressNow}
+        taskStartedAtById={taskControls.taskStartedAtById}
+      />
 
       <ReviewDocumentHistory
         refreshToken={historyRefreshToken}
