@@ -60,14 +60,11 @@ export type ReviewGenerationFloatingNotice = {
 };
 
 export type ReviewGenerationTaskControls = {
-  lessons: ReviewLessonRecord[];
-  notice: ReviewGenerationFloatingNotice | null;
   progressNow: number;
   taskStartedAtById: Record<number, number>;
   onLessonsChange: (lessons: ReviewLessonRecord[]) => void;
   onTaskStarted: (lessonId: number, startedAtMs: number) => void;
   onFloatingNotice: (notice: ReviewGenerationFloatingNotice) => void;
-  onDismissNotice: () => void;
 };
 
 const REVIEW_HISTORY_PAGE_SIZE = 12;
@@ -210,17 +207,15 @@ function getLessonStatusMeta(
 export function ReviewGenerationTaskDock({
   lessons,
   notice,
-  onDismissNotice,
+  onDismiss,
   progressNow,
   taskStartedAtById,
-  placement = 'floating',
 }: {
   lessons: ReviewLessonRecord[];
   notice: ReviewGenerationFloatingNotice | null;
-  onDismissNotice: () => void;
+  onDismiss: () => void;
   progressNow: number;
   taskStartedAtById: Record<number, number>;
-  placement?: 'floating' | 'inline';
 }) {
   const reduceMotion = useReducedMotion();
   const dockLessons = lessons.filter((lesson) => {
@@ -233,7 +228,7 @@ export function ReviewGenerationTaskDock({
     return null;
   }
 
-  if (placement === 'floating' && typeof document === 'undefined') {
+  if (typeof document === 'undefined') {
     return null;
   }
 
@@ -245,12 +240,7 @@ export function ReviewGenerationTaskDock({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
         transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
-        className={cn(
-          'rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100',
-          placement === 'floating'
-            ? 'fixed bottom-5 right-5 z-[65] w-[calc(100vw-2.5rem)] max-w-[24rem]'
-            : 'w-full',
-        )}
+        className="fixed bottom-5 right-5 z-[65] w-[calc(100vw-2.5rem)] max-w-[24rem] rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100"
         aria-live="polite"
       >
         <div className="flex items-start justify-between gap-3">
@@ -260,16 +250,15 @@ export function ReviewGenerationTaskDock({
               {activeCount > 0 ? `${activeCount} 个任务进行中` : '任务状态会在这里更新'}
             </p>
           </div>
-          {notice && (
-            <button
-              type="button"
-              onClick={onDismissNotice}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200"
-              aria-label="关闭提示"
-            >
-              <X size={15} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200"
+            aria-label="关闭生成状态浮层"
+            title="关闭"
+          >
+            <X size={15} />
+          </button>
         </div>
 
         {notice && (
@@ -318,7 +307,7 @@ export function ReviewGenerationTaskDock({
     </AnimatePresence>
   );
 
-  return placement === 'floating' ? createPortal(dock, document.body) : dock;
+  return createPortal(dock, document.body);
 }
 
 function ReviewDocumentHistory({
@@ -712,15 +701,6 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControl
           新建
         </button>
       </div>
-
-      <ReviewGenerationTaskDock
-        placement="inline"
-        lessons={taskControls.lessons}
-        notice={taskControls.notice}
-        onDismissNotice={taskControls.onDismissNotice}
-        progressNow={taskControls.progressNow}
-        taskStartedAtById={taskControls.taskStartedAtById}
-      />
 
       <ReviewDocumentHistory
         refreshToken={historyRefreshToken}

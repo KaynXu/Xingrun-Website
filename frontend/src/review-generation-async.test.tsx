@@ -106,16 +106,18 @@ test('review plan version helper requires a ready version with an available PDF 
   assert.equal(canMakeReviewPlanVersionCurrent(detail, { ...baseVersion, status: 'failed' }), false);
 });
 
-test('review generation source keeps progress feedback inline on the review page and floating elsewhere', () => {
+test('review generation source keeps progress feedback in a dismissible floating dock', () => {
   assert.match(reviewGenerationSource, /function ReviewGenerationTaskDock\(/);
   assert.match(reviewGenerationSource, /createPortal\(dock, document\.body\)/);
   assert.match(reviewGenerationSource, /fixed bottom-5 right-5/);
-  assert.match(reviewGenerationSource, /placement=\"inline\"/);
+  assert.match(reviewGenerationSource, /aria-label=\"关闭生成状态浮层\"/);
   assert.match(reviewGenerationSource, /复习计划生成/);
   assert.match(reviewGenerationSource, /dotClassName: 'bg-amber-500'/);
   assert.match(reviewGenerationSource, /return state === 'pending' \|\| state === 'failed';/);
   assert.match(workspacePageContentSource, /return state === 'pending' \|\| state === 'failed';/);
-  assert.match(workspacePageContentSource, /activeWorkspacePage !== 'review-generation' && \(/);
+  assert.match(workspacePageContentSource, /reviewTaskDockDismissed/);
+  assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(false\);/);
+  assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(true\);/);
   assert.match(workspacePageContentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);
   assert.match(workspacePageContentSource, /setReviewProgressNow\(Date\.now\(\)\);/);
   assert.match(workspacePageContentSource, /activeWorkspacePage === 'review-generation' \? 6000 : 3000/);
