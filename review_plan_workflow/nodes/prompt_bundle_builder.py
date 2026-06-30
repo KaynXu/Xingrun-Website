@@ -9,6 +9,7 @@ from review_plan_workflow.llm.prompt_registry import PROMPT_ROOT
 from review_plan_workflow.schemas import (
     AgenticPlanBlueprint,
     PromptBundle,
+    ReviewPlanInput,
     ScopePlan,
     SourceSummary,
     SubjectRoute,
@@ -29,6 +30,7 @@ def _relative_prompt_path(path: str, fallback: str) -> str:
 
 
 def _run(input_data: dict[str, Any], context: WorkflowContext) -> PromptBundle:
+    review_input: ReviewPlanInput = input_data["input"]
     route: SubjectRoute = input_data["route"]
     source: SourceSummary = input_data["source"]
     scope: ScopePlan = input_data["scope"]
@@ -44,6 +46,13 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> PromptBundle:
         "scope": scope.model_dump(),
         "time_allocation": time_allocation.model_dump(),
         "task_blueprint": task_blueprint.model_dump(),
+        "generation_options": {
+            "schedule_mode": review_input.schedule_mode,
+            "review_days": review_input.review_days,
+            "daily_count": review_input.daily_count,
+            "has_user_requirements": bool(review_input.user_requirements),
+            "user_requirements": review_input.user_requirements,
+        },
     }
     if agent_blueprint is not None:
         variables["agent_blueprint"] = agent_blueprint.model_dump()

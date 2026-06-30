@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from review_plan_workflow.executor import WorkflowNode
-from review_plan_workflow.schemas import NormalizedBrief, ScopePlan, SourceSummary, SubjectRoute
+from review_plan_workflow.schemas import NormalizedBrief, ReviewPlanInput, ScopePlan, SourceSummary, SubjectRoute
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -27,6 +27,7 @@ def _subject_review_loop(subject: str) -> list[str]:
 
 
 def _run(input_data: dict[str, Any], context: WorkflowContext) -> ScopePlan:
+    review_input: ReviewPlanInput = input_data["input"]
     normalized: NormalizedBrief = input_data["normalized"]
     route: SubjectRoute = input_data["route"]
     source: SourceSummary = input_data["source"]
@@ -44,7 +45,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> ScopePlan:
         context.add_warning("scope_planning", warning, "medium")
 
     return ScopePlan(
-        review_days=[1, 2, 7, 14, 30],
+        review_days=review_input.review_days,
         module_sequence=module_sequence,
         review_loop=_subject_review_loop(route.selected_subject),
         scope_warnings=scope_warnings,

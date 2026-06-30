@@ -11,6 +11,7 @@ from config_runtime import (
 )
 
 from .executor import run_workflow_node
+from .generation_options import normalize_generation_options
 from .nodes import (
     intake_normalizer_node,
     parent_planner_node,
@@ -77,8 +78,20 @@ def _record_run(
         return
 
 
-def _score_quality(plan: dict[str, Any], *, subject: str, context: WorkflowContext, node_key: str) -> QualityReview:
-    quality = review_single_lesson_plan(plan, subject=subject)
+def _score_quality(
+    plan: dict[str, Any],
+    *,
+    subject: str,
+    review_input: ReviewPlanInput,
+    context: WorkflowContext,
+    node_key: str,
+) -> QualityReview:
+    quality = review_single_lesson_plan(
+        plan,
+        subject=subject,
+        required_review_days=review_input.review_days,
+        schedule_mode=review_input.schedule_mode,
+    )
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
@@ -113,7 +126,7 @@ def _fallback_agent_blueprint(
         writer_instructions=[
             "每一天必须绑定本节课主题和学生薄弱点，不能输出模板化任务。",
             "题目必须自洽可作答；课堂原题信息不足时改成同知识点同错因的同类题。",
-            "保留固定 day=1,2,7,14,30 结构。",
+            "严格保留本次输入指定的 review_days 结构。",
         ],
         quality_risks=[
             "父模型蓝图缺失时，writer 更容易泛化或机械重复。",
@@ -323,6 +336,7 @@ def _maybe_revise_plan(
         local_quality = _score_quality(
             current_plan,
             subject=subject,
+            review_input=review_input,
             context=context,
             node_key=f"quality_reviewer_rules_after_revision_{attempt}",
         )
@@ -362,10 +376,12 @@ def generate_single_lesson_review_plan(
     model: str = "",
     lesson_id: int = 0,
     organization_id: int = 0,
+    generation_options: object | None = None,
     include_usage: bool = False,
 ) -> Union[dict[str, Any], Tuple[dict[str, Any], dict[str, Any]]]:
     resolved_provider = provider or resolve_review_plan_provider()
     resolved_model = model or resolve_review_plan_model(provider=resolved_provider)
+    options = normalize_generation_options(generation_options)
     context = WorkflowContext(
         provider=resolved_provider,
         model=resolved_model,
@@ -378,6 +394,10 @@ def generate_single_lesson_review_plan(
         topic=topic,
         weak_points=weak_points,
         lesson_date=lesson_date,
+        schedule_mode=str(options["schedule_mode"]),
+        review_days=list(options["review_days"]),
+        daily_count=options.get("daily_count") if isinstance(options.get("daily_count"), int) else None,
+        user_requirements=str(options.get("user_requirements") or ""),
     )
     _record_run(lesson_id=lesson_id, organization_id=organization_id, context=context, status="running")
 
@@ -425,6 +445,7 @@ def generate_single_lesson_review_plan(
             prompt_bundle = run_workflow_node(
                 prompt_bundle_builder_node,
                 {
+                    "input": review_input,
                     "route": route,
                     "source": source,
                     "scope": scope,
@@ -450,7 +471,13 @@ def generate_single_lesson_review_plan(
                 context,
             )
             plan = _normalize_output_plan(plan, review_input)
-            local_quality = _score_quality(plan, subject=route.selected_subject, context=context, node_key="quality_reviewer_rules_initial")
+            local_quality = _score_quality(
+                plan,
+                subject=route.selected_subject,
+                review_input=review_input,
+                context=context,
+                node_key="quality_reviewer_rules_initial",
+            )
             quality, reviewer_usage = _review_with_llm_quality_gate(
                 plan=plan,
                 local_quality=local_quality,

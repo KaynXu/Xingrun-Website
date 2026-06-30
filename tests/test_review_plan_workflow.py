@@ -14,7 +14,7 @@ import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
-from review_plan_workflow.schemas import validate_final_review_plan
+from review_plan_workflow.schemas import ReviewPlanInput, validate_final_review_plan
 from review_plan_workflow.service import generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
@@ -103,6 +103,17 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(plan.lesson_info.grade, "9")
         self.assertEqual([day.day for day in plan.days], [1, 2, 7, 14, 30])
 
+    def test_review_plan_input_accepts_custom_review_days(self):
+        review_input = ReviewPlanInput(
+            summary_text="课堂总结",
+            schedule_mode="custom",
+            review_days=[1, 5],
+            user_requirements="只做考前两次",
+        )
+
+        self.assertEqual(review_input.review_days, [1, 5])
+        self.assertEqual(review_input.user_requirements, "只做考前两次")
+
     def test_validate_final_review_plan_normalizes_components_only_writer_shape(self):
         plan, errors = validate_final_review_plan(components_only_single_lesson_plan())
         self.assertIsNotNone(plan)
@@ -176,6 +187,23 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         review = review_single_lesson_plan(desktop_writer_single_lesson_plan(), subject="math")
         self.assertTrue(review.passed)
         self.assertFalse(any(issue.category in {"schema", "completeness"} for issue in review.issues))
+
+    def test_quality_gate_uses_required_review_days(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] in {1, 7}]
+
+        review = review_single_lesson_plan(plan, subject="math", required_review_days=[1, 7], schedule_mode="custom")
+
+        self.assertTrue(review.passed, review.model_dump())
+        self.assertFalse(any(issue.category == "completeness" for issue in review.issues))
+
+    def test_quality_gate_rejects_extra_default_days_for_custom_schedule(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+
+        review = review_single_lesson_plan(plan, subject="math", required_review_days=[1], schedule_mode="compressed")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(any(issue.category == "completeness" for issue in review.issues))
 
     def test_quality_gate_rejects_pdf_fallback_content(self):
         broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")
@@ -587,6 +615,49 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("formula_sheet", run["node_outputs"]["task_blueprint"]["required_components"])
         self.assertEqual(run["node_outputs"]["time_allocator"]["review_schedule"][0]["day"], 1)
         self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_passes_generation_options_through_workflow(self, mock_generate_plan):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] in {1, 7}]
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={
+                "schedule_mode": "custom",
+                "review_days": [1, 7],
+                "user_requirements": "只做两次，题量轻一点",
+            },
+            include_usage=True,
+        )
+
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 7])
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["node_outputs"]["scope_planner"]["review_days"], [1, 7])
+        options = run["node_outputs"]["prompt_bundle_builder"]["variables"]["generation_options"]
+        self.assertEqual(options["schedule_mode"], "custom")
+        self.assertEqual(options["review_days"], [1, 7])
+        self.assertEqual(options["user_requirements"], "只做两次，题量轻一点")
+        self.assertIn("复习日必须且只能覆盖 [1, 7]", mock_generate_plan.call_args.kwargs["user_message"])
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_uses_writer_model_when_chain_model_differs(self, mock_generate_plan):

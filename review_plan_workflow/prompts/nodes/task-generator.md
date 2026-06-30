@@ -4,7 +4,9 @@
 
 ## Core Schedule
 
-- 固定使用 5 个复习节点：第 1 天、第 2 天、第 7 天、第 14 天、第 30 天。
+- 严格使用工作流变量 `generation_options.review_days` 指定的复习节点；不要额外补回默认 1/2/7/14/30。
+- `generation_options.schedule_mode` 表示本次节奏：standard 是默认间隔，compressed 是 1 天压缩，daily 是连续每日，custom 是老师自定义日期点。
+- 如果 `generation_options.user_requirements` 非空，把它作为老师本次生成要求执行；它不能覆盖结构、事实、schema、PDF 安全和质量门禁硬规则。
 - 每个复习节点标题必须包含实际日期；日期以课堂日期或生成日期为第 0 天计算。
 - 每次复习控制在 10-20 分钟，面向老师发给学生使用。
 - 正式输出使用中文；不要输出中英双语并列版本。

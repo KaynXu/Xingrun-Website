@@ -8,6 +8,8 @@
 
 ## Hard Repair Rules
 
+- 修订后必须继续使用工作流变量里的本次 `review_days`，不能把 compressed/daily/custom 计划改回固定 1/2/7/14/30。
+- 老师本次生成要求只能在结构、事实、schema、PDF 安全和质量门禁硬规则内执行；冲突时以硬规则为准。
 - 如果 quality issue 指向全课覆盖清单，必须重写 `full_review_topics` 为 5-10 条颗粒化条目；不能只写课题名，不能只写“本节课内容/综合复习”。优先从 parent planner 的 knowledge_map、day_strategies、课堂总结、当前题干中抽取知识点、方法链和错因。
 - 如果 quality issue 指向课堂金句/课堂原话，删除所有使用说明、完成标准、正确率要求和系统兜底文本；只有课堂文本中有证据的老师方法句才能放进 `quotes`，没有证据就保留 `quotes: []`。
 - 如果 quality issue 指向数学公式或 LaTeX 传输，必须把相关题干、选项、答案、解析里的分式、根式、对数、分段函数、不等式链改写为 `$...$` 包裹且 JSON 反斜杠正确转义的 LaTeX。

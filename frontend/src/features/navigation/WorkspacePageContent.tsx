@@ -80,6 +80,7 @@ export function WorkspacePageContent({
   const [reviewTaskStartedAtById, setReviewTaskStartedAtById] = useState<Record<number, number>>({});
   const [activeReviewTaskIds, setActiveReviewTaskIds] = useState<Set<number>>(() => new Set());
   const [reviewProgressNow, setReviewProgressNow] = useState(() => Date.now());
+  const [reviewTaskDockDismissed, setReviewTaskDockDismissed] = useState(false);
 
   const refreshReviewLessons = useCallback((quiet = true) => (
     apiFetch<unknown>('/api/review-plans')
@@ -100,8 +101,14 @@ export function WorkspacePageContent({
   const handleReviewTaskStarted = useCallback((lessonId: number, startedAtMs: number) => {
     setReviewTaskStartedAtById((current) => ({ ...current, [lessonId]: startedAtMs }));
     setActiveReviewTaskIds((current) => new Set(current).add(lessonId));
+    setReviewTaskDockDismissed(false);
     void refreshReviewLessons();
   }, [refreshReviewLessons]);
+
+  const handleReviewFloatingNotice = useCallback((notice: ReviewGenerationFloatingNotice) => {
+    setReviewFloatingNotice(notice);
+    setReviewTaskDockDismissed(false);
+  }, []);
 
   const hasReviewFloatingTask = reviewLatestLessons.some((lesson) => {
     const state = getReviewLessonTaskState(lesson);
@@ -154,7 +161,7 @@ export function WorkspacePageContent({
     taskStartedAtById: reviewTaskStartedAtById,
     onLessonsChange: handleReviewLessonsChange,
     onTaskStarted: handleReviewTaskStarted,
-    onFloatingNotice: setReviewFloatingNotice,
+    onFloatingNotice: handleReviewFloatingNotice,
   };
 
   return (
@@ -210,13 +217,18 @@ export function WorkspacePageContent({
         </motion.div>
       </AnimatePresence>
 
-      <ReviewGenerationTaskDock
-        lessons={reviewLatestLessons}
-        notice={reviewFloatingNotice}
-        onDismissNotice={() => setReviewFloatingNotice(null)}
-        progressNow={reviewProgressNow}
-        taskStartedAtById={reviewTaskStartedAtById}
-      />
+      {!reviewTaskDockDismissed && (
+        <ReviewGenerationTaskDock
+          lessons={reviewLatestLessons}
+          notice={reviewFloatingNotice}
+          onDismiss={() => {
+            setReviewFloatingNotice(null);
+            setReviewTaskDockDismissed(true);
+          }}
+          progressNow={reviewProgressNow}
+          taskStartedAtById={reviewTaskStartedAtById}
+        />
+      )}
     </>
   );
 }
