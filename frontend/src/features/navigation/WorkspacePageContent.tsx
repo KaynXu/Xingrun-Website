@@ -150,11 +150,14 @@ export function WorkspacePageContent({
   }, [activeReviewTaskIds, reviewLatestLessons]);
 
   const reviewTaskControls = {
+    lessons: reviewLatestLessons,
+    notice: reviewFloatingNotice,
     progressNow: reviewProgressNow,
     taskStartedAtById: reviewTaskStartedAtById,
     onLessonsChange: handleReviewLessonsChange,
     onTaskStarted: handleReviewTaskStarted,
     onFloatingNotice: setReviewFloatingNotice,
+    onDismissNotice: () => setReviewFloatingNotice(null),
   };
 
   return (
@@ -210,13 +213,15 @@ export function WorkspacePageContent({
         </motion.div>
       </AnimatePresence>
 
-      <ReviewGenerationTaskDock
-        lessons={reviewLatestLessons}
-        notice={reviewFloatingNotice}
-        onDismissNotice={() => setReviewFloatingNotice(null)}
-        progressNow={reviewProgressNow}
-        taskStartedAtById={reviewTaskStartedAtById}
-      />
+      {activeWorkspacePage !== 'review-generation' && (
+        <ReviewGenerationTaskDock
+          lessons={reviewLatestLessons}
+          notice={reviewFloatingNotice}
+          onDismissNotice={() => setReviewFloatingNotice(null)}
+          progressNow={reviewProgressNow}
+          taskStartedAtById={reviewTaskStartedAtById}
+        />
+      )}
     </>
   );
 }
