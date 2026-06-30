@@ -6921,6 +6921,20 @@ def get_class_commentary_task(task_id: int):
     return _serialize_class_commentary_task_row(row) if row else None
 
 
+def list_class_commentary_tasks_for_organization(organization_id: int, limit: int = 30) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            {_class_commentary_task_select_sql()}
+            WHERE t.organization_id=?
+            ORDER BY t.updated_at DESC, t.id DESC
+            LIMIT ?
+            """,
+            (organization_id, max(1, min(int(limit or 30), 100))),
+        ).fetchall()
+    return [_serialize_class_commentary_task_row(row) for row in rows]
+
+
 def create_class_commentary_task(
     *,
     organization_id: int,
