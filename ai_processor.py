@@ -2309,9 +2309,9 @@ def generate_class_commentary_feedback(
     system_prompt = (
         "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
         "Do not invent facts. Do not include roster students who are not clearly mentioned. "
-        "Treat the supplied colleague skill as the primary working instructions for judgment focus, feedback structure, tone, and phrasing. "
+        "Treat the supplied colleague skill as the primary working instructions for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
         "Use the transcript and roster as the only source of student facts. "
-        "Return plain text only, with one block per mentioned student."
+        "Return plain text only. Do not flatten every student into one long paragraph."
     )
     response = client.chat.completions.create(
         model=model,
@@ -2319,7 +2319,7 @@ def generate_class_commentary_feedback(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": payload_to_json(payload)},
         ],
-        temperature=0.35,
+        temperature=0.55,
     )
     text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
     if include_usage:
