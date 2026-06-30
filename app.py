@@ -215,6 +215,7 @@ from lesson_manager import (
     mark_class_commentary_task_failed,
     mark_class_commentary_task_transcribing,
     mark_class_commentary_raw_transcription_succeeded,
+    mark_class_commentary_transcription_succeeded,
     mark_class_commentary_transcript_polish_failed,
     mark_class_commentary_transcript_polish_succeeded,
     mark_review_plan_version_transcription_succeeded,
@@ -8108,6 +8109,38 @@ def api_class_commentary_tasks_create():
         str(task.get("transcription_request_key") or ""),
     )
     return jsonify(_serialize_class_commentary_task_for_response(task)), 202
+
+
+@app.route("/api/class-commentary/tasks/text", methods=["POST"])
+def api_class_commentary_tasks_create_text():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    try:
+        class_id = int((data or {}).get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    if class_id <= 0:
+        return jsonify({"error": "class_id is required"}), 400
+    cls, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
+    confirmed_transcript_text = str((data or {}).get("confirmed_transcript_text") or "").strip()
+    if not confirmed_transcript_text:
+        return jsonify({"error": "confirmed_transcript_text is required"}), 400
+    task = create_class_commentary_task(
+        organization_id=int(user["organization_id"]),
+        class_id=int(cls["id"]),
+        teacher_user_id=int(user["id"]),
+        audio_path="",
+        audio_filename="手动输入",
+        transcription_request_key="",
+    )
+    task = mark_class_commentary_transcription_succeeded(int(task["id"]), confirmed_transcript_text)
+    return jsonify(_serialize_class_commentary_task_for_response(task)), 201
 
 
 @app.route("/api/class-commentary/tasks", methods=["GET"])

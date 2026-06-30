@@ -5,6 +5,7 @@ import {
   buildClassCommentaryTaskPath,
   classCommentaryStatusLabel,
   fetchClassCommentaryTasks,
+  createClassCommentaryTextTask,
   normalizeClassCommentaryTask,
   shouldPollClassCommentaryTask,
 } from './classCommentary';
@@ -52,6 +53,7 @@ test('request helpers use workspaceShared auth instead of explicit token paramet
   assert.match(source, /import \{ apiFetch, apiUploadFormWithProgress \} from '\.\/workspaceShared';/);
   assert.match(source, /apiFetch<\{ skills\?: unknown\[] \}>/);
   assert.match(source, /apiFetch<\{ tasks\?: unknown\[] \}>/);
+  assert.match(source, /apiFetch<Record<string, unknown>>\('\/api\/class-commentary\/tasks\/text'/);
   assert.match(source, /apiUploadFormWithProgress<Record<string, unknown>>/);
   assert.doesNotMatch(source, /X-Auth-Token/);
   assert.doesNotMatch(source, /currentUser\.token/);
@@ -60,4 +62,8 @@ test('request helpers use workspaceShared auth instead of explicit token paramet
 
 test('fetchClassCommentaryTasks exposes the class-commentary task list helper', () => {
   assert.equal(typeof fetchClassCommentaryTasks, 'function');
+});
+
+test('createClassCommentaryTextTask exposes the manual transcript task helper', () => {
+  assert.equal(typeof createClassCommentaryTextTask, 'function');
 });

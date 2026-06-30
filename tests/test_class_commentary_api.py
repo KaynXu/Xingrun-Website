@@ -288,6 +288,27 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["tasks"][0]["transcript_text"], "")
         self.assertPrivateTranscriptPolishFieldsHidden(payload["tasks"][0])
 
+    def test_create_text_task_returns_transcribed_task_without_audio(self):
+        class_id = self._create_class_with_student()
+
+        response = self.client.post(
+            "/api/class-commentary/tasks/text",
+            headers=self.headers,
+            json={
+                "class_id": class_id,
+                "confirmed_transcript_text": "小王今天计算有进步, 课堂回答更主动。",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["status"], "transcribed")
+        self.assertEqual(payload["audio_filename"], "手动输入")
+        self.assertEqual(payload["transcript_text"], "小王今天计算有进步, 课堂回答更主动。")
+        self.assertEqual(payload["confirmed_transcript_text"], "小王今天计算有进步, 课堂回答更主动。")
+        self.assertPrivateTranscriptPolishFieldsHidden(payload)
+
     def test_manual_transcript_save_preserves_private_polish_fields(self):
         class_id = self._create_class_with_student()
         task = lesson_manager.create_class_commentary_task(

@@ -133,6 +133,14 @@ export async function createClassCommentaryTask(
   return normalizeClassCommentaryTask(payload);
 }
 
+export async function createClassCommentaryTextTask(classId: number, text: string): Promise<ClassCommentaryTask> {
+  const payload = await apiFetch<Record<string, unknown>>('/api/class-commentary/tasks/text', {
+    method: 'POST',
+    body: JSON.stringify({ class_id: classId, confirmed_transcript_text: text }),
+  });
+  return normalizeClassCommentaryTask(payload);
+}
+
 export async function fetchClassCommentaryTask(taskId: number): Promise<ClassCommentaryTask> {
   return normalizeClassCommentaryTask(await apiFetch<Record<string, unknown>>(buildClassCommentaryTaskPath(taskId)));
 }
