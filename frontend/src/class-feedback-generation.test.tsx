@@ -8,6 +8,7 @@ test('class feedback generation page uses class-commentary api client', () => {
   assert.match(source, /from '..\/..\/classCommentary'/);
   assert.match(source, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
   assert.match(source, /createClassCommentaryTask/);
+  assert.match(source, /createClassCommentaryTextTask/);
   assert.match(source, /fetchClassCommentaryTasks/);
   assert.match(source, /fetchClassCommentarySkills/);
   assert.match(source, /generateClassCommentaryFeedback/);
@@ -56,10 +57,16 @@ test('class feedback generation page exposes generated task history', () => {
 
 test('class feedback generation page saves transcript before generation', () => {
   assert.match(source, /if \(!trimmedConfirmedTranscript\) \{\s*setErrorMessage\('请先确认转写文本'\);/);
-  assert.match(source, /const savedTask = transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task;/);
+  assert.match(source, /const savedTask = task\s*\?\s*\(transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task\)\s*:\s*await createClassCommentaryTextTask\(Number\(selectedClassId\), trimmedConfirmedTranscript\);/);
   assert.match(source, /await generateClassCommentaryFeedback\(savedTask\.id, selectedSkillId\)/);
 });
 
 test('class feedback generation page does not trim undefined persisted transcript', () => {
   assert.match(source, /const persistedTranscript = \(task\?\.confirmed_transcript_text \|\| task\?\.transcript_text \|\| ''\)\.trim\(\);/);
+});
+
+test('class feedback generation page allows manual transcript generation without audio task', () => {
+  assert.match(source, /const canGenerate = !busy && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(!task \|\| canUseTranscript\);/);
+  assert.match(source, /disabled=\{loadingInitial\}/);
+  assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
 });

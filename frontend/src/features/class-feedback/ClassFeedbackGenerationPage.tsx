@@ -31,6 +31,7 @@ import type { ClassItem, CurrentUser } from '../../appTypes';
 import {
   classCommentaryStatusLabel,
   createClassCommentaryTask,
+  createClassCommentaryTextTask,
   fetchClassCommentarySkills,
   fetchClassCommentaryTasks,
   fetchClassCommentaryTask,
@@ -187,7 +188,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const canUseTranscript = canUseTranscriptState(task);
   const canCreateTask = !loadingInitial && !busy && Boolean(selectedClassId && audioFile);
   const canSaveTranscript = !busy && canUseTranscript && hasTranscriptText;
-  const canGenerate = !busy && canUseTranscript && hasTranscriptText && Boolean(task && selectedSkillId);
+  const canGenerate = !busy && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (!task || canUseTranscript);
 
   async function handleCreateTask() {
     if (!selectedClassId || !audioFile) {
@@ -233,7 +234,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   }
 
   async function handleGenerate() {
-    if (!task || !selectedSkillId) {
+    if (!selectedClassId || !selectedSkillId) {
       setErrorMessage('请选择同事风格后再生成');
       return;
     }
@@ -244,9 +245,9 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     setBusy(true);
     setErrorMessage('');
     try {
-      const savedTask = transcriptDirty
-        ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript)
-        : task;
+      const savedTask = task
+        ? (transcriptDirty ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript) : task)
+        : await createClassCommentaryTextTask(Number(selectedClassId), trimmedConfirmedTranscript);
       setTask(savedTask);
       setHistoryTasks((current) => mergeHistoryTask(current, savedTask));
       setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text || '');
@@ -534,13 +535,13 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
           <Textarea
             value={confirmedTranscript}
             onChange={(event) => setConfirmedTranscript(event.target.value)}
-            placeholder="上传并转写后, 请在这里确认或修订文本。"
+            placeholder="可直接输入课堂记录, 也可以上传并转写后在这里确认或修订文本。"
             className="min-h-56"
-            disabled={loadingInitial || (!task && !confirmedTranscript)}
+            disabled={loadingInitial}
           />
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
-              保存确认文本后, 再按所选同事风格生成反馈包。
+              可直接输入文本生成反馈包; 已有录音任务时也可以先保存确认文本。
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" onClick={handleSaveTranscript} disabled={!canSaveTranscript}>
