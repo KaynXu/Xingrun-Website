@@ -3337,7 +3337,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
     stats = [
         {"label": "机构数", "value": str(len(organizations)), "note": "当前在库机构"},
         {"label": "待审批", "value": str(total_pending_approvals), "note": "机构申请和成员申请"},
-        {"label": "待反馈", "value": str(sum(pending_feedback_by_org.values())), "note": "课堂反馈任务"},
+        {"label": "待咨询", "value": str(sum(pending_consultations_by_org.values())), "note": "当前未结束咨询"},
         {"label": "低余额机构", "value": str(len(low_credit_by_org)), "note": "余额 20 及以下"},
     ]
 
