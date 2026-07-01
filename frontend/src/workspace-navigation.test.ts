@@ -116,9 +116,13 @@ test('review generation source renders history as a paginated list with merged d
 });
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
-  assert.match(lessonInputSource, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
-  assert.match(lessonInputSource, /reviewFormFieldClass = `\$\{workspaceFieldClass\} border-slate-200 focus:border-slate-300 focus:ring-slate-100`;/);
-  assert.match(lessonInputSource, /className=\{`\$\{reviewFormFieldClass\} w-full`\}/);
+  assert.match(lessonInputSource, /title="基本信息"/);
+  assert.match(lessonInputSource, /function SelectField\(/);
+  assert.match(lessonInputSource, /function InputField\(/);
+  assert.match(lessonInputSource, /className="grid grid-cols-1 sm:grid-cols-3 overflow-hidden"/);
+  assert.match(lessonInputSource, /<SelectField[\s\S]*label="科目"/);
+  assert.match(lessonInputSource, /<SelectField[\s\S]*label="班级"/);
+  assert.match(lessonInputSource, /<InputField[\s\S]*label="日期"/);
   assert.doesNotMatch(lessonInputSource, /sm:w-40/);
   assert.doesNotMatch(appSource, /sm:w-32/);
 });

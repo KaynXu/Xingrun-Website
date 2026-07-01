@@ -151,9 +151,9 @@ test('review generation validates custom review days before creating or regenera
 });
 
 test('review generation places generation settings directly under top class metadata', () => {
-  const optionsIndex = lessonInputSource.indexOf('<ReviewPlanGenerationOptionsFields');
+  const optionsIndex = lessonInputSource.indexOf('title="生成设置"');
   const noClassWarningIndex = lessonInputSource.indexOf('{hasNoAssignableClasses &&');
-  const materialSectionIndex = lessonInputSource.indexOf('课堂材料</h4>');
+  const materialSectionIndex = lessonInputSource.indexOf('title="课堂材料"');
 
   assert.notEqual(optionsIndex, -1);
   assert.ok(optionsIndex < noClassWarningIndex);
@@ -162,11 +162,13 @@ test('review generation places generation settings directly under top class meta
 
 test('review generation composer uses compact single-column layout', () => {
   assert.match(reviewGenerationSource, /新建复习文档/);
-  assert.match(reviewGenerationSource, /max-w-3xl/);
-  assert.match(lessonInputSource, /showUserRequirements=\{false\}/);
+  assert.match(reviewGenerationSource, /max-w-\[720px\]/);
+  assert.match(lessonInputSource, /function SectionHeader\(/);
+  assert.match(lessonInputSource, /title="基本信息"/);
+  assert.match(lessonInputSource, /title="生成设置"/);
+  assert.match(lessonInputSource, /title="课堂材料"/);
   assert.match(lessonInputSource, /const \[supplementOpen, setSupplementOpen\] = useState\(false\);/);
-  assert.match(lessonInputSource, /补充信息/);
-  assert.match(lessonInputSource, /sticky bottom-0/);
+  assert.match(lessonInputSource, /title="补充信息" optional/);
   assert.match(lessonInputSource, /formStatusText/);
   assert.match(lessonInputSource, /disabled=\{!canGenerate\}/);
   assert.doesNotMatch(lessonInputSource, /生成前检查/);
