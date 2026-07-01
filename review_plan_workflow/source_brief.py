@@ -124,6 +124,10 @@ def _looks_like_knowledge_point(sentence: str) -> bool:
 def _looks_like_example(sentence: str) -> bool:
     if _sentence_has_marker(sentence, _EXAMPLE_MARKERS):
         return True
+    if sentence.startswith("求") and not sentence.startswith("先求"):
+        return True
+    if sentence.endswith(("？", "?")) and any(token in sentence for token in ("轨迹", "动点", "函数", "方程", "几何", "点", "求")):
+        return True
     return False
 
 

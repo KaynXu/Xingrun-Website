@@ -133,3 +133,21 @@ class ReviewPlanSourceBriefTestCase(unittest.TestCase):
         self.assertEqual(brief.lesson_title_candidates[0], "动点与立体几何综合")
         self.assertFalse(brief.example_stems)
         self.assertFalse(brief.teacher_emphasis)
+
+    def test_deterministic_brief_recognizes_plain_qiu_and_question_form_examples(self):
+        brief = build_deterministic_source_brief(
+            raw_text=(
+                "求点P的轨迹。\n"
+                "轨迹是什么？\n"
+                "例题：再想一想这个问题。\n"
+            ),
+            subject="数学",
+            topic="",
+            weak_points="",
+            user_requirements="",
+        )
+
+        example_texts = [item.stem for item in brief.example_stems]
+        self.assertIn("求点P的轨迹", " ".join(example_texts))
+        self.assertIn("轨迹是什么？", example_texts)
+        self.assertTrue(brief.example_stems)
