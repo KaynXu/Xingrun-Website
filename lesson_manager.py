@@ -2902,6 +2902,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS review_plan_runs (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             lesson_id        INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+            version_id       INTEGER DEFAULT NULL REFERENCES review_plan_versions(id) ON DELETE CASCADE,
             organization_id  INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             trace_id         TEXT NOT NULL UNIQUE,
             status           TEXT NOT NULL DEFAULT 'running',
@@ -2973,7 +2974,6 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_review_plan_runs_lesson_updated
         ON review_plan_runs(lesson_id, updated_at);
-
         CREATE TABLE IF NOT EXISTS organization_requests (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_name TEXT NOT NULL,
@@ -4644,6 +4644,13 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "review_plan_versions", "completed_at", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "created_at", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "updated_at", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_runs", "version_id", "INTEGER DEFAULT NULL")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_review_plan_runs_version_updated
+        ON review_plan_runs(version_id, updated_at)
+        """
+    )
     _migrate_review_plan_generated_at_column(conn)
     conn.execute(
         """
@@ -5535,6 +5542,7 @@ def _load_review_plan_run_json(value: object, fallback: object):
 def save_review_plan_run(
     *,
     lesson_id: int,
+    version_id: int = 0,
     organization_id: int,
     trace_id: str,
     status: str,
@@ -5554,6 +5562,7 @@ def save_review_plan_run(
     node_outputs_json = _dump_review_plan_run_json(node_outputs, {})
     logs_json = _dump_review_plan_run_json(logs, [])
     normalized_status = str(status or "running")
+    normalized_version_id = int(version_id or 0) or None
     with get_conn() as conn:
         if normalized_status == "running":
             conn.execute(
@@ -5578,7 +5587,7 @@ def save_review_plan_run(
             conn.execute(
                 """
                 UPDATE review_plan_runs
-                SET lesson_id=?, organization_id=?, status=?, subject=?, provider=?, model=?,
+                SET lesson_id=?, version_id=?, organization_id=?, status=?, subject=?, provider=?, model=?,
                     prompt_version=?, style_version=?, schema_version=?, warnings_json=?,
                     quality_review_json=?, node_outputs_json=?, logs_json=?,
                     updated_at=datetime('now','localtime')
@@ -5586,6 +5595,7 @@ def save_review_plan_run(
                 """,
                 (
                     int(lesson_id),
+                    normalized_version_id,
                     int(organization_id),
                     normalized_status,
                     str(subject or ""),
@@ -5605,14 +5615,15 @@ def save_review_plan_run(
         conn.execute(
             """
             INSERT INTO review_plan_runs (
-                lesson_id, organization_id, trace_id, status, subject, provider, model,
+                lesson_id, version_id, organization_id, trace_id, status, subject, provider, model,
                 prompt_version, style_version, schema_version, warnings_json,
                 quality_review_json, node_outputs_json, logs_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(lesson_id),
+                normalized_version_id,
                 int(organization_id),
                 str(trace_id or ""),
                 normalized_status,
@@ -5641,6 +5652,28 @@ def get_latest_review_plan_run_for_lesson(lesson_id: int) -> Optional[dict]:
             LIMIT 1
             """,
             (int(lesson_id),),
+        ).fetchone()
+        if not row:
+            return None
+        run = dict(row)
+        run["warnings"] = _load_review_plan_run_json(run.get("warnings_json"), [])
+        run["quality_review"] = _load_review_plan_run_json(run.get("quality_review_json"), {})
+        run["node_outputs"] = _load_review_plan_run_json(run.get("node_outputs_json"), {})
+        run["logs"] = _load_review_plan_run_json(run.get("logs_json"), [])
+        return run
+
+
+def get_latest_review_plan_run_for_version(version_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM review_plan_runs
+            WHERE version_id=?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(version_id),),
         ).fetchone()
         if not row:
             return None
@@ -6931,6 +6964,31 @@ def list_class_commentary_tasks_for_organization(organization_id: int, limit: in
             LIMIT ?
             """,
             (organization_id, max(1, min(int(limit or 30), 100))),
+        ).fetchall()
+    return [_serialize_class_commentary_task_row(row) for row in rows]
+
+
+def list_class_commentary_tasks_for_classes(class_ids: list[int], limit: int = 30) -> list[dict]:
+    normalized_class_ids = []
+    seen_class_ids = set()
+    for class_id in class_ids:
+        normalized_class_id = int(class_id or 0)
+        if normalized_class_id <= 0 or normalized_class_id in seen_class_ids:
+            continue
+        seen_class_ids.add(normalized_class_id)
+        normalized_class_ids.append(normalized_class_id)
+    if not normalized_class_ids:
+        return []
+    placeholders = ",".join("?" for _ in normalized_class_ids)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            {_class_commentary_task_select_sql()}
+            WHERE t.class_id IN ({placeholders})
+            ORDER BY t.updated_at DESC, t.id DESC
+            LIMIT ?
+            """,
+            (*normalized_class_ids, max(1, min(int(limit or 30), 100))),
         ).fetchall()
     return [_serialize_class_commentary_task_row(row) for row in rows]
 

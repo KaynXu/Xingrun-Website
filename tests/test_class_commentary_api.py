@@ -74,6 +74,27 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         )
         return lesson_manager.mark_class_commentary_transcription_succeeded(task["id"], transcript)
 
+    def _create_member(self, username: str, password: str = "memberpass123") -> tuple[int, str]:
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    username,
+                    lesson_manager.hash_password(password),
+                    username,
+                    "member",
+                    "active",
+                    self.owner["organization_id"],
+                ),
+            )
+            member_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        login = self.client.post("/api/login", json={"username": username, "password": password})
+        self.assertEqual(login.status_code, 200)
+        return member_id, login.get_json()["token"]
+
     def assertPrivateTranscriptPolishFieldsHidden(self, payload: dict):
         for field_name in self.PRIVATE_TRANSCRIPT_POLISH_FIELDS:
             self.assertNotIn(field_name, payload)
@@ -287,6 +308,60 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["tasks"][0]["class_name"], "数学·七年级·4班")
         self.assertEqual(payload["tasks"][0]["transcript_text"], "")
         self.assertPrivateTranscriptPolishFieldsHidden(payload["tasks"][0])
+
+    def test_task_list_for_member_hides_unassigned_class_history(self):
+        assigned_class_id = self._create_class_with_student()
+        unassigned_class_id = lesson_manager.save_class(
+            "数学·八年级·8班",
+            subject="数学",
+            grade="八年级",
+            organization_id=self.owner["organization_id"],
+            teacher_user_id=self.owner["id"],
+        )
+        member_id, member_token = self._create_member("commentary_list_member")
+        lesson_manager.set_class_teacher_user_id(assigned_class_id, member_id)
+        assigned_task = self._create_transcribed_task(assigned_class_id, "分配班级内容")
+        unassigned_task = self._create_transcribed_task(unassigned_class_id, "未分配班级内容")
+
+        list_response = self.client.get(
+            "/api/class-commentary/tasks",
+            headers={"X-Auth-Token": member_token},
+        )
+        direct_response = self.client.get(
+            f"/api/class-commentary/tasks/{unassigned_task['id']}",
+            headers={"X-Auth-Token": member_token},
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        payload = list_response.get_json()
+        self.assertEqual([item["id"] for item in payload["tasks"]], [assigned_task["id"]])
+        self.assertNotIn("未分配班级内容", str(payload))
+        self.assertEqual(direct_response.status_code, 403)
+
+    def test_task_list_for_member_limits_after_class_scope(self):
+        assigned_class_id = self._create_class_with_student()
+        unassigned_class_id = lesson_manager.save_class(
+            "数学·九年级·9班",
+            subject="数学",
+            grade="九年级",
+            organization_id=self.owner["organization_id"],
+            teacher_user_id=self.owner["id"],
+        )
+        member_id, member_token = self._create_member("commentary_paged_member")
+        lesson_manager.set_class_teacher_user_id(assigned_class_id, member_id)
+        visible_task = self._create_transcribed_task(assigned_class_id, "自己的较旧记录")
+        for index in range(31):
+            self._create_transcribed_task(unassigned_class_id, f"其他班级新记录 {index}")
+
+        response = self.client.get(
+            "/api/class-commentary/tasks",
+            headers={"X-Auth-Token": member_token},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([item["id"] for item in payload["tasks"]], [visible_task["id"]])
+        self.assertIn("自己的较旧记录", str(payload))
 
     def test_create_text_task_returns_transcribed_task_without_audio(self):
         class_id = self._create_class_with_student()
