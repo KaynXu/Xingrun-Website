@@ -1069,10 +1069,12 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
     @patch("review_plan_workflow.service.generate_single_lesson_review_plan")
     @patch("ai_processor.polish_review_plan_transcript")
     @patch("ai_processor.transcribe_audio")
+    @patch("app.update_review_plan_version_source_artifact")
     @patch("app._run_ai_feature_with_charge")
     def test_worker_uses_polished_transcript_for_audio_review_plan_generation(
         self,
         mock_run_with_charge,
+        mock_update_source_artifact,
         mock_transcribe_audio,
         mock_polish_transcript,
         mock_generate_plan,
@@ -1120,9 +1122,24 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         )
         expected_plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
         feature_calls: list[dict] = []
+        source_artifact_calls: list[dict] = []
+        event_order: list[str] = []
 
         mock_transcribe_audio.return_value = "原始转写：动点倒顶点距离不变。"
-        mock_polish_transcript.return_value = "润色转写：动点到定点距离不变，轨迹是球面。"
+
+        real_update_source_artifact = lesson_manager.update_review_plan_version_source_artifact
+
+        def update_source_artifact(version_id, **kwargs):
+            event_order.append(f"source_artifact:{kwargs.get('source_text')}")
+            source_artifact_calls.append(kwargs)
+            return real_update_source_artifact(version_id, **kwargs)
+
+        def polish_transcript(**kwargs):
+            event_order.append("polish")
+            return "润色转写：动点到定点距离不变，轨迹是球面。"
+
+        mock_update_source_artifact.side_effect = update_source_artifact
+        mock_polish_transcript.side_effect = polish_transcript
         mock_generate_plan.return_value = expected_plan
 
         def run_with_charge(**kwargs):
@@ -1149,6 +1166,11 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(mock_transcribe_audio.call_count, 1)
         self.assertEqual(mock_polish_transcript.call_count, 1)
         self.assertEqual(mock_generate_plan.call_count, 1)
+        self.assertGreaterEqual(mock_update_source_artifact.call_count, 2)
+        self.assertEqual(event_order[:2], ["source_artifact:原始转写：动点倒顶点距离不变。", "polish"])
+        self.assertEqual(source_artifact_calls[0]["source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertEqual(source_artifact_calls[0]["cleaned_source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertEqual(source_artifact_calls[-1]["source_text"], "原始转写：动点倒顶点距离不变。")
         generate_kwargs = mock_generate_plan.call_args.kwargs
         self.assertIn("润色转写：动点到定点距离不变，轨迹是球面。", generate_kwargs["summary_text"])
         self.assertNotIn("原始转写：动点倒顶点距离不变。", generate_kwargs["summary_text"])
