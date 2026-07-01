@@ -148,3 +148,13 @@ test('review generation validates custom review days before creating or regenera
   assert.match(reviewGenerationSource, /getGenerationOptionsValidationError\(options\)/);
   assert.match(reviewGenerationSource, /onFloatingNotice\(\{ type: 'error', text: generationOptionsError \}\);/);
 });
+
+test('review generation places generation settings directly under top class metadata', () => {
+  const optionsIndex = lessonInputSource.indexOf('<ReviewPlanGenerationOptionsFields');
+  const noClassWarningIndex = lessonInputSource.indexOf('{hasNoAssignableClasses &&');
+  const materialSectionIndex = lessonInputSource.indexOf('课堂材料');
+
+  assert.notEqual(optionsIndex, -1);
+  assert.ok(optionsIndex < noClassWarningIndex);
+  assert.ok(optionsIndex < materialSectionIndex);
+});

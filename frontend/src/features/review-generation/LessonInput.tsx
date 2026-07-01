@@ -301,6 +301,13 @@ export function LessonInput({
               />
             </div>
 
+            <section className={reviewFormSectionClass}>
+              <ReviewPlanGenerationOptionsFields
+                value={generationOptions}
+                onChange={setGenerationOptions}
+              />
+            </section>
+
             {hasNoAssignableClasses && (
               <p className="text-sm text-amber-600 dark:text-amber-300">
                 当前账号未分配负责班级，请先联系管理员分配班级后再生成复习记录。
@@ -409,13 +416,6 @@ export function LessonInput({
                       className={`${reviewFormFieldClass} resize-none`}
                     />
                   </div>
-                </section>
-
-                <section className={reviewFormSectionClass}>
-                  <ReviewPlanGenerationOptionsFields
-                    value={generationOptions}
-                    onChange={setGenerationOptions}
-                  />
                 </section>
               </div>
 
