@@ -114,6 +114,65 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(review_input.review_days, [1, 5])
         self.assertEqual(review_input.user_requirements, "只做考前两次")
 
+    def test_source_brief_builder_records_structured_source_before_writer(self):
+        from review_plan_workflow.executor import run_workflow_node
+        from review_plan_workflow.nodes.intake_normalizer import intake_normalizer_node
+        from review_plan_workflow.nodes.source_brief_builder import source_brief_builder_node
+        from review_plan_workflow.state import WorkflowContext
+
+        review_input = ReviewPlanInput(
+            summary_text=(
+                "本节课主题：动点与立体几何综合\n"
+                "老师强调：先看固定量，再判断轨迹。\n"
+                "例题：动点 P 到定点 O 的距离恒为 r，轨迹是什么？"
+            ),
+            subject="数学",
+            grade="六年级",
+            user_requirements="压缩成一天，少一点题量",
+        )
+        context = WorkflowContext(provider="deepseek", model="deepseek-v4-pro")
+        normalized = run_workflow_node(intake_normalizer_node, review_input, context)
+        brief = run_workflow_node(
+            source_brief_builder_node,
+            {"input": review_input, "normalized": normalized},
+            context,
+        )
+
+        self.assertEqual(brief.lesson_title_candidates[0], "动点与立体几何综合")
+        self.assertTrue(brief.evidence_map)
+        self.assertIn("source_brief", context.node_outputs)
+        trace_source_brief = context.node_outputs["source_brief"]
+        self.assertEqual(trace_source_brief["schema_version"], "2026-07-01")
+        self.assertIn("cleaned_text_length", trace_source_brief)
+        self.assertNotIn("cleaned_text", trace_source_brief)
+        self.assertNotIn("压缩成一天，少一点题量", str(trace_source_brief))
+        executor_source_brief = context.node_outputs["source_brief_builder"]
+        self.assertIn("cleaned_text_length", executor_source_brief)
+        self.assertNotIn("cleaned_text", executor_source_brief)
+
+    def test_source_brief_builder_warns_on_missing_fields_without_leaking_cleaned_text(self):
+        from review_plan_workflow.executor import run_workflow_node
+        from review_plan_workflow.nodes.intake_normalizer import intake_normalizer_node
+        from review_plan_workflow.nodes.source_brief_builder import source_brief_builder_node
+        from review_plan_workflow.state import WorkflowContext
+
+        review_input = ReviewPlanInput(
+            summary_text="今天讲了很多内容，学生容易把条件看漏。",
+            subject="数学",
+            grade="六年级",
+        )
+        context = WorkflowContext(provider="deepseek", model="deepseek-v4-pro")
+        normalized = run_workflow_node(intake_normalizer_node, review_input, context)
+        brief = run_workflow_node(
+            source_brief_builder_node,
+            {"input": review_input, "normalized": normalized},
+            context,
+        )
+
+        self.assertIn("topic", brief.missing_fields)
+        self.assertIn("source_brief_missing_fields", [warning.code for warning in context.warnings])
+        self.assertNotIn("cleaned_text", context.node_outputs["source_brief_builder"])
+
     def test_validate_final_review_plan_normalizes_components_only_writer_shape(self):
         plan, errors = validate_final_review_plan(components_only_single_lesson_plan())
         self.assertIsNotNone(plan)
