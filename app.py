@@ -157,9 +157,11 @@ from lesson_manager import (
     get_registration_request,
     get_user_by_id,
     get_user_class_ids,
+    get_latest_review_plan_run_for_version,
     init_db,
     list_all_users,
     list_class_history,
+    list_class_commentary_tasks_for_classes,
     list_class_commentary_tasks_for_organization,
     list_class_teacher_bindings,
     list_classes,
@@ -871,11 +873,11 @@ def _get_or_create_compat_review_plan_version_for_job(
     )
 
 
-def _review_plan_quality_failure_message(lesson_id: int) -> str:
+def _review_plan_quality_failure_message(version_id: int) -> str:
     try:
-        latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
+        latest_run = get_latest_review_plan_run_for_version(version_id)
     except Exception:
-        logger.exception("Failed to read review plan quality run for lesson %s", lesson_id)
+        logger.exception("Failed to read review plan quality run for version %s", version_id)
         return ""
     if not latest_run or str(latest_run.get("status") or "") != "succeeded":
         return ""
@@ -1074,6 +1076,7 @@ def _run_review_plan_generation_job(
                     provider=chat_provider,
                     model=chat_model,
                     lesson_id=lesson_id,
+                    version_id=version_id,
                     organization_id=int(user["organization_id"]),
                 ),
                 provider=chat_provider,
@@ -1106,7 +1109,7 @@ def _run_review_plan_generation_job(
         if isinstance(plan, tuple) and len(plan) == 2 and isinstance(plan[1], dict):
             plan = plan[0]
 
-        quality_error = _review_plan_quality_failure_message(lesson_id)
+        quality_error = _review_plan_quality_failure_message(version_id)
         if quality_error:
             logger.warning("Review plan quality gate blocked lesson %s: %s", lesson_id, quality_error)
             try:
@@ -8200,13 +8203,11 @@ def api_class_commentary_tasks_list():
     user, error = _require_auth()
     if error:
         return error
-    tasks = list_class_commentary_tasks_for_organization(int(user["organization_id"]), limit=30)
-    accessible_class_ids = {int(item["id"]) for item in list_classes_for_actor(user)}
-    visible_tasks = [
-        _serialize_class_commentary_task_for_response(task)
-        for task in tasks
-        if int(task["class_id"]) in accessible_class_ids
-    ]
+    if user.get("role") == "member":
+        tasks = list_class_commentary_tasks_for_classes(get_user_class_ids(int(user["id"])), limit=30)
+    else:
+        tasks = list_class_commentary_tasks_for_organization(int(user["organization_id"]), limit=30)
+    visible_tasks = [_serialize_class_commentary_task_for_response(task) for task in tasks]
     return jsonify({"tasks": visible_tasks})
 
 
