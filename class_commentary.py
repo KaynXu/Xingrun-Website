@@ -176,6 +176,8 @@ def build_class_commentary_generation_payload(
             "When a student has multiple feedback points, write 2-4 short paragraphs instead of squeezing everything into one paragraph.",
             "Each paragraph should focus on one idea, such as current state, concrete problem, next action, or parent cooperation.",
             "If the selected skill uses bracket-style emojis such as [呲牙] or [破涕为笑], preserve that emoji style and use it as the skill would, especially to soften direct criticism or mark good news.",
+            "For a skill that clearly uses bracket-style emojis, emojis are not optional decoration: include at least one bracket-style emoji in the opening or overall note and at least one bracket-style emoji in each student's feedback.",
+            "Prefer [呲牙] for warm encouragement or friendly transitions, and [破涕为笑] for softening direct criticism, forgotten knowledge, weak habits, or parent-cooperation reminders.",
             "Do not over-polish into formal report language; keep the selected colleague's live parent-group speaking style.",
         ],
     }
