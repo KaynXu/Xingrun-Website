@@ -188,6 +188,7 @@ class ReviewPlanRuntimeContractTestCase(unittest.TestCase):
             "OPENAI_API_KEY": "sk-openai-secret",
             "DEEPSEEK_API_KEY": "sk-deepseek-secret",
             "LANGFUSE_PUBLIC_KEY": "pk-lf-secret",
+            "TENCENTCLOUD_APP_ID": "123456789",
         }
 
         self.assertEqual(script.validate_contract(env), [])
@@ -195,9 +196,11 @@ class ReviewPlanRuntimeContractTestCase(unittest.TestCase):
         self.assertIn("OPENAI_API_KEY_present=True", report)
         self.assertIn("DEEPSEEK_API_KEY_present=True", report)
         self.assertIn("LANGFUSE_PUBLIC_KEY_present=True", report)
+        self.assertIn("TENCENTCLOUD_APP_ID_present=True", report)
         self.assertNotIn("sk-openai-secret", report)
         self.assertNotIn("sk-deepseek-secret", report)
         self.assertNotIn("pk-lf-secret", report)
+        self.assertNotIn("123456789", report)
 
 
 if __name__ == "__main__":
