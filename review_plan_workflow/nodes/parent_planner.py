@@ -144,6 +144,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[AgenticP
         reasoning_effort=context.reasoning_effort,
         temperature=temperature,
         stage="parent_planner",
+        timeout_seconds=120.0,
+        max_retries=0,
     )
     raw_blueprint = payload
     for wrapper_key in ("agenticPlanBlueprint", "blueprint", "plan_blueprint"):

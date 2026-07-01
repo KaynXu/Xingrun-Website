@@ -51,7 +51,7 @@ def _revision_message(
     source_brief: ReviewPlanSourceBrief | None = None,
 ) -> str:
     sections = [
-        f"Targeted revision attempt: {attempt}/2",
+        f"Targeted revision attempt: {attempt}",
         "只修复 quality review 指出的问题；保留原计划中已经正确的结构和内容。",
         "不得虚构教材页码、考试日期、学生成绩、老师原话或未提供的题目来源。",
         f"必须返回完整 JSON object，且 days 只包含 {review_input.review_days} 的复习节点。",
@@ -125,6 +125,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
         reasoning_effort=context.reasoning_effort,
         temperature=temperature,
         stage="targeted_revision",
+        timeout_seconds=90.0,
+        max_retries=0,
     )
     revised = _apply_lesson_date(normalize_final_review_plan(revised), review_input)
     context.node_outputs.setdefault("revision_attempts", []).append(

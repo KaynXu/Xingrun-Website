@@ -170,11 +170,14 @@ def generate_review_plan_json(
     reasoning_effort: str = "",
     temperature: float | None = None,
     stage: str = "generate_json",
+    timeout_seconds: float | None = None,
+    max_retries: int = 0,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     provider_name = resolve_chat_provider(provider)
     model_name = resolve_chat_model(provider_name, model)
     client = get_chat_client(provider_name)
     request_temperature = 0.3 if temperature is None else float(temperature)
+    request_timeout = REVIEW_PLAN_LLM_TIMEOUT_SECONDS if timeout_seconds is None else float(timeout_seconds)
     request_kwargs: dict[str, Any] = {
         "model": model_name,
         "messages": [
@@ -183,7 +186,7 @@ def generate_review_plan_json(
         ],
         "temperature": request_temperature,
         "response_format": {"type": "json_object"},
-        "timeout": REVIEW_PLAN_LLM_TIMEOUT_SECONDS,
+        "timeout": request_timeout,
     }
     normalized_effort = normalize_reasoning_effort(reasoning_effort)
     if provider_name == "openai" and normalized_effort:
@@ -198,7 +201,13 @@ def generate_review_plan_json(
         temperature=request_temperature,
     ) as generation:
         try:
-            response = client.chat.completions.create(**request_kwargs)
+            active_client = client
+            with_options = getattr(client, "with_options", None)
+            if callable(with_options):
+                configured_client = with_options(timeout=request_timeout, max_retries=max(0, int(max_retries)))
+                if configured_client is not None:
+                    active_client = configured_client
+            response = active_client.chat.completions.create(**request_kwargs)
             raw = response.choices[0].message.content
             payload = loads_model_json(raw)
             usage = usage_dict(response, provider=provider_name, model_fallback=model_name)

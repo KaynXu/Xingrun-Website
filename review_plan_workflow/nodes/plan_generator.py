@@ -182,6 +182,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
             model=writer_model,
             temperature=writer_temperature,
             stage="plan_generator",
+            timeout_seconds=180.0,
+            max_retries=0,
         )
         plan = _normalize_plan(plan, review_input)
         errors = _schema_errors(plan)
@@ -222,6 +224,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
                 model=writer_model,
                 temperature=repair_temperature,
                 stage="plan_generator_schema_repair",
+                timeout_seconds=180.0,
+                max_retries=0,
             )
             plan = _normalize_plan(repaired, review_input)
             usage = merge_usage(usage, repair_usage)

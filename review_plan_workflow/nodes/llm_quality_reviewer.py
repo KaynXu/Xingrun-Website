@@ -86,6 +86,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[QualityR
         reasoning_effort=context.reasoning_effort,
         temperature=temperature,
         stage="quality_reviewer_llm",
+        timeout_seconds=90.0,
+        max_retries=0,
     )
     review = _quality_from_payload(payload)
     context.node_outputs["quality_reviewer_llm_model_config"] = {

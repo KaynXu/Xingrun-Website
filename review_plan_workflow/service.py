@@ -27,6 +27,7 @@ from .nodes import (
     time_allocator_node,
 )
 from .quality_gate import review_single_lesson_plan
+from .quality_policy import max_revision_attempts_for_quality, should_run_llm_quality_review
 from .llm.client import merge_usage
 from .observability import (
     flush,
@@ -254,6 +255,18 @@ def _review_with_llm_quality_gate(
     context: WorkflowContext,
     node_key: str,
 ) -> tuple[QualityReview, dict[str, Any]]:
+    if not should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief):
+        skipped = {
+            "mode": "skipped",
+            "reason": "local_quality_passed_with_high_source_confidence",
+            "score": local_quality.score,
+            "source_confidence": source_brief.confidence if source_brief is not None else None,
+        }
+        context.node_outputs[node_key] = skipped
+        context.node_outputs["quality_reviewer_llm_skipped"] = skipped
+        context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        return local_quality, {}
+
     if not _has_runtime_key_for_provider(context.provider):
         context.node_outputs["quality_reviewer_llm_skipped"] = {
             "reason": "missing_runtime_key_for_direct_service_call",
@@ -317,8 +330,11 @@ def _maybe_revise_plan(
     current_plan = plan
     current_quality = quality
     total_usage = usage
+    max_attempts = max_revision_attempts_for_quality(quality=quality, source_brief=source_brief)
+    if max_attempts <= 0:
+        return plan, quality, usage
 
-    for attempt in range(1, 3):
+    for attempt in range(1, max_attempts + 1):
         try:
             revised_plan, revision_usage = run_workflow_node(
                 revision_node,
@@ -369,7 +385,7 @@ def _maybe_revise_plan(
     if best_quality.must_revise:
         context.add_warning(
             "quality_revision_required",
-            "质量门禁在最多 2 次 revision 后仍建议人工复核；已返回当前最高分版本。",
+            f"质量门禁在 {max_attempts} 次 revision 后仍建议人工复核；已返回当前最高分版本。",
             "high",
         )
     return best_plan, best_quality, total_usage
