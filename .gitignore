@@ -29,4 +29,11 @@ Assets/
 
 review_plan_templates/pdf_output/*.pdf
 review_plan_templates/pdf_output/.DS_Store
+
+# Locally generated PDF deliverables and proof artifacts
+output/pdf/
+data/pdfs/*.pdf
+data/pdfs/*.zip
+data/pdfs/wrong_question_practice_sheets/
+data/pdfs/wrong_question_practice_packs/
 xunlian   md/
