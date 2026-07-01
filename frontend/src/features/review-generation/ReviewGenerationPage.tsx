@@ -41,7 +41,7 @@ type ReviewPlanCreateResult = {
 
 type ReviewGenerationPageProps = {
   onSuccess: () => void;
-  renderLessonInput: (onSuccess: (result: ReviewPlanCreateResult) => void) => ReactNode;
+  renderLessonInput: (onSuccess: (result: ReviewPlanCreateResult) => void, onCancel: () => void) => ReactNode;
   taskControls: ReviewGenerationTaskControls;
 };
 
@@ -677,10 +677,10 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControl
     setComposerOpen(false);
     setHighlightedLessonId(result.id);
     if (result.duplicate) {
-      taskControls.onFloatingNotice({ type: 'info', text: `这份录音已处理过，已复用已有复习文档 #${result.id}。` });
+      taskControls.onFloatingNotice({ type: 'info', text: `已复用文档 #${result.id}` });
     } else {
       taskControls.onTaskStarted(result.id, Date.now());
-      taskControls.onFloatingNotice({ type: 'info', text: '复习计划已开始生成，可先去处理其他页面。' });
+      taskControls.onFloatingNotice({ type: 'info', text: '已开始生成' });
     }
     setHistoryRefreshToken((current) => current + 1);
     onSuccess();
@@ -720,9 +720,9 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControl
 
       {composerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm sm:p-6">
-          <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-[#ffffff] shadow-none">
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-[#ffffff] shadow-none">
             <div className="flex items-center justify-between border-b border-slate-200/70 bg-[#ffffff] px-5 py-4 sm:px-6">
-              <h3 className="text-xl font-semibold text-slate-900">生成复习文档</h3>
+              <h3 className="text-xl font-semibold text-slate-900">新建复习文档</h3>
               <button
                 type="button"
                 onClick={() => setComposerOpen(false)}
@@ -733,7 +733,7 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControl
               </button>
             </div>
             <div className="overflow-y-auto bg-[#ffffff] px-5 py-5 sm:px-6 sm:py-6">
-              {renderLessonInput(handleFormSuccess)}
+              {renderLessonInput(handleFormSuccess, () => setComposerOpen(false))}
             </div>
           </div>
         </div>

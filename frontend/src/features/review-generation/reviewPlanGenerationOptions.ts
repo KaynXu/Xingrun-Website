@@ -45,10 +45,15 @@ export function parseCustomReviewDays(value: string): number[] {
 
 export function getGenerationOptionsValidationError(value: ReviewPlanGenerationOptionsFormValue): string {
   if (value.scheduleMode === 'daily' && (!Number.isInteger(value.dailyCount) || value.dailyCount < 1 || value.dailyCount > MAX_REVIEW_DAYS)) {
-    return '连续生成天数请填写 1 到 30 之间的整数。';
+    return '请输入天数';
   }
-  if (value.scheduleMode === 'custom' && !parseCustomReviewDays(value.customDays).length) {
-    return '请填写至少一个复习日期点，例如 1,3,7。';
+  if (value.scheduleMode === 'custom') {
+    if (!value.customDays.trim()) {
+      return '请输入日期点';
+    }
+    if (!parseCustomReviewDays(value.customDays).length) {
+      return '日期点格式错误';
+    }
   }
   return '';
 }

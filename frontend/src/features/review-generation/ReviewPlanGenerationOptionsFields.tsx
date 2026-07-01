@@ -2,26 +2,29 @@ import { CalendarDays, ListChecks, MessageSquareText } from 'lucide-react';
 
 import { cn, workspaceFieldClass } from '../../workspaceShared';
 import type { ReviewPlanGenerationOptionsFormValue, ReviewPlanScheduleMode } from './reviewPlanGenerationOptions';
-import { getGenerationOptionsFormSummary, parseCustomReviewDays } from './reviewPlanGenerationOptions';
+import { getGenerationOptionsFormSummary, getGenerationOptionsValidationError, parseCustomReviewDays } from './reviewPlanGenerationOptions';
 
 const scheduleModes: Array<{ value: ReviewPlanScheduleMode; label: string }> = [
-  { value: 'standard', label: '标准 5 次' },
-  { value: 'compressed', label: '压缩 1 天' },
-  { value: 'daily', label: '连续每日' },
+  { value: 'standard', label: '标准' },
+  { value: 'compressed', label: '压缩' },
+  { value: 'daily', label: '连续' },
   { value: 'custom', label: '自定义' },
 ];
 
 export function ReviewPlanGenerationOptionsFields({
   value,
   onChange,
+  showUserRequirements = true,
 }: {
   value: ReviewPlanGenerationOptionsFormValue;
   onChange: (value: ReviewPlanGenerationOptionsFormValue) => void;
+  showUserRequirements?: boolean;
 }) {
   const update = (patch: Partial<ReviewPlanGenerationOptionsFormValue>) => {
     onChange({ ...value, ...patch });
   };
   const customDayCount = parseCustomReviewDays(value.customDays).length;
+  const validationError = getGenerationOptionsValidationError(value);
 
   return (
     <div className="space-y-4">
@@ -57,7 +60,7 @@ export function ReviewPlanGenerationOptionsFields({
         <label className="block">
           <span className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
             <ListChecks size={14} />
-            连续生成天数
+            天数
           </span>
           <input
             type="number"
@@ -74,39 +77,41 @@ export function ReviewPlanGenerationOptionsFields({
         <label className="block">
           <span className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
             <ListChecks size={14} />
-            复习日期点
+            日期点
           </span>
           <input
             type="text"
             value={value.customDays}
             onChange={(event) => update({ customDays: event.target.value })}
-            placeholder="例如：1,3,7"
+            placeholder="1,3,7"
             required
             aria-invalid={!customDayCount}
             className={`${workspaceFieldClass} w-full border-slate-200 focus:border-slate-300 focus:ring-slate-100`}
           />
-          {!customDayCount && (
+          {validationError && (
             <span className="mt-2 block text-xs font-medium text-rose-600 dark:text-rose-300">
-              请至少填写一个日期点，例如 1,3,7。
+              {validationError}
             </span>
           )}
         </label>
       )}
 
-      <label className="block">
-        <span className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          <MessageSquareText size={14} />
-          老师本次要求
-        </span>
-        <textarea
-          value={value.userRequirements}
-          onChange={(event) => update({ userRequirements: event.target.value })}
-          rows={3}
-          maxLength={1000}
-          placeholder="例如：明天考试前使用，题量少一点，多给选择题诊断。"
-          className={`${workspaceFieldClass} resize-none border-slate-200 focus:border-slate-300 focus:ring-slate-100`}
-        />
-      </label>
+      {showUserRequirements && (
+        <label className="block">
+          <span className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <MessageSquareText size={14} />
+            本次要求
+          </span>
+          <textarea
+            value={value.userRequirements}
+            onChange={(event) => update({ userRequirements: event.target.value })}
+            rows={3}
+            maxLength={1000}
+            placeholder="题量、题型、难度"
+            className={`${workspaceFieldClass} resize-none border-slate-200 focus:border-slate-300 focus:ring-slate-100`}
+          />
+        </label>
+      )}
     </div>
   );
 }
