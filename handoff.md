@@ -1004,3 +1004,9 @@
   - `py_compile` for the generation script
   - `pypdf` extraction confirmed 12 pages and 7862 extracted characters
   - content checks confirmed the lesson title, core topics, all five review dates, and same-lesson source note
+
+## 2026-07-01 review plan generation audit and source brief plan
+- Created `docs/superpowers/audits/2026-07-01-review-plan-generation-workflow-audit.md` to document the current generation chain, production slow-path evidence, source preprocessing gap, teacher prompt routing issue, regeneration inconsistency, and target source-brief architecture.
+- Created `docs/superpowers/plans/2026-07-01-review-plan-source-brief-quality-speed.md` using `superpowers:writing-plans`, with task-level implementation steps for source brief models, version source artifact storage, workflow integration, regeneration consistency, local-first quality policy, bounded LLM calls, Langfuse privacy metrics, and eval fixtures.
+- No business code was changed in this round; implementation remains pending.
+- Branch used for the documentation work: `codex/review-plan-source-brief-audit-plan`.
