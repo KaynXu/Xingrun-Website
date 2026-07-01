@@ -238,10 +238,10 @@ function SegmentedControl({
 }
 
 const scheduleModes = [
-  { value: 'standard', label: '标准', description: '按照艾宾浩斯遗忘曲线标准间隔生成复习计划,每日复习量适中,适合大多数学生。' },
-  { value: 'compressed', label: '压缩', description: '将复习任务集中在较短天数完成,适合考前突击或时间紧张的学生。' },
-  { value: 'daily', label: '连续', description: '每天生成固定题量复习,适合持续巩固基础知识。' },
-  { value: 'custom', label: '自定义', description: '自定义复习天数和间隔,灵活配置复习节奏。' },
+  { value: 'standard', label: '5次间隔', description: '第1、2、7、14、30天复习' },
+  { value: 'compressed', label: '1天集中', description: '只生成第1天,集中完成' },
+  { value: 'daily', label: '每日连续', description: '连续每天生成,默认7天' },
+  { value: 'custom', label: '自定义日期', description: '按填写的日期点生成' },
 ];
 
 export function LessonInput({

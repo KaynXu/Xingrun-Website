@@ -112,13 +112,13 @@ export function buildGenerationOptionsPayload(value: ReviewPlanGenerationOptions
 
 export function getGenerationOptionsFormSummary(value: ReviewPlanGenerationOptionsFormValue): string {
   if (value.scheduleMode === 'compressed') {
-    return '压缩 1 天';
+    return '1天集中复习';
   }
   if (value.scheduleMode === 'daily') {
-    return `连续 ${value.dailyCount} 天`;
+    return `每日连续 ${value.dailyCount} 天`;
   }
   if (value.scheduleMode === 'custom') {
-    return `自定义 ${value.customDays.trim() || '未填写'}`;
+    return `自定义日期 ${value.customDays.trim() || '未填写'}`;
   }
-  return '标准 5 次';
+  return '5次间隔复习';
 }
