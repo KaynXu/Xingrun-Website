@@ -998,8 +998,8 @@ def _run_review_plan_generation_job(
                     source_record_type="lesson_upload",
                     source_record_id=f"upload:{lesson_id}",
                     producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(audio_file_path)),
-                    provider="local",
-                    model="faster-whisper-base",
+                    provider=_audio_transcription_provider_name(),
+                    model=_audio_transcription_model_name(),
                     request_key=audio_request_key or str(version.get("audio_request_key") or "") or request_key,
                 )
                 raw_transcription = str(transcription or "").strip()
