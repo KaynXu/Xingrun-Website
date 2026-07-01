@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowUp,
   Bell,
   CalendarDays,
   Cpu,
@@ -241,6 +240,8 @@ export function Sidebar({
   showAccounts,
   canOpenPage,
   roleLabel,
+  showReviewTaskLauncher,
+  onOpenReviewTaskDock,
 }: {
   activePage: SidebarPage;
   currentUser: CurrentUser;
@@ -255,6 +256,8 @@ export function Sidebar({
   showAccounts: boolean;
   canOpenPage: (page: SidebarPage) => boolean;
   roleLabel?: string;
+  showReviewTaskLauncher?: boolean;
+  onOpenReviewTaskDock?: () => void;
 }) {
   const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const dashboardItems = ([
@@ -384,15 +387,20 @@ export function Sidebar({
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-6 right-6 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-        aria-label="回到顶部"
-        title="回到顶部"
-      >
-        <ArrowUp size={20} />
-      </button>
+      {!mobile && showReviewTaskLauncher && (
+        <button
+          type="button"
+          onClick={onOpenReviewTaskDock}
+          className="fixed bottom-6 right-6 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+          aria-label="打开生成进度"
+          title="生成进度"
+        >
+          <span className="relative flex items-center justify-center">
+            <Library size={18} />
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-slate-900 dark:ring-white" />
+          </span>
+        </button>
+      )}
 
       <AnimatePresence>
         {accountSheetOpen && (

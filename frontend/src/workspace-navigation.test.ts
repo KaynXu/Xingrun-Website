@@ -76,6 +76,18 @@ test('review generation source defaults to history documents and expands the sha
   assert.match(reviewGenerationSource, /新建复习文档/);
   assert.match(reviewGenerationSource, /<ReviewDocumentHistory[\s\S]*refreshToken=\{historyRefreshToken\}[\s\S]*highlightedLessonId=\{highlightedLessonId\}[\s\S]*onFloatingNotice=\{taskControls\.onFloatingNotice\}/);
   assert.match(contentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);
+  assert.match(appSource, /const \[reviewTaskDockDismissed, setReviewTaskDockDismissed\] = useState\(false\);/);
+  assert.match(appSource, /const \[reviewTaskDockAvailable, setReviewTaskDockAvailable\] = useState\(false\);/);
+  assert.match(appSource, /showReviewTaskLauncher=\{reviewTaskDockDismissed && reviewTaskDockAvailable\}/);
+  assert.match(shellSource, /showReviewTaskLauncher: boolean;/);
+  assert.match(shellSource, /onOpenReviewTaskDock: \(\) => void;/);
+  assert.match(shellSource, /showReviewTaskLauncher=\{showReviewTaskLauncher\}/);
+  assert.match(shellSource, /onOpenReviewTaskDock=\{onOpenReviewTaskDock\}/);
+  assert.match(sidebarSource, /showReviewTaskLauncher\?: boolean;/);
+  assert.match(sidebarSource, /onOpenReviewTaskDock\?: \(\) => void;/);
+  assert.match(sidebarSource, /aria-label="打开生成进度"/);
+  assert.match(sidebarSource, /title="生成进度"/);
+  assert.doesNotMatch(sidebarSource, /aria-label="回到顶部"/);
 });
 
 test('review generation source closes the shared composer after successful generation and refreshes history', () => {

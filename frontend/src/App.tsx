@@ -146,6 +146,8 @@ export default function App() {
     typeof window === 'undefined' ? 'dashboard' : getWorkspacePageFromPathname(window.location.pathname) ?? 'dashboard',
   );
   const [classBindingTarget, setClassBindingTarget] = useState<ClassBindingTarget | null>(null);
+  const [reviewTaskDockDismissed, setReviewTaskDockDismissed] = useState(false);
+  const [reviewTaskDockAvailable, setReviewTaskDockAvailable] = useState(false);
   const [showLanding, setShowLanding] = useState(false);
   const [landingHash, setLandingHash] = useState<string>(() =>
     typeof window === 'undefined' ? '' : window.location.hash,
@@ -241,6 +243,8 @@ export default function App() {
     setShowLanding(false);
     setActivePage('dashboard');
     setMobileNavOpen(false);
+    setReviewTaskDockDismissed(false);
+    setReviewTaskDockAvailable(false);
     if (typeof window !== 'undefined' && normalizeWorkspacePathname(window.location.pathname) !== '/') {
       window.history.pushState({}, '', '/');
     }
@@ -400,6 +404,8 @@ export default function App() {
       showAccounts={hasStaffAccess(currentUser.role)}
       canOpenPage={(page) => canOpenWorkspacePage(currentUser, page)}
       roleLabel={getRoleLabel(currentUser.role)}
+      showReviewTaskLauncher={reviewTaskDockDismissed && reviewTaskDockAvailable}
+      onOpenReviewTaskDock={() => setReviewTaskDockDismissed(false)}
     >
       <WorkspacePageContent
         activeWorkspacePage={activeWorkspacePage}
@@ -416,6 +422,9 @@ export default function App() {
         handleOpenClassBinding={handleOpenClassBinding}
         handleLogout={handleLogout}
         onCurrentUserUpdated={(user) => setCurrentUser(user)}
+        reviewTaskDockDismissed={reviewTaskDockDismissed}
+        setReviewTaskDockDismissed={setReviewTaskDockDismissed}
+        onReviewTaskDockAvailableChange={setReviewTaskDockAvailable}
       />
     </WorkspaceShellLayout>
   );
