@@ -2310,7 +2310,7 @@ def generate_class_commentary_feedback(
         "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
         "Do not invent facts. Do not include roster students who are not clearly mentioned. "
         "Treat the supplied colleague skill as the primary working instructions for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
-        "When the skill clearly uses bracket-style emojis, emojis are not optional decoration; use them naturally in the opening and in each student's feedback. "
+        "Infer the selected skill's emoji system from its examples, including tokens, density, placement, and meaning; match it when appropriate, and do not force emojis for low-emoji skills. "
         "Use the transcript and roster as the only source of student facts. "
         "Return plain text only. Do not flatten every student into one long paragraph."
     )
