@@ -222,7 +222,9 @@ def _collect_day_unique_question_counts(day: dict[str, Any]) -> tuple[int, int, 
         if isinstance(value, dict):
             item_type = _clean_text(value.get("type")).lower()
             fill_text = value.get("text") or value.get("stem") or value.get("question") or value.get("label")
-            if item_type == "fill" or ("answer" in value and fill_text):
+            if item_type == "fill" or (
+                fill_text and any(key in value for key in ("answer", "answer_hint", "reference_answer"))
+            ):
                 add_fill(fill_text)
             for nested in value.values():
                 walk(nested)
@@ -234,6 +236,8 @@ def _collect_day_unique_question_counts(day: dict[str, Any]) -> tuple[int, int, 
     walk(day.get("items", []))
     walk(day.get("steps", []))
     walk(day.get("active_recall", {}))
+    walk(day.get("tasks", {}))
+    walk(day.get("oral_cards", []))
 
     for choice in day.get("choices", []) if isinstance(day.get("choices"), list) else []:
         if not isinstance(choice, dict):
