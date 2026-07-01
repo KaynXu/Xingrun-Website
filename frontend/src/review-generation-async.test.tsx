@@ -119,6 +119,8 @@ test('review generation source keeps progress feedback in a dismissible floating
   assert.match(workspacePageContentSource, /reviewTaskDockDismissed/);
   assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(false\);/);
   assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(true\);/);
+  assert.match(workspacePageContentSource, /const hasReviewDockContent = Boolean\(reviewFloatingNotice\) \|\| hasReviewFloatingTask;/);
+  assert.match(workspacePageContentSource, /onReviewTaskDockAvailableChange\(hasReviewDockContent\);/);
   assert.match(workspacePageContentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);
   assert.match(workspacePageContentSource, /setReviewProgressNow\(Date\.now\(\)\);/);
   assert.match(workspacePageContentSource, /activeWorkspacePage === 'review-generation' \? 6000 : 3000/);

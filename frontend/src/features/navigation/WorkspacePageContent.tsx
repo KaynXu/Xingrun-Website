@@ -58,6 +58,9 @@ export function WorkspacePageContent({
   handleOpenClassBinding,
   handleLogout,
   onCurrentUserUpdated,
+  reviewTaskDockDismissed,
+  setReviewTaskDockDismissed,
+  onReviewTaskDockAvailableChange,
 }: {
   activeWorkspacePage: WorkspaceShellPage;
   currentUser: CurrentUser;
@@ -73,6 +76,9 @@ export function WorkspacePageContent({
   handleOpenClassBinding: (target: ClassBindingTarget) => void;
   handleLogout: () => void;
   onCurrentUserUpdated: (user: CurrentUser) => void;
+  reviewTaskDockDismissed: boolean;
+  setReviewTaskDockDismissed: (dismissed: boolean) => void;
+  onReviewTaskDockAvailableChange: (available: boolean) => void;
 }) {
   const consultationMeetingMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('consultationMeeting') === '1';
   const [reviewFloatingNotice, setReviewFloatingNotice] = useState<ReviewGenerationFloatingNotice | null>(null);
@@ -80,7 +86,6 @@ export function WorkspacePageContent({
   const [reviewTaskStartedAtById, setReviewTaskStartedAtById] = useState<Record<number, number>>({});
   const [activeReviewTaskIds, setActiveReviewTaskIds] = useState<Set<number>>(() => new Set());
   const [reviewProgressNow, setReviewProgressNow] = useState(() => Date.now());
-  const [reviewTaskDockDismissed, setReviewTaskDockDismissed] = useState(false);
 
   const refreshReviewLessons = useCallback((quiet = true) => (
     apiFetch<unknown>('/api/review-plans')
@@ -114,8 +119,13 @@ export function WorkspacePageContent({
     const state = getReviewLessonTaskState(lesson);
     return state === 'pending' || state === 'failed';
   });
+  const hasReviewDockContent = Boolean(reviewFloatingNotice) || hasReviewFloatingTask;
   const hasReviewPendingTask = reviewLatestLessons.some(isReviewLessonPending);
   const shouldPollReviewTasks = activeReviewTaskIds.size > 0 || hasReviewPendingTask;
+
+  useEffect(() => {
+    onReviewTaskDockAvailableChange(hasReviewDockContent);
+  }, [hasReviewDockContent, onReviewTaskDockAvailableChange]);
 
   useEffect(() => {
     if (!hasReviewFloatingTask && activeReviewTaskIds.size === 0) {
@@ -217,7 +227,7 @@ export function WorkspacePageContent({
         </motion.div>
       </AnimatePresence>
 
-      {!reviewTaskDockDismissed && (
+      {!reviewTaskDockDismissed && hasReviewDockContent && (
         <ReviewGenerationTaskDock
           lessons={reviewLatestLessons}
           notice={reviewFloatingNotice}
