@@ -265,13 +265,15 @@ from lesson_manager import (
     change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_review_plan_version_source_artifact,
     update_user_avatar_preferences,
 )
-from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, transcribe_audio
+from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import list_colleague_skills, load_colleague_skill, payload_to_json, sanitize_class_commentary_roster
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
+from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
     CreditBalanceError,
@@ -330,8 +332,8 @@ def _audio_transcription_model_name() -> str:
     return "faster-whisper"
 
 
-def _review_plan_chat_model_name() -> str:
-    provider = _review_plan_ai_provider_name()
+def _review_plan_chat_model_name(provider: str = "") -> str:
+    provider = provider or _review_plan_ai_provider_name()
     return resolve_review_plan_model(get_config(), provider=provider)
 
 
@@ -991,7 +993,7 @@ def _run_review_plan_generation_job(
                 fail_review_plan_version(version_id, "音频转录失败，请重新上传")
                 return
             try:
-                from ai_processor import transcribe_audio
+                from ai_processor import polish_review_plan_transcript, transcribe_audio
                 transcription = _run_ai_feature_with_charge(
                     user=user,
                     feature_key="audio_transcription",
@@ -1006,9 +1008,60 @@ def _run_review_plan_generation_job(
                 if not raw_transcription:
                     fail_review_plan_version(version_id, "音频转录失败，请稍后重试")
                     return
+                raw_source_text_hash = review_plan_transcript_source_text_hash(raw_transcription)
+                source_brief_snapshot = version.get("source_brief") or {}
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=raw_transcription,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
+                )
+                transcript_for_generation = raw_transcription
+                try:
+                    polish_provider = _review_plan_ai_provider_name()
+                    polish_model = _review_plan_chat_model_name(polish_provider)
+                    polished_text = _run_ai_feature_with_charge(
+                        user=user,
+                        feature_key="review_plan_transcript_polish",
+                        source_record_type="review_plan_transcript_polish",
+                        source_record_id=version_id or lesson_id,
+                        producer=lambda: _call_ai_helper_with_usage(
+                            polish_review_plan_transcript,
+                            raw_transcript_text=raw_transcription,
+                            subject=str(lesson.get("subject") or ""),
+                            grade=str(lesson.get("grade") or ""),
+                            topic=str(lesson.get("topic") or ""),
+                            teacher_requirements=str((generation_options or {}).get("user_requirements") or ""),
+                            provider=polish_provider,
+                            model=polish_model,
+                        ),
+                        provider=polish_provider,
+                        model=polish_model,
+                        request_key=request_key,
+                        claim_request_identity=False,
+                    )
+                    polished_text = str(polished_text or "").strip()
+                    if not polished_text:
+                        raise ValueError("review plan transcript polish returned empty text")
+                    transcript_for_generation = polished_text
+                except Exception as polish_exc:
+                    logger.warning(
+                        "Review plan transcript polish failed for lesson %s version %s: %s",
+                        lesson_id,
+                        version_id,
+                        polish_exc,
+                    )
                 merged_summary = _merge_review_plan_materials(
-                    raw_transcription,
+                    transcript_for_generation,
                     same_lesson_materials or version.get("same_lesson_materials") or [],
+                )
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=merged_summary,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
                 )
                 mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)
