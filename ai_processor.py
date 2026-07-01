@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import wave
 from pathlib import Path
 from class_commentary import (
     build_class_commentary_generation_payload,
@@ -394,44 +395,109 @@ def _extract_tencent_flash_transcript(payload: object) -> str:
     return "".join(part for part in parts if part).strip()
 
 
+def _iter_resampled_audio_frames(resampler, frame):
+    frames = resampler.resample(frame)
+    if frames is None:
+        return
+    if isinstance(frames, list):
+        yield from frames
+        return
+    yield frames
+
+
+def _audio_frame_to_pcm_bytes(frame) -> bytes:
+    to_ndarray = getattr(frame, "to_ndarray", None)
+    if callable(to_ndarray):
+        return to_ndarray().tobytes()
+    planes = getattr(frame, "planes", None) or []
+    if not planes:
+        return b""
+    return bytes(planes[0])
+
+
+def _transcode_audio_to_tencent_wav(audio_path: Path) -> Path:
+    try:
+        import av
+    except ImportError as exc:
+        raise RuntimeError("腾讯 ASR 音频转码需要 PyAV，请先安装最新依赖。") from exc
+
+    tmp_file = tempfile.NamedTemporaryFile(
+        prefix=f"{audio_path.stem}_tencent_",
+        suffix=".wav",
+        delete=False,
+    )
+    tmp_path = Path(tmp_file.name)
+    tmp_file.close()
+    bytes_written = 0
+    try:
+        with av.open(str(audio_path)) as container, wave.open(str(tmp_path), "wb") as wav_file:
+            audio_streams = [stream for stream in container.streams if getattr(stream, "type", "") == "audio"]
+            if not audio_streams:
+                raise ValueError("音频文件没有可转码的音轨")
+            resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=16000)
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            for frame in container.decode(audio=0):
+                for resampled_frame in _iter_resampled_audio_frames(resampler, frame):
+                    pcm_bytes = _audio_frame_to_pcm_bytes(resampled_frame)
+                    if pcm_bytes:
+                        wav_file.writeframes(pcm_bytes)
+                        bytes_written += len(pcm_bytes)
+            for resampled_frame in _iter_resampled_audio_frames(resampler, None):
+                pcm_bytes = _audio_frame_to_pcm_bytes(resampled_frame)
+                if pcm_bytes:
+                    wav_file.writeframes(pcm_bytes)
+                    bytes_written += len(pcm_bytes)
+        if bytes_written <= 0:
+            raise ValueError("音频转码后没有可识别声音")
+        return tmp_path
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise RuntimeError(f"腾讯 ASR 音频转码失败：{exc}") from exc
+
+
 def _transcribe_audio_path_with_tencent_flash(audio_path: Path) -> str:
     appid, secret_id, secret_key = _tencent_asr_credentials()
-    if audio_path.stat().st_size > 100 * 1024 * 1024:
-        raise ValueError("腾讯云极速版单个音频不能超过 100MB")
-    now = int(time.time())
-    params = {
-        "engine_type": _tencent_asr_engine_type(),
-        "voice_format": _tencent_voice_format(audio_path),
-        "secretid": secret_id,
-        "timestamp": now,
-        "expired": now + 24 * 60 * 60,
-        "nonce": random.randint(1, 2_147_483_647),
-        "filter_dirty": 0,
-        "filter_modal": 0,
-        "filter_punc": 0,
-        "convert_num_mode": 1,
-        "word_info": 0,
-    }
-    signature = _tencent_flash_asr_signature(appid=appid, secret_key=secret_key, params=params)
-    url = (
-        f"https://{_TENCENT_FLASH_ASR_HOST}{_TENCENT_FLASH_ASR_PATH_TEMPLATE.format(appid=appid)}?"
-        f"{urllib.parse.urlencode(params)}"
-    )
-    request = urllib.request.Request(
-        url,
-        data=audio_path.read_bytes(),
-        headers={
-            "Authorization": signature,
-            "Content-Type": "application/octet-stream",
-        },
-        method="POST",
-    )
+    request_audio_path = _transcode_audio_to_tencent_wav(audio_path)
     try:
+        if request_audio_path.stat().st_size > 100 * 1024 * 1024:
+            raise ValueError("腾讯云极速版单个音频不能超过 100MB")
+        now = int(time.time())
+        params = {
+            "engine_type": _tencent_asr_engine_type(),
+            "voice_format": _tencent_voice_format(request_audio_path),
+            "secretid": secret_id,
+            "timestamp": now,
+            "expired": now + 24 * 60 * 60,
+            "nonce": random.randint(1, 2_147_483_647),
+            "filter_dirty": 0,
+            "filter_modal": 0,
+            "filter_punc": 0,
+            "convert_num_mode": 1,
+            "word_info": 0,
+        }
+        signature = _tencent_flash_asr_signature(appid=appid, secret_key=secret_key, params=params)
+        url = (
+            f"https://{_TENCENT_FLASH_ASR_HOST}{_TENCENT_FLASH_ASR_PATH_TEMPLATE.format(appid=appid)}?"
+            f"{urllib.parse.urlencode(params)}"
+        )
+        request = urllib.request.Request(
+            url,
+            data=request_audio_path.read_bytes(),
+            headers={
+                "Authorization": signature,
+                "Content-Type": "application/octet-stream",
+            },
+            method="POST",
+        )
         with urllib.request.urlopen(request, timeout=180) as response:
             response_payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"腾讯云 ASR 请求失败：HTTP {exc.code} {error_body}") from exc
+    finally:
+        request_audio_path.unlink(missing_ok=True)
     transcript_text = _extract_tencent_flash_transcript(response_payload)
     if not transcript_text:
         raise ValueError("腾讯云 ASR 返回空转写文本")
@@ -447,6 +513,7 @@ def _should_fallback_to_local_asr_after_tencent_error(exc: Exception) -> bool:
             "decode failed",
             "解码",
             "返回空转写文本",
+            "音频转码失败",
         )
     )
 
