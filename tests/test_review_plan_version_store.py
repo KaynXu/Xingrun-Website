@@ -397,3 +397,48 @@ class ReviewPlanVersionLifecycleTestCase(unittest.TestCase):
 
         lesson = lesson_manager.get_lesson(lesson_id)
         self.assertEqual(lesson["current_review_plan_version_id"], ready["id"])
+
+    def test_review_plan_version_persists_source_artifact(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="原始课堂材料",
+            weak_points="空间轨迹",
+            created_by_user_id=7,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=7,
+        )
+
+        lesson_manager.update_review_plan_version_source_artifact(
+            int(version["id"]),
+            source_text="原始课堂材料",
+            cleaned_source_text="清洗后课堂材料",
+            source_text_hash="sha256:" + "a" * 64,
+            source_brief={
+                "schema_version": "2026-07-01",
+                "source_text_hash": "sha256:" + "a" * 64,
+                "cleaned_text": "清洗后课堂材料",
+                "lesson_title_candidates": ["动点与立体几何综合"],
+                "knowledge_points": [{"name": "空间轨迹", "evidence_ids": ["ev-001"], "confidence": 0.8}],
+                "method_chains": [],
+                "common_mistakes": [],
+                "example_stems": [],
+                "teacher_emphasis": [],
+                "excluded_noise": [],
+                "missing_fields": [],
+                "evidence_map": [{"id": "ev-001", "source": "summary_text", "quote": "清洗后课堂材料", "offset_start": 0, "offset_end": 7, "kind": "text"}],
+                "confidence": 0.8,
+            },
+        )
+
+        hydrated = lesson_manager.get_review_plan_version_for_lesson(lesson_id, int(version["id"]))
+        self.assertEqual(hydrated["source_text"], "原始课堂材料")
+        self.assertEqual(hydrated["cleaned_source_text"], "清洗后课堂材料")
+        self.assertEqual(hydrated["source_text_hash"], "sha256:" + "a" * 64)
+        self.assertEqual(hydrated["source_brief"]["lesson_title_candidates"], ["动点与立体几何综合"])
+        self.assertEqual(hydrated["source_brief"]["knowledge_points"][0]["name"], "空间轨迹")

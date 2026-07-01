@@ -4568,6 +4568,10 @@ def _review_plan_version_from_row(row) -> Optional[dict]:
         generation_options = normalize_generation_options(None)
     version["generation_options"] = generation_options
     version["generation_summary"] = generation_options_summary(generation_options)
+    version["source_text"] = str(version.get("source_text") or "")
+    version["cleaned_source_text"] = str(version.get("cleaned_source_text") or "")
+    version["source_text_hash"] = str(version.get("source_text_hash") or "")
+    version["source_brief"] = _load_review_plan_source_brief(version.get("source_brief_json"))
     return version
 
 
@@ -4583,6 +4587,14 @@ def _column_expr(columns: set[str], column: str, fallback_sql: str) -> str:
     return column if column in columns else fallback_sql
 
 
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def _dump_review_plan_materials(value: Optional[list[str]]) -> str:
     try:
         return json.dumps(value or [], ensure_ascii=False)
@@ -4596,6 +4608,15 @@ def _dump_generation_options(value: object | None, *, source: str = "create") ->
     except ValueError:
         options = normalize_generation_options(None, source=source)
     return json.dumps(options, ensure_ascii=False)
+
+
+def _dump_review_plan_source_brief(value: object | None) -> str:
+    return _dump_review_plan_run_json(value, {})
+
+
+def _load_review_plan_source_brief(value: object | None) -> dict:
+    payload = _load_review_plan_run_json(value, {})
+    return payload if isinstance(payload, dict) else {}
 
 
 def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
@@ -4615,6 +4636,10 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
             request_id       TEXT NOT NULL DEFAULT '',
             chat_provider    TEXT NOT NULL DEFAULT '',
             chat_model       TEXT NOT NULL DEFAULT '',
+            source_text      TEXT NOT NULL DEFAULT '',
+            cleaned_source_text TEXT NOT NULL DEFAULT '',
+            source_text_hash TEXT NOT NULL DEFAULT '',
+            source_brief_json TEXT NOT NULL DEFAULT '{}',
             same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
             generation_options_json TEXT NOT NULL DEFAULT '{}',
             created_by_user_id INTEGER NOT NULL DEFAULT 0,
@@ -4638,19 +4663,24 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "review_plan_versions", "request_id", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "chat_provider", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "chat_model", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "source_text", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "cleaned_source_text", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "source_text_hash", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "review_plan_versions", "source_brief_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "review_plan_versions", "same_lesson_materials_json", "TEXT NOT NULL DEFAULT '[]'")
     _ensure_column(conn, "review_plan_versions", "generation_options_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "review_plan_versions", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "review_plan_versions", "completed_at", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "created_at", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "updated_at", "TEXT NOT NULL DEFAULT ''")
-    _ensure_column(conn, "review_plan_runs", "version_id", "INTEGER DEFAULT NULL")
-    conn.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_review_plan_runs_version_updated
-        ON review_plan_runs(version_id, updated_at)
-        """
-    )
+    if _table_exists(conn, "review_plan_runs"):
+        _ensure_column(conn, "review_plan_runs", "version_id", "INTEGER DEFAULT NULL")
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_review_plan_runs_version_updated
+            ON review_plan_runs(version_id, updated_at)
+            """
+        )
     _migrate_review_plan_generated_at_column(conn)
     conn.execute(
         """
@@ -4713,6 +4743,10 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
                 request_id       TEXT NOT NULL DEFAULT '',
                 chat_provider    TEXT NOT NULL DEFAULT '',
                 chat_model       TEXT NOT NULL DEFAULT '',
+                source_text      TEXT NOT NULL DEFAULT '',
+                cleaned_source_text TEXT NOT NULL DEFAULT '',
+                source_text_hash TEXT NOT NULL DEFAULT '',
+                source_brief_json TEXT NOT NULL DEFAULT '{}',
                 same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
                 generation_options_json TEXT NOT NULL DEFAULT '{}',
                 created_by_user_id INTEGER NOT NULL DEFAULT 0,
@@ -4737,6 +4771,10 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
             "request_id",
             "chat_provider",
             "chat_model",
+            "source_text",
+            "cleaned_source_text",
+            "source_text_hash",
+            "source_brief_json",
             "same_lesson_materials_json",
             "generation_options_json",
             "created_by_user_id",
@@ -4750,6 +4788,10 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
             "lesson_id": "0",
             "version_no": "1",
             "status": "'pending'",
+            "source_text": "''",
+            "cleaned_source_text": "''",
+            "source_text_hash": "''",
+            "source_brief_json": "'{}'",
             "same_lesson_materials_json": "'[]'",
             "generation_options_json": "'{}'",
             "created_by_user_id": "0",
@@ -5066,6 +5108,38 @@ def update_review_plan_version_generation_options(version_id: int, generation_op
                 int(version_id),
             ),
         )
+
+
+def update_review_plan_version_source_artifact(
+    version_id: int,
+    *,
+    source_text: str,
+    cleaned_source_text: str,
+    source_text_hash: str,
+    source_brief: object,
+) -> None:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET source_text=?,
+                cleaned_source_text=?,
+                source_text_hash=?,
+                source_brief_json=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (
+                str(source_text or ""),
+                str(cleaned_source_text or ""),
+                str(source_text_hash or ""),
+                _dump_review_plan_source_brief(source_brief),
+                int(version_id),
+            ),
+        )
+        conn.commit()
+    if cur.rowcount == 0:
+        raise LookupError("review plan version not found")
 
 
 def mark_review_plan_version_transcription_succeeded(version_id: int, *, summary: str) -> None:
