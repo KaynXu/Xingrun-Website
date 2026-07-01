@@ -114,3 +114,22 @@ class ReviewPlanSourceBriefTestCase(unittest.TestCase):
         self.assertFalse(brief.example_stems)
         self.assertFalse(brief.teacher_emphasis)
         self.assertTrue(brief.evidence_map)
+
+    def test_deterministic_brief_does_not_classify_plain_steps_or_title_as_examples_or_emphasis(self):
+        brief = build_deterministic_source_brief(
+            raw_text=(
+                "本节课主题：动点与立体几何综合\n"
+                "先判断轨迹。\n"
+                "先求点P的位置。\n"
+                "动点P在圆上。\n"
+                "轨迹是什么。\n"
+            ),
+            subject="数学",
+            topic="",
+            weak_points="",
+            user_requirements="",
+        )
+
+        self.assertEqual(brief.lesson_title_candidates[0], "动点与立体几何综合")
+        self.assertFalse(brief.example_stems)
+        self.assertFalse(brief.teacher_emphasis)

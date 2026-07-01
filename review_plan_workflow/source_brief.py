@@ -26,9 +26,9 @@ _TITLE_MARKERS = ("本节课主题：", "主题：", "topic:")
 _SENTENCE_SCAN_RE = re.compile(r"[^。\n！？!?；;]+[。！？!?；;]?")
 _METHOD_SPLIT_RE = re.compile(r"\s*(?:->|→|、|，|,|；|;)\s*")
 _KNOWLEDGE_MARKERS = ("知识点：", "知识点:", "重点：", "重点:", "结论：", "结论:", "定理：", "定理:", "公式：", "公式:", "性质：", "性质:")
-_EXAMPLE_MARKERS = ("例题：", "例题:", "题目：", "题目:", "已知", "求证", "求解", "证明", "动点", "函数", "方程", "几何", "轨迹")
+_EXAMPLE_MARKERS = ("例题：", "例题:", "题目：", "题目:", "已知", "求证", "求解", "证明")
 _MISTAKE_MARKERS = ("易错：", "易错:", "常错：", "常错:", "常见错误", "错误：", "错误:", "误区：", "误区:", "误看", "看漏", "混淆", "漏看", "把")
-_EMPHASIS_MARKERS = ("老师强调：", "老师强调:", "强调：", "强调:", "一定要", "记住", "先看", "先判断", "先求", "特别注意")
+_EMPHASIS_MARKERS = ("老师强调：", "老师强调:", "强调：", "强调:", "一定要", "要注意", "重点是", "记住", "特别注意")
 _METHOD_MARKERS = ("方法：", "方法:", "步骤：", "步骤:", "思路：", "思路:", "先", "然后", "最后")
 
 
@@ -122,9 +122,7 @@ def _looks_like_knowledge_point(sentence: str) -> bool:
 
 
 def _looks_like_example(sentence: str) -> bool:
-    if _sentence_has_marker(sentence, ("例题：", "例题:", "题目：", "题目:", "已知", "求证", "求解", "证明")):
-        return True
-    if "动点" in sentence or "轨迹" in sentence or "函数" in sentence or "方程" in sentence or "几何" in sentence:
+    if _sentence_has_marker(sentence, _EXAMPLE_MARKERS):
         return True
     return False
 
@@ -140,9 +138,7 @@ def _looks_like_mistake(sentence: str) -> bool:
 
 
 def _looks_like_emphasis(sentence: str) -> bool:
-    if _sentence_has_marker(sentence, ("老师强调：", "老师强调:", "强调：", "强调:", "一定要", "记住", "特别注意")):
-        return True
-    if "先看" in sentence or "先判断" in sentence or "先求" in sentence:
+    if _sentence_has_marker(sentence, _EMPHASIS_MARKERS):
         return True
     return False
 
