@@ -33,6 +33,7 @@ from class_commentary import (
 from config_runtime import get_runtime_config, normalize_chat_provider, normalize_vision_provider
 from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
 from review_plan_workflow.transcript_polish import (
+    REVIEW_PLAN_TRANSCRIPT_POLISH_SYSTEM_PROMPT,
     build_review_plan_transcript_polish_payload,
     normalize_review_plan_transcript_polish_text,
 )
@@ -2400,10 +2401,7 @@ def polish_review_plan_transcript(
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {
-                "role": "system",
-                "content": "You correct ASR transcript text for review-plan source understanding. Return polished transcript only.",
-            },
+            {"role": "system", "content": REVIEW_PLAN_TRANSCRIPT_POLISH_SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
         temperature=0.1,

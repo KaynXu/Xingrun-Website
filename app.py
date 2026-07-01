@@ -265,6 +265,7 @@ from lesson_manager import (
     change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_review_plan_version_source_artifact,
     update_user_avatar_preferences,
 )
 from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
@@ -272,6 +273,7 @@ from class_commentary import list_colleague_skills, load_colleague_skill, payloa
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
+from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
     CreditBalanceError,
@@ -1006,6 +1008,15 @@ def _run_review_plan_generation_job(
                 if not raw_transcription:
                     fail_review_plan_version(version_id, "音频转录失败，请稍后重试")
                     return
+                raw_source_text_hash = review_plan_transcript_source_text_hash(raw_transcription)
+                source_brief_snapshot = version.get("source_brief") or {}
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=raw_transcription,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
+                )
                 transcript_for_generation = raw_transcription
                 try:
                     polish_provider = _review_plan_ai_provider_name()
@@ -1044,6 +1055,13 @@ def _run_review_plan_generation_job(
                 merged_summary = _merge_review_plan_materials(
                     transcript_for_generation,
                     same_lesson_materials or version.get("same_lesson_materials") or [],
+                )
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=merged_summary,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
                 )
                 mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)

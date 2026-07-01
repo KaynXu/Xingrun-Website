@@ -1167,10 +1167,15 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(feature_calls[1]["model"], "gpt-5.5")
 
         saved = lesson_manager.get_lesson(lesson_id)
+        saved_version = lesson_manager.get_review_plan_version(version["id"])
         self.assertEqual(saved["record_status"], "ready")
         self.assertIn("润色转写：动点到定点距离不变，轨迹是球面。", saved["summary"])
         self.assertNotIn("原始转写：动点倒顶点距离不变。", saved["summary"])
         self.assertIn("补充材料：球面轨迹和截面判断。", saved["summary"])
+        self.assertEqual(saved_version["source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertIn("润色转写：动点到定点距离不变，轨迹是球面。", saved_version["cleaned_source_text"])
+        self.assertIn("补充材料：球面轨迹和截面判断。", saved_version["cleaned_source_text"])
+        self.assertTrue(saved_version["source_text_hash"].startswith("sha256:"))
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
@@ -1273,10 +1278,15 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(feature_calls[1]["model"], "gpt-5.5")
 
         saved = lesson_manager.get_lesson(lesson_id)
+        saved_version = lesson_manager.get_review_plan_version(version["id"])
         self.assertEqual(saved["record_status"], "ready")
         self.assertIn("原始转写：动点倒顶点距离不变。", saved["summary"])
         self.assertNotIn("润色转写：动点到定点距离不变，轨迹是球面。", saved["summary"])
         self.assertIn("补充材料：球面轨迹和截面判断。", saved["summary"])
+        self.assertEqual(saved_version["source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertIn("原始转写：动点倒顶点距离不变。", saved_version["cleaned_source_text"])
+        self.assertIn("补充材料：球面轨迹和截面判断。", saved_version["cleaned_source_text"])
+        self.assertTrue(saved_version["source_text_hash"].startswith("sha256:"))
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
