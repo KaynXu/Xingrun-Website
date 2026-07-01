@@ -15,7 +15,7 @@ import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
-from review_plan_workflow.schemas import ReviewPlanInput, validate_final_review_plan
+from review_plan_workflow.schemas import ReviewPlanInput, normalize_final_review_plan, validate_final_review_plan
 from review_plan_workflow.service import generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
@@ -103,6 +103,76 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(plan.lesson_info.topic, "二次函数最值与将军饮马综合复习")
         self.assertEqual(plan.lesson_info.grade, "9")
         self.assertEqual([day.day for day in plan.days], [1, 2, 7, 14, 30])
+
+    def test_normalizes_section_questions_for_compressed_day_quality_gate(self):
+        plan = {
+            "lesson_info": {"subject": "数学", "grade": "三年级", "date": "2026-07-01", "topic": "几何最短路径复习"},
+            "full_review_topics": ["面积比转高的比例", "动点轨迹判断", "轴对称最短路径", "桥模型端点对应", "分段关系式"],
+            "quotes": ["面积比不是直接给面积，而是告诉高的关系。"],
+            "days": [
+                {
+                    "day_number": 1,
+                    "date": "2026-07-02",
+                    "objective": "用错因、步骤和模型复盘几何最短路径。",
+                    "sections": [
+                        {
+                            "type": "mixed",
+                            "title": "填空与选择诊断",
+                            "instructions": "完成后标注错因。",
+                            "questions": [
+                                {
+                                    "id": "blank1",
+                                    "type": "blank",
+                                    "question": "同底三角形面积比等于对应______的比。",
+                                    "answer": ["高"],
+                                },
+                                {
+                                    "id": "blank2",
+                                    "type": "blank",
+                                    "question": "点到直线的距离固定时，动点轨迹是一条与该直线______的直线。",
+                                    "answer": "平行",
+                                },
+                                {
+                                    "id": "blank3",
+                                    "type": "blank",
+                                    "question": "轴对称最短路径先作一个定点关于轨迹线的______。",
+                                    "answer": "对称点",
+                                },
+                                {
+                                    "id": "choice1",
+                                    "type": "choice",
+                                    "question": "求定点 A 到直线 l 上动点 P 再到定点 B 的最短路径，第一步通常是？",
+                                    "options": ["A. 作 A 关于 l 的对称点", "B. 直接量 AP", "C. 随便取 P", "D. 先算面积"],
+                                    "answer": "A",
+                                },
+                                {
+                                    "id": "choice2",
+                                    "type": "choice",
+                                    "question": "动点面积图像写关系式时，最容易漏掉的是？",
+                                    "options": ["A. 时间范围", "B. 图像颜色", "C. 题号", "D. 字体大小"],
+                                    "answer": "A",
+                                },
+                            ],
+                        }
+                    ],
+                    "completion_criteria": "能说清轨迹、变换、锁点、计算四步。",
+                }
+            ],
+        }
+
+        normalized = normalize_final_review_plan(plan)
+        day = normalized["days"][0]
+        self.assertEqual(len(day["blanks"]), 3)
+        self.assertEqual(len(day["choices"]), 2)
+        self.assertEqual(day["blanks"][0]["answer"], "高")
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
 
     def test_review_plan_input_accepts_custom_review_days(self):
         review_input = ReviewPlanInput(
