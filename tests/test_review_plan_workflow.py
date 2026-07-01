@@ -125,6 +125,65 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(plan.days[0].choices[0]["question"], "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。")
         self.assertIn("解函数不等式时，第一步先判断", plan.days[0].items[-1]["text"])
 
+    def test_validate_final_review_plan_normalizes_nested_tasks_into_printable_fields(self):
+        raw_plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        for day in raw_plan["days"]:
+            day["blanks"] = []
+            day["choices"] = []
+            day["items"] = []
+            day["tasks"] = {
+                "blanks": [
+                    {"stem": f"第{day['day']}天：定长线段在立体中的轨迹是______。", "answer": "球面"},
+                    {"stem": f"第{day['day']}天：球面被平面截得的图形是______。", "answer": "圆"},
+                    {"stem": f"第{day['day']}天：面积最值先找固定底或固定______。", "answer": "高"},
+                ],
+                "choices": [
+                    {
+                        "question": f"第{day['day']}天：到定点距离为定长的动点轨迹是？",
+                        "options": ["A. 球面", "B. 直线", "C. 射线", "D. 折线"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": f"第{day['day']}天：定底三角形面积最值优先看什么？",
+                        "options": ["A. 动高", "B. 颜色", "C. 页码", "D. 字体"],
+                        "answer": "A",
+                    },
+                ],
+                "active_recall": {
+                    "cards": [
+                        {"stem": f"第{day['day']}天：为什么线面角最大值要找线段最短？", "answer_hint": "垂高固定时，斜线越短角越大。"}
+                    ]
+                },
+            }
+        raw_plan["days"][2]["tasks"] = {
+            "blanks_spiral": [
+                {"stem": "第7天：定长线段在立体中的轨迹是______。", "answer": "球面"},
+                {"stem": "第7天：球面被平面截得的图形是______。", "answer": "圆"},
+            ],
+            "oral_cards": [
+                {"stem": "题干：动点 P 满足 PA·PB=0。", "answer_hint": "以 AB 为直径的圆。"},
+                {"stem": "题干：动点 P 到定点距离固定。", "answer_hint": "轨迹是球面。"},
+                {"stem": "题干：线面角垂高固定。", "answer_hint": "找线段最短。"},
+            ],
+        }
+        raw_plan["days"][3]["tasks"]["multiple_choice_diagnosis"] = {
+            "question": "第14天：下列哪一步最能避免空间直觉误判？",
+            "options": ["A. 先画关系图", "B. 直接猜", "C. 只看答案", "D. 跳过证明"],
+            "answer": "A",
+        }
+
+        plan, errors = validate_final_review_plan(raw_plan)
+        review = review_single_lesson_plan(raw_plan, subject="math")
+
+        self.assertIsNotNone(plan)
+        self.assertEqual(errors, [])
+        self.assertEqual(plan.days[0].blanks[0]["text"], "第1天：定长线段在立体中的轨迹是______。")
+        self.assertEqual(plan.days[0].choices[0]["question"], "第1天：到定点距离为定长的动点轨迹是？")
+        self.assertEqual(len(plan.days[2].blanks), 2)
+        self.assertTrue(any("PA·PB=0" in item["text"] for item in plan.days[2].items))
+        self.assertTrue(review.passed, review.model_dump())
+        self.assertFalse(any(issue.category in {"pdf_readiness", "task_actionability"} for issue in review.issues))
+
     def test_validate_final_review_plan_normalizes_wrapped_camel_case_writer_shape(self):
         wrapped_plan = {
             "reviewPlan": {

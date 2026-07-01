@@ -356,6 +356,76 @@ def _normalize_component_payload(day: dict[str, Any]) -> tuple[list[dict[str, An
     return blanks, choices, body_items, quotes
 
 
+def _item_text(value: dict[str, Any]) -> str:
+    return _clean_text(
+        value.get("text")
+        or value.get("stem")
+        or value.get("question")
+        or value.get("prompt")
+        or value.get("task")
+        or value.get("front")
+    )
+
+
+def _normalize_task_payload(value: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    blanks: list[dict[str, Any]] = []
+    choices: list[dict[str, Any]] = []
+    body_items: list[str] = []
+
+    def collect(item: Any, parent_key: str = "") -> None:
+        key = parent_key.lower()
+        if isinstance(item, dict):
+            if key in {"blanks", "fillinblanks", "blanks_spiral"}:
+                normalized_blank = _normalize_blank(item)
+                if normalized_blank.get("text"):
+                    _append_unique_blank(blanks, normalized_blank)
+            elif isinstance(item.get("options"), list):
+                _append_unique_choice(choices, item)
+            else:
+                text = _item_text(item)
+                if text:
+                    if "______" in text and any(field in item for field in ("answer", "reference_answer", "answer_hint")):
+                        _append_unique_blank(blanks, {"text": text, "answer": item.get("answer") or item.get("reference_answer") or item.get("answer_hint")})
+                    else:
+                        _append_unique_body_from_task(text)
+
+            for nested_key, nested_value in item.items():
+                normalized_key = str(nested_key)
+                if normalized_key in {"options"}:
+                    continue
+                if normalized_key in {"blanks", "fillInBlanks", "blanks_spiral"} and isinstance(nested_value, list):
+                    for nested_item in nested_value:
+                        collect(nested_item, normalized_key)
+                    continue
+                if normalized_key in {"choices", "multipleChoice"} and isinstance(nested_value, list):
+                    for nested_item in nested_value:
+                        collect(nested_item, normalized_key)
+                    continue
+                if normalized_key in {"items", "cards", "questions", "oral_cards"} and isinstance(nested_value, list):
+                    for nested_item in nested_value:
+                        collect(nested_item, normalized_key)
+                    continue
+                if isinstance(nested_value, (dict, list)):
+                    collect(nested_value, normalized_key)
+        elif isinstance(item, list):
+            for nested_item in item:
+                collect(nested_item, parent_key)
+        else:
+            text = _clean_text(item)
+            if text and key in {"blanks", "fillinblanks", "blanks_spiral"}:
+                _append_unique_blank(blanks, {"text": text, "answer": ""})
+            elif text:
+                _append_unique_body_from_task(text)
+
+    def _append_unique_body_from_task(text: str) -> None:
+        clean = _clean_text(text)
+        if clean and clean not in body_items:
+            body_items.append(clean)
+
+    collect(value)
+    return blanks, choices, body_items
+
+
 def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(day)
     try:
@@ -406,10 +476,13 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
             normalized["time"] = f"{time_minutes}分钟"
 
     component_blanks, component_choices, component_body_items, component_quotes = _normalize_component_payload(normalized)
+    task_blanks, task_choices, task_body_items = _normalize_task_payload(normalized.get("tasks"))
     items = [copy.deepcopy(item) for item in normalized.get("items", []) if isinstance(item, dict)]
     _append_unique_body(items, normalized.get("goal", ""))
     _append_unique_body(items, normalized.get("focus", ""))
     for text in component_body_items:
+        _append_unique_body(items, text)
+    for text in task_body_items:
         _append_unique_body(items, text)
 
     active_recall_blanks: list[dict[str, Any]] = []
@@ -467,6 +540,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
             _append_unique_blank(normalized_blanks, normalized_blank)
     for blank in component_blanks:
         _append_unique_blank(normalized_blanks, blank)
+    for blank in task_blanks:
+        _append_unique_blank(normalized_blanks, blank)
     for blank in active_recall_blanks:
         _append_unique_blank(normalized_blanks, blank)
     for normalized_blank in normalized_blanks:
@@ -493,6 +568,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
             continue
         _append_unique_choice(normalized_choices, choice)
     for choice in component_choices:
+        _append_unique_choice(normalized_choices, choice)
+    for choice in task_choices:
         _append_unique_choice(normalized_choices, choice)
     normalized["choices"] = normalized_choices
 
