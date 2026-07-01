@@ -62,6 +62,7 @@ def _user_message(
             "硬性覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；不能只写本节课标题，不能只写“本节课内容/综合复习”。",
             "硬性课堂金句契约：quotes 只保留课堂文本中老师真实强调过的方法句；没有证据就返回空数组，禁止把使用说明、完成标准、正确率要求或“每一个复习日都要完整复习整节课内容”写成金句。",
             "硬性数学公式契约：数学公式、分式、根式、对数、分段函数、区间和不等式链必须写成 `$...$` LaTeX；JSON 反斜杠要正确转义，禁止 begincases/endcases/sqrt[/log_( 等坏文本。",
+            "硬性顶层 JSON 契约：顶层必须直接包含 lesson_info, full_review_topics, quotes, days；禁止输出 plan, reviewPlan, result, data, output, content, response 等包裹字段；禁止把 days 放进 plan.days 或其他内层对象。",
             "请返回可直接进入现有 PDF 渲染链路的 JSON object，不要输出 Markdown 包裹。",
         ]
     )
