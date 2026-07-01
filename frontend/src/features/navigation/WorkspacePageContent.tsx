@@ -191,8 +191,8 @@ export function WorkspacePageContent({
             <ReviewGenerationPage
               onSuccess={handleReviewGenerationSuccess}
               taskControls={reviewTaskControls}
-              renderLessonInput={(handleFormSuccess) => (
-                <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} />
+              renderLessonInput={(handleFormSuccess, handleFormCancel) => (
+                <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} onCancel={handleFormCancel} />
               )}
             />
           )}

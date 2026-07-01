@@ -139,7 +139,8 @@ test('review generation validates custom review days before creating or regenera
   assert.match(reviewPlanGenerationOptionsSource, /export function parseCustomReviewDays/);
   assert.match(reviewPlanGenerationOptionsSource, /replace\(\/，\/g, ','\)/);
   assert.match(reviewPlanGenerationOptionsSource, /export function getGenerationOptionsValidationError/);
-  assert.match(reviewPlanGenerationOptionsSource, /请填写至少一个复习日期点/);
+  assert.match(reviewPlanGenerationOptionsSource, /请输入日期点/);
+  assert.match(reviewPlanGenerationOptionsSource, /日期点格式错误/);
   assert.match(reviewPlanGenerationOptionsSource, /review_days: parseCustomReviewDays\(value\.customDays\)/);
   assert.match(lessonInputSource, /getGenerationOptionsValidationError\(generationOptions\)/);
   assert.match(lessonInputSource, /setError\(generationOptionsError\);/);
@@ -152,9 +153,22 @@ test('review generation validates custom review days before creating or regenera
 test('review generation places generation settings directly under top class metadata', () => {
   const optionsIndex = lessonInputSource.indexOf('<ReviewPlanGenerationOptionsFields');
   const noClassWarningIndex = lessonInputSource.indexOf('{hasNoAssignableClasses &&');
-  const materialSectionIndex = lessonInputSource.indexOf('课堂材料');
+  const materialSectionIndex = lessonInputSource.indexOf('课堂材料</h4>');
 
   assert.notEqual(optionsIndex, -1);
   assert.ok(optionsIndex < noClassWarningIndex);
   assert.ok(optionsIndex < materialSectionIndex);
+});
+
+test('review generation composer uses compact single-column layout', () => {
+  assert.match(reviewGenerationSource, /新建复习文档/);
+  assert.match(reviewGenerationSource, /max-w-3xl/);
+  assert.match(lessonInputSource, /showUserRequirements=\{false\}/);
+  assert.match(lessonInputSource, /const \[supplementOpen, setSupplementOpen\] = useState\(false\);/);
+  assert.match(lessonInputSource, /补充信息/);
+  assert.match(lessonInputSource, /sticky bottom-0/);
+  assert.match(lessonInputSource, /formStatusText/);
+  assert.match(lessonInputSource, /disabled=\{!canGenerate\}/);
+  assert.doesNotMatch(lessonInputSource, /生成前检查/);
+  assert.doesNotMatch(lessonInputSource, /xl:grid-cols-\[minmax\(0,1\.35fr\)_280px\]/);
 });

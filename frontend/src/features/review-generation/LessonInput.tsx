@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Upload } from 'lucide-react';
+import { AlertCircle, ArrowRight, ChevronDown, Cpu, Upload, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ClassItem, CurrentUser } from '../../appTypes';
 import {
@@ -15,7 +15,6 @@ import {
   DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
   buildGenerationOptionsPayload,
   getGenerationOptionsValidationError,
-  getGenerationOptionsFormSummary,
   type ReviewPlanGenerationOptionsFormValue,
 } from './reviewPlanGenerationOptions';
 
@@ -29,7 +28,6 @@ type ReviewPlanCreateResponse = {
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
 const reviewFormSectionClass = 'space-y-4 border-b border-slate-200/80 pb-6 dark:border-white/10';
 const reviewFormSectionTitleClass = 'text-sm font-semibold text-slate-900 dark:text-white';
-const reviewFormSectionTextClass = 'mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400';
 const reviewFormFieldClass = `${workspaceFieldClass} border-slate-200 focus:border-slate-300 focus:ring-slate-100`;
 
 function syncMemberScopedClassSelection(
@@ -86,9 +84,11 @@ function SubjectSelect({
 export function LessonInput({
   onSuccess,
   currentUser,
+  onCancel,
 }: {
   onSuccess: (result: ReviewPlanCreateResponse) => void;
   currentUser: CurrentUser;
+  onCancel?: () => void;
 }) {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
@@ -108,6 +108,7 @@ export function LessonInput({
   const [error, setError] = useState('');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
+  const [supplementOpen, setSupplementOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -156,6 +157,16 @@ export function LessonInput({
   }, [classes, classesLoading, currentUser.role]);
 
   const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
+  const generationOptionsError = getGenerationOptionsValidationError(generationOptions);
+  const missingItems = [
+    hasNoAssignableClasses || !classId ? '班级' : '',
+    inputType === 'text' && !summaryText.trim() ? '课堂材料' : '',
+    inputType === 'file' && !file ? '课堂材料' : '',
+  ].filter(Boolean);
+  const formStatusText = hasNoAssignableClasses
+    ? '未分配班级'
+    : generationOptionsError || (missingItems.length ? `缺少：${missingItems.join('、')}` : '可生成');
+  const canGenerate = !hasNoAssignableClasses && !generationOptionsError && missingItems.length === 0 && !isLoading;
 
   const handleClassChange = (id: number) => {
     setClassId(id);
@@ -184,22 +195,21 @@ export function LessonInput({
   const handleGenerate = async () => {
     setError('');
     if (hasNoAssignableClasses) {
-      setError('当前账号未分配负责班级，请先联系管理员分配班级');
+      setError('未分配班级');
       return;
     }
     if (!classId) {
-      setError('请选择班级后再生成复习记录');
+      setError('请选择班级');
       return;
     }
     if (inputType === 'text' && !summaryText.trim()) {
-      setError('请填写课堂笔记内容');
+      setError('请输入课堂材料');
       return;
     }
     if (inputType === 'file' && !file) {
-      setError('请选择上传文件');
+      setError('请选择文件');
       return;
     }
-    const generationOptionsError = getGenerationOptionsValidationError(generationOptions);
     if (generationOptionsError) {
       setError(generationOptionsError);
       return;
@@ -275,7 +285,7 @@ export function LessonInput({
             key="form"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
+            className="space-y-5 pb-20"
           >
             <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
               <SubjectSelect
@@ -305,13 +315,12 @@ export function LessonInput({
               <ReviewPlanGenerationOptionsFields
                 value={generationOptions}
                 onChange={setGenerationOptions}
+                showUserRequirements={false}
               />
             </section>
 
             {hasNoAssignableClasses && (
-              <p className="text-sm text-amber-600 dark:text-amber-300">
-                当前账号未分配负责班级，请先联系管理员分配班级后再生成复习记录。
-              </p>
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-300">未分配班级</p>
             )}
 
             {error && (
@@ -321,144 +330,168 @@ export function LessonInput({
               </div>
             )}
 
-            <div className="grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_280px]">
-              <div className="space-y-6">
-                <section className={reviewFormSectionClass}>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className={reviewFormSectionTitleClass}>课堂材料</h4>
-                    </div>
-                    <div className="inline-flex gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-1 dark:border-white/10 dark:bg-white/5">
-                      <button
-                        onClick={() => setInputType('text')}
-                        className={cn(
-                          'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                          inputType === 'text' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
-                        )}
-                      >
-                        文字笔记
-                      </button>
-                      <button
-                        onClick={() => setInputType('file')}
-                        className={cn(
-                          'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                          inputType === 'file' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
-                        )}
-                      >
-                        上传文件
-                      </button>
-                    </div>
-                  </div>
-
-                  {inputType === 'file' ? (
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="cursor-pointer rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-6 py-10 text-center transition hover:border-slate-400 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
-                    >
-                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center text-slate-700 dark:text-slate-200">
-                        <Upload size={24} />
-                      </div>
-                      <h4 className="font-semibold text-slate-900 dark:text-white">{file ? file.name : '上传课后录音或文本'}</h4>
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">支持 m4a、mp3、wav、txt、md</p>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".mp3,.m4a,.mp4,.wav,.ogg,.webm,.flac,.txt,.md"
-                        className="hidden"
-                        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[420px] flex-col">
-                      <div className="mb-4 flex items-center justify-between gap-4">
-                        <h4 className={reviewFormSectionTitleClass}>课堂笔记</h4>
-                        <button
-                          onClick={handleAnalyze}
-                          disabled={!summaryText.trim() || isAnalyzing}
-                          className={workspaceGhostButtonClass}
-                        >
-                          <Cpu size={13} className={isAnalyzing ? 'text-sky-500' : 'text-slate-500 dark:text-slate-400'} />
-                          {isAnalyzing ? '识别中...' : '识别课程信息'}
-                        </button>
-                      </div>
-                      <textarea
-                        placeholder="在此处粘贴课堂笔记、结构化大纲或老师补充说明..."
-                        value={summaryText}
-                        onChange={(e) => setSummaryText(e.target.value)}
-                        className="min-h-[340px] flex-1 resize-none rounded-2xl border border-slate-200 bg-[#fcfdff] px-5 py-4 text-sm leading-relaxed text-slate-700 outline-none transition focus:border-slate-300 focus:ring-4 focus:ring-slate-100 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:border-slate-600 dark:focus:ring-white/10"
-                      />
-                    </div>
-                  )}
-                </section>
-
-                <section className={reviewFormSectionClass}>
-                  <h4 className={reviewFormSectionTitleClass}>教学信息</h4>
-                  <div className="space-y-4">
-                    <input
-                      type="text"
-                      placeholder="课程主题（选填）"
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      className={reviewFormFieldClass}
-                    />
-                    <textarea
-                      placeholder="薄弱点（选填）"
-                      value={weakPoints}
-                      onChange={(e) => setWeakPoints(e.target.value)}
-                      rows={4}
-                      className={`${reviewFormFieldClass} resize-none`}
-                    />
-                    <textarea
-                      placeholder="同一节课补充材料（选填）：第二段录音纪要、飞书智能纪要或老师补充说明"
-                      value={sameLessonMaterials}
-                      onChange={(e) => setSameLessonMaterials(e.target.value)}
-                      rows={6}
-                      className={`${reviewFormFieldClass} resize-none`}
-                    />
-                  </div>
-                </section>
+            <section className={reviewFormSectionClass}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h4 className={reviewFormSectionTitleClass}>课堂材料</h4>
+                <div className="inline-flex gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1 dark:border-white/10 dark:bg-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setInputType('text')}
+                    className={cn(
+                      'rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                      inputType === 'text' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
+                    )}
+                  >
+                    文字
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputType('file')}
+                    className={cn(
+                      'rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                      inputType === 'file' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
+                    )}
+                  >
+                    文件
+                  </button>
+                </div>
               </div>
 
-              <aside className="xl:border-l xl:border-slate-200/80 xl:pl-6 dark:xl:border-white/10">
-                <section className="space-y-4 xl:sticky xl:top-0">
-                  <div className="flex items-center gap-2 text-slate-900 dark:text-white">
-                    <CheckCircle2 size={18} className="text-sky-500" />
-                    <h4 className={reviewFormSectionTitleClass}>生成前检查</h4>
+              {inputType === 'file' ? (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="cursor-pointer rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-6 py-8 text-center transition hover:border-slate-400 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+                >
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center text-slate-700 dark:text-slate-200">
+                    <Upload size={22} />
                   </div>
-                  <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>班级</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">
-                        {classes.find((item) => item.id === classId)?.name || '未选择'}
-                      </span>
-                    </div>
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>科目</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">{subject || '未选择'}</span>
-                    </div>
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>日期</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">{lessonDate}</span>
-                    </div>
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>材料来源</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">
-                        {inputType === 'text' ? '文字笔记' : file?.name || '上传文件'}
-                      </span>
-                    </div>
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>生成节奏</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">
-                        {getGenerationOptionsFormSummary(generationOptions)}
-                      </span>
-                    </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <h4 className="max-w-full truncate font-semibold text-slate-900 dark:text-white">{file ? file.name : '上传文件'}</h4>
+                    {file && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFile(null);
+                          if (fileInputRef.current) {
+                            fileInputRef.current.value = '';
+                          }
+                        }}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                        aria-label="删除文件"
+                        title="删除"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
-                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} self-start bg-slate-950 px-4 py-3 text-base font-semibold text-white shadow-none hover:bg-slate-800`}>
-                    生成复习文档
-                    <ArrowRight size={20} />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".mp3,.m4a,.mp4,.wav,.ogg,.webm,.flac,.txt,.md"
+                    className="hidden"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              ) : (
+                <div className="flex min-h-[360px] flex-col">
+                  <div className="mb-3 flex items-center justify-between gap-4">
+                    <h4 className={reviewFormSectionTitleClass}>课堂笔记</h4>
+                    <button
+                      type="button"
+                      onClick={handleAnalyze}
+                      disabled={!summaryText.trim() || isAnalyzing}
+                      className={workspaceGhostButtonClass}
+                    >
+                      <Cpu size={13} className={isAnalyzing ? 'text-sky-500' : 'text-slate-500 dark:text-slate-400'} />
+                      {isAnalyzing ? '识别中' : '识别'}
+                    </button>
+                  </div>
+                  <textarea
+                    placeholder="课堂笔记、讲义、录音转写"
+                    value={summaryText}
+                    onChange={(e) => setSummaryText(e.target.value)}
+                    className="min-h-[300px] flex-1 resize-none rounded-2xl border border-slate-200 bg-[#fcfdff] px-5 py-4 text-sm leading-relaxed text-slate-700 outline-none transition focus:border-slate-300 focus:ring-4 focus:ring-slate-100 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:border-slate-600 dark:focus:ring-white/10"
+                  />
+                </div>
+              )}
+            </section>
+
+            <section className={reviewFormSectionClass}>
+              <button
+                type="button"
+                onClick={() => setSupplementOpen((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+                aria-expanded={supplementOpen}
+              >
+                <span className={reviewFormSectionTitleClass}>补充信息</span>
+                <ChevronDown
+                  size={16}
+                  className={cn(
+                    'text-slate-400 transition-transform',
+                    supplementOpen && 'rotate-180',
+                  )}
+                />
+              </button>
+              {supplementOpen && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <input
+                    type="text"
+                    placeholder="主题"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    className={reviewFormFieldClass}
+                  />
+                  <input
+                    type="text"
+                    placeholder="薄弱点"
+                    value={weakPoints}
+                    onChange={(e) => setWeakPoints(e.target.value)}
+                    className={reviewFormFieldClass}
+                  />
+                  <textarea
+                    placeholder="补充材料"
+                    value={sameLessonMaterials}
+                    onChange={(e) => setSameLessonMaterials(e.target.value)}
+                    rows={4}
+                    className={`${reviewFormFieldClass} resize-none sm:col-span-2`}
+                  />
+                  <textarea
+                    placeholder="本次要求"
+                    value={generationOptions.userRequirements}
+                    onChange={(event) => setGenerationOptions({ ...generationOptions, userRequirements: event.target.value })}
+                    rows={3}
+                    maxLength={1000}
+                    className={`${reviewFormFieldClass} resize-none sm:col-span-2`}
+                  />
+                </div>
+              )}
+            </section>
+
+            <div className="sticky bottom-0 z-10 -mx-5 -mb-5 flex flex-col gap-3 border-t border-slate-200/80 bg-white/95 px-5 py-4 backdrop-blur sm:-mx-6 sm:-mb-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-white/10 dark:bg-slate-950/95">
+              <span className={cn(
+                'text-sm font-medium',
+                canGenerate ? 'text-sky-700 dark:text-sky-300' : 'text-slate-500 dark:text-slate-400',
+              )}
+              >
+                {formStatusText}
+              </span>
+              <div className="flex justify-end gap-2">
+                {onCancel && (
+                  <button type="button" onClick={onCancel} className={workspaceGhostButtonClass}>
+                    取消
                   </button>
-                </section>
-              </aside>
+                )}
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={!canGenerate}
+                  className={`${workspacePrimaryButtonClass} bg-slate-950 px-4 py-3 text-base font-semibold text-white shadow-none hover:bg-slate-800`}
+                >
+                  生成
+                  <ArrowRight size={18} />
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
