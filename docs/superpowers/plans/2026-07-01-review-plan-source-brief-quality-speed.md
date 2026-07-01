@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a structured source-brief layer to review-plan generation so raw transcripts become evidence-backed teaching inputs, teacher requirements affect planning early, regeneration reuses a stable source artifact, and slow LLM review/revision paths are bounded.
+**Goal:** Add a structured source-brief layer to review-plan generation so raw transcripts become evidence-backed teaching inputs, teacher requirements affect planning early, regeneration reuses a stable source artifact, review-plan ASR/model contracts match the intended production roles, and slow LLM review/revision paths are bounded.
 
-**Architecture:** Persist a version-scoped source artifact containing raw source snapshot, cleaned source text, structured source brief, evidence map, and source hash. Insert a source brief node before parent planning, route teacher requirements through source analysis, parent planning, writer, revision, and observability, then use a local-first quality policy with stage-specific LLM timeouts. Regeneration reuses the selected/current version source artifact by default and creates a new version without overwriting previous PDFs.
+**Architecture:** Persist a version-scoped source artifact containing raw source snapshot, polished/cleaned source text, structured source brief, evidence map, and source hash. For audio input, use the same Tencent ASR path as class commentary, run correction-only transcript polish with OpenAI `gpt-5.5`, then insert a source brief node before parent planning. Route teacher requirements through source analysis, parent planning, writer, revision, and observability, while keeping parent planning on OpenAI `gpt-5.5` and writer generation on DeepSeek `deepseek-v4-pro`. Regeneration reuses the selected/current version source artifact by default and creates a new version without overwriting previous PDFs.
 
 **Tech Stack:** Python 3, Flask, SQLite, Pydantic, unittest, OpenAI-compatible SDK, Langfuse, Vite, React, TypeScript, node:test, PDF extraction smoke tests.
 
@@ -17,6 +17,11 @@
 - Regeneration must create a new version and must not overwrite the previous ready PDF.
 - Teacher requirements may influence planning and writing, but cannot override factuality, schema, PDF safety, generation options, or quality gate rules.
 - Langfuse traces must not include full classroom text, full prompts, raw transcripts, source brief cleaned text, or complete generated PDFs.
+- Review-plan audio transcription must use the same ASR provider path as class commentary: `XR_AUDIO_TRANSCRIPTION_PROVIDER=tencent` and `XR_TENCENT_ASR_ENGINE_TYPE=16k_zh`; review-plan charge/trace metadata must show `tencent` and `flash-16k_zh`, not a hard-coded local Whisper label.
+- Review-plan parent/planner must be explicitly configured as OpenAI `gpt-5.5`: `XR_REVIEW_PLAN_PROVIDER=openai`, `XR_REVIEW_PLAN_MODEL=gpt-5.5`.
+- Review-plan writer must be explicitly configured as DeepSeek `deepseek-v4-pro`: `XR_REVIEW_PLAN_WRITER_PROVIDER=deepseek`, `XR_REVIEW_PLAN_WRITER_MODEL=deepseek-v4-pro`.
+- Review-plan audio transcript polish must run before source brief with OpenAI `gpt-5.5`, following the class-commentary correction-only pattern and falling back to raw transcript if polish fails.
+- Class commentary transcript polish and feedback generation remain OpenAI `gpt-5.5`; review-plan should share the ASR and transcript-polish quality pattern, not the class-commentary feedback prompt.
 - Frontend copy must stay terse. Use compact labels and controls, not explanatory paragraphs.
 - Legacy rows with no source artifact must still generate by falling back to `lessons.summary`.
 - The first implementation must use existing dependencies. Do not add LangChain, LangGraph, or a new background queue in this PR.
@@ -31,6 +36,10 @@
 
 - Create `review_plan_workflow/source_brief.py`
   - Owns source text cleaning, evidence slicing, deterministic fallback extraction, source hashes, and source brief Pydantic models.
+
+- Create `review_plan_workflow/transcript_polish.py`
+  - Owns review-plan transcript polish payload rules, math-term hints, and correction-only output normalization.
+  - Keeps this prompt separate from class-commentary feedback writing while reusing the same OpenAI `gpt-5.5` role.
 
 - Create `review_plan_workflow/nodes/source_brief_builder.py`
   - Workflow node that builds a source brief from `ReviewPlanInput`, `NormalizedBrief`, and generation options.
@@ -82,7 +91,15 @@
   - Store source snapshots when creating versions.
   - Use version source artifact during generation.
   - Make regeneration reuse current version source artifact by default.
-  - Keep audio transcription raw text as source snapshot, then let source brief builder clean it.
+  - Use runtime ASR provider/model metadata for review-plan transcription, matching class commentary.
+  - Keep audio transcription raw text as source snapshot, run review-plan transcript polish with OpenAI `gpt-5.5`, then let source brief builder structure the polished text.
+
+- Modify `ai_processor.py`
+  - Add `polish_review_plan_transcript()` using the review-plan transcript polish payload and the resolved OpenAI `gpt-5.5` parent provider/model.
+
+- Modify `config_runtime.py`
+  - Keep parent and writer model resolution separate.
+  - Add tests or helper constants that document the production target: parent/polish `openai/gpt-5.5`, writer `deepseek/deepseek-v4-pro`, ASR `tencent/flash-16k_zh`.
 
 - Modify `review_plan_workflow/observability.py`
   - Add source brief metrics and hashes to traces.
@@ -96,6 +113,8 @@
 
 - Modify tests:
   - Create `tests/test_review_plan_source_brief.py`
+  - Create `tests/test_review_plan_runtime_contract.py`
+  - Create `tests/test_review_plan_transcript_polish.py`
   - Modify `tests/test_review_plan_workflow.py`
   - Modify `tests/test_review_plan_async_api.py`
   - Modify `tests/test_review_plan_version_store.py`
@@ -161,6 +180,43 @@ def update_review_plan_version_source_artifact(
     source_brief: object,
 ) -> None:
     """Persist source artifact fields for one review_plan_versions row."""
+```
+
+`review_plan_workflow/transcript_polish.py` must expose:
+
+```python
+REVIEW_PLAN_TRANSCRIPT_POLISH_SCHEMA_VERSION = "2026-07-01"
+
+def build_review_plan_transcript_polish_payload(
+    *,
+    raw_transcript_text: str,
+    subject: str = "",
+    grade: str = "",
+    topic: str = "",
+    teacher_requirements: str = "",
+    math_terms: list[str] | tuple[str, ...] | None = None,
+) -> dict:
+    """Build a correction-only transcript polish payload for review-plan audio input."""
+
+def normalize_review_plan_transcript_polish_text(text: str) -> str:
+    """Return cleaned transcript text without adding planning or feedback prose."""
+```
+
+`ai_processor.py` must expose:
+
+```python
+def polish_review_plan_transcript(
+    *,
+    raw_transcript_text: str,
+    subject: str = "",
+    grade: str = "",
+    topic: str = "",
+    teacher_requirements: str = "",
+    provider: str = "",
+    model: str = "",
+    include_usage: bool = False,
+) -> str | tuple[str, dict]:
+    """Polish ASR text for review-plan source understanding with OpenAI gpt-5.5."""
 ```
 
 `review_plan_workflow/quality_policy.py` must expose:
@@ -232,6 +288,131 @@ sed -n '1,260p' docs/superpowers/audits/2026-07-01-review-plan-generation-workfl
 ```
 
 Expected: the audit names all five problem areas: source preprocessing, output quality, speed, teacher prompt integration, and regeneration consistency.
+
+## Task 0A: Runtime Provider Contract And ASR Alignment
+
+**Files:**
+- Modify: `app.py`
+- Modify: `config_runtime.py` only if a small helper is needed
+- Create: `tests/test_review_plan_runtime_contract.py`
+
+**Interfaces:**
+- Consumes: existing runtime config keys.
+- Produces: explicit review-plan runtime contract tests.
+- Produces: review-plan transcription charge/trace metadata that matches actual ASR provider.
+
+- [ ] **Step 1: Write failing runtime contract tests**
+
+Create `tests/test_review_plan_runtime_contract.py`:
+
+```python
+import unittest
+from unittest.mock import patch
+
+from config_runtime import (
+    resolve_review_plan_model,
+    resolve_review_plan_provider,
+    resolve_review_plan_writer_model,
+    resolve_review_plan_writer_provider,
+)
+from app import _audio_transcription_model_name, _audio_transcription_provider_name
+
+
+class ReviewPlanRuntimeContractTestCase(unittest.TestCase):
+    def test_review_plan_parent_and_writer_models_are_separate(self):
+        cfg = {
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.5",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash",
+        }
+
+        self.assertEqual(resolve_review_plan_provider(cfg), "openai")
+        self.assertEqual(resolve_review_plan_model(cfg), "gpt-5.5")
+        self.assertEqual(resolve_review_plan_writer_provider(cfg), "deepseek")
+        self.assertEqual(resolve_review_plan_writer_model(cfg), "deepseek-v4-pro")
+
+    def test_deepseek_writer_default_remains_v4_pro_when_env_is_omitted(self):
+        cfg = {
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.5",
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash",
+        }
+
+        self.assertEqual(resolve_review_plan_writer_provider(cfg), "deepseek")
+        self.assertEqual(resolve_review_plan_writer_model(cfg), "deepseek-v4-pro")
+
+    def test_review_plan_audio_metadata_uses_tencent_asr_runtime_config(self):
+        with patch(
+            "app.get_config",
+            return_value={
+                "audio_transcription_provider": "tencent",
+                "tencent_asr_engine_type": "16k_zh",
+            },
+        ):
+            self.assertEqual(_audio_transcription_provider_name(), "tencent")
+            self.assertEqual(_audio_transcription_model_name(), "flash-16k_zh")
+```
+
+Expected: the resolver tests pass and the metadata test locks the provider/model labels that review-plan audio generation must use.
+
+- [ ] **Step 2: Fix review-plan audio charge metadata**
+
+In `_run_review_plan_generation_job()` replace the review-plan transcription charge call:
+
+```python
+provider="local",
+model="faster-whisper-base",
+```
+
+with:
+
+```python
+provider=_audio_transcription_provider_name(),
+model=_audio_transcription_model_name(),
+```
+
+Expected: review-plan audio charge records and traces show the same ASR provider/model as class commentary under `XR_AUDIO_TRANSCRIPTION_PROVIDER=tencent`.
+
+- [ ] **Step 3: Add deployment runtime assertion**
+
+Add a redacted deploy/smoke check script or proof snippet that reads PM2 env and asserts:
+
+```text
+XR_AUDIO_TRANSCRIPTION_PROVIDER=tencent
+XR_TENCENT_ASR_ENGINE_TYPE=16k_zh
+XR_REVIEW_PLAN_PROVIDER=openai
+XR_REVIEW_PLAN_MODEL=gpt-5.5
+XR_REVIEW_PLAN_WRITER_PROVIDER=deepseek
+XR_REVIEW_PLAN_WRITER_MODEL=deepseek-v4-pro
+XR_CLASS_COMMENTARY_PROVIDER=openai
+XR_CLASS_COMMENTARY_MODEL=gpt-5.5
+```
+
+Never print API key values. Only print `*_present=True/False` for credential presence.
+
+- [ ] **Step 4: Run runtime contract proof**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_review_plan_runtime_contract -v
+git diff --check
+```
+
+Expected: all runtime contract tests pass and there are no whitespace errors.
+
+- [ ] **Step 5: Commit Task 0A**
+
+Run:
+
+```bash
+git add app.py config_runtime.py tests/test_review_plan_runtime_contract.py
+git commit -m "fix: align review plan runtime model and ASR contract"
+```
 
 ## Task 1: Source Brief Models And Deterministic Extraction
 
@@ -599,6 +780,216 @@ Run:
 ```bash
 git add review_plan_workflow/schemas.py review_plan_workflow/source_brief.py tests/test_review_plan_source_brief.py
 git commit -m "feat: add review plan source brief model"
+```
+
+## Task 1A: Review-Plan Transcript Polish For Audio Input
+
+**Files:**
+- Create: `review_plan_workflow/transcript_polish.py`
+- Modify: `ai_processor.py`
+- Modify: `app.py`
+- Create: `tests/test_review_plan_transcript_polish.py`
+- Modify: `tests/test_review_plan_async_api.py`
+
+**Interfaces:**
+- Consumes: raw ASR transcript text from `transcribe_audio()`.
+- Produces: polished transcript text for source artifact storage and source brief extraction.
+- Uses: OpenAI `gpt-5.5` through the review-plan parent provider/model contract.
+
+- [ ] **Step 1: Write failing transcript polish payload tests**
+
+Create `tests/test_review_plan_transcript_polish.py`:
+
+```python
+import unittest
+
+from review_plan_workflow.transcript_polish import (
+    build_review_plan_transcript_polish_payload,
+    normalize_review_plan_transcript_polish_text,
+)
+
+
+class ReviewPlanTranscriptPolishTestCase(unittest.TestCase):
+    def test_payload_is_correction_only_and_keeps_teacher_requirements_separate(self):
+        payload = build_review_plan_transcript_polish_payload(
+            raw_transcript_text="动点倒顶点距离不变，轨迹是求面。",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            teacher_requirements="压缩成一天，少一点题量",
+            math_terms=["动点", "定点", "球面"],
+        )
+
+        self.assertEqual(payload["task"], "review_plan_transcript_polish")
+        self.assertIn("raw_transcript", payload)
+        self.assertIn("teacher_requirements", payload)
+        self.assertIn("Do not create review tasks", payload["rules"])
+        self.assertIn("Do not rewrite this into parent feedback", payload["rules"])
+
+    def test_normalizer_removes_outer_markdown_without_changing_lines(self):
+        self.assertEqual(
+            normalize_review_plan_transcript_polish_text("```text\n第一行\n第二行\n```"),
+            "第一行\n第二行",
+        )
+```
+
+Expected: fails because `review_plan_workflow/transcript_polish.py` does not exist.
+
+- [ ] **Step 2: Implement review-plan transcript polish payload**
+
+Create `review_plan_workflow/transcript_polish.py`:
+
+```python
+from __future__ import annotations
+
+
+REVIEW_PLAN_TRANSCRIPT_POLISH_SCHEMA_VERSION = "2026-07-01"
+DEFAULT_REVIEW_PLAN_MATH_TERMS = (
+    "动点",
+    "定点",
+    "轨迹",
+    "球面",
+    "截面",
+    "垂直",
+    "平行",
+    "全等",
+    "相似",
+    "角度",
+)
+
+
+def build_review_plan_transcript_polish_payload(
+    *,
+    raw_transcript_text: str,
+    subject: str = "",
+    grade: str = "",
+    topic: str = "",
+    teacher_requirements: str = "",
+    math_terms: list[str] | tuple[str, ...] | None = None,
+) -> dict:
+    terms = [str(item).strip() for item in (math_terms or DEFAULT_REVIEW_PLAN_MATH_TERMS) if str(item).strip()]
+    return {
+        "schema_version": REVIEW_PLAN_TRANSCRIPT_POLISH_SCHEMA_VERSION,
+        "task": "review_plan_transcript_polish",
+        "lesson": {"subject": subject, "grade": grade, "topic": topic},
+        "teacher_requirements": str(teacher_requirements or "").strip(),
+        "math_terms": terms,
+        "raw_transcript": str(raw_transcript_text or "").strip(),
+        "rules": [
+            "Only correct ASR recognition errors, punctuation, and light sentence boundaries.",
+            "Use math_terms only to correct obvious recognition mistakes.",
+            "Do not add topics, examples, formulas, students, or teacher claims.",
+            "Do not create review tasks",
+            "Do not rewrite this into parent feedback",
+            "Do not compress or expand content to satisfy teacher_requirements.",
+            "Return polished transcript text only.",
+        ],
+    }
+
+
+def normalize_review_plan_transcript_polish_text(text: str) -> str:
+    cleaned = str(text or "").strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    return "\n".join(line.rstrip() for line in cleaned.splitlines()).strip()
+```
+
+- [ ] **Step 3: Add AI helper using OpenAI gpt-5.5 parent contract**
+
+Modify `ai_processor.py`:
+
+```python
+from review_plan_workflow.transcript_polish import (
+    build_review_plan_transcript_polish_payload,
+    normalize_review_plan_transcript_polish_text,
+)
+
+
+def polish_review_plan_transcript(
+    *,
+    raw_transcript_text: str,
+    subject: str = "",
+    grade: str = "",
+    topic: str = "",
+    teacher_requirements: str = "",
+    provider: str = "",
+    model: str = "",
+    include_usage: bool = False,
+):
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_client(provider=provider)
+    payload = build_review_plan_transcript_polish_payload(
+        raw_transcript_text=raw_transcript_text,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        teacher_requirements=teacher_requirements,
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You correct ASR transcript text for review-plan source understanding. Return polished transcript only."},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        temperature=0.1,
+    )
+    text = normalize_review_plan_transcript_polish_text(response.choices[0].message.content or "")
+    if include_usage:
+        return text, _usage_dict(response, provider=provider, model_fallback=model)
+    return text
+```
+
+Adjust exact client creation to match existing helper signatures. The model passed from `app.py` must be `openai/gpt-5.5`, not the DeepSeek writer.
+
+- [ ] **Step 4: Run polish after review-plan audio transcription**
+
+In `_run_review_plan_generation_job()` after raw transcription succeeds:
+
+1. Save `raw_transcription` as the source snapshot.
+2. Run `_run_ai_feature_with_charge()` with:
+   - `feature_key="review_plan_transcript_polish"`
+   - `provider=_review_plan_ai_provider_name()`
+   - `model=_review_plan_chat_model_name(_review_plan_ai_provider_name())`
+   - target runtime values `openai/gpt-5.5`
+3. Use polished text for `_merge_review_plan_materials()` and source brief extraction.
+4. If polish fails, log a warning, keep raw transcription, and continue generation.
+
+Expected: review-plan audio has the same ASR path as class commentary and a correction-only OpenAI `gpt-5.5` polish stage before source brief.
+
+- [ ] **Step 5: Add async API regression test**
+
+Modify `tests/test_review_plan_async_api.py` to prove:
+
+- Audio review-plan generation calls `transcribe_audio()` once.
+- Review-plan ASR charge metadata is `tencent/flash-16k_zh` when runtime config says Tencent.
+- Review-plan transcript polish charge metadata is `openai/gpt-5.5`.
+- The source brief receives polished transcript text when polish succeeds.
+- The source brief receives raw transcript text when polish fails.
+
+- [ ] **Step 6: Run transcript polish proof**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_review_plan_transcript_polish tests.test_review_plan_async_api -v
+git diff --check
+```
+
+Expected: tests pass and there are no whitespace errors.
+
+- [ ] **Step 7: Commit Task 1A**
+
+Run:
+
+```bash
+git add review_plan_workflow/transcript_polish.py ai_processor.py app.py tests/test_review_plan_transcript_polish.py tests/test_review_plan_async_api.py
+git commit -m "feat: polish review plan audio transcripts"
 ```
 
 ## Task 2: Version Source Artifact Storage
@@ -1910,6 +2301,7 @@ python3 -m py_compile \
   lesson_manager.py \
   review_plan_workflow/schemas.py \
   review_plan_workflow/source_brief.py \
+  review_plan_workflow/transcript_polish.py \
   review_plan_workflow/service.py \
   review_plan_workflow/quality_policy.py \
   review_plan_workflow/llm/client.py \
@@ -1920,6 +2312,8 @@ python3 -m py_compile \
   review_plan_workflow/nodes/plan_generator.py \
   review_plan_workflow/nodes/revision.py
 python3 -m unittest \
+  tests.test_review_plan_runtime_contract \
+  tests.test_review_plan_transcript_polish \
   tests.test_review_plan_source_brief \
   tests.test_review_plan_version_store \
   tests.test_review_plan_workflow \
@@ -1971,15 +2365,18 @@ Append this entry to `handoff.md`:
 ```markdown
 ## 2026-07-01 review plan source brief quality/speed
 - Added version-scoped review-plan source artifacts: raw source snapshot, cleaned source text, source hash, and structured source brief.
+- Aligned review-plan runtime roles: ASR uses Tencent `flash-16k_zh`, transcript polish and parent planning use OpenAI `gpt-5.5`, and writer uses DeepSeek `deepseek-v4-pro`.
+- Added correction-only review-plan transcript polish before source brief for audio input.
 - Routed source brief and teacher requirements through source analysis, parent planning, writer, revision, and privacy-safe observability.
 - Changed regeneration to reuse the current version source artifact by default while still creating a new version.
 - Added local-first quality policy and bounded LLM timeouts to avoid 10-20 minute slow paths.
 - Added regression coverage for dynamic geometry, text-only low-density output, checklist-like choices, source artifact storage, regeneration consistency, and Langfuse source-metric privacy.
 - Proof passed:
-  - `python3 -m py_compile app.py lesson_manager.py review_plan_workflow/schemas.py review_plan_workflow/source_brief.py review_plan_workflow/service.py review_plan_workflow/quality_policy.py review_plan_workflow/llm/client.py review_plan_workflow/nodes/source_brief_builder.py review_plan_workflow/nodes/source_analyzer.py review_plan_workflow/nodes/parent_planner.py review_plan_workflow/nodes/prompt_bundle_builder.py review_plan_workflow/nodes/plan_generator.py review_plan_workflow/nodes/revision.py`
-  - `python3 -m unittest tests.test_review_plan_source_brief tests.test_review_plan_version_store tests.test_review_plan_workflow tests.test_review_plan_async_api tests.test_review_plan_observability tests.test_review_plan_evals tests.test_single_lesson_pdf_unification -v`
+  - `python3 -m py_compile app.py lesson_manager.py review_plan_workflow/schemas.py review_plan_workflow/source_brief.py review_plan_workflow/transcript_polish.py review_plan_workflow/service.py review_plan_workflow/quality_policy.py review_plan_workflow/llm/client.py review_plan_workflow/nodes/source_brief_builder.py review_plan_workflow/nodes/source_analyzer.py review_plan_workflow/nodes/parent_planner.py review_plan_workflow/nodes/prompt_bundle_builder.py review_plan_workflow/nodes/plan_generator.py review_plan_workflow/nodes/revision.py`
+  - `python3 -m unittest tests.test_review_plan_runtime_contract tests.test_review_plan_transcript_polish tests.test_review_plan_source_brief tests.test_review_plan_version_store tests.test_review_plan_workflow tests.test_review_plan_async_api tests.test_review_plan_observability tests.test_review_plan_evals tests.test_single_lesson_pdf_unification -v`
   - `cd frontend && npx tsx --test src/review-generation-async.test.tsx src/reviewGenerationAsync.test.ts`
   - `cd frontend && npm run build`
+  - Redacted PM2 runtime contract check passed for Tencent ASR, OpenAI `gpt-5.5`, and DeepSeek `deepseek-v4-pro`
   - `git diff --check`
 ```
 
@@ -2016,6 +2413,30 @@ git push origin develop
 
 Expected: remote `develop` includes the source-brief implementation commits.
 
+- [ ] **Step 9: Verify production runtime contract after deploy**
+
+After deployment, run a redacted PM2 env check on the production server. The check must print only non-secret model/provider values and credential presence booleans.
+
+Expected:
+
+```text
+XR_AUDIO_TRANSCRIPTION_PROVIDER=tencent
+XR_TENCENT_ASR_ENGINE_TYPE=16k_zh
+XR_REVIEW_PLAN_PROVIDER=openai
+XR_REVIEW_PLAN_MODEL=gpt-5.5
+XR_REVIEW_PLAN_WRITER_PROVIDER=deepseek
+XR_REVIEW_PLAN_WRITER_MODEL=deepseek-v4-pro
+XR_CLASS_COMMENTARY_PROVIDER=openai
+XR_CLASS_COMMENTARY_MODEL=gpt-5.5
+OPENAI_API_KEY_present=True
+DEEPSEEK_API_KEY_present=True
+TENCENTCLOUD_APP_ID_present=True
+TENCENTCLOUD_SECRET_ID_present=True
+TENCENTCLOUD_SECRET_KEY_present=True
+```
+
+If any model/provider differs, fix the server environment and restart `pm2` with `--update-env` before calling the implementation done.
+
 ## NOT In Scope
 
 - Do not merge `develop` into `master`.
@@ -2027,7 +2448,7 @@ Expected: remote `develop` includes the source-brief implementation commits.
 
 ## Parallelization Strategy
 
-Sequential implementation is recommended for Tasks 1-7 because they touch the same workflow contracts and tests build on the previous task.
+Sequential implementation is recommended for Tasks 0A, 1, 1A, and 2-7 because they touch the same workflow contracts and tests build on the previous task. Task 0A should land before audio/transcript work, and Task 1A should land before source brief integration.
 
 After Task 7 lands, Task 8 eval fixtures and Task 5 frontend copy can be split into separate worktrees if needed:
 
@@ -2041,7 +2462,8 @@ Merge order: Lane A first, then Lane B and Lane C.
 
 Spec coverage:
 
-- Source preprocessing: Tasks 1, 3, 4.
+- Runtime model/ASR contract: Task 0A and Task 9.
+- Source preprocessing: Tasks 1, 1A, 3, 4.
 - Output quality: Tasks 4, 6, 8.
 - Speed: Task 6.
 - Teacher prompt integration: Tasks 3, 4, 7.
@@ -2057,5 +2479,6 @@ Placeholder scan:
 Type consistency:
 
 - `ReviewPlanSourceBrief` is defined in Task 1 and consumed by Tasks 3, 4, 6, and 7.
+- `polish_review_plan_transcript` is defined in Task 1A and consumed by review-plan audio generation before Task 3 source brief execution.
 - `update_review_plan_version_source_artifact` is defined in Task 2 and consumed by Tasks 4 and 5.
 - `should_run_llm_quality_review` and `max_revision_attempts_for_quality` are defined in Task 6 and consumed by service code in the same task.
