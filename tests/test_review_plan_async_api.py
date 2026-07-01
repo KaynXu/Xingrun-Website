@@ -1066,6 +1066,220 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("review_plan_workflow.service.generate_single_lesson_review_plan")
+    @patch("ai_processor.polish_review_plan_transcript")
+    @patch("ai_processor.transcribe_audio")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_uses_polished_transcript_for_audio_review_plan_generation(
+        self,
+        mock_run_with_charge,
+        mock_transcribe_audio,
+        mock_polish_transcript,
+        mock_generate_plan,
+        mock_generate_pdf,
+    ):
+        config_runtime.write_file_config(
+            {
+                "audio_transcription_provider": "tencent",
+                "tencent_asr_engine_type": "16k_zh",
+                "review_plan_provider": "openai",
+                "review_plan_model": "gpt-5.5",
+            }
+        )
+        audio_path = self.base / "lesson.m4a"
+        audio_path.write_bytes(b"audio")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="",
+            weak_points="空间想象",
+            class_id=0,
+            record_status="transcribing",
+            created_by_user_id=1,
+            review_audio_path=str(audio_path),
+            review_audio_request_key="audio-key",
+            review_request_key="request-key",
+            review_request_id="request-id",
+            review_chat_provider="openai",
+            review_chat_model="gpt-5.5",
+            review_same_lesson_materials=["补充材料：球面轨迹和截面判断。"],
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="transcribing",
+            created_by_user_id=1,
+            audio_path=str(audio_path),
+            audio_request_key="audio-key",
+            request_key="request-key",
+            request_id="request-id",
+            chat_provider="openai",
+            chat_model="gpt-5.5",
+            same_lesson_materials=["补充材料：球面轨迹和截面判断。"],
+        )
+        expected_plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        feature_calls: list[dict] = []
+
+        mock_transcribe_audio.return_value = "原始转写：动点倒顶点距离不变。"
+        mock_polish_transcript.return_value = "润色转写：动点到定点距离不变，轨迹是球面。"
+        mock_generate_plan.return_value = expected_plan
+
+        def run_with_charge(**kwargs):
+            feature_calls.append(kwargs)
+            if kwargs["feature_key"] in {"audio_transcription", "review_plan_transcript_polish", "lesson_plan_generate"}:
+                return kwargs["producer"]()
+            raise AssertionError(f"unexpected feature key: {kwargs['feature_key']}")
+
+        mock_run_with_charge.side_effect = run_with_charge
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            version_id=version["id"],
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-5.5",
+            request_key="request-key",
+            request_id="request-id",
+            audio_path=str(audio_path),
+            audio_request_key="audio-key",
+            same_lesson_materials=["补充材料：球面轨迹和截面判断。"],
+        )
+
+        self.assertEqual(mock_transcribe_audio.call_count, 1)
+        self.assertEqual(mock_polish_transcript.call_count, 1)
+        self.assertEqual(mock_generate_plan.call_count, 1)
+        generate_kwargs = mock_generate_plan.call_args.kwargs
+        self.assertIn("润色转写：动点到定点距离不变，轨迹是球面。", generate_kwargs["summary_text"])
+        self.assertNotIn("原始转写：动点倒顶点距离不变。", generate_kwargs["summary_text"])
+        self.assertIn("补充材料：球面轨迹和截面判断。", generate_kwargs["summary_text"])
+        self.assertEqual(generate_kwargs["provider"], "openai")
+        self.assertEqual(generate_kwargs["model"], "gpt-5.5")
+
+        self.assertEqual([call["feature_key"] for call in feature_calls], [
+            "audio_transcription",
+            "review_plan_transcript_polish",
+            "lesson_plan_generate",
+        ])
+        self.assertEqual(feature_calls[0]["provider"], "tencent")
+        self.assertEqual(feature_calls[0]["model"], "flash-16k_zh")
+        self.assertEqual(feature_calls[1]["provider"], "openai")
+        self.assertEqual(feature_calls[1]["model"], "gpt-5.5")
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "ready")
+        self.assertIn("润色转写：动点到定点距离不变，轨迹是球面。", saved["summary"])
+        self.assertNotIn("原始转写：动点倒顶点距离不变。", saved["summary"])
+        self.assertIn("补充材料：球面轨迹和截面判断。", saved["summary"])
+        mock_generate_pdf.assert_called_once()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("review_plan_workflow.service.generate_single_lesson_review_plan")
+    @patch("ai_processor.polish_review_plan_transcript")
+    @patch("ai_processor.transcribe_audio")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_falls_back_to_raw_transcript_when_polish_fails(
+        self,
+        mock_run_with_charge,
+        mock_transcribe_audio,
+        mock_polish_transcript,
+        mock_generate_plan,
+        mock_generate_pdf,
+    ):
+        config_runtime.write_file_config(
+            {
+                "audio_transcription_provider": "tencent",
+                "tencent_asr_engine_type": "16k_zh",
+                "review_plan_provider": "openai",
+                "review_plan_model": "gpt-5.5",
+            }
+        )
+        audio_path = self.base / "lesson.m4a"
+        audio_path.write_bytes(b"audio")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="",
+            weak_points="空间想象",
+            class_id=0,
+            record_status="transcribing",
+            created_by_user_id=1,
+            review_audio_path=str(audio_path),
+            review_audio_request_key="audio-key",
+            review_request_key="request-key",
+            review_request_id="request-id",
+            review_chat_provider="openai",
+            review_chat_model="gpt-5.5",
+            review_same_lesson_materials=["补充材料：球面轨迹和截面判断。"],
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="transcribing",
+            created_by_user_id=1,
+            audio_path=str(audio_path),
+            audio_request_key="audio-key",
+            request_key="request-key",
+            request_id="request-id",
+            chat_provider="openai",
+            chat_model="gpt-5.5",
+            same_lesson_materials=["补充材料：球面轨迹和截面判断。"],
+        )
+        expected_plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        feature_calls: list[dict] = []
+
+        mock_transcribe_audio.return_value = "原始转写：动点倒顶点距离不变。"
+        mock_polish_transcript.side_effect = RuntimeError("boom")
+        mock_generate_plan.return_value = expected_plan
+
+        def run_with_charge(**kwargs):
+            feature_calls.append(kwargs)
+            if kwargs["feature_key"] in {"audio_transcription", "review_plan_transcript_polish", "lesson_plan_generate"}:
+                return kwargs["producer"]()
+            raise AssertionError(f"unexpected feature key: {kwargs['feature_key']}")
+
+        mock_run_with_charge.side_effect = run_with_charge
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            version_id=version["id"],
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-5.5",
+            request_key="request-key",
+            request_id="request-id",
+            audio_path=str(audio_path),
+            audio_request_key="audio-key",
+            same_lesson_materials=["补充材料：球面轨迹和截面判断。"],
+        )
+
+        self.assertEqual(mock_transcribe_audio.call_count, 1)
+        self.assertEqual(mock_polish_transcript.call_count, 1)
+        self.assertEqual(mock_generate_plan.call_count, 1)
+        generate_kwargs = mock_generate_plan.call_args.kwargs
+        self.assertIn("原始转写：动点倒顶点距离不变。", generate_kwargs["summary_text"])
+        self.assertNotIn("润色转写：动点到定点距离不变，轨迹是球面。", generate_kwargs["summary_text"])
+        self.assertIn("补充材料：球面轨迹和截面判断。", generate_kwargs["summary_text"])
+
+        self.assertEqual([call["feature_key"] for call in feature_calls], [
+            "audio_transcription",
+            "review_plan_transcript_polish",
+            "lesson_plan_generate",
+        ])
+        self.assertEqual(feature_calls[0]["provider"], "tencent")
+        self.assertEqual(feature_calls[0]["model"], "flash-16k_zh")
+        self.assertEqual(feature_calls[1]["provider"], "openai")
+        self.assertEqual(feature_calls[1]["model"], "gpt-5.5")
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "ready")
+        self.assertIn("原始转写：动点倒顶点距离不变。", saved["summary"])
+        self.assertNotIn("润色转写：动点到定点距离不变，轨迹是球面。", saved["summary"])
+        self.assertIn("补充材料：球面轨迹和截面判断。", saved["summary"])
+        mock_generate_pdf.assert_called_once()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_worker_only_processes_pending_lessons(
         self,
