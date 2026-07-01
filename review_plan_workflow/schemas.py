@@ -63,6 +63,72 @@ class SubjectRoute(BaseModel):
     special_handling_notes: list[str] = Field(default_factory=list)
 
 
+class SourceEvidence(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    source: str = "summary_text"
+    quote: str
+    offset_start: int = 0
+    offset_end: int = 0
+    kind: str = "text"
+
+
+class SourceKnowledgePoint(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class SourceMethodChain(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    steps: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class SourceMistake(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class SourceExampleStem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    stem: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class SourceTeacherEmphasis(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    quote: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ReviewPlanSourceBrief(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: str = "2026-07-01"
+    source_text_hash: str = ""
+    cleaned_text: str = ""
+    lesson_title_candidates: list[str] = Field(default_factory=list)
+    knowledge_points: list[SourceKnowledgePoint] = Field(default_factory=list)
+    method_chains: list[SourceMethodChain] = Field(default_factory=list)
+    common_mistakes: list[SourceMistake] = Field(default_factory=list)
+    example_stems: list[SourceExampleStem] = Field(default_factory=list)
+    teacher_emphasis: list[SourceTeacherEmphasis] = Field(default_factory=list)
+    excluded_noise: list[str] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    evidence_map: list[SourceEvidence] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
 class SourceSummary(BaseModel):
     source_type: str = "user_input"
     confirmed_topics: list[str] = Field(default_factory=list)
@@ -70,6 +136,7 @@ class SourceSummary(BaseModel):
     excluded_topics: list[str] = Field(default_factory=list)
     evidence_map: list[dict[str, Any]] = Field(default_factory=list)
     risk_notes: list[str] = Field(default_factory=list)
+    source_brief: Optional[ReviewPlanSourceBrief] = None
     confidence: float = 0.0
 
 
