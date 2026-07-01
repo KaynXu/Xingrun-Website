@@ -917,6 +917,10 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             {
                 "subject": "数学",
                 "lesson_date": "2026-07-01",
+                "lesson_info": {"subject": "math", "topic": "", "grade": "", "date": "2026-07-01", "key_categories": []},
+                "full_review_topics": [],
+                "quotes": [],
+                "days": [],
                 "review_days": [1, 2, 7, 14, 30],
                 "plan": {
                     "full_review_topics": full_review_topics,
@@ -955,6 +959,37 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertEqual(run["warnings"], [])
         self.assertTrue(run["quality_review"]["passed"])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_normalizes_common_result_wrapper_without_schema_repair(self, mock_generate_plan):
+        inner_plan = valid_single_lesson_plan(subject="数学", topic="圆与动点综合")
+        mock_generate_plan.return_value = (
+            {
+                "result": {
+                    "plan": inner_plan,
+                },
+            },
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="六年级",
+            topic="圆与动点综合",
+            lesson_date="2026-07-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "圆与动点综合")
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
+        self.assertEqual(mock_generate_plan.call_count, 1)
+        user_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn("顶层必须直接包含 lesson_info, full_review_topics, quotes, days", user_message)
+        self.assertIn("禁止输出 plan, reviewPlan, result, data, output, content, response 等包裹字段", user_message)
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
