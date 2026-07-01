@@ -29,6 +29,16 @@ CHECK_OPERATORS = {
     "minQualityScore",
     "schemaValid",
 }
+ASSERTION_NAMES = {
+    "fixed_single_lesson_review_days",
+    "topic_contains",
+    "topic_not_empty",
+    "full_review_topics_minimum",
+    "minimum_printable_items_per_day",
+    "choices_have_complete_options",
+    "no_duplicate_printable_tasks",
+    "no_generic_checklist_choices",
+}
 
 
 def iter_fixture_paths(root: Path = FIXTURE_ROOT) -> list[Path]:
@@ -93,6 +103,21 @@ def validate_fixture_definition(fixture: dict[str, Any], *, fixture_path: str = 
         if len(operators) > 1:
             errors.append(f"{label}: checks[{index}] must include only one supported operator")
 
+    assertions = fixture.get("assertions")
+    if assertions is not None:
+        if not isinstance(assertions, list):
+            errors.append(f"{label}: assertions must be a list when present")
+        else:
+            for index, assertion in enumerate(assertions, start=1):
+                if not isinstance(assertion, dict):
+                    errors.append(f"{label}: assertions[{index}] must be an object")
+                    continue
+                name = assertion.get("name")
+                if not isinstance(name, str) or not name:
+                    errors.append(f"{label}: assertions[{index}] must include a name")
+                elif name not in ASSERTION_NAMES:
+                    errors.append(f"{label}: assertions[{index}] uses unsupported assertion {name}")
+
     subject = str(input_payload.get("subject") or "").lower()
     allow_international = bool(fixture.get("allowInternationalCourse"))
     if subject in {"math", "physics"} and not allow_international:
@@ -120,6 +145,129 @@ def _extract_day_numbers(plan: dict[str, Any]) -> list[int]:
             except (TypeError, ValueError):
                 continue
     return sorted(numbers)
+
+
+def _lesson_topic(plan: dict[str, Any]) -> str:
+    lesson_info = plan.get("lesson_info") if isinstance(plan.get("lesson_info"), dict) else {}
+    return str(lesson_info.get("topic") or plan.get("topic") or plan.get("lesson_topic") or "").strip()
+
+
+def _task_text(item: dict[str, Any]) -> str:
+    return str(item.get("text") or item.get("question") or item.get("stem") or item.get("label") or "").strip()
+
+
+def _iter_day_tasks(day: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    values = day.get(key) if isinstance(day.get(key), list) else []
+    return [item for item in values if isinstance(item, dict)]
+
+
+def _printable_item_count(day: dict[str, Any]) -> int:
+    count = 0
+    for key in ("items", "blanks", "choices"):
+        count += sum(1 for item in _iter_day_tasks(day, key) if _task_text(item))
+    return count
+
+
+def _assert_fixed_single_lesson_review_days(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    expected_days = sorted(int(day) for day in _list_value(assertion.get("daysExactly")))
+    actual_days = _extract_day_numbers(plan)
+    assert actual_days == expected_days, f"expected days {expected_days}, got {actual_days}"
+
+
+def _assert_topic_contains(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    topic = _lesson_topic(plan)
+    expected = str(assertion.get("contains") or "")
+    assert expected in topic, f"expected topic to contain {expected!r}, got {topic!r}"
+
+
+def _assert_topic_not_empty(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    topic = _lesson_topic(plan)
+    assert topic and topic != "课后", f"expected non-empty specific topic, got {topic!r}"
+
+
+def _assert_full_review_topics_minimum(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    topics = plan.get("full_review_topics") if isinstance(plan.get("full_review_topics"), list) else []
+    minimum = int(assertion.get("minimum") or 0)
+    assert len(topics) >= minimum, f"expected at least {minimum} full review topics, got {len(topics)}"
+
+
+def _assert_minimum_printable_items_per_day(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    minimum = int(assertion.get("minimum") or 0)
+    for day in plan.get("days") or []:
+        count = _printable_item_count(day) if isinstance(day, dict) else 0
+        assert count >= minimum, f"day {day.get('day') if isinstance(day, dict) else '?'} has {count} printable items"
+
+
+def _assert_no_duplicate_printable_tasks(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    for day in plan.get("days") or []:
+        if not isinstance(day, dict):
+            continue
+        texts = []
+        for key in ("items", "blanks", "choices"):
+            texts.extend(_task_text(item) for item in _iter_day_tasks(day, key))
+        normalized = [text for text in texts if text]
+        assert len(normalized) == len(set(normalized)), f"day {day.get('day')} has duplicate printable tasks"
+
+
+def _assert_choices_have_complete_options(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    minimum_choices = int(assertion.get("minimumChoices") or 1)
+    choices = []
+    for day in plan.get("days") or []:
+        if isinstance(day, dict):
+            choices.extend(_iter_day_tasks(day, "choices"))
+    assert len(choices) >= minimum_choices, f"expected at least {minimum_choices} choices, got {len(choices)}"
+    for choice in choices:
+        question = str(choice.get("question") or choice.get("stem") or "").strip()
+        options = [str(option or "").strip() for option in choice.get("options", [])]
+        answer = str(choice.get("answer") or "").strip()
+        option_heads = {option[:1].upper() for option in options if option}
+        assert question, "choice question is empty"
+        assert len([option for option in options if option]) >= 4, f"choice {question!r} has incomplete options"
+        assert answer[:1].upper() in option_heads, f"choice {question!r} answer {answer!r} is not in options"
+
+
+def _assert_no_generic_checklist_choices(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    for day in plan.get("days") or []:
+        if not isinstance(day, dict):
+            continue
+        for choice in _iter_day_tasks(day, "choices"):
+            question = str(choice.get("question") or choice.get("stem") or "")
+            options = " ".join(str(option or "") for option in choice.get("options", []))
+            choice_text = f"{question} {options}"
+            checklist_pair = "先看固定量" in choice_text and "检查边界" in choice_text
+            generic_phrase = any(token in choice_text for token in ("执行清单", "完成复盘", "完成今日复习"))
+            assert not (checklist_pair or generic_phrase), f"choice is checklist-like: {choice_text}"
+
+
+ASSERTION_HANDLERS = {
+    "fixed_single_lesson_review_days": _assert_fixed_single_lesson_review_days,
+    "topic_contains": _assert_topic_contains,
+    "topic_not_empty": _assert_topic_not_empty,
+    "full_review_topics_minimum": _assert_full_review_topics_minimum,
+    "minimum_printable_items_per_day": _assert_minimum_printable_items_per_day,
+    "choices_have_complete_options": _assert_choices_have_complete_options,
+    "no_duplicate_printable_tasks": _assert_no_duplicate_printable_tasks,
+    "no_generic_checklist_choices": _assert_no_generic_checklist_choices,
+}
+
+
+def evaluate_fixture_assertions(plan: dict[str, Any], fixture: dict[str, Any]) -> list[dict[str, Any]]:
+    results = []
+    assertions = fixture.get("assertions") if isinstance(fixture.get("assertions"), list) else []
+    for assertion in assertions:
+        if not isinstance(assertion, dict):
+            continue
+        name = str(assertion.get("name") or "unnamed_assertion")
+        handler = ASSERTION_HANDLERS.get(name)
+        if handler is None:
+            results.append({"name": name, "passed": False, "error": "unsupported fixture assertion"})
+            continue
+        try:
+            handler(plan, assertion)
+            results.append({"name": name, "passed": True})
+        except AssertionError as exc:
+            results.append({"name": name, "passed": False, "error": str(exc)})
+    return results
 
 
 def _evaluate_check(
@@ -210,8 +358,10 @@ def evaluate_plan_against_fixture(plan: dict[str, Any], fixture: dict[str, Any],
         for check in checks
         if isinstance(check, dict)
     ]
+    assertion_results = evaluate_fixture_assertions(plan, fixture)
     checks_passed = all(result["passed"] for result in check_results)
-    passed = not definition_errors and schema_valid and quality.passed and checks_passed
+    assertions_passed = all(result["passed"] for result in assertion_results)
+    passed = not definition_errors and schema_valid and quality.passed and checks_passed and assertions_passed
 
     return {
         "fixture": fixture_path,
@@ -221,12 +371,18 @@ def evaluate_plan_against_fixture(plan: dict[str, Any], fixture: dict[str, Any],
         "schema_errors": schema_errors,
         "quality": quality.model_dump(),
         "checks": check_results,
+        "assertions": assertion_results,
     }
 
 
 def workflow_kwargs_from_fixture(fixture: dict[str, Any], *, provider: str = "", model: str = "") -> dict[str, Any]:
     input_payload = fixture.get("input") if isinstance(fixture.get("input"), dict) else {}
     known_weaknesses = [str(item) for item in _list_value(input_payload.get("knownWeaknesses"))]
+    generation_options = input_payload.get("generation_options")
+    if not isinstance(generation_options, dict):
+        generation_options = input_payload.get("generationOptions")
+    if not isinstance(generation_options, dict):
+        generation_options = {}
     summary_lines = [
         f"fixture: {fixture.get('name') or ''}",
         f"course_system: {input_payload.get('courseSystem') or ''}",
@@ -248,6 +404,7 @@ def workflow_kwargs_from_fixture(fixture: dict[str, Any], *, provider: str = "",
         "lesson_date": str(input_payload.get("lessonDate") or input_payload.get("lesson_date") or ""),
         "provider": provider,
         "model": model,
+        "generation_options": generation_options,
         "include_usage": True,
     }
 

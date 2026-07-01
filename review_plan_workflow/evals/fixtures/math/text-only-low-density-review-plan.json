@@ -1,0 +1,36 @@
+{
+  "name": "text-only-low-density-review-plan",
+  "input": {
+    "subject": "math",
+    "courseSystem": "中国小学数学",
+    "grade": "六年级",
+    "target": "等式推导边界和审题列式课后复习",
+    "topic": "",
+    "summary_text": "课堂讲了等式判断、取倒数需要分母不为0、平方相等和绝对值相等的边界、两数相等或互为相反数、应用题中理想购买数量的语义转化。学生容易把若则关系倒过来，也容易把贵20元的方向列反。",
+    "knownWeaknesses": ["等式推导边界", "审题列式方向"],
+    "generation_options": {
+      "schedule_mode": "standard",
+      "review_days": [1, 2, 7, 14, 30],
+      "user_requirements": "执行清单不能全做选择题。"
+    }
+  },
+  "expectedCriteria": [
+    "must infer a non-empty lesson topic from text-only input",
+    "must include at least five full review topics",
+    "must include printable tasks every day",
+    "must avoid duplicate printable tasks",
+    "must include fixed 1/2/7/14/30 review days"
+  ],
+  "checks": [
+    {"name": "text_only_math_terms", "containsAny": ["等式", "边界", "列式"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
+  ],
+  "assertions": [
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "topic_not_empty"},
+    {"name": "full_review_topics_minimum", "minimum": 5},
+    {"name": "minimum_printable_items_per_day", "minimum": 3},
+    {"name": "no_duplicate_printable_tasks"}
+  ]
+}
