@@ -1274,10 +1274,73 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         saved = lesson_manager.get_lesson(lesson_id)
         versions = lesson_manager.list_review_plan_versions(lesson_id)
         self.assertEqual(saved["record_status"], "failed")
-        self.assertIn("复习计划质量门禁未通过", saved["generation_error"])
-        self.assertIn("得分 25", saved["generation_error"])
+        self.assertIn("这次生成的复习计划不够完整", saved["generation_error"])
+        self.assertIn("生成结果缺少明确的课程主题", saved["generation_error"])
+        self.assertNotIn("质量门禁", saved["generation_error"])
+        self.assertNotIn("得分", saved["generation_error"])
         self.assertEqual(versions[0]["status"], "failed")
         self.assertEqual(saved["current_review_plan_version_id"], None)
+        mock_generate_pdf.assert_not_called()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_writes_readable_message_for_schema_quality_failure(
+        self,
+        mock_run_with_charge,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="课堂总结文本",
+            weak_points="",
+            class_id=0,
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+
+        def run_with_schema_failure_trace(**_kwargs):
+            lesson_manager.save_review_plan_run(
+                lesson_id=lesson_id,
+                organization_id=1,
+                trace_id="schema-blocked-trace",
+                status="succeeded",
+                subject="math",
+                provider="openai",
+                model="gpt-5.4",
+                quality_review={
+                    "score": 0,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [
+                        {
+                            "severity": "high",
+                            "category": "schema",
+                            "description": "复习计划结构未通过 schema 校验：Value error, review plan must include review days",
+                            "suggested_fix": "补齐复习日结构。",
+                        }
+                    ],
+                },
+            )
+            return plan
+
+        mock_run_with_charge.side_effect = run_with_schema_failure_trace
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-5.4",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "failed")
+        self.assertIn("没有生成出完整的每日复习安排", saved["generation_error"])
+        self.assertNotIn("schema", saved["generation_error"])
+        self.assertNotIn("Value error", saved["generation_error"])
+        self.assertNotIn("得分 0", saved["generation_error"])
         mock_generate_pdf.assert_not_called()
 
     @patch("app._run_ai_feature_with_charge", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))

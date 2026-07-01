@@ -29,6 +29,7 @@ import {
   DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
   buildGenerationOptionsPayload,
   formValueFromGenerationOptions,
+  getGenerationOptionsValidationError,
   type ReviewPlanGenerationOptionsFormValue,
 } from './reviewPlanGenerationOptions';
 
@@ -404,6 +405,11 @@ function ReviewDocumentHistory({
     options: ReviewPlanGenerationOptionsFormValue,
   ) => {
     if (isReviewLessonPending(lesson) || regeneratingLessonIds.has(lesson.id)) {
+      return;
+    }
+    const generationOptionsError = getGenerationOptionsValidationError(options);
+    if (generationOptionsError) {
+      onFloatingNotice({ type: 'error', text: generationOptionsError });
       return;
     }
 

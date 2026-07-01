@@ -28,6 +28,31 @@ export const DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS: ReviewPlanGenerationOptions
   userRequirements: '',
 };
 
+const MAX_REVIEW_DAYS = 30;
+
+export function parseCustomReviewDays(value: string): number[] {
+  const items = value
+    .replace(/，/g, ',')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const days = items.map((item) => Number(item));
+  if (!days.length || days.some((day) => !Number.isInteger(day) || day < 1 || day > MAX_REVIEW_DAYS)) {
+    return [];
+  }
+  return Array.from(new Set(days)).sort((a, b) => a - b);
+}
+
+export function getGenerationOptionsValidationError(value: ReviewPlanGenerationOptionsFormValue): string {
+  if (value.scheduleMode === 'daily' && (!Number.isInteger(value.dailyCount) || value.dailyCount < 1 || value.dailyCount > MAX_REVIEW_DAYS)) {
+    return '连续生成天数请填写 1 到 30 之间的整数。';
+  }
+  if (value.scheduleMode === 'custom' && !parseCustomReviewDays(value.customDays).length) {
+    return '请填写至少一个复习日期点，例如 1,3,7。';
+  }
+  return '';
+}
+
 export function formValueFromGenerationOptions(value: StoredReviewPlanGenerationOptions | null | undefined): ReviewPlanGenerationOptionsFormValue {
   if (!value) {
     return { ...DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS };
@@ -70,7 +95,7 @@ export function buildGenerationOptionsPayload(value: ReviewPlanGenerationOptions
   if (value.scheduleMode === 'custom') {
     return {
       schedule_mode: 'custom',
-      review_days: value.customDays,
+      review_days: parseCustomReviewDays(value.customDays),
       user_requirements: value.userRequirements.trim(),
     };
   }

@@ -2,7 +2,7 @@ import { CalendarDays, ListChecks, MessageSquareText } from 'lucide-react';
 
 import { cn, workspaceFieldClass } from '../../workspaceShared';
 import type { ReviewPlanGenerationOptionsFormValue, ReviewPlanScheduleMode } from './reviewPlanGenerationOptions';
-import { getGenerationOptionsFormSummary } from './reviewPlanGenerationOptions';
+import { getGenerationOptionsFormSummary, parseCustomReviewDays } from './reviewPlanGenerationOptions';
 
 const scheduleModes: Array<{ value: ReviewPlanScheduleMode; label: string }> = [
   { value: 'standard', label: '标准 5 次' },
@@ -21,6 +21,7 @@ export function ReviewPlanGenerationOptionsFields({
   const update = (patch: Partial<ReviewPlanGenerationOptionsFormValue>) => {
     onChange({ ...value, ...patch });
   };
+  const customDayCount = parseCustomReviewDays(value.customDays).length;
 
   return (
     <div className="space-y-4">
@@ -80,8 +81,15 @@ export function ReviewPlanGenerationOptionsFields({
             value={value.customDays}
             onChange={(event) => update({ customDays: event.target.value })}
             placeholder="例如：1,3,7"
+            required
+            aria-invalid={!customDayCount}
             className={`${workspaceFieldClass} w-full border-slate-200 focus:border-slate-300 focus:ring-slate-100`}
           />
+          {!customDayCount && (
+            <span className="mt-2 block text-xs font-medium text-rose-600 dark:text-rose-300">
+              请至少填写一个日期点，例如 1,3,7。
+            </span>
+          )}
         </label>
       )}
 

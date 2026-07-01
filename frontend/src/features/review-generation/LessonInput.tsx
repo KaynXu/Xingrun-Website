@@ -14,6 +14,7 @@ import { ReviewPlanGenerationOptionsFields } from './ReviewPlanGenerationOptions
 import {
   DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
   buildGenerationOptionsPayload,
+  getGenerationOptionsValidationError,
   getGenerationOptionsFormSummary,
   type ReviewPlanGenerationOptionsFormValue,
 } from './reviewPlanGenerationOptions';
@@ -196,6 +197,11 @@ export function LessonInput({
     }
     if (inputType === 'file' && !file) {
       setError('请选择上传文件');
+      return;
+    }
+    const generationOptionsError = getGenerationOptionsValidationError(generationOptions);
+    if (generationOptionsError) {
+      setError(generationOptionsError);
       return;
     }
 

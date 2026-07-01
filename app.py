@@ -888,19 +888,51 @@ def _review_plan_quality_failure_message(lesson_id: int) -> str:
     if not (must_revise or failed):
         return ""
 
-    raw_score = quality.get("score")
-    score_text = f"（得分 {raw_score}）" if isinstance(raw_score, int) else ""
     first_issue = ""
     issues = quality.get("issues")
     if isinstance(issues, list):
         for issue in issues:
             if not isinstance(issue, dict):
                 continue
+            category = str(issue.get("category") or "").strip().lower()
             description = str(issue.get("description") or "").strip()
-            if description:
-                first_issue = f"：{description.rstrip('。.')}"
+            readable = _review_plan_readable_quality_issue(category, description)
+            if readable:
+                first_issue = f"{readable.rstrip('。.')}。"
                 break
-    return f"复习计划质量门禁未通过{score_text}{first_issue}。请补充课程主题或重新生成。"
+    reason_text = f"原因：{first_issue}" if first_issue else ""
+    return (
+        "这次生成的复习计划不够完整，系统已先拦截，避免生成半成品文档。"
+        f"{reason_text}"
+        "请点击“重新生成”；如果再次失败，请补充课程主题、重点题型或本次要求。"
+    )
+
+
+def _review_plan_readable_quality_issue(category: str, description: str) -> str:
+    text = description.strip()
+    lowered = text.lower()
+    if category == "schema" or "schema" in lowered or "review plan must include review days" in lowered:
+        return "没有生成出完整的每日复习安排"
+    if "复习日没有严格匹配" in text:
+        return "生成结果没有按本次选择的复习日期安排"
+    if "lesson_info.topic" in text or "空壳标题" in text:
+        return "生成结果缺少明确的课程主题"
+    if "全课覆盖清单" in text:
+        return "生成结果缺少清晰的复习范围"
+    if "唯一可打印题目不足" in text:
+        return text.replace("唯一可打印题目", "可直接给学生练习的题目").replace("PDF", "文档")
+    if not text:
+        return ""
+    for technical in (
+        "schema",
+        "Schema",
+        "Value error,",
+        "lesson_info.topic",
+        "`",
+        "PDF",
+    ):
+        text = text.replace(technical, "文档" if technical == "PDF" else "")
+    return " ".join(text.split())
 
 
 def _run_review_plan_generation_job(
@@ -7866,7 +7898,27 @@ def _extract_generation_options_or_error(data, *, source: str, fallback: object 
     try:
         return normalize_generation_options(payload if payload is not None else fallback, source=source), None
     except ValueError as exc:
-        return None, (jsonify({"error": f"生成设置无效：{exc}"}), 400)
+        return None, (jsonify({"error": f"生成设置无效：{_readable_generation_options_error(str(exc))}"}), 400)
+
+
+def _readable_generation_options_error(message: str) -> str:
+    if "review_days must not be empty" in message:
+        return "请至少填写一个复习日期点，例如 1,3,7"
+    if "review_days must contain positive integers" in message:
+        return "复习日期点只能填写 1 到 30 之间的正整数"
+    if "review_days can contain at most" in message:
+        return "自定义复习日期最多填写 30 个"
+    if "review_days must be a list or comma string" in message:
+        return "复习日期点请用逗号分隔，例如 1,3,7"
+    if "daily_count must be a positive integer" in message:
+        return "连续生成天数请填写 1 到 30 之间的正整数"
+    if "daily_count must be at most" in message:
+        return "连续生成天数最多 30 天"
+    if "schedule_mode must be" in message:
+        return "请选择有效的生成节奏"
+    if "generation_options must be valid JSON" in message:
+        return "生成设置格式不正确，请刷新页面后重试"
+    return message or "请检查生成设置"
 
 
 def _merge_review_plan_materials(primary_text: str, same_lesson_materials: list[str]) -> str:

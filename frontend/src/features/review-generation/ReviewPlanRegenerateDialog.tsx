@@ -2,7 +2,7 @@ import { RefreshCw, X } from 'lucide-react';
 
 import { cn, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
 import { ReviewPlanGenerationOptionsFields } from './ReviewPlanGenerationOptionsFields';
-import type { ReviewPlanGenerationOptionsFormValue } from './reviewPlanGenerationOptions';
+import { getGenerationOptionsValidationError, type ReviewPlanGenerationOptionsFormValue } from './reviewPlanGenerationOptions';
 
 type ReviewPlanRegenerateDialogProps = {
   title: string;
@@ -21,6 +21,8 @@ export function ReviewPlanRegenerateDialog({
   onSubmit,
   submitting,
 }: ReviewPlanRegenerateDialogProps) {
+  const validationError = getGenerationOptionsValidationError(value);
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/35 px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-white">
@@ -40,6 +42,11 @@ export function ReviewPlanRegenerateDialog({
         </div>
         <div className="py-4">
           <ReviewPlanGenerationOptionsFields value={value} onChange={onChange} />
+          {validationError && (
+            <p className="mt-3 text-sm font-medium text-rose-600 dark:text-rose-300">
+              {validationError}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200/70 pt-4 dark:border-white/10">
           <button type="button" onClick={onCancel} className={workspaceSecondaryButtonClass}>
@@ -48,7 +55,7 @@ export function ReviewPlanRegenerateDialog({
           <button
             type="button"
             onClick={onSubmit}
-            disabled={submitting}
+            disabled={submitting || Boolean(validationError)}
             className={workspacePrimaryButtonClass}
           >
             <RefreshCw size={16} className={cn(submitting && 'animate-spin')} />

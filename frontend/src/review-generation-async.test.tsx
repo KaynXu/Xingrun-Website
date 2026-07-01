@@ -10,6 +10,7 @@ import {
 
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
 const reviewPlanRegenerateDialogSource = readFileSync(new URL('./features/review-generation/ReviewPlanRegenerateDialog.tsx', import.meta.url), 'utf8');
+const reviewPlanGenerationOptionsSource = readFileSync(new URL('./features/review-generation/reviewPlanGenerationOptions.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const workspacePageContentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
@@ -132,4 +133,18 @@ test('review generation source synchronizes member class selection against acces
   assert.match(lessonInputSource, /setClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
   assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
   assert.match(workspacePageContentSource, /import \{ LessonInput \} from '\.\.\/review-generation\/LessonInput';/);
+});
+
+test('review generation validates custom review days before creating or regenerating', () => {
+  assert.match(reviewPlanGenerationOptionsSource, /export function parseCustomReviewDays/);
+  assert.match(reviewPlanGenerationOptionsSource, /replace\(\/，\/g, ','\)/);
+  assert.match(reviewPlanGenerationOptionsSource, /export function getGenerationOptionsValidationError/);
+  assert.match(reviewPlanGenerationOptionsSource, /请填写至少一个复习日期点/);
+  assert.match(reviewPlanGenerationOptionsSource, /review_days: parseCustomReviewDays\(value\.customDays\)/);
+  assert.match(lessonInputSource, /getGenerationOptionsValidationError\(generationOptions\)/);
+  assert.match(lessonInputSource, /setError\(generationOptionsError\);/);
+  assert.match(reviewPlanRegenerateDialogSource, /const validationError = getGenerationOptionsValidationError\(value\);/);
+  assert.match(reviewPlanRegenerateDialogSource, /disabled=\{submitting \|\| Boolean\(validationError\)\}/);
+  assert.match(reviewGenerationSource, /getGenerationOptionsValidationError\(options\)/);
+  assert.match(reviewGenerationSource, /onFloatingNotice\(\{ type: 'error', text: generationOptionsError \}\);/);
 });

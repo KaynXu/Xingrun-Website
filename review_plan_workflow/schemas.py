@@ -365,11 +365,18 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized["day"] = day_number
 
     if not _clean_text(normalized.get("goal")):
-        normalized["goal"] = _clean_text(normalized.get("reviewGoal") or normalized.get("review_goal"))
+        normalized["goal"] = _clean_text(
+            normalized.get("reviewGoal")
+            or normalized.get("review_goal")
+            or normalized.get("objective")
+        )
     if not _clean_text(normalized.get("focus")):
         normalized["focus"] = _clean_text(normalized.get("reviewFocus") or normalized.get("review_focus"))
     if not _clean_text(normalized.get("completion_standard")):
-        normalized["completion_standard"] = _clean_text(normalized.get("completionCriteria"))
+        normalized["completion_standard"] = _clean_text(
+            normalized.get("completionCriteria")
+            or normalized.get("completion_criteria")
+        )
     if "active_recall" not in normalized and isinstance(normalized.get("activeRecall"), (dict, str)):
         normalized["active_recall"] = normalized.get("activeRecall")
 
@@ -429,8 +436,12 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         for item in active_recall.get("items", []) if isinstance(active_recall.get("items"), list) else []:
             if isinstance(item, dict):
                 text = _clean_text(item.get("text") or item.get("stem") or item.get("question"))
-                if text:
-                    _append_unique_body(items, text)
+            else:
+                text = _clean_text(item)
+            if text:
+                _append_unique_body(items, text)
+                if "______" in text:
+                    _append_unique_blank(active_recall_blanks, {"text": text, "answer": ""})
         if not _clean_text(normalized.get("self_test_phrase")):
             normalized["self_test_phrase"] = (
                 _clean_text(active_recall.get("expected"))
@@ -447,6 +458,9 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         raw_blanks.extend(normalized.get("blanks", []))
     if isinstance(normalized.get("fillInBlanks"), list):
         raw_blanks.extend(normalized.get("fillInBlanks", []))
+    mini_test = normalized.get("mini_test")
+    if isinstance(mini_test, dict) and isinstance(mini_test.get("blanks"), list):
+        raw_blanks.extend(mini_test.get("blanks", []))
     for blank in raw_blanks:
         normalized_blank = _normalize_blank(blank)
         if normalized_blank.get("text"):
@@ -472,6 +486,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         raw_choices.extend(normalized.get("choices", []))
     if isinstance(normalized.get("multipleChoice"), list):
         raw_choices.extend(normalized.get("multipleChoice", []))
+    if isinstance(mini_test, dict) and isinstance(mini_test.get("choices"), list):
+        raw_choices.extend(mini_test.get("choices", []))
     for choice in raw_choices:
         if not isinstance(choice, dict):
             continue
@@ -489,6 +505,31 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
                 day_quotes.append(quote)
         normalized["quotes"] = day_quotes
 
+    for oral_card in normalized.get("oral_cards", []) if isinstance(normalized.get("oral_cards"), list) else []:
+        if not isinstance(oral_card, dict):
+            continue
+        text = " ".join(
+            part for part in (
+                _clean_text(oral_card.get("stem")),
+                _clean_text(oral_card.get("question")),
+            )
+            if part
+        )
+        _append_unique_body(items, text)
+    if isinstance(mini_test, dict):
+        short_question = mini_test.get("short_question")
+        if isinstance(short_question, dict):
+            text = " ".join(
+                part for part in (
+                    _clean_text(short_question.get("stem")),
+                    _clean_text(short_question.get("question")),
+                    _clean_text(short_question.get("reference_answer")),
+                )
+                if part
+            )
+            _append_unique_body(items, text)
+    normalized["items"] = items
+
     if not _clean_text(normalized.get("self_test_phrase")):
         normalized["self_test_phrase"] = (
             _clean_text(normalized.get("completion_standard"))
@@ -501,6 +542,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
 def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(plan or {})
     wrapped_plan = normalized.get("reviewPlan")
+    if not isinstance(wrapped_plan, dict):
+        wrapped_plan = normalized.get("plan")
     if isinstance(wrapped_plan, dict):
         for source_key, target_key in (
             ("subject", "subject"),
@@ -515,6 +558,11 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
             wrapped_days = wrapped_plan.get("days")
             if isinstance(wrapped_days, list):
                 normalized["days"] = wrapped_days
+        for key in ("full_review_topics", "quotes", "final_reminder_lines", "knowledge_sections"):
+            if key not in normalized or normalized.get(key) in (None, "", [], {}):
+                wrapped_value = wrapped_plan.get(key)
+                if wrapped_value not in (None, "", [], {}):
+                    normalized[key] = wrapped_value
 
     lesson_info = normalized.setdefault("lesson_info", {})
     if not isinstance(lesson_info, dict):

@@ -76,13 +76,30 @@ def _apply_lesson_date(plan: dict[str, Any], review_input: ReviewPlanInput) -> d
     return plan
 
 
+def _apply_lesson_metadata(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
+    lesson_info = plan.setdefault("lesson_info", {})
+    if not isinstance(lesson_info, dict):
+        lesson_info = {}
+        plan["lesson_info"] = lesson_info
+    if review_input.subject and not str(lesson_info.get("subject") or "").strip():
+        lesson_info["subject"] = review_input.subject
+    if review_input.grade and not str(lesson_info.get("grade") or "").strip():
+        lesson_info["grade"] = review_input.grade
+    if review_input.topic and not str(lesson_info.get("topic") or "").strip():
+        lesson_info["topic"] = review_input.topic
+    return plan
+
+
 def _schema_errors(plan: dict[str, Any]) -> list[str]:
     _, errors = validate_final_review_plan(plan)
     return errors
 
 
 def _normalize_plan(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
-    return _apply_lesson_date(normalize_final_review_plan(plan), review_input)
+    return _apply_lesson_metadata(
+        _apply_lesson_date(normalize_final_review_plan(plan), review_input),
+        review_input,
+    )
 
 
 def _repair_message(
