@@ -438,6 +438,19 @@ def _transcribe_audio_path_with_tencent_flash(audio_path: Path) -> str:
     return transcript_text
 
 
+def _should_fallback_to_local_asr_after_tencent_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "audio decode failed",
+            "decode failed",
+            "解码",
+            "返回空转写文本",
+        )
+    )
+
+
 WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
 你需要判断上传图片是否属于几何题或几何体题，并提取可直接进入错题库的题目文本；如果题目依赖几何图、函数图、数轴或线段示意图，还要输出可重绘的结构化图像信息。
 识别前必须先根据印刷文字、页边和题目排版判断图片正确阅读方向；如果原图是横着或倒着的，仍按旋正后的方向理解题目。
@@ -2210,8 +2223,15 @@ def transcribe_audio(audio_path: str, *, include_usage: bool = False):
     provider = _audio_transcription_provider()
     print(f"正在转录音频：{audio_path.name} ...")
     if provider == "tencent":
-        transcription = _transcribe_audio_path_with_tencent_flash(audio_path)
-        usage = _tencent_asr_usage_dict()
+        try:
+            transcription = _transcribe_audio_path_with_tencent_flash(audio_path)
+            usage = _tencent_asr_usage_dict()
+        except Exception as exc:
+            if not _should_fallback_to_local_asr_after_tencent_error(exc):
+                raise
+            print(f"腾讯云 ASR 无法解码音频，切换本地 faster-whisper 兜底：{exc}")
+            transcription = _transcribe_audio_path_locally(str(audio_path))
+            usage = _local_whisper_usage_dict()
     else:
         transcription = _transcribe_audio_path_locally(str(audio_path))
         usage = _local_whisper_usage_dict()
