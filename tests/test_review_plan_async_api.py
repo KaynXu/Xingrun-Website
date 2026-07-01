@@ -1231,8 +1231,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         plan = valid_single_lesson_plan(subject="数学", topic="")
 
         def run_with_low_quality_trace(**_kwargs):
+            version_id = lesson_manager.list_review_plan_versions(lesson_id)[0]["id"]
             lesson_manager.save_review_plan_run(
                 lesson_id=lesson_id,
+                version_id=version_id,
                 organization_id=1,
                 trace_id="quality-blocked-trace",
                 status="succeeded",
@@ -1284,6 +1286,61 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
     @patch("app._run_ai_feature_with_charge")
+    def test_worker_ignores_stale_quality_failure_from_other_generation(
+        self,
+        mock_run_with_charge,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="分数应用题",
+            summary="课堂总结文本",
+            weak_points="",
+            class_id=0,
+        )
+        lesson_manager.save_review_plan_run(
+            lesson_id=lesson_id,
+            organization_id=1,
+            trace_id="stale-failed-trace",
+            status="succeeded",
+            subject="math",
+            provider="openai",
+            model="gpt-5.4",
+            quality_review={
+                "score": 0,
+                "passed": False,
+                "must_revise": True,
+                "issues": [
+                    {
+                        "severity": "high",
+                        "category": "schema",
+                        "description": "review plan must include review days",
+                    }
+                ],
+            },
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="分数应用题")
+        mock_run_with_charge.return_value = plan
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-5.4",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        versions = lesson_manager.list_review_plan_versions(lesson_id)
+        self.assertEqual(saved["record_status"], "ready")
+        self.assertEqual(versions[0]["status"], "ready")
+        self.assertEqual(saved["current_review_plan_version_id"], versions[0]["id"])
+        mock_generate_pdf.assert_called_once()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("app._run_ai_feature_with_charge")
     def test_worker_writes_readable_message_for_schema_quality_failure(
         self,
         mock_run_with_charge,
@@ -1301,8 +1358,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
 
         def run_with_schema_failure_trace(**_kwargs):
+            version_id = lesson_manager.list_review_plan_versions(lesson_id)[0]["id"]
             lesson_manager.save_review_plan_run(
                 lesson_id=lesson_id,
+                version_id=version_id,
                 organization_id=1,
                 trace_id="schema-blocked-trace",
                 status="succeeded",

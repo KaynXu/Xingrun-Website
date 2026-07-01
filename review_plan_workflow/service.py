@@ -47,6 +47,7 @@ from .state import WorkflowContext
 def _record_run(
     *,
     lesson_id: int,
+    version_id: int = 0,
     organization_id: int,
     context: WorkflowContext,
     status: str,
@@ -59,6 +60,7 @@ def _record_run(
 
         save_review_plan_run(
             lesson_id=lesson_id,
+            version_id=version_id,
             organization_id=organization_id,
             trace_id=context.trace_id,
             status=status,
@@ -375,6 +377,7 @@ def generate_single_lesson_review_plan(
     provider: str = "",
     model: str = "",
     lesson_id: int = 0,
+    version_id: int = 0,
     organization_id: int = 0,
     generation_options: object | None = None,
     include_usage: bool = False,
@@ -399,7 +402,7 @@ def generate_single_lesson_review_plan(
         daily_count=options.get("daily_count") if isinstance(options.get("daily_count"), int) else None,
         user_requirements=str(options.get("user_requirements") or ""),
     )
-    _record_run(lesson_id=lesson_id, organization_id=organization_id, context=context, status="running")
+    _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="running")
 
     try:
         with workflow_trace(
@@ -503,6 +506,7 @@ def generate_single_lesson_review_plan(
 
             _record_run(
                 lesson_id=lesson_id,
+                version_id=version_id,
                 organization_id=organization_id,
                 context=context,
                 status="succeeded",
@@ -513,7 +517,7 @@ def generate_single_lesson_review_plan(
             return plan
     except Exception as exc:
         record_workflow_failure(context=context, error=exc)
-        _record_run(lesson_id=lesson_id, organization_id=organization_id, context=context, status="failed")
+        _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="failed")
         raise
     finally:
         flush()
