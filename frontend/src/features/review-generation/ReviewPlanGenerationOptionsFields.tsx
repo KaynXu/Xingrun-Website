@@ -5,10 +5,10 @@ import type { ReviewPlanGenerationOptionsFormValue, ReviewPlanScheduleMode } fro
 import { getGenerationOptionsFormSummary, getGenerationOptionsValidationError, parseCustomReviewDays } from './reviewPlanGenerationOptions';
 
 const scheduleModes: Array<{ value: ReviewPlanScheduleMode; label: string }> = [
-  { value: 'standard', label: '标准' },
-  { value: 'compressed', label: '压缩' },
-  { value: 'daily', label: '连续' },
-  { value: 'custom', label: '自定义' },
+  { value: 'standard', label: '5次间隔' },
+  { value: 'compressed', label: '1天集中' },
+  { value: 'daily', label: '每日连续' },
+  { value: 'custom', label: '自定义日期' },
 ];
 
 export function ReviewPlanGenerationOptionsFields({

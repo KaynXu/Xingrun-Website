@@ -157,6 +157,21 @@ test('review generation validates custom review days before creating or regenera
   assert.match(reviewGenerationSource, /onFloatingNotice\(\{ type: 'error', text: generationOptionsError \}\);/);
 });
 
+test('review generation schedule mode labels show concrete day counts', () => {
+  const optionsFieldsSource = readFileSync(new URL('./features/review-generation/ReviewPlanGenerationOptionsFields.tsx', import.meta.url), 'utf8');
+
+  for (const label of ['5次间隔', '1天集中', '每日连续', '自定义日期']) {
+    assert.match(lessonInputSource, new RegExp(label));
+    assert.match(optionsFieldsSource, new RegExp(label));
+  }
+  assert.match(reviewPlanGenerationOptionsSource, /return '1天集中复习';/);
+  assert.match(reviewPlanGenerationOptionsSource, /return `每日连续 \$\{value\.dailyCount\} 天`;/);
+  assert.match(reviewPlanGenerationOptionsSource, /return `自定义日期 \$\{value\.customDays\.trim\(\) \|\| '未填写'\}`;/);
+  assert.match(reviewPlanGenerationOptionsSource, /return '5次间隔复习';/);
+  assert.doesNotMatch(lessonInputSource, /label: '压缩'/);
+  assert.doesNotMatch(optionsFieldsSource, /label: '压缩'/);
+});
+
 test('review generation places generation settings directly under top class metadata', () => {
   const optionsIndex = lessonInputSource.indexOf('title="生成设置"');
   const noClassWarningIndex = lessonInputSource.indexOf('{hasNoAssignableClasses &&');
