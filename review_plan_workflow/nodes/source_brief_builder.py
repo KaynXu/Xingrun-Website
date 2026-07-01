@@ -4,15 +4,12 @@ from typing import Any
 
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.schemas import NormalizedBrief, ReviewPlanInput, ReviewPlanSourceBrief
-from review_plan_workflow.source_brief import build_deterministic_source_brief
+from review_plan_workflow.source_brief import build_deterministic_source_brief, source_brief_trace_payload
 from review_plan_workflow.state import WorkflowContext
 
 
 def _trace_safe_source_brief(brief: ReviewPlanSourceBrief) -> dict[str, Any]:
-    return {
-        **brief.model_dump(exclude={"cleaned_text"}),
-        "cleaned_text_length": len(brief.cleaned_text),
-    }
+    return source_brief_trace_payload(brief)
 
 
 def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSourceBrief:

@@ -37,6 +37,68 @@ def source_text_hash(text: str) -> str:
     return f"sha256:{digest}"
 
 
+def _trace_text_metrics(text: object) -> dict:
+    value = str(text or "")
+    return {
+        "chars": len(value),
+        "source_text_hash": source_text_hash(value) if value else "",
+    }
+
+
+def source_evidence_trace_payload(value: object) -> dict:
+    if hasattr(value, "model_dump"):
+        data = value.model_dump()
+    elif isinstance(value, dict):
+        data = value
+    else:
+        return {}
+    quote = data.get("quote") or data.get("evidence") or data.get("stem") or ""
+    return {
+        "id": str(data.get("id") or ""),
+        "source": str(data.get("source") or ""),
+        "kind": str(data.get("kind") or ""),
+        "offset_start": int(data.get("offset_start") or 0),
+        "offset_end": int(data.get("offset_end") or 0),
+        "text": _trace_text_metrics(quote),
+    }
+
+
+def source_evidence_list_trace_payload(values: object) -> list[dict]:
+    if not isinstance(values, list):
+        return []
+    return [payload for payload in (source_evidence_trace_payload(item) for item in values[:20]) if payload]
+
+
+def source_brief_trace_payload(brief: ReviewPlanSourceBrief | dict | None) -> dict:
+    if brief is None:
+        return {}
+    if hasattr(brief, "model_dump"):
+        data = brief.model_dump()
+        cleaned_text = getattr(brief, "cleaned_text", "")
+    elif isinstance(brief, dict):
+        data = brief
+        cleaned_text = str(brief.get("cleaned_text") or "")
+    else:
+        return {}
+    evidence_map = data.get("evidence_map") or []
+    return {
+        "schema_version": str(data.get("schema_version") or SOURCE_BRIEF_SCHEMA_VERSION),
+        "source_text_hash": str(data.get("source_text_hash") or ""),
+        "cleaned_text_length": len(str(cleaned_text or "")),
+        "lesson_title_candidates_count": len(data.get("lesson_title_candidates") or []),
+        "knowledge_points_count": len(data.get("knowledge_points") or []),
+        "method_chains_count": len(data.get("method_chains") or []),
+        "common_mistakes_count": len(data.get("common_mistakes") or []),
+        "example_stems_count": len(data.get("example_stems") or []),
+        "teacher_emphasis_count": len(data.get("teacher_emphasis") or []),
+        "excluded_noise_count": len(data.get("excluded_noise") or []),
+        "missing_fields": list(data.get("missing_fields") or [])[:10],
+        "evidence_map": source_evidence_list_trace_payload(evidence_map),
+        "evidence_count": len(evidence_map) if isinstance(evidence_map, list) else 0,
+        "confidence": float(data.get("confidence") or 0.0),
+    }
+
+
 def clean_source_text(text: str) -> str:
     cleaned = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
     for pattern in _NOISE_PATTERNS:

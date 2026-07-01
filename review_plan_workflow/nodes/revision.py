@@ -13,9 +13,23 @@ from review_plan_workflow.schemas import (
     PromptBundle,
     QualityReview,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     normalize_final_review_plan,
 )
+from review_plan_workflow.source_brief import source_brief_trace_payload
 from review_plan_workflow.state import WorkflowContext
+
+
+def _source_brief_revision_section(
+    prompt_bundle: PromptBundle,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> str:
+    safe_brief = prompt_bundle.variables.get("source_brief")
+    if not isinstance(safe_brief, dict) and source_brief is not None:
+        safe_brief = source_brief_trace_payload(source_brief)
+    if not isinstance(safe_brief, dict) or not safe_brief:
+        return ""
+    return "结构化课堂材料：\n" + json.dumps(safe_brief, ensure_ascii=False, indent=2)
 
 
 def _apply_lesson_date(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
@@ -33,6 +47,8 @@ def _revision_message(
     review_input: ReviewPlanInput,
     attempt: int,
     agent_blueprint: AgenticPlanBlueprint | None = None,
+    prompt_bundle: PromptBundle | None = None,
+    source_brief: ReviewPlanSourceBrief | None = None,
 ) -> str:
     sections = [
         f"Targeted revision attempt: {attempt}/2",
@@ -48,6 +64,10 @@ def _revision_message(
         )
     if agent_blueprint is not None:
         sections.append("父模型教学蓝图：\n" + agent_blueprint.model_dump_json(indent=2))
+    if prompt_bundle is not None:
+        source_section = _source_brief_revision_section(prompt_bundle, source_brief)
+        if source_section:
+            sections.append(source_section)
     sections.extend(
         [
             "质量问题：\n" + quality.model_dump_json(indent=2),
@@ -78,6 +98,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
     plan: dict[str, Any] = input_data["plan"]
     attempt = int(input_data.get("attempt") or 1)
     agent_blueprint: AgenticPlanBlueprint | None = input_data.get("agent_blueprint")
+    source_brief: ReviewPlanSourceBrief | None = input_data.get("source_brief")
     temperature = resolve_review_plan_temperature()
 
     rendered = render_prompt(
@@ -96,6 +117,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
             review_input=review_input,
             attempt=attempt,
             agent_blueprint=agent_blueprint,
+            prompt_bundle=prompt_bundle,
+            source_brief=source_brief,
         ),
         provider=context.provider,
         model=context.model,

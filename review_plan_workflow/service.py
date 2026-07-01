@@ -21,6 +21,7 @@ from .nodes import (
     revision_node,
     scope_planner_node,
     source_analyzer_node,
+    source_brief_builder_node,
     subject_router_node,
     task_blueprint_node,
     time_allocator_node,
@@ -39,6 +40,7 @@ from .schemas import (
     QualityIssue,
     QualityReview,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     normalize_final_review_plan,
 )
 from .state import WorkflowContext
@@ -161,6 +163,7 @@ def _run_parent_planner_with_fallback(
     scope: Any,
     time_allocation: Any,
     task_blueprint: Any,
+    source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
 ) -> tuple[AgenticPlanBlueprint, dict[str, Any]]:
     if not _has_runtime_key_for_provider(context.provider):
@@ -187,6 +190,7 @@ def _run_parent_planner_with_fallback(
                 "scope": scope,
                 "time_allocation": time_allocation,
                 "task_blueprint": task_blueprint,
+                "source_brief": source_brief,
             },
             context,
         )
@@ -246,6 +250,7 @@ def _review_with_llm_quality_gate(
     local_quality: QualityReview,
     prompt_bundle: Any,
     agent_blueprint: AgenticPlanBlueprint,
+    source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
     node_key: str,
 ) -> tuple[QualityReview, dict[str, Any]]:
@@ -265,6 +270,7 @@ def _review_with_llm_quality_gate(
                 "local_quality": local_quality,
                 "prompt_bundle": prompt_bundle,
                 "agent_blueprint": agent_blueprint,
+                "source_brief": source_brief,
             },
             context,
         )
@@ -299,6 +305,7 @@ def _maybe_revise_plan(
     review_input: ReviewPlanInput,
     prompt_bundle: Any,
     agent_blueprint: AgenticPlanBlueprint,
+    source_brief: ReviewPlanSourceBrief | None = None,
     subject: str,
     context: WorkflowContext,
 ) -> tuple[dict[str, Any], QualityReview, dict[str, Any]]:
@@ -322,6 +329,7 @@ def _maybe_revise_plan(
                     "quality": current_quality,
                     "attempt": attempt,
                     "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
                 },
                 context,
             )
@@ -347,6 +355,7 @@ def _maybe_revise_plan(
             local_quality=local_quality,
             prompt_bundle=prompt_bundle,
             agent_blueprint=agent_blueprint,
+            source_brief=source_brief,
             context=context,
             node_key=f"quality_reviewer_after_revision_{attempt}",
         )
@@ -412,11 +421,26 @@ def generate_single_lesson_review_plan(
             organization_id=organization_id,
         ):
             normalized = run_workflow_node(intake_normalizer_node, review_input, context)
+            source_brief = run_workflow_node(
+                source_brief_builder_node,
+                {"input": review_input, "normalized": normalized},
+                context,
+            )
             route = run_workflow_node(subject_router_node, normalized, context)
-            source = run_workflow_node(source_analyzer_node, normalized, context)
+            source = run_workflow_node(
+                source_analyzer_node,
+                {"normalized": normalized, "source_brief": source_brief},
+                context,
+            )
             scope = run_workflow_node(
                 scope_planner_node,
-                {"input": review_input, "normalized": normalized, "route": route, "source": source},
+                {
+                    "input": review_input,
+                    "normalized": normalized,
+                    "route": route,
+                    "source": source,
+                    "source_brief": source_brief,
+                },
                 context,
             )
             time_allocation = run_workflow_node(
@@ -430,6 +454,7 @@ def generate_single_lesson_review_plan(
                     "normalized": normalized,
                     "route": route,
                     "source": source,
+                    "source_brief": source_brief,
                     "scope": scope,
                     "time_allocation": time_allocation,
                 },
@@ -443,6 +468,7 @@ def generate_single_lesson_review_plan(
                 scope=scope,
                 time_allocation=time_allocation,
                 task_blueprint=task_blueprint,
+                source_brief=source_brief,
                 context=context,
             )
             prompt_bundle = run_workflow_node(
@@ -455,6 +481,7 @@ def generate_single_lesson_review_plan(
                     "time_allocation": time_allocation,
                     "task_blueprint": task_blueprint,
                     "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
                 },
                 context,
             )
@@ -470,6 +497,7 @@ def generate_single_lesson_review_plan(
                     "task_blueprint": task_blueprint,
                     "prompt_bundle": prompt_bundle,
                     "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
                 },
                 context,
             )
@@ -486,6 +514,7 @@ def generate_single_lesson_review_plan(
                 local_quality=local_quality,
                 prompt_bundle=prompt_bundle,
                 agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
                 context=context,
                 node_key="quality_reviewer_initial",
             )
@@ -497,6 +526,7 @@ def generate_single_lesson_review_plan(
                 review_input=review_input,
                 prompt_bundle=prompt_bundle,
                 agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
                 subject=route.selected_subject,
                 context=context,
             )

@@ -273,6 +273,7 @@ from class_commentary import list_colleague_skills, load_colleague_skill, payloa
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
+from review_plan_workflow.source_brief import build_deterministic_source_brief
 from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
@@ -1109,6 +1110,27 @@ def _run_review_plan_generation_job(
         topic = str(lesson.get("topic") or "")
         weak_points = str(lesson.get("weak_points") or "")
         raw_text = str(lesson.get("summary") or "")
+        version_cleaned_source_text = str((version or {}).get("cleaned_source_text") or "").strip()
+        version_source_text = str((version or {}).get("source_text") or "").strip()
+        source_text_for_generation = version_cleaned_source_text or version_source_text or raw_text
+        source_snapshot_text = version_source_text or source_text_for_generation
+
+        if version_id and not str((version or {}).get("source_text_hash") or "").strip():
+            source_brief = build_deterministic_source_brief(
+                raw_text=source_text_for_generation,
+                subject=subject,
+                topic=topic,
+                weak_points=weak_points,
+                user_requirements=str((generation_options or {}).get("user_requirements") or ""),
+            )
+            update_review_plan_version_source_artifact(
+                version_id,
+                source_text=source_snapshot_text,
+                cleaned_source_text=source_brief.cleaned_text,
+                source_text_hash=source_brief.source_text_hash,
+                source_brief=source_brief.model_dump(),
+            )
+            version = get_review_plan_version_for_lesson(lesson_id, version_id)
 
         from review_plan_workflow.service import generate_single_lesson_review_plan
         try:
@@ -1119,7 +1141,7 @@ def _run_review_plan_generation_job(
                 source_record_id=lesson_id,
                 producer=lambda: _call_ai_helper_with_usage(
                     generate_single_lesson_review_plan,
-                    summary_text=raw_text,
+                    summary_text=source_text_for_generation,
                     subject=subject,
                     grade=grade,
                     topic=topic,

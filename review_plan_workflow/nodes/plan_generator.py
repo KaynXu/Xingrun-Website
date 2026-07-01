@@ -16,16 +16,37 @@ from review_plan_workflow.schemas import (
     AgenticPlanBlueprint,
     PromptBundle,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     normalize_final_review_plan,
     validate_final_review_plan,
 )
+from review_plan_workflow.source_brief import source_brief_trace_payload
 from review_plan_workflow.state import WorkflowContext
+
+
+def _source_brief_sections(
+    prompt_bundle: PromptBundle,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> list[str]:
+    safe_brief = prompt_bundle.variables.get("source_brief")
+    if not isinstance(safe_brief, dict) and source_brief is not None:
+        safe_brief = source_brief_trace_payload(source_brief)
+    if not isinstance(safe_brief, dict) or not safe_brief:
+        return []
+
+    sections = [
+        "结构化课堂材料：\n" + json.dumps(safe_brief, ensure_ascii=False, indent=2),
+    ]
+    if source_brief is not None and source_brief.cleaned_text:
+        sections.append("课堂材料摘录：\n" + source_brief.cleaned_text[:1600])
+    return sections
 
 
 def _user_message(
     review_input: ReviewPlanInput,
     prompt_bundle: PromptBundle,
     agent_blueprint: AgenticPlanBlueprint | None = None,
+    source_brief: ReviewPlanSourceBrief | None = None,
 ) -> str:
     meta_parts = [f"生成日期（第0天）：{date.today().isoformat()}"]
     if review_input.subject:
@@ -54,9 +75,13 @@ def _user_message(
             "父模型教学蓝图（必须优先执行；如果课堂信息不足，只能把假设写进 assumptions，不能伪装成事实）：\n"
             + agent_blueprint.model_dump_json(indent=2)
         )
+    source_sections = _source_brief_sections(prompt_bundle, source_brief)
+    if source_sections:
+        sections.extend(source_sections)
+    else:
+        sections.append("课堂总结：\n" + review_input.summary_text)
     sections.extend(
         [
-            "课堂总结：\n" + review_input.summary_text,
             "硬性选择题契约：所有 choices 必须有完整 question、4 个完整 options 和 answer；options 不能只写 A/B/C/D，必须写成 A. 具体选项内容；answer 只能是 A/B/C/D。",
             f"硬性复习日契约：days 必须且只能覆盖 {review_input.review_days}；不得额外生成 1/2/7/14/30 中未被指定的日期。",
             "硬性覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；不能只写本节课标题，不能只写“本节课内容/综合复习”。",
@@ -131,7 +156,8 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
     review_input: ReviewPlanInput = input_data["input"]
     prompt_bundle: PromptBundle = input_data["prompt_bundle"]
     agent_blueprint: AgenticPlanBlueprint | None = input_data.get("agent_blueprint")
-    user_message = _user_message(review_input, prompt_bundle, agent_blueprint)
+    source_brief: ReviewPlanSourceBrief | None = input_data.get("source_brief")
+    user_message = _user_message(review_input, prompt_bundle, agent_blueprint, source_brief)
     attempts: list[dict[str, Any]] = []
     plan: dict[str, Any] | None = None
     usage: dict[str, Any] = {}

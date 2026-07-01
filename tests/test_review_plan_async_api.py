@@ -1067,6 +1067,121 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
     @patch("review_plan_workflow.service.generate_single_lesson_review_plan")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_uses_version_source_artifact_before_lesson_summary(
+        self,
+        mock_run_with_charge,
+        mock_generate_plan,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="后来被编辑过的 lesson summary",
+            weak_points="空间轨迹",
+            class_id=0,
+            created_by_user_id=1,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=1,
+            generation_options={"schedule_mode": "compressed"},
+        )
+        lesson_manager.update_review_plan_version_source_artifact(
+            int(version["id"]),
+            source_text="原始课堂源材料",
+            cleaned_source_text="清洗后课堂源材料",
+            source_text_hash="sha256:" + "b" * 64,
+            source_brief={
+                "schema_version": "2026-07-01",
+                "source_text_hash": "sha256:" + "b" * 64,
+                "cleaned_text": "清洗后课堂源材料",
+                "lesson_title_candidates": ["动点与立体几何综合"],
+                "knowledge_points": [],
+                "method_chains": [],
+                "common_mistakes": [],
+                "example_stems": [],
+                "teacher_emphasis": [],
+                "excluded_noise": [],
+                "missing_fields": [],
+                "evidence_map": [],
+                "confidence": 0.8,
+            },
+        )
+        mock_generate_plan.return_value = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            version_id=int(version["id"]),
+            user={"id": 1, "organization_id": 1},
+            chat_provider="deepseek",
+            chat_model="deepseek-v4-pro",
+            request_key="request-key",
+            request_id="request-id",
+        )
+
+        generate_kwargs = mock_generate_plan.call_args.kwargs
+        self.assertEqual(generate_kwargs["summary_text"], "清洗后课堂源材料")
+        self.assertNotEqual(generate_kwargs["summary_text"], "后来被编辑过的 lesson summary")
+        saved_version = lesson_manager.get_review_plan_version(version["id"])
+        self.assertEqual(saved_version["source_text_hash"], "sha256:" + "b" * 64)
+        mock_generate_pdf.assert_called_once()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("review_plan_workflow.service.generate_single_lesson_review_plan")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_persists_source_artifact_for_text_version_without_hash(
+        self,
+        mock_run_with_charge,
+        mock_generate_plan,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary=(
+                "本节课主题：动点与立体几何综合\n"
+                "老师强调：先看固定量，再判断轨迹。\n"
+                "例题：动点 P 到定点 O 的距离恒为 r，轨迹是什么？"
+            ),
+            weak_points="空间轨迹",
+            class_id=0,
+            created_by_user_id=1,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=1,
+            generation_options={"schedule_mode": "standard"},
+        )
+        mock_generate_plan.return_value = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            version_id=int(version["id"]),
+            user={"id": 1, "organization_id": 1},
+            chat_provider="deepseek",
+            chat_model="deepseek-v4-pro",
+            request_key="request-key",
+            request_id="request-id",
+        )
+
+        saved_version = lesson_manager.get_review_plan_version(version["id"])
+        self.assertTrue(saved_version["source_text_hash"].startswith("sha256:"))
+        self.assertIn("先看固定量", saved_version["cleaned_source_text"])
+        self.assertEqual(saved_version["source_brief"]["lesson_title_candidates"], ["动点与立体几何综合"])
+        self.assertEqual(mock_generate_plan.call_args.kwargs["summary_text"], saved_version["cleaned_source_text"])
+        mock_generate_pdf.assert_called_once()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("review_plan_workflow.service.generate_single_lesson_review_plan")
     @patch("ai_processor.polish_review_plan_transcript")
     @patch("ai_processor.transcribe_audio")
     @patch("app.update_review_plan_version_source_artifact")
