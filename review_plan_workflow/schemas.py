@@ -322,6 +322,12 @@ def _clean_text(value: object) -> str:
     return str(value or "").strip()
 
 
+def _clean_answer_text(value: object) -> str:
+    if isinstance(value, (list, tuple, set)):
+        return "；".join(text for text in (_clean_text(item) for item in value) if text)
+    return _clean_text(value)
+
+
 def _normalize_choice(choice: dict[str, Any]) -> dict[str, Any]:
     question = _clean_text(choice.get("question") or choice.get("stem"))
     options = [str(option).strip() for option in choice.get("options", []) if str(option or "").strip()]
@@ -343,7 +349,7 @@ def _normalize_blank(blank: Any) -> dict[str, Any]:
     if isinstance(blank, dict):
         return {
             "text": _clean_text(blank.get("text") or blank.get("stem") or blank.get("question")),
-            "answer": _clean_text(blank.get("answer")),
+            "answer": _clean_answer_text(blank.get("answer")),
         }
     if isinstance(blank, (list, tuple)) and blank:
         text = _clean_text(blank[0])
@@ -367,7 +373,7 @@ def _append_unique_blank(blanks: list[dict[str, Any]], blank: dict[str, Any]) ->
     text = _clean_text(blank.get("text"))
     if not text:
         return
-    answer = _clean_text(blank.get("answer"))
+    answer = _clean_answer_text(blank.get("answer"))
     for existing in blanks:
         if _clean_text(existing.get("text")) == text:
             return
@@ -544,12 +550,18 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
 
     component_blanks, component_choices, component_body_items, component_quotes = _normalize_component_payload(normalized)
     task_blanks, task_choices, task_body_items = _normalize_task_payload(normalized.get("tasks"))
+    section_blanks, section_choices, section_body_items = _normalize_task_payload(normalized.get("sections"))
+    question_blanks, question_choices, question_body_items = _normalize_task_payload(normalized.get("questions"))
     items = [copy.deepcopy(item) for item in normalized.get("items", []) if isinstance(item, dict)]
     _append_unique_body(items, normalized.get("goal", ""))
     _append_unique_body(items, normalized.get("focus", ""))
     for text in component_body_items:
         _append_unique_body(items, text)
     for text in task_body_items:
+        _append_unique_body(items, text)
+    for text in section_body_items:
+        _append_unique_body(items, text)
+    for text in question_body_items:
         _append_unique_body(items, text)
 
     active_recall_blanks: list[dict[str, Any]] = []
@@ -609,6 +621,10 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         _append_unique_blank(normalized_blanks, blank)
     for blank in task_blanks:
         _append_unique_blank(normalized_blanks, blank)
+    for blank in section_blanks:
+        _append_unique_blank(normalized_blanks, blank)
+    for blank in question_blanks:
+        _append_unique_blank(normalized_blanks, blank)
     for blank in active_recall_blanks:
         _append_unique_blank(normalized_blanks, blank)
     for normalized_blank in normalized_blanks:
@@ -637,6 +653,10 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     for choice in component_choices:
         _append_unique_choice(normalized_choices, choice)
     for choice in task_choices:
+        _append_unique_choice(normalized_choices, choice)
+    for choice in section_choices:
+        _append_unique_choice(normalized_choices, choice)
+    for choice in question_choices:
         _append_unique_choice(normalized_choices, choice)
     normalized["choices"] = normalized_choices
 
