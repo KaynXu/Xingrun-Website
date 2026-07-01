@@ -69,6 +69,67 @@ def _is_safe_preview_key(key: object) -> bool:
     return _safe_key(key) in _SAFE_PREVIEW_KEYS
 
 
+def _count_source_brief_field(data: dict[str, Any], list_key: str, count_key: str) -> int:
+    if count_key in data:
+        return max(0, int(data.get(count_key) or 0))
+    value = data.get(list_key)
+    return len(value) if isinstance(value, list) else 0
+
+
+def _looks_like_source_brief(data: dict[str, Any]) -> bool:
+    if "source_text_hash" not in data or "confidence" not in data:
+        return False
+    return any(
+        key in data
+        for key in (
+            "cleaned_text",
+            "cleaned_text_length",
+            "lesson_title_candidates",
+            "lesson_title_candidates_count",
+            "knowledge_points",
+            "knowledge_points_count",
+            "evidence_map",
+            "evidence_count",
+        )
+    )
+
+
+def summarize_source_brief(value: object) -> dict[str, Any]:
+    if hasattr(value, "model_dump"):
+        try:
+            data = value.model_dump()
+        except Exception:
+            data = {}
+    elif isinstance(value, dict):
+        data = value
+    else:
+        data = {}
+    return {
+        "schema_version": str(data.get("schema_version") or ""),
+        "source_text_hash": str(data.get("source_text_hash") or ""),
+        "lesson_title_candidates_count": _count_source_brief_field(
+            data,
+            "lesson_title_candidates",
+            "lesson_title_candidates_count",
+        ),
+        "knowledge_points_count": _count_source_brief_field(data, "knowledge_points", "knowledge_points_count"),
+        "method_chains_count": _count_source_brief_field(data, "method_chains", "method_chains_count"),
+        "common_mistakes_count": _count_source_brief_field(data, "common_mistakes", "common_mistakes_count"),
+        "example_stems_count": _count_source_brief_field(data, "example_stems", "example_stems_count"),
+        "teacher_emphasis_count": _count_source_brief_field(data, "teacher_emphasis", "teacher_emphasis_count"),
+        "excluded_noise_count": _count_source_brief_field(data, "excluded_noise", "excluded_noise_count"),
+        "missing_fields": list(data.get("missing_fields") or [])[:10],
+        "evidence_count": _count_source_brief_field(data, "evidence_map", "evidence_count"),
+        "confidence": float(data.get("confidence") or 0.0),
+    }
+
+
+def summarize_evidence_map(value: object) -> dict[str, Any]:
+    if isinstance(value, list):
+        return {"type": "list", "count": len(value)}
+    return {"type": type(value).__name__, "count": 0}
+
+
 def summarize_for_observability(value: object, *, depth: int = 0) -> object:
     """Return a bounded, PII-conscious summary for trace inputs/outputs."""
 
@@ -86,6 +147,9 @@ def summarize_for_observability(value: object, *, depth: int = 0) -> object:
         sample = [summarize_for_observability(item, depth=depth + 1) for item in list(value)[:5]]
         return {"type": type(value).__name__, "count": len(value), "sample": sample}
     if isinstance(value, dict):
+        if _looks_like_source_brief(value):
+            return summarize_source_brief(value)
+
         keys = [str(key) for key in value.keys()]
         if depth >= 2:
             return {"type": "dict", "key_count": len(keys), "keys": keys[:20]}
@@ -98,7 +162,11 @@ def summarize_for_observability(value: object, *, depth: int = 0) -> object:
         fields: dict[str, Any] = {}
         for key, item in list(value.items())[:20]:
             key_text = str(key)
-            if isinstance(item, str):
+            if _safe_key(key_text) == "source_brief":
+                fields[key_text] = summarize_source_brief(item)
+            elif _safe_key(key_text) == "evidence_map":
+                fields[key_text] = summarize_evidence_map(item)
+            elif isinstance(item, str):
                 fields[key_text] = _text_summary(item, include_preview=_is_safe_preview_key(key_text))
             elif _is_sensitive_key(key_text):
                 fields[key_text] = summarize_for_observability(item, depth=2)

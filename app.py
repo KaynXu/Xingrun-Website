@@ -265,13 +265,16 @@ from lesson_manager import (
     change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_review_plan_version_source_artifact,
     update_user_avatar_preferences,
 )
-from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, transcribe_audio
+from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import list_colleague_skills, load_colleague_skill, payload_to_json, sanitize_class_commentary_roster
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
+from review_plan_workflow.source_brief import build_deterministic_source_brief
+from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
     CreditBalanceError,
@@ -330,8 +333,8 @@ def _audio_transcription_model_name() -> str:
     return "faster-whisper"
 
 
-def _review_plan_chat_model_name() -> str:
-    provider = _review_plan_ai_provider_name()
+def _review_plan_chat_model_name(provider: str = "") -> str:
+    provider = provider or _review_plan_ai_provider_name()
     return resolve_review_plan_model(get_config(), provider=provider)
 
 
@@ -991,24 +994,75 @@ def _run_review_plan_generation_job(
                 fail_review_plan_version(version_id, "音频转录失败，请重新上传")
                 return
             try:
-                from ai_processor import transcribe_audio
+                from ai_processor import polish_review_plan_transcript, transcribe_audio
                 transcription = _run_ai_feature_with_charge(
                     user=user,
                     feature_key="audio_transcription",
                     source_record_type="lesson_upload",
                     source_record_id=f"upload:{lesson_id}",
                     producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(audio_file_path)),
-                    provider="local",
-                    model="faster-whisper-base",
+                    provider=_audio_transcription_provider_name(),
+                    model=_audio_transcription_model_name(),
                     request_key=audio_request_key or str(version.get("audio_request_key") or "") or request_key,
                 )
                 raw_transcription = str(transcription or "").strip()
                 if not raw_transcription:
                     fail_review_plan_version(version_id, "音频转录失败，请稍后重试")
                     return
+                raw_source_text_hash = review_plan_transcript_source_text_hash(raw_transcription)
+                source_brief_snapshot = version.get("source_brief") or {}
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=raw_transcription,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
+                )
+                transcript_for_generation = raw_transcription
+                try:
+                    polish_provider = _review_plan_ai_provider_name()
+                    polish_model = _review_plan_chat_model_name(polish_provider)
+                    polished_text = _run_ai_feature_with_charge(
+                        user=user,
+                        feature_key="review_plan_transcript_polish",
+                        source_record_type="review_plan_transcript_polish",
+                        source_record_id=version_id or lesson_id,
+                        producer=lambda: _call_ai_helper_with_usage(
+                            polish_review_plan_transcript,
+                            raw_transcript_text=raw_transcription,
+                            subject=str(lesson.get("subject") or ""),
+                            grade=str(lesson.get("grade") or ""),
+                            topic=str(lesson.get("topic") or ""),
+                            teacher_requirements=str((generation_options or {}).get("user_requirements") or ""),
+                            provider=polish_provider,
+                            model=polish_model,
+                        ),
+                        provider=polish_provider,
+                        model=polish_model,
+                        request_key=request_key,
+                        claim_request_identity=False,
+                    )
+                    polished_text = str(polished_text or "").strip()
+                    if not polished_text:
+                        raise ValueError("review plan transcript polish returned empty text")
+                    transcript_for_generation = polished_text
+                except Exception as polish_exc:
+                    logger.warning(
+                        "Review plan transcript polish failed for lesson %s version %s: %s",
+                        lesson_id,
+                        version_id,
+                        polish_exc,
+                    )
                 merged_summary = _merge_review_plan_materials(
-                    raw_transcription,
+                    transcript_for_generation,
                     same_lesson_materials or version.get("same_lesson_materials") or [],
+                )
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=merged_summary,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
                 )
                 mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)
@@ -1056,6 +1110,27 @@ def _run_review_plan_generation_job(
         topic = str(lesson.get("topic") or "")
         weak_points = str(lesson.get("weak_points") or "")
         raw_text = str(lesson.get("summary") or "")
+        version_cleaned_source_text = str((version or {}).get("cleaned_source_text") or "").strip()
+        version_source_text = str((version or {}).get("source_text") or "").strip()
+        source_text_for_generation = version_cleaned_source_text or version_source_text or raw_text
+        source_snapshot_text = version_source_text or source_text_for_generation
+
+        if version_id and not str((version or {}).get("source_text_hash") or "").strip():
+            source_brief = build_deterministic_source_brief(
+                raw_text=source_text_for_generation,
+                subject=subject,
+                topic=topic,
+                weak_points=weak_points,
+                user_requirements=str((generation_options or {}).get("user_requirements") or ""),
+            )
+            update_review_plan_version_source_artifact(
+                version_id,
+                source_text=source_snapshot_text,
+                cleaned_source_text=source_brief.cleaned_text,
+                source_text_hash=source_brief.source_text_hash,
+                source_brief=source_brief.model_dump(),
+            )
+            version = get_review_plan_version_for_lesson(lesson_id, version_id)
 
         from review_plan_workflow.service import generate_single_lesson_review_plan
         try:
@@ -1066,7 +1141,7 @@ def _run_review_plan_generation_job(
                 source_record_id=lesson_id,
                 producer=lambda: _call_ai_helper_with_usage(
                     generate_single_lesson_review_plan,
-                    summary_text=raw_text,
+                    summary_text=source_text_for_generation,
                     subject=subject,
                     grade=grade,
                     topic=topic,
@@ -7782,6 +7857,12 @@ def api_lesson_regenerate(lesson_id):
     if not raw_text:
         return jsonify({"error": "这份记录缺少课堂内容，无法重新生成"}), 400
     current_version = get_current_review_plan_version(lesson_id)
+    current_source_text = str((current_version or {}).get("source_text") or "").strip()
+    cleaned_source_text = str((current_version or {}).get("cleaned_source_text") or "").strip()
+    source_text_hash_value = str((current_version or {}).get("source_text_hash") or "").strip()
+    source_brief = (current_version or {}).get("source_brief") or {}
+    has_source_artifact = bool(current_source_text or cleaned_source_text or source_text_hash_value or source_brief)
+    source_text = current_source_text or raw_text
     generation_options, generation_options_error = _extract_generation_options_or_error(
         request.json if request.is_json else (request.form or {}),
         source="regenerate",
@@ -7822,6 +7903,15 @@ def api_lesson_regenerate(lesson_id):
             generation_options=generation_options,
             generation_options_source="regenerate",
         )
+        if has_source_artifact:
+            update_review_plan_version_source_artifact(
+                int(version["id"]),
+                source_text=source_text,
+                cleaned_source_text=cleaned_source_text,
+                source_text_hash=source_text_hash_value,
+                source_brief=source_brief,
+            )
+            version = get_review_plan_version_for_lesson(lesson_id, int(version["id"])) or version
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
             version_id=int(version["id"]),

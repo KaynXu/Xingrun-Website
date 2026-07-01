@@ -13,9 +13,23 @@ from review_plan_workflow.schemas import (
     PromptBundle,
     QualityReview,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     normalize_final_review_plan,
 )
+from review_plan_workflow.source_brief import source_brief_trace_payload
 from review_plan_workflow.state import WorkflowContext
+
+
+def _source_brief_revision_section(
+    prompt_bundle: PromptBundle,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> str:
+    safe_brief = prompt_bundle.variables.get("source_brief")
+    if not isinstance(safe_brief, dict) and source_brief is not None:
+        safe_brief = source_brief_trace_payload(source_brief)
+    if not isinstance(safe_brief, dict) or not safe_brief:
+        return ""
+    return "结构化课堂材料：\n" + json.dumps(safe_brief, ensure_ascii=False, indent=2)
 
 
 def _apply_lesson_date(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
@@ -33,9 +47,11 @@ def _revision_message(
     review_input: ReviewPlanInput,
     attempt: int,
     agent_blueprint: AgenticPlanBlueprint | None = None,
+    prompt_bundle: PromptBundle | None = None,
+    source_brief: ReviewPlanSourceBrief | None = None,
 ) -> str:
     sections = [
-        f"Targeted revision attempt: {attempt}/2",
+        f"Targeted revision attempt: {attempt}",
         "只修复 quality review 指出的问题；保留原计划中已经正确的结构和内容。",
         "不得虚构教材页码、考试日期、学生成绩、老师原话或未提供的题目来源。",
         f"必须返回完整 JSON object，且 days 只包含 {review_input.review_days} 的复习节点。",
@@ -48,6 +64,10 @@ def _revision_message(
         )
     if agent_blueprint is not None:
         sections.append("父模型教学蓝图：\n" + agent_blueprint.model_dump_json(indent=2))
+    if prompt_bundle is not None:
+        source_section = _source_brief_revision_section(prompt_bundle, source_brief)
+        if source_section:
+            sections.append(source_section)
     sections.extend(
         [
             "质量问题：\n" + quality.model_dump_json(indent=2),
@@ -78,6 +98,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
     plan: dict[str, Any] = input_data["plan"]
     attempt = int(input_data.get("attempt") or 1)
     agent_blueprint: AgenticPlanBlueprint | None = input_data.get("agent_blueprint")
+    source_brief: ReviewPlanSourceBrief | None = input_data.get("source_brief")
     temperature = resolve_review_plan_temperature()
 
     rendered = render_prompt(
@@ -96,12 +117,16 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
             review_input=review_input,
             attempt=attempt,
             agent_blueprint=agent_blueprint,
+            prompt_bundle=prompt_bundle,
+            source_brief=source_brief,
         ),
         provider=context.provider,
         model=context.model,
         reasoning_effort=context.reasoning_effort,
         temperature=temperature,
         stage="targeted_revision",
+        timeout_seconds=90.0,
+        max_retries=0,
     )
     revised = _apply_lesson_date(normalize_final_review_plan(revised), review_input)
     context.node_outputs.setdefault("revision_attempts", []).append(

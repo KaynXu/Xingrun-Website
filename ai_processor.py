@@ -32,6 +32,11 @@ from class_commentary import (
 )
 from config_runtime import get_runtime_config, normalize_chat_provider, normalize_vision_provider
 from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
+from review_plan_workflow.transcript_polish import (
+    REVIEW_PLAN_TRANSCRIPT_POLISH_SYSTEM_PROMPT,
+    build_review_plan_transcript_polish_payload,
+    normalize_review_plan_transcript_polish_text,
+)
 
 # ─── 配置加载 ──────────────────────────────────────────────────────────────────
 def _load_config() -> dict:
@@ -2367,6 +2372,41 @@ def polish_class_commentary_transcript(
         temperature=0.1,
     )
     text = (response.choices[0].message.content or "").strip()
+    if include_usage:
+        return text, _usage_dict(response, provider=provider, model_fallback=model)
+    return text
+
+
+def polish_review_plan_transcript(
+    *,
+    raw_transcript_text: str,
+    subject: str = "",
+    grade: str = "",
+    topic: str = "",
+    teacher_requirements: str = "",
+    provider: str = "",
+    model: str = "",
+    include_usage: bool = False,
+):
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_client(provider=provider)
+    payload = build_review_plan_transcript_polish_payload(
+        raw_transcript_text=raw_transcript_text,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        teacher_requirements=teacher_requirements,
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": REVIEW_PLAN_TRANSCRIPT_POLISH_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        temperature=0.1,
+    )
+    text = normalize_review_plan_transcript_polish_text(response.choices[0].message.content or "")
     if include_usage:
         return text, _usage_dict(response, provider=provider, model_fallback=model)
     return text

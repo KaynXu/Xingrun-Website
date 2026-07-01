@@ -43,6 +43,11 @@ test('review history source exposes regenerate action and immediate progress fee
   assert.doesNotMatch(reviewGenerationSource, /确定重新生成《/);
 });
 
+test('regenerate dialog keeps source reuse copy terse', () => {
+  assert.match(reviewPlanRegenerateDialogSource, /复用原课堂材料/);
+  assert.doesNotMatch(reviewPlanRegenerateDialogSource, /重新上传|重新转录|原始逐字稿会/);
+});
+
 test('review history opens lightweight version detail view', () => {
   assert.match(reviewGenerationSource, /selectedDetailLessonId/);
   assert.match(reviewGenerationSource, /<ReviewPlanDetailView/);
