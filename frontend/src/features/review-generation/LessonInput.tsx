@@ -130,8 +130,14 @@ function SelectField({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="truncate flex-1 text-sm bg-transparent outline-none cursor-pointer"
-          style={{ color: value ? '#0f172a' : '#94a3b8', fontSize: '0.875rem' }}
+          className="truncate min-w-0 flex-1 appearance-none text-sm bg-transparent outline-none cursor-pointer"
+          style={{
+            color: value ? '#0f172a' : '#94a3b8',
+            fontSize: '0.875rem',
+            appearance: 'none',
+            WebkitAppearance: 'none',
+            MozAppearance: 'none',
+          }}
         >
           {placeholder && <option value="" disabled>{placeholder}</option>}
           {options.map((opt) => (

@@ -132,6 +132,8 @@ test('lesson input source keeps subject class and date controls in a fluid grid 
   assert.match(lessonInputSource, /function SelectField\(/);
   assert.match(lessonInputSource, /function InputField\(/);
   assert.match(lessonInputSource, /className="grid grid-cols-1 sm:grid-cols-3 overflow-hidden"/);
+  assert.match(lessonInputSource, /className="truncate min-w-0 flex-1 appearance-none text-sm bg-transparent outline-none cursor-pointer"/);
+  assert.match(lessonInputSource, /appearance: 'none'/);
   assert.match(lessonInputSource, /<SelectField[\s\S]*label="科目"/);
   assert.match(lessonInputSource, /<SelectField[\s\S]*label="班级"/);
   assert.match(lessonInputSource, /<InputField[\s\S]*label="日期"/);
