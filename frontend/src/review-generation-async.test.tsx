@@ -181,3 +181,12 @@ test('review generation composer uses compact single-column layout', () => {
   assert.doesNotMatch(lessonInputSource, /生成前检查/);
   assert.doesNotMatch(lessonInputSource, /xl:grid-cols-\[minmax\(0,1\.35fr\)_280px\]/);
 });
+
+test('review generation material upload supports drag and drop', () => {
+  assert.match(lessonInputSource, /const \[isMaterialDragActive, setIsMaterialDragActive\] = useState\(false\);/);
+  assert.match(lessonInputSource, /const handleMaterialFileDrop = \(event: React\.DragEvent<HTMLDivElement>\)/);
+  assert.match(lessonInputSource, /event\.dataTransfer\.dropEffect = 'copy';/);
+  assert.match(lessonInputSource, /onDrop=\{handleMaterialFileDrop\}/);
+  assert.match(lessonInputSource, /handleMaterialFileSelect\(event\.dataTransfer\.files\?\.\[0\] \?\? null\)/);
+  assert.match(lessonInputSource, /onChange=\{\(e\) => handleMaterialFileSelect\(e\.target\.files\?\.\[0\] \?\? null\)\}/);
+});

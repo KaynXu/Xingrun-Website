@@ -264,6 +264,7 @@ export function LessonInput({
   });
   const [inputType, setInputType] = useState<'text' | 'file'>('text');
   const [file, setFile] = useState<File | null>(null);
+  const [isMaterialDragActive, setIsMaterialDragActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -335,6 +336,17 @@ export function LessonInput({
     setClassId(id);
     const cls = classes.find((c) => c.id === id);
     if (cls?.subject && academicSubjectOptions.includes(cls.subject)) setSubject(cls.subject);
+  };
+
+  const handleMaterialFileSelect = (nextFile: File | null) => {
+    setFile(nextFile);
+    setIsMaterialDragActive(false);
+  };
+
+  const handleMaterialFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handleMaterialFileSelect(event.dataTransfer.files?.[0] ?? null);
   };
 
   const handleAnalyze = async () => {
@@ -699,10 +711,34 @@ export function LessonInput({
                 ) : (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="cursor-pointer rounded-xl border border-dashed bg-slate-50/70 px-6 py-8 text-center transition hover:border-slate-400 hover:bg-slate-50"
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setIsMaterialDragActive(true);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      event.dataTransfer.dropEffect = 'copy';
+                      setIsMaterialDragActive(true);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setIsMaterialDragActive(false);
+                      }
+                    }}
+                    onDrop={handleMaterialFileDrop}
+                    className={cn(
+                      'cursor-pointer rounded-xl border border-dashed px-6 py-8 text-center transition',
+                      isMaterialDragActive
+                        ? 'border-slate-500 bg-slate-100'
+                        : 'border-slate-200 bg-slate-50/70 hover:border-slate-400 hover:bg-slate-50',
+                    )}
                     style={{
-                      border: '1px dashed #e2e8f0',
-                      background: '#ffffff',
+                      border: isMaterialDragActive ? '1px dashed #475569' : '1px dashed #e2e8f0',
+                      background: isMaterialDragActive ? '#f1f5f9' : '#ffffff',
                       borderRadius: '8px',
                       minHeight: '140px',
                     }}
@@ -719,7 +755,7 @@ export function LessonInput({
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setFile(null);
+                            handleMaterialFileSelect(null);
                             if (fileInputRef.current) {
                               fileInputRef.current.value = '';
                             }
@@ -737,7 +773,7 @@ export function LessonInput({
                       type="file"
                       accept=".mp3,.m4a,.mp4,.wav,.ogg,.webm,.flac,.txt,.md"
                       className="hidden"
-                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                      onChange={(e) => handleMaterialFileSelect(e.target.files?.[0] ?? null)}
                     />
                   </div>
                 )}
