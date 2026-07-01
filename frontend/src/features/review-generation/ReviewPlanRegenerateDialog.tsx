@@ -30,6 +30,9 @@ export function ReviewPlanRegenerateDialog({
           <div>
             <h3 className="text-base font-semibold">重新生成设置</h3>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{title}</p>
+            <div className="mt-3 inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300">
+              复用原课堂材料
+            </div>
           </div>
           <button
             type="button"

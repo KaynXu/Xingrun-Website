@@ -502,6 +502,68 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(second["generation_options"]["source"], "regenerate")
         self.assertEqual(mock_start_thread.call_args.kwargs["generation_options"], second["generation_options"])
 
+    @patch("app._start_review_plan_generation_thread")
+    @patch("app.ensure_feature_credits_available")
+    @patch("app.has_review_plan_api_key", return_value=True)
+    def test_regenerate_review_plan_reuses_current_version_source_artifact(
+        self,
+        _mock_has_api_key,
+        _mock_ensure_credits,
+        mock_start_thread,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="后来被编辑过的 lesson summary",
+            weak_points="空间轨迹",
+            created_by_user_id=1,
+        )
+        current = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="ready",
+            created_by_user_id=1,
+            generation_options={"schedule_mode": "standard"},
+        )
+        lesson_manager.update_review_plan_version_source_artifact(
+            int(current["id"]),
+            source_text="原始课堂源材料",
+            cleaned_source_text="清洗后课堂源材料",
+            source_text_hash="sha256:" + "b" * 64,
+            source_brief={
+                "schema_version": "2026-07-01",
+                "source_text_hash": "sha256:" + "b" * 64,
+                "cleaned_text": "清洗后课堂源材料",
+                "lesson_title_candidates": ["动点与立体几何综合"],
+                "knowledge_points": [],
+                "method_chains": [],
+                "common_mistakes": [],
+                "example_stems": [],
+                "teacher_emphasis": [],
+                "excluded_noise": [],
+                "missing_fields": [],
+                "evidence_map": [],
+                "confidence": 0.8,
+            },
+        )
+        lesson_manager.set_current_review_plan_version(lesson_id, int(current["id"]))
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/regenerate",
+            headers=self._auth_headers(self.owner_token),
+            json={"generation_options": {"schedule_mode": "compressed", "user_requirements": "压缩一天"}},
+        )
+
+        self.assertEqual(response.status_code, 202)
+        new_version_id = response.get_json()["version_id"]
+        new_version = lesson_manager.get_review_plan_version_for_lesson(lesson_id, new_version_id)
+        self.assertEqual(new_version["source_text"], "原始课堂源材料")
+        self.assertEqual(new_version["cleaned_source_text"], "清洗后课堂源材料")
+        self.assertEqual(new_version["source_text_hash"], "sha256:" + "b" * 64)
+        self.assertEqual(new_version["source_brief"]["lesson_title_candidates"], ["动点与立体几何综合"])
+        self.assertEqual(mock_start_thread.call_args.kwargs["generation_options"]["user_requirements"], "压缩一天")
+
     def test_review_plan_list_uses_current_version_fields_and_time(self):
         first_pdf_path = self.base / "first.pdf"
         second_pdf_path = self.base / "second.pdf"

@@ -7857,6 +7857,12 @@ def api_lesson_regenerate(lesson_id):
     if not raw_text:
         return jsonify({"error": "这份记录缺少课堂内容，无法重新生成"}), 400
     current_version = get_current_review_plan_version(lesson_id)
+    current_source_text = str((current_version or {}).get("source_text") or "").strip()
+    cleaned_source_text = str((current_version or {}).get("cleaned_source_text") or "").strip()
+    source_text_hash_value = str((current_version or {}).get("source_text_hash") or "").strip()
+    source_brief = (current_version or {}).get("source_brief") or {}
+    has_source_artifact = bool(current_source_text or cleaned_source_text or source_text_hash_value or source_brief)
+    source_text = current_source_text or raw_text
     generation_options, generation_options_error = _extract_generation_options_or_error(
         request.json if request.is_json else (request.form or {}),
         source="regenerate",
@@ -7897,6 +7903,15 @@ def api_lesson_regenerate(lesson_id):
             generation_options=generation_options,
             generation_options_source="regenerate",
         )
+        if has_source_artifact:
+            update_review_plan_version_source_artifact(
+                int(version["id"]),
+                source_text=source_text,
+                cleaned_source_text=cleaned_source_text,
+                source_text_hash=source_text_hash_value,
+                source_brief=source_brief,
+            )
+            version = get_review_plan_version_for_lesson(lesson_id, int(version["id"])) or version
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
             version_id=int(version["id"]),
