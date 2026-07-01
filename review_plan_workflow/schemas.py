@@ -539,11 +539,28 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _has_final_plan_fields(value: dict[str, Any]) -> bool:
+    return any(key in value for key in ("lesson_info", "days", "full_review_topics", "quotes"))
+
+
+def _find_wrapped_final_plan(value: dict[str, Any], depth: int = 0) -> dict[str, Any] | None:
+    if depth >= 3:
+        return None
+    for key in ("reviewPlan", "plan", "result", "data", "output", "content", "response"):
+        candidate = value.get(key)
+        if not isinstance(candidate, dict):
+            continue
+        if _has_final_plan_fields(candidate):
+            return candidate
+        nested = _find_wrapped_final_plan(candidate, depth + 1)
+        if nested is not None:
+            return nested
+    return None
+
+
 def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(plan or {})
-    wrapped_plan = normalized.get("reviewPlan")
-    if not isinstance(wrapped_plan, dict):
-        wrapped_plan = normalized.get("plan")
+    wrapped_plan = _find_wrapped_final_plan(normalized)
     if isinstance(wrapped_plan, dict):
         for source_key, target_key in (
             ("subject", "subject"),
@@ -554,6 +571,17 @@ def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
         ):
             if not _clean_text(normalized.get(target_key)):
                 normalized[target_key] = _clean_text(wrapped_plan.get(source_key))
+        wrapped_lesson_info = wrapped_plan.get("lesson_info")
+        if isinstance(wrapped_lesson_info, dict):
+            lesson_info = normalized.get("lesson_info")
+            if not isinstance(lesson_info, dict):
+                lesson_info = {}
+                normalized["lesson_info"] = lesson_info
+            for key in ("subject", "topic", "grade", "date", "key_categories", "weak_points"):
+                if lesson_info.get(key) in (None, "", [], {}):
+                    wrapped_value = wrapped_lesson_info.get(key)
+                    if wrapped_value not in (None, "", [], {}):
+                        lesson_info[key] = wrapped_value
         if not isinstance(normalized.get("days"), list) or not normalized.get("days"):
             wrapped_days = wrapped_plan.get("days")
             if isinstance(wrapped_days, list):
