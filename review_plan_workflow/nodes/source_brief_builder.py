@@ -8,6 +8,13 @@ from review_plan_workflow.source_brief import build_deterministic_source_brief
 from review_plan_workflow.state import WorkflowContext
 
 
+def _trace_safe_source_brief(brief: ReviewPlanSourceBrief) -> dict[str, Any]:
+    return {
+        **brief.model_dump(exclude={"cleaned_text"}),
+        "cleaned_text_length": len(brief.cleaned_text),
+    }
+
+
 def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSourceBrief:
     review_input: ReviewPlanInput = input_data["input"]
     normalized: NormalizedBrief = input_data["normalized"]
@@ -19,10 +26,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSour
         weak_points=review_input.weak_points,
         user_requirements=review_input.user_requirements,
     )
-    context.node_outputs["source_brief"] = {
-        **brief.model_dump(exclude={"cleaned_text"}),
-        "cleaned_text_length": len(brief.cleaned_text),
-    }
+    context.node_outputs["source_brief"] = _trace_safe_source_brief(brief)
     if brief.missing_fields:
         context.add_warning(
             "source_brief_missing_fields",
@@ -35,4 +39,5 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSour
 source_brief_builder_node: WorkflowNode[dict[str, Any], ReviewPlanSourceBrief] = WorkflowNode(
     name="source_brief_builder",
     run=_run,
+    output_serializer=_trace_safe_source_brief,
 )

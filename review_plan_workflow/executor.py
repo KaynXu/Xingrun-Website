@@ -16,6 +16,7 @@ OutputT = TypeVar("OutputT")
 class WorkflowNode(Generic[InputT, OutputT]):
     name: str
     run: Callable[[InputT, WorkflowContext], OutputT]
+    output_serializer: Callable[[OutputT], object] | None = None
 
 
 def _json_safe(value: object) -> object:
@@ -38,8 +39,9 @@ def run_workflow_node(node: WorkflowNode[InputT, OutputT], input_data: InputT, c
         try:
             output = node.run(input_data, context)
             latency_ms = int((monotonic() - started) * 1000)
-            span.record_success(output=output, latency_ms=latency_ms)
-            context.node_outputs[node.name] = _json_safe(output)
+            persisted_output = node.output_serializer(output) if node.output_serializer else output
+            span.record_success(output=persisted_output, latency_ms=latency_ms)
+            context.node_outputs[node.name] = _json_safe(persisted_output)
             context.logs.append(
                 WorkflowLog(
                     node_name=node.name,
