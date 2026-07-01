@@ -43,6 +43,7 @@ class ReviewPlanSourceBriefTestCase(unittest.TestCase):
                 "例题：动点 P 到定点 O 的距离恒为 r，轨迹是什么？\n"
                 "易错：把空间球面误看成平面圆。\n"
                 "方法：固定量 -> 轨迹对象 -> 边界条件。"
+                "\n知识点：轨迹判断。\n"
             ),
             subject="数学",
             topic="",
@@ -51,18 +52,54 @@ class ReviewPlanSourceBriefTestCase(unittest.TestCase):
         )
 
         self.assertEqual(brief.schema_version, "2026-07-01")
+        evidence_by_quote = {item.quote: item for item in brief.evidence_map}
         self.assertEqual(brief.lesson_title_candidates[0], "动点与立体几何综合")
-        self.assertTrue(any(item.name == "轨迹判断" for item in brief.knowledge_points))
-        self.assertTrue(any("固定量" in " ".join(item.steps) for item in brief.method_chains))
-        self.assertTrue(any("球面" in item.name for item in brief.common_mistakes))
-        self.assertTrue(any("动点 P" in item.stem for item in brief.example_stems))
-        self.assertTrue(any("先看固定量" in item.quote for item in brief.teacher_emphasis))
+        self.assertEqual(
+            next(item for item in brief.knowledge_points if item.name == "轨迹判断").evidence_ids,
+            [evidence_by_quote["知识点：轨迹判断。"].id],
+        )
+        self.assertEqual(
+            next(item for item in brief.method_chains if "固定量" in " ".join(item.steps)).evidence_ids,
+            [evidence_by_quote["方法：固定量 -> 轨迹对象 -> 边界条件。"].id],
+        )
+        self.assertEqual(
+            next(item for item in brief.common_mistakes if "球面" in item.name).evidence_ids,
+            [evidence_by_quote["易错：把空间球面误看成平面圆。"].id],
+        )
+        self.assertEqual(
+            next(item for item in brief.example_stems if "动点 P" in item.stem).evidence_ids,
+            [evidence_by_quote["例题：动点 P 到定点 O 的距离恒为 r，轨迹是什么？"].id],
+        )
+        self.assertEqual(
+            next(item for item in brief.teacher_emphasis if "先看固定量" in item.quote).evidence_ids,
+            [evidence_by_quote["老师强调：先看固定量，再判断轨迹。"].id],
+        )
         self.assertTrue(brief.evidence_map)
         self.assertGreaterEqual(brief.confidence, 0.7)
 
-    def test_deterministic_brief_marks_missing_topic_when_no_topic_signal_exists(self):
+    def test_deterministic_brief_tracks_duplicate_sentence_offsets(self):
         brief = build_deterministic_source_brief(
-            raw_text="今天讲了很多题，学生容易把条件看漏。",
+            raw_text=(
+                "重复句子。\n"
+                "重复句子。\n"
+                "知识点：轨迹判断。\n"
+            ),
+            subject="数学",
+            topic="",
+            weak_points="",
+            user_requirements="",
+        )
+
+        repeated = [item for item in brief.evidence_map if item.quote == "重复句子。"]
+        self.assertEqual(len(repeated), 2)
+        self.assertEqual(repeated[0].offset_start, 0)
+        self.assertEqual(repeated[1].offset_start, 6)
+        self.assertNotEqual(repeated[0].offset_start, repeated[1].offset_start)
+        self.assertNotEqual(repeated[0].offset_end, repeated[1].offset_end)
+
+    def test_deterministic_brief_rejects_overly_broad_triggers(self):
+        brief = build_deterministic_source_brief(
+            raw_text="今天讲了很多题，学生有点迷糊。先复习一下概念，别急。",
             subject="数学",
             topic="",
             weak_points="",
@@ -71,4 +108,9 @@ class ReviewPlanSourceBriefTestCase(unittest.TestCase):
 
         self.assertIn("topic", brief.missing_fields)
         self.assertLess(brief.confidence, 0.7)
+        self.assertFalse(brief.knowledge_points)
+        self.assertFalse(brief.method_chains)
+        self.assertFalse(brief.common_mistakes)
+        self.assertFalse(brief.example_stems)
+        self.assertFalse(brief.teacher_emphasis)
         self.assertTrue(brief.evidence_map)

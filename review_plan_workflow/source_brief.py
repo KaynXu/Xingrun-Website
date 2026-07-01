@@ -23,8 +23,13 @@ _NOISE_PATTERNS = (
     "对吧对吧",
 )
 _TITLE_MARKERS = ("本节课主题：", "主题：", "topic:")
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?；;])\s+|\n+")
+_SENTENCE_SCAN_RE = re.compile(r"[^。\n！？!?；;]+[。！？!?；;]?")
 _METHOD_SPLIT_RE = re.compile(r"\s*(?:->|→|、|，|,|；|;)\s*")
+_KNOWLEDGE_MARKERS = ("知识点：", "知识点:", "重点：", "重点:", "结论：", "结论:", "定理：", "定理:", "公式：", "公式:", "性质：", "性质:")
+_EXAMPLE_MARKERS = ("例题：", "例题:", "题目：", "题目:", "已知", "求证", "求解", "证明", "动点", "函数", "方程", "几何", "轨迹")
+_MISTAKE_MARKERS = ("易错：", "易错:", "常错：", "常错:", "常见错误", "错误：", "错误:", "误区：", "误区:", "误看", "看漏", "混淆", "漏看", "把")
+_EMPHASIS_MARKERS = ("老师强调：", "老师强调:", "强调：", "强调:", "一定要", "记住", "先看", "先判断", "先求", "特别注意")
+_METHOD_MARKERS = ("方法：", "方法:", "步骤：", "步骤:", "思路：", "思路:", "先", "然后", "最后")
 
 
 def source_text_hash(text: str) -> str:
@@ -41,23 +46,35 @@ def clean_source_text(text: str) -> str:
 
 
 def _sentences(text: str) -> list[str]:
-    return [item.strip() for item in _SENTENCE_SPLIT_RE.split(text) if item.strip()]
+    return [sentence for sentence, _, _ in _scan_sentence_records(text)]
 
 
 def _evidence_id(index: int) -> str:
     return f"ev-{index:03d}"
 
 
-def _make_evidence(cleaned: str, sentence: str, index: int, *, kind: str = "text") -> SourceEvidence:
-    start = cleaned.find(sentence)
-    if start < 0:
-        start = 0
+def _scan_sentence_records(text: str) -> list[tuple[str, int, int]]:
+    records: list[tuple[str, int, int]] = []
+    for match in _SENTENCE_SCAN_RE.finditer(text):
+        raw = match.group()
+        if not raw.strip():
+            continue
+        start = match.start()
+        trimmed_start = start + (len(raw) - len(raw.lstrip()))
+        trimmed_end = start + len(raw.rstrip())
+        sentence = text[trimmed_start:trimmed_end].strip()
+        if sentence:
+            records.append((sentence, trimmed_start, trimmed_end))
+    return records
+
+
+def _make_evidence(sentence: str, start: int, end: int, index: int, *, kind: str = "text") -> SourceEvidence:
     return SourceEvidence(
         id=_evidence_id(index),
         source="summary_text",
         quote=sentence[:180],
         offset_start=start,
-        offset_end=start + len(sentence),
+        offset_end=end,
         kind=kind,
     )
 
@@ -75,6 +92,61 @@ def _title_candidates(cleaned: str, explicit_topic: str) -> list[str]:
     return titles[:3]
 
 
+def _sentence_has_marker(sentence: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in sentence for marker in markers)
+
+
+def _strip_marker_payload(sentence: str, markers: tuple[str, ...]) -> str:
+    for marker in markers:
+        if marker in sentence:
+            return sentence.split(marker, 1)[1].strip(" ：:。；;")
+    return sentence.strip("。；; ")
+
+
+def _looks_like_method_chain(sentence: str) -> bool:
+    if _sentence_has_marker(sentence, ("方法：", "方法:", "步骤：", "步骤:", "思路：", "思路:")):
+        return True
+    if "->" in sentence or "→" in sentence:
+        return True
+    if _sentence_has_marker(sentence, ("先",)) and any(marker in sentence for marker in ("再", "然后", "最后", "接着")) and any(
+        marker in sentence for marker in ("方法", "步骤", "思路", "过程", "顺序")
+    ):
+        return True
+    return False
+
+
+def _looks_like_knowledge_point(sentence: str) -> bool:
+    if _sentence_has_marker(sentence, _KNOWLEDGE_MARKERS):
+        return True
+    return False
+
+
+def _looks_like_example(sentence: str) -> bool:
+    if _sentence_has_marker(sentence, ("例题：", "例题:", "题目：", "题目:", "已知", "求证", "求解", "证明")):
+        return True
+    if "动点" in sentence or "轨迹" in sentence or "函数" in sentence or "方程" in sentence or "几何" in sentence:
+        return True
+    return False
+
+
+def _looks_like_mistake(sentence: str) -> bool:
+    if _sentence_has_marker(sentence, ("易错：", "易错:", "常错：", "常错:", "常见错误", "错误：", "错误:", "误区：", "误区:")):
+        return True
+    if "误看" in sentence or "看漏" in sentence or "混淆" in sentence or "漏看" in sentence:
+        return True
+    if "把" in sentence and "看成" in sentence:
+        return True
+    return False
+
+
+def _looks_like_emphasis(sentence: str) -> bool:
+    if _sentence_has_marker(sentence, ("老师强调：", "老师强调:", "强调：", "强调:", "一定要", "记住", "特别注意")):
+        return True
+    if "先看" in sentence or "先判断" in sentence or "先求" in sentence:
+        return True
+    return False
+
+
 def build_deterministic_source_brief(
     *,
     raw_text: str,
@@ -84,49 +156,74 @@ def build_deterministic_source_brief(
     user_requirements: str = "",
 ) -> ReviewPlanSourceBrief:
     cleaned = clean_source_text(raw_text)
-    sentences = _sentences(cleaned)
-    evidence_items = [_make_evidence(cleaned, sentence, index + 1) for index, sentence in enumerate(sentences[:18])]
-    evidence_ids = [item.id for item in evidence_items[:3]]
+    sentence_records = _scan_sentence_records(cleaned)
+    evidence_items = [
+        _make_evidence(sentence, start, end, index + 1)
+        for index, (sentence, start, end) in enumerate(sentence_records[:18])
+    ]
+    sentence_records_with_evidence = [
+        (sentence, start, end, evidence.id)
+        for (sentence, start, end), evidence in zip(sentence_records[:18], evidence_items)
+    ]
     title_candidates = _title_candidates(cleaned, topic)
 
     knowledge_points: list[SourceKnowledgePoint] = []
     if weak_points.strip():
-        knowledge_points.append(SourceKnowledgePoint(name=weak_points.strip(), evidence_ids=evidence_ids, confidence=0.72))
-    for sentence in sentences:
-        if any(token in sentence for token in ("知识点", "方法", "定理", "公式", "轨迹", "函数", "方程", "几何")):
-            name = sentence.strip("。；; ")
-            if name and all(item.name != name for item in knowledge_points):
-                knowledge_points.append(SourceKnowledgePoint(name=name[:60], evidence_ids=evidence_ids, confidence=0.68))
+        knowledge_points.append(SourceKnowledgePoint(name=weak_points.strip(), evidence_ids=[], confidence=0.72))
+    for sentence, _, _, evidence_id in sentence_records_with_evidence:
+        if not _looks_like_knowledge_point(sentence):
+            continue
+        name = _strip_marker_payload(sentence, _KNOWLEDGE_MARKERS)
+        if not name:
+            continue
+        existing = next((item for item in knowledge_points if item.name == name[:60]), None)
+        if existing is None:
+            knowledge_points.append(SourceKnowledgePoint(name=name[:60], evidence_ids=[evidence_id], confidence=0.68))
+        else:
+            if evidence_id not in existing.evidence_ids:
+                existing.evidence_ids.append(evidence_id)
+            existing.confidence = max(existing.confidence, 0.68)
         if len(knowledge_points) >= 8:
             break
 
     method_chains: list[SourceMethodChain] = []
-    for sentence in sentences:
-        if "方法" in sentence or "先" in sentence or "步骤" in sentence or "->" in sentence or "→" in sentence:
-            parts = [part for part in _METHOD_SPLIT_RE.split(sentence.strip("。；; ")) if part]
-            if len(parts) >= 2:
-                method_chains.append(SourceMethodChain(name=parts[0][:40], steps=parts[:6], evidence_ids=evidence_ids))
+    for sentence, _, _, evidence_id in sentence_records_with_evidence:
+        if not _looks_like_method_chain(sentence):
+            continue
+        parts = [part for part in _METHOD_SPLIT_RE.split(sentence.strip("。；; ")) if part]
+        if len(parts) < 2:
+            continue
+        method_chains.append(
+            SourceMethodChain(
+                name=parts[0][:40],
+                steps=parts[:6],
+                evidence_ids=[evidence_id],
+            )
+        )
         if len(method_chains) >= 5:
             break
 
     mistakes: list[SourceMistake] = []
-    for sentence in sentences:
-        if any(token in sentence for token in ("易错", "错", "误看", "漏", "混淆", "卡")):
-            mistakes.append(SourceMistake(name=sentence.strip("。；; ")[:80], evidence_ids=evidence_ids))
+    for sentence, _, _, evidence_id in sentence_records_with_evidence:
+        if not _looks_like_mistake(sentence):
+            continue
+        mistakes.append(SourceMistake(name=sentence.strip("。；; ")[:80], evidence_ids=[evidence_id]))
         if len(mistakes) >= 5:
             break
 
     examples: list[SourceExampleStem] = []
-    for sentence in sentences:
-        if any(token in sentence for token in ("例题", "题", "已知", "求", "证明", "动点")):
-            examples.append(SourceExampleStem(stem=sentence.strip("。；; ")[:120], evidence_ids=evidence_ids))
+    for sentence, _, _, evidence_id in sentence_records_with_evidence:
+        if not _looks_like_example(sentence):
+            continue
+        examples.append(SourceExampleStem(stem=sentence.strip("。；; ")[:120], evidence_ids=[evidence_id]))
         if len(examples) >= 6:
             break
 
     emphasis: list[SourceTeacherEmphasis] = []
-    for sentence in sentences:
-        if any(token in sentence for token in ("老师强调", "强调", "记住", "一定", "先")):
-            emphasis.append(SourceTeacherEmphasis(quote=sentence.strip("。；; ")[:100], evidence_ids=evidence_ids))
+    for sentence, _, _, evidence_id in sentence_records_with_evidence:
+        if not _looks_like_emphasis(sentence):
+            continue
+        emphasis.append(SourceTeacherEmphasis(quote=sentence.strip("。；; ")[:100], evidence_ids=[evidence_id]))
         if len(emphasis) >= 5:
             break
 
