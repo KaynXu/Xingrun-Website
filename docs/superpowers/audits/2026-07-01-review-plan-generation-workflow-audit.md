@@ -8,7 +8,7 @@ Scope: review-plan generation quality, speed, teacher requirements, regeneration
 
 The main failure is architectural: the workflow sends raw classroom text or raw ASR transcript into downstream planning and writing without a persisted structured source layer.
 
-Prompt tuning and schema normalization help, but they are late-stage repairs. The next implementation should add a version-scoped structured source brief, route teacher requirements into source analysis and planning, and shorten the slow quality/revision path.
+Prompt tuning and schema normalization help, but they are late-stage repairs. The next implementation should add a version-scoped structured source brief, route teacher requirements into source analysis and planning, align runtime model/ASR contracts with class commentary where appropriate, and shorten the slow quality/revision path.
 
 ## Current Data Flow
 
@@ -50,6 +50,10 @@ regenerate
 - `review_plan_workflow/nodes/revision.py:44-48` passes teacher requirements to revision.
 - `review_plan_workflow/llm/client.py:21` defines `REVIEW_PLAN_LLM_TIMEOUT_SECONDS = 180.0`, while production logs show revision stages can still consume about 540 seconds, likely because provider/client retries multiply the effective wait.
 - `config_runtime.py:62-67` sets nonzero generation temperatures: planner `0.25`, writer `0.35`, repair/reviewer `0.1`. Regeneration is therefore not deterministic.
+- `config_runtime.py:221-249` separates review-plan parent model config from writer model config: parent uses `XR_REVIEW_PLAN_PROVIDER` / `XR_REVIEW_PLAN_MODEL`, while writer uses `XR_REVIEW_PLAN_WRITER_PROVIDER` / `XR_REVIEW_PLAN_WRITER_MODEL`; the DeepSeek writer fallback resolves to `deepseek-v4-pro`.
+- `ai_processor.py:2195-2212` uses one `transcribe_audio()` path for audio, selecting Tencent ASR when `XR_AUDIO_TRANSCRIPTION_PROVIDER=tencent` and local faster-whisper otherwise.
+- `app.py:993-1002` review-plan audio generation calls the same `transcribe_audio()` helper, but the charge/trace metadata is still hard-coded as `provider="local"` and `model="faster-whisper-base"`. This can make review-plan ASR look different from class commentary even when runtime config uses Tencent.
+- `app.py:1156-1213` class commentary records audio transcription with runtime ASR provider/model metadata, saves raw transcript, then runs transcript polish before feedback generation.
 
 ## Production Evidence
 
@@ -78,6 +82,34 @@ quality score: 25
 common warning: missing_input topic
 revision timeout: about 542-545 seconds
 quality issues: repeated printable tasks, factual drift, empty/generic topic, low-density PDF pages
+```
+
+### Production Runtime Configuration
+
+Read-only PM2 environment checks on `xingrun` showed the current production contract is only partially aligned:
+
+- Review-plan parent currently runs `XR_REVIEW_PLAN_PROVIDER=openai` with `XR_REVIEW_PLAN_MODEL=gpt-5.4`. Target: `gpt-5.5`.
+- Review-plan writer provider/model are not explicitly set in PM2. Code fallback makes a DeepSeek writer resolve to `deepseek-v4-pro`, but production should still pin `XR_REVIEW_PLAN_WRITER_PROVIDER=deepseek` and `XR_REVIEW_PLAN_WRITER_MODEL=deepseek-v4-pro` to remove ambiguity.
+- Class commentary currently runs `XR_CLASS_COMMENTARY_PROVIDER=openai` and `XR_CLASS_COMMENTARY_MODEL=gpt-5.5`.
+- Audio transcription currently runs `XR_AUDIO_TRANSCRIPTION_PROVIDER=tencent` and `XR_TENCENT_ASR_ENGINE_TYPE=16k_zh`; Tencent credential presence is confirmed without exposing values.
+- Global DeepSeek default is `deepseek-v4-flash`, so review-plan writer behavior must not be inferred from global `XR_DEEPSEEK_MODEL`.
+
+Target runtime contract:
+
+```text
+review-plan ASR: Tencent Cloud ASR, same provider path as class commentary
+XR_AUDIO_TRANSCRIPTION_PROVIDER=tencent
+XR_TENCENT_ASR_ENGINE_TYPE=16k_zh
+review-plan transcript polish: OpenAI gpt-5.5 before source brief
+review-plan parent/planner: OpenAI gpt-5.5
+XR_REVIEW_PLAN_PROVIDER=openai
+XR_REVIEW_PLAN_MODEL=gpt-5.5
+review-plan writer: DeepSeek deepseek-v4-pro
+XR_REVIEW_PLAN_WRITER_PROVIDER=deepseek
+XR_REVIEW_PLAN_WRITER_MODEL=deepseek-v4-pro
+class commentary transcript polish/generation: OpenAI gpt-5.5
+XR_CLASS_COMMENTARY_PROVIDER=openai
+XR_CLASS_COMMENTARY_MODEL=gpt-5.5
 ```
 
 ## External Implementation Patterns
@@ -120,7 +152,7 @@ Relevant references:
 
 Severity: P1
 
-Current state: raw text or ASR text is treated as the source of truth. The workflow does not persist a cleaned transcript, source brief, evidence map, or topic/confidence artifact.
+Current state: raw text or ASR text is treated as the source of truth. The workflow does not persist a cleaned transcript, source brief, evidence map, or topic/confidence artifact. Review-plan audio does not currently have the class-commentary style transcript polish stage.
 
 Impact:
 
@@ -129,7 +161,7 @@ Impact:
 - Writer and reviewer must solve source understanding and document generation in one pass.
 - Regeneration cannot know which exact source structure produced the prior output.
 
-Recommendation: add a version-scoped `ReviewPlanSourceBrief` before parent planner and writer.
+Recommendation: add a version-scoped `ReviewPlanSourceBrief` before parent planner and writer. For audio input, the chain should be Tencent ASR, OpenAI `gpt-5.5` transcript polish, then source brief extraction.
 
 ### 2. Output Quality
 
@@ -164,6 +196,7 @@ Main bottlenecks:
 Recommendation:
 
 - Use a compact source brief for planner/writer.
+- Add transcript polish for audio sources, but keep it bounded and use its shorter cleaned text to reduce downstream token load.
 - Add stage-specific timeouts and disable automatic retries for review-plan LLM calls.
 - Run LLM reviewer only when local quality is suspicious, failed, or the source confidence is low.
 - Cap revision to one fast targeted attempt in production until reliability improves.
@@ -204,13 +237,15 @@ Recommendation: define regeneration as "reuse the version source artifact by def
 - `review_plan_workflow/quality_gate.py` already has deterministic PDF-readiness checks.
 - `review_plan_workflow/observability.py` already sends privacy-preserving Langfuse traces.
 - `review_plan_versions` already gives a version boundary for persisted source artifacts.
-- Class commentary has a useful precedent: `app.py:1156-1213` transcribes class commentary, saves raw transcript, then runs transcript polish.
+- Class commentary has a useful precedent: `app.py:1156-1213` transcribes class commentary through runtime ASR config, saves raw transcript, then runs OpenAI `gpt-5.5` transcript polish before feedback generation.
 
 ## Target Data Flow
 
 ```text
 raw source
   -> source ingestion
+      audio: Tencent ASR through the shared transcribe_audio path
+      audio: OpenAI gpt-5.5 transcript polish
       source_text snapshot
       cleaned_source_text
       structured source_brief
@@ -289,6 +324,8 @@ regenerate
 ## Implementation Risks
 
 - Adding source brief can become another slow LLM call if it sends the full transcript with high reasoning settings. Mitigation: deterministic cleaner first, compact LLM extraction, fast model, strict timeout, fallback to deterministic brief.
+- Adding transcript polish can become another slow LLM call if it is treated as an unbounded rewrite. Mitigation: use OpenAI `gpt-5.5` with a correction-only prompt, strict timeout, no meaning changes, and raw-transcript fallback.
+- Runtime config can drift between parent model, writer model, ASR provider, and trace metadata. Mitigation: add explicit env pins and startup/deploy assertions for `gpt-5.5`, `deepseek-v4-pro`, and Tencent ASR metadata.
 - Persisting source artifacts on version rows changes regeneration semantics. Mitigation: legacy fallback reads `lesson.summary` when version source fields are empty.
 - Skipping LLM reviewer can let subtle issues through. Mitigation: only skip when local score is high, no high issues, source confidence is high, schema passes, and PDF smoke checks pass.
 - Frontend copy can become explanatory again. Mitigation: use compact labels only: `源材料`, `生成要求`, `复习日期`, `复用原材料`.
@@ -296,6 +333,8 @@ regenerate
 ## Verification Needed
 
 - Unit tests for source cleaning and source brief extraction.
+- Unit tests proving review-plan parent resolves to OpenAI `gpt-5.5`, writer resolves to DeepSeek `deepseek-v4-pro`, and audio transcription metadata uses Tencent `flash-16k_zh` when configured.
+- Tests for review-plan transcript polish that prove it runs before source brief for audio input and falls back safely when polish fails.
 - Store tests proving version source artifacts persist and hydrate.
 - Workflow tests proving parent planner and writer receive source brief and teacher requirements.
 - API tests proving regeneration reuses source artifacts and does not overwrite current PDFs.
@@ -307,6 +346,9 @@ regenerate
 ## Definition Of Done
 
 - New generation stores `source_text`, `cleaned_source_text`, `source_brief_json`, and source hashes on the generated version.
+- Review-plan audio uses the same Tencent ASR provider path and metadata as class commentary.
+- Review-plan audio transcript polish uses OpenAI `gpt-5.5` before source brief.
+- Review-plan parent is pinned to OpenAI `gpt-5.5`; review-plan writer is explicitly pinned to DeepSeek `deepseek-v4-pro`.
 - Regeneration reuses the selected/current version source artifact unless source rebuilding is explicitly requested.
 - Teacher requirements enter source brief, parent planner, writer, revision, and trace summaries.
 - Planner/writer prompts use source brief and evidence snippets instead of repeating the full dirty transcript.
