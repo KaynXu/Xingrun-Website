@@ -9,6 +9,7 @@ from .printable_questions import (
     merge_visible_and_raw_counts,
 )
 from .schemas import QualityIssue, QualityReview, normalize_final_review_plan, validate_final_review_plan
+from .source_coverage import missing_source_coverage_groups as find_missing_source_coverage_groups
 
 
 def _contains_any(text: str, candidates: tuple[str, ...]) -> bool:
@@ -39,15 +40,6 @@ BAD_QUOTE_PATTERNS = (
     "执行清单",
     "自查答案",
     "能独立",
-)
-MATH_SOURCE_COVERAGE_GROUPS = (
-    ("勾股逆向：三角形三边满足 a²+b²=c²", ("逆向", "三角形三边", "勾股逆定理")),
-    ("份数计算", ("份数", "一份", "份长度", "几份")),
-    ("α+β 和角推导", ("α+β", "和角", "45°", "45度")),
-    ("二倍角关系", ("2α", "2β", "4β", "二倍角")),
-    ("垂直平分线构造", ("垂直平分线",)),
-    ("配方法推导", ("配方法", "一元二次")),
-    ("互余角关系", ("互余",)),
 )
 BAD_MATH_TEXT_PATTERNS = (
     "begincases",
@@ -132,15 +124,6 @@ def _plan_text_blob(plan: dict[str, Any]) -> str:
     return "\n".join(_iter_strings(plan))
 
 
-def _source_brief_data(source_brief: Any) -> dict[str, Any]:
-    if source_brief is None:
-        return {}
-    if hasattr(source_brief, "model_dump"):
-        data = source_brief.model_dump()
-        return data if isinstance(data, dict) else {}
-    return source_brief if isinstance(source_brief, dict) else {}
-
-
 def _compact_contains_any(text: str, terms: tuple[str, ...]) -> bool:
     compact_text = _compact_text(text)
     for term in terms:
@@ -150,77 +133,20 @@ def _compact_contains_any(text: str, terms: tuple[str, ...]) -> bool:
     return False
 
 
-def _coverage_terms_from_text(value: str) -> tuple[str, ...]:
-    terms = []
-    for part in re.split(r"[\s,，。.!！?？、:：;；《》「」“”\"'`（）()\[\]【】\-_/—与]+", value):
-        text = part.strip()
-        if len(text) >= 3 and text not in terms:
-            terms.append(text)
-    compact = _compact_text(value)
-    if len(compact) >= 3 and compact not in terms:
-        terms.append(compact)
-    return tuple(terms)
-
-
-def _source_group_is_present(plan_text: str, terms: tuple[str, ...]) -> bool:
-    return _compact_contains_any(plan_text, terms)
-
-
-def _source_coverage_groups(source_brief: Any, *, subject_key: str) -> list[tuple[str, tuple[str, ...]]]:
-    data = _source_brief_data(source_brief)
-    if not data:
-        return []
-    groups: list[tuple[str, tuple[str, ...]]] = []
-
-    for point in data.get("knowledge_points") or []:
-        if not isinstance(point, dict):
-            continue
-        name = _clean_text(point.get("name"))
-        if len(name) >= 3:
-            groups.append((name[:28], _coverage_terms_from_text(name) or (name,)))
-
-    for chain in data.get("method_chains") or []:
-        if not isinstance(chain, dict):
-            continue
-        name = _clean_text(chain.get("name"))
-        steps = tuple(_clean_text(step) for step in (chain.get("steps") or []) if _clean_text(step))
-        terms = tuple(
-            term
-            for source in (name, *steps[:4])
-            for term in _coverage_terms_from_text(source)
-            if len(term) >= 3
-        )
-        if terms:
-            groups.append(((name or terms[0])[:28], terms))
-
-    cleaned_text = _clean_text(data.get("cleaned_text"))
-    if subject_key == "math" and cleaned_text:
-        for label, terms in MATH_SOURCE_COVERAGE_GROUPS:
-            if _compact_contains_any(cleaned_text, terms):
-                groups.append((label, terms))
-
-    deduped: list[tuple[str, tuple[str, ...]]] = []
-    seen: set[str] = set()
-    for label, terms in groups:
-        normalized_label = _compact_text(label)
-        if not normalized_label or normalized_label in seen:
-            continue
-        seen.add(normalized_label)
-        deduped.append((label, terms))
-    return deduped[:10]
-
-
 def _missing_source_coverage_groups(
     normalized_plan: dict[str, Any],
     source_brief: Any,
     *,
     subject_key: str,
 ) -> list[str]:
-    groups = _source_coverage_groups(source_brief, subject_key=subject_key)
-    if len(groups) < 4:
-        return []
-    plan_text = _plan_text_blob(normalized_plan)
-    return [label for label, terms in groups if not _source_group_is_present(plan_text, terms)]
+    return [
+        group.label
+        for group in find_missing_source_coverage_groups(
+            normalized_plan,
+            source_brief,
+            subject_key=subject_key,
+        )
+    ]
 
 
 def _strip_topic_suffixes(value: str) -> str:

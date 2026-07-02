@@ -31,10 +31,11 @@ from review_plan_workflow.schemas import (
 from review_plan_workflow.service import (
     _fallback_agent_blueprint,
     _normalize_output_plan,
+    _repair_source_coverage_gaps,
     _should_skip_parent_planner,
     generate_single_lesson_review_plan,
 )
-from review_plan_workflow.source_brief import build_deterministic_source_brief
+from review_plan_workflow.source_brief import build_deterministic_source_brief, source_brief_trace_payload
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -1434,6 +1435,178 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         self.assertFalse(_should_skip_parent_planner(review_input=review_input, source_brief=source_brief))
+
+    def test_source_brief_trace_includes_coverage_requirements_without_raw_text(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：逆向：三角形三边满足a²+b²=c²才能判定直角三角形。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数、特殊角度αβ与和角推导",
+        )
+
+        trace = source_brief_trace_payload(source_brief, subject_key="math")
+
+        requirements = trace["coverage_requirements"]
+        labels = [item["label"] for item in requirements]
+        self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", labels)
+        self.assertIn("配方法推导", labels)
+        self.assertNotIn("cleaned_text", trace)
+
+    def test_source_coverage_repair_fills_missing_key_chains_before_failure(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：逆向：三角形三边满足a²+b²=c²才能判定直角三角形。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数、特殊角度αβ与和角推导",
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+        )
+        review_input = ReviewPlanInput(
+            summary_text=transcript,
+            subject="数学",
+            schedule_mode="compressed",
+            review_days=[1],
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+            constraints={"requested_question_count": 10},
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["full_review_topics"] = ["整数勾股数", "特殊角定义", "基础勾股比", "互余角关系", "二倍角关系"]
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：3:4:5 中斜边是______。", "answer": "5"}
+            for i in range(1, 7)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 5)
+        ]
+        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "answer": "按课堂顺序。"}]}
+
+        initial_review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=source_brief,
+        )
+        self.assertTrue(any(issue.category == "source_coverage" for issue in initial_review.issues))
+
+        repaired, labels = _repair_source_coverage_gaps(
+            plan,
+            review_input=review_input,
+            source_brief=source_brief,
+            subject="math",
+        )
+        repaired_review = review_single_lesson_plan(
+            repaired,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=source_brief,
+        )
+
+        self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", labels)
+        self.assertIn("配方法推导", labels)
+        self.assertFalse(any(issue.category == "source_coverage" for issue in repaired_review.issues))
+        active_recall_text = json.dumps(repaired["days"][0]["active_recall"], ensure_ascii=False)
+        self.assertIn("配方法推导", active_recall_text)
+        self.assertIn("勾股逆向", active_recall_text)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_deterministically_repairs_source_coverage_before_returning(self, mock_generate_plan):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：逆向：三角形三边满足a²+b²=c²才能判定直角三角形。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["full_review_topics"] = ["整数勾股数", "特殊角定义", "基础勾股比", "互余角关系", "二倍角关系"]
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：3:4:5 中斜边是______。", "answer": "5"}
+            for i in range(1, 7)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 5)
+        ]
+        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "answer": "按课堂顺序。"}]}
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-03",
+            subject="数学",
+            grade="高一",
+            topic="勾股数、特殊角度αβ与和角推导",
+            summary=transcript,
+            weak_points="当天课后复习",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text=transcript,
+            subject="数学",
+            grade="高一",
+            topic="勾股数、特殊角度αβ与和角推导",
+            weak_points="当天课后复习",
+            lesson_date="2026-07-03",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={
+                "schedule_mode": "compressed",
+                "review_days": [1],
+                "user_requirements": "生成当天的复习计划，题目控制在10个题",
+                "constraints": {"requested_question_count": 10},
+            },
+            include_usage=True,
+        )
+
+        output_text = json.dumps(generated, ensure_ascii=False)
+        self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", output_text)
+        self.assertIn("配方法推导", output_text)
+        self.assertIn("口述课堂关键链路", output_text)
+        review = review_single_lesson_plan(
+            generated,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=build_deterministic_source_brief(
+                raw_text=transcript,
+                subject="数学",
+                topic="勾股数、特殊角度αβ与和角推导",
+                user_requirements="生成当天的复习计划，题目控制在10个题",
+            ),
+        )
+        self.assertFalse(any(issue.category == "source_coverage" for issue in review.issues))
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertIn("source_coverage_repair_initial", run["node_outputs"])
 
     def test_quality_gate_rejects_pdf_fallback_content(self):
         broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")

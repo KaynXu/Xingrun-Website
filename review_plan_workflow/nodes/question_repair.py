@@ -202,15 +202,26 @@ def can_repair_questions(plan: dict[str, Any], quality: QualityReview) -> bool:
     return bool(find_question_repair_targets(plan, quality))
 
 
-def _compact_source_brief(prompt_bundle: PromptBundle, source_brief: ReviewPlanSourceBrief | None) -> dict[str, Any]:
+def _compact_source_brief(
+    prompt_bundle: PromptBundle,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> dict[str, Any]:
     safe_brief = prompt_bundle.variables.get("source_brief")
     if not isinstance(safe_brief, dict) and source_brief is not None:
-        safe_brief = source_brief_trace_payload(source_brief)
+        safe_brief = source_brief_trace_payload(source_brief, subject_key=review_input.subject)
     if not isinstance(safe_brief, dict):
         return {}
     return {
         key: safe_brief.get(key)
-        for key in ("lesson_title_candidates", "knowledge_points", "method_chains", "common_mistakes", "confidence")
+        for key in (
+            "lesson_title_candidates",
+            "knowledge_points",
+            "method_chains",
+            "common_mistakes",
+            "coverage_requirements",
+            "confidence",
+        )
         if safe_brief.get(key) not in (None, "", [], {})
     }
 
@@ -248,7 +259,7 @@ def _repair_message(
             "user_requirements": review_input.user_requirements,
         },
         "full_review_topics": normalized.get("full_review_topics", [])[:10],
-        "source_brief": _compact_source_brief(prompt_bundle, source_brief),
+        "source_brief": _compact_source_brief(prompt_bundle, review_input, source_brief),
         "parent_blueprint": blueprint_payload,
         "targets": [
             {

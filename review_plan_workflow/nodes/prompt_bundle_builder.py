@@ -32,11 +32,11 @@ def _relative_prompt_path(path: str, fallback: str) -> str:
     return fallback
 
 
-def _source_payload(source: SourceSummary) -> dict[str, Any]:
+def _source_payload(source: SourceSummary, *, subject_key: str = "") -> dict[str, Any]:
     payload = source.model_dump()
     payload["evidence_map"] = source_evidence_list_trace_payload(payload.get("evidence_map"))
     if source.source_brief is not None:
-        payload["source_brief"] = source_brief_trace_payload(source.source_brief)
+        payload["source_brief"] = source_brief_trace_payload(source.source_brief, subject_key=subject_key)
     return payload
 
 
@@ -54,9 +54,9 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> PromptBundle:
     variables = {
         "trace_id": context.trace_id,
         "selected_subject": route.selected_subject,
-        "source": _source_payload(source),
+        "source": _source_payload(source, subject_key=route.selected_subject),
         "source_pack": source_pack_trace_payload(review_input.source_pack),
-        "source_brief": source_brief_trace_payload(source_brief),
+        "source_brief": source_brief_trace_payload(source_brief, subject_key=route.selected_subject),
         "scope": scope.model_dump(),
         "time_allocation": time_allocation.model_dump(),
         "task_blueprint": task_blueprint.model_dump(),

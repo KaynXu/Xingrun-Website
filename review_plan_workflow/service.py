@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, Optional, Tuple, Union
 
 from config_runtime import (
@@ -56,6 +57,7 @@ from .schemas import (
     ReviewPlanSourceBrief,
     normalize_final_review_plan,
 )
+from .source_coverage import missing_source_coverage_groups
 from .state import WorkflowContext
 from .validator import ReviewPlanValidationResult, validate_review_plan_delivery
 
@@ -116,6 +118,105 @@ def _score_quality(
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
+
+
+def _subject_key(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"数学", "math"}:
+        return "math"
+    return text
+
+
+def _merge_unique_texts(existing: object, additions: list[str]) -> list[str]:
+    values = [str(item or "").strip() for item in existing] if isinstance(existing, list) else []
+    merged: list[str] = []
+    for item in (*values, *additions):
+        if item and item not in merged:
+            merged.append(item)
+    return merged
+
+
+def _active_recall_items(value: object) -> list[dict[str, str]]:
+    if isinstance(value, dict):
+        source = value.get("items")
+        if isinstance(source, list):
+            return [item for item in source if isinstance(item, dict)]
+        text = str(value.get("instructions") or value.get("text") or "").strip()
+        return [{"text": text, "answer": ""}] if text else []
+    if isinstance(value, list):
+        return [item if isinstance(item, dict) else {"text": str(item), "answer": ""} for item in value if str(item or "").strip()]
+    text = str(value or "").strip()
+    return [{"text": text, "answer": ""}] if text else []
+
+
+def _repair_source_coverage_gaps(
+    plan: dict[str, Any],
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+    subject: str,
+) -> tuple[dict[str, Any], list[str]]:
+    if source_brief is None or not _is_compressed_single_day(review_input):
+        return plan, []
+    subject_key = _subject_key(subject or review_input.subject)
+    missing_groups = missing_source_coverage_groups(
+        normalize_final_review_plan(plan),
+        source_brief,
+        subject_key=subject_key,
+    )
+    if not missing_groups:
+        return plan, []
+
+    repaired = copy.deepcopy(plan)
+    labels = [group.label for group in missing_groups]
+    repaired["full_review_topics"] = _merge_unique_texts(repaired.get("full_review_topics"), labels)
+
+    lesson_info = repaired.setdefault("lesson_info", {})
+    if isinstance(lesson_info, dict):
+        lesson_info["key_categories"] = _merge_unique_texts(lesson_info.get("key_categories"), labels)
+
+    days = repaired.get("days") if isinstance(repaired.get("days"), list) else []
+    if days and isinstance(days[0], dict):
+        day = days[0]
+        items = _active_recall_items(day.get("active_recall"))
+        existing_text = "\n".join(str(item.get("text") or "") for item in items if isinstance(item, dict))
+        for group in missing_groups:
+            if group.label in existing_text:
+                continue
+            terms = "、".join(group.terms[:3])
+            items.append(
+                {
+                    "text": f"口述课堂关键链路：{group.label}。说明它的判断入口、关键步骤和容易漏掉的条件。",
+                    "answer": f"能围绕 {terms} 说清楚本节课的推导或判定过程。",
+                }
+            )
+        day["active_recall"] = {"items": items}
+    return repaired, labels
+
+
+def _repair_source_coverage_gaps_with_context(
+    plan: dict[str, Any],
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+    subject: str,
+    context: WorkflowContext,
+    node_key: str,
+) -> dict[str, Any]:
+    repaired, labels = _repair_source_coverage_gaps(
+        plan,
+        review_input=review_input,
+        source_brief=source_brief,
+        subject=subject,
+    )
+    if labels:
+        context.node_outputs[node_key] = {"repaired_labels": labels}
+        context.add_warning(
+            "source_coverage_deterministic_repair",
+            "已把课堂材料中遗漏的关键知识链路确定性补入复习计划：" + "、".join(labels),
+            "medium",
+        )
+    return repaired
 
 
 def _validate_delivery(
@@ -693,6 +794,14 @@ def _maybe_revise_plan(
 
         total_usage = merge_usage(total_usage, revision_usage)
         current_plan = _normalize_output_plan(revised_plan, review_input, source_brief)
+        current_plan = _repair_source_coverage_gaps_with_context(
+            current_plan,
+            review_input=review_input,
+            source_brief=source_brief,
+            subject=subject,
+            context=context,
+            node_key=f"source_coverage_repair_after_revision_{attempt}",
+        )
         current_validation = _validate_delivery(
             current_plan,
             review_input=review_input,
@@ -747,6 +856,14 @@ def _maybe_revise_plan(
             )
             total_usage = merge_usage(total_usage, repair_usage)
             repaired_plan = _normalize_output_plan(repaired_plan, review_input, source_brief)
+            repaired_plan = _repair_source_coverage_gaps_with_context(
+                repaired_plan,
+                review_input=review_input,
+                source_brief=source_brief,
+                subject=subject,
+                context=context,
+                node_key=f"source_coverage_repair_after_question_repair_{attempt}",
+            )
             repaired_validation = _validate_delivery(
                 repaired_plan,
                 review_input=review_input,
@@ -933,6 +1050,14 @@ def generate_single_lesson_review_plan(
                 context,
             )
             plan = _normalize_output_plan(plan, review_input, source_brief)
+            plan = _repair_source_coverage_gaps_with_context(
+                plan,
+                review_input=review_input,
+                source_brief=source_brief,
+                subject=route.selected_subject,
+                context=context,
+                node_key="source_coverage_repair_initial",
+            )
             validation = _validate_delivery(
                 plan,
                 review_input=review_input,

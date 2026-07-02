@@ -26,11 +26,12 @@ from review_plan_workflow.state import WorkflowContext
 
 def _source_brief_sections(
     prompt_bundle: PromptBundle,
+    review_input: ReviewPlanInput,
     source_brief: ReviewPlanSourceBrief | None,
 ) -> list[str]:
     safe_brief = prompt_bundle.variables.get("source_brief")
     if not isinstance(safe_brief, dict) and source_brief is not None:
-        safe_brief = source_brief_trace_payload(source_brief)
+        safe_brief = source_brief_trace_payload(source_brief, subject_key=review_input.subject)
     if not isinstance(safe_brief, dict) or not safe_brief:
         return []
 
@@ -77,7 +78,7 @@ def _user_message(
             "父模型教学蓝图（必须优先执行；如果课堂信息不足，把假设写进 assumptions，不能伪装成已确认课堂事实）：\n"
             + agent_blueprint.model_dump_json(indent=2)
         )
-    source_sections = _source_brief_sections(prompt_bundle, source_brief)
+    source_sections = _source_brief_sections(prompt_bundle, review_input, source_brief)
     if source_sections:
         sections.extend(source_sections)
     else:

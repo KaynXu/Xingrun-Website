@@ -51,7 +51,10 @@ def _planner_message(
     source_payload = source.model_dump()
     source_payload["evidence_map"] = source_evidence_list_trace_payload(source_payload.get("evidence_map"))
     if source.source_brief is not None:
-        source_payload["source_brief"] = source_brief_trace_payload(source.source_brief)
+        source_payload["source_brief"] = source_brief_trace_payload(
+            source.source_brief,
+            subject_key=route.selected_subject,
+        )
     payload = {
         "input": {
             "subject": review_input.subject,
@@ -68,7 +71,7 @@ def _planner_message(
         "normalized": normalized.model_dump(),
         "route": route.model_dump(),
         "source": source_payload,
-        "source_brief": source_brief_trace_payload(source_brief or source.source_brief),
+        "source_brief": source_brief_trace_payload(source_brief or source.source_brief, subject_key=route.selected_subject),
         "scope": scope.model_dump(),
         "time_allocation": time_allocation.model_dump(),
         "task_blueprint": task_blueprint.model_dump(),
