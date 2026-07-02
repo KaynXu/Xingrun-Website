@@ -77,6 +77,8 @@ const allFilters: ClassFilterState = {
   teacherFilter: 'all',
   stageFilter: '全部学段',
   gradeFilter: '全部',
+  classTypeFilter: '全部班型',
+  searchText: '',
 };
 
 test('resolveFilteredClasses filters class cards and sorts incomplete cards first', () => {
@@ -119,6 +121,7 @@ test('resolveClassFilterOptions cascades options while ignoring the active layer
   assert.deepEqual(options.teacherOptions.map((teacher) => teacher.id), [2]);
   assert.deepEqual(options.stageOptions, ['初中']);
   assert.deepEqual(options.gradeOptions, ['七年级', '八年级']);
+  assert.deepEqual(options.classTypeOptions, ['全部班型', 'group']);
 });
 
 test('resolveFilteredClasses applies teacher stage and grade filters as behavior', () => {
@@ -150,6 +153,8 @@ test('class filter display helpers build summary, tags, options, and info issues
     teacherFilter: 2,
     stageFilter: '初中',
     gradeFilter: '七年级',
+    classTypeFilter: '全部班型',
+    searchText: '',
   };
   const options = resolveClassFilterOptions({
     classes,
@@ -169,9 +174,108 @@ test('class filter display helpers build summary, tags, options, and info issues
     ['teacher', '李老师', true],
     ['stage', '初中', true],
     ['grade', '七年级', true],
+    ['classType', '班型', false],
   ]);
   assert.deepEqual(resolveActiveClassFilterOptions('teacher', filters, options).map((item) => item.id), [2]);
+  assert.deepEqual(resolveActiveClassFilterOptions('classType', filters, options).map((item) => item.label), ['全部班型', '多人班课']);
   assert.deepEqual(getClassInfoIssues(classes[3], {}, subjectOptions), ['缺科目', '缺学段', '缺年级', '缺班号', '缺负责教师']);
+});
+
+test('resolveFilteredClasses filters by class type and normalized search text', () => {
+  const filtered = resolveFilteredClasses({
+    classes: [
+      ...classes,
+      {
+        id: 15,
+        name: '物理·初2024级·九年级·短期刷题班',
+        class_type: 'short_term_drill',
+        subject: '物理',
+        grade: '九年级',
+        current_grade: '九年级',
+        stage: '初中',
+        class_number: '',
+        teacher_user_id: 2,
+        teacher_name: '李老师',
+        cohort_year: 2024,
+      },
+    ],
+    subjectLookupClasses: classes,
+    studentsByClassId: {
+      15: [{ name: '蒋思雨' }],
+    },
+    teacherBindingByClassId: {},
+    subjectOptions,
+    filters: {
+      ...allFilters,
+      classTypeFilter: 'short_term_drill',
+      searchText: '物理九年级短期刷题班',
+    },
+  }).map((item) => item.id);
+
+  assert.deepEqual(filtered, [15]);
+
+  assert.deepEqual(resolveFilteredClasses({
+    classes: [
+      ...classes,
+      {
+        id: 15,
+        name: '物理·初2024级·九年级·短期刷题班',
+        class_type: 'short_term_drill',
+        subject: '物理',
+        grade: '九年级',
+        current_grade: '九年级',
+        stage: '初中',
+        class_number: '',
+        teacher_user_id: 2,
+        teacher_name: '李老师',
+        cohort_year: 2024,
+      },
+    ],
+    subjectLookupClasses: classes,
+    studentsByClassId: {
+      15: [{ name: '蒋思雨' }],
+    },
+    teacherBindingByClassId: {},
+    subjectOptions,
+    filters: {
+      ...allFilters,
+      searchText: '蒋思雨',
+    },
+  }).map((item) => item.id), [15]);
+
+  const filters: ClassFilterState = {
+    ...allFilters,
+    classTypeFilter: 'short_term_drill',
+    searchText: '刷题',
+  };
+  const options = resolveClassFilterOptions({
+    classes: [
+      ...classes,
+      {
+        id: 15,
+        name: '物理·初2024级·九年级·短期刷题班',
+        class_type: 'short_term_drill',
+        subject: '物理',
+        grade: '九年级',
+        current_grade: '九年级',
+        stage: '初中',
+        class_number: '',
+        teacher_user_id: 2,
+        teacher_name: '李老师',
+        cohort_year: 2024,
+      },
+    ],
+    subjectLookupClasses: classes,
+    users: teachers,
+    teacherBindingByClassId: {},
+    subjectOptions,
+    stageOptions,
+    gradeOptions,
+    gradeGroups,
+    filters,
+  });
+  assert.equal(buildClassFilterSummary(filters, teachers), '短期刷题班 / 刷题');
+  assert.deepEqual(resolveActiveClassFilterOptions('classType', filters, options).map((item) => item.label), ['全部班型', '短期刷题班']);
 });
 
 test('small classes do not require class number in info issue checks', () => {

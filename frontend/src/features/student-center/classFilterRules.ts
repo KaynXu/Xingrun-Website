@@ -1,4 +1,5 @@
 import {
+  formatClassDisplayName,
   getAcademicGradeRank,
   getAcademicStageFromGrade,
   normalizeAcademicGradeLabel,
@@ -8,17 +9,21 @@ import type { ClassManagementFilterLayer } from './ClassManagementTab';
 import type { ClassItem, UserItem } from './model';
 
 export type ClassTeacherFilter = number | 'all';
+export type ClassTypeFilter = '全部班型' | 'group' | 'short_term_drill' | '1v1' | '1v2' | '1v3';
 
 export type ClassFilterState = {
   subjectFilter: string;
   teacherFilter: ClassTeacherFilter;
   stageFilter: string;
   gradeFilter: string;
+  classTypeFilter: ClassTypeFilter;
+  searchText: string;
 };
 
 type ClassRuleBase = {
   classes: ClassItem[];
   subjectLookupClasses?: ClassItem[];
+  studentsByClassId?: Record<number, Array<{ name: string }>>;
   teacherBindingByClassId: Record<number, number | null>;
   subjectOptions: string[];
 };
@@ -66,6 +71,32 @@ function buildSubjectLookup(
   return { subjectByTeacherUserId, subjectByTeacherName };
 }
 
+export function getClassTypeLabel(value: string | null | undefined): string {
+  if (!value || value === 'group') {
+    return '多人班课';
+  }
+  if (value === 'short_term_drill') {
+    return '短期刷题班';
+  }
+  if (value === '1v1' || value === '1v2' || value === '1v3') {
+    return value;
+  }
+  return value;
+}
+
+function normalizeClassSearchText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[·\s\-_（）()]+/g, '')
+    .replace(/初三/g, '九年级')
+    .replace(/初二/g, '八年级')
+    .replace(/初一/g, '七年级')
+    .replace(/高一/g, '高一')
+    .replace(/高二/g, '高二')
+    .replace(/高三/g, '高三');
+}
+
 export function getClassEffectiveSubject(
   item: ClassItem,
   classes: ClassItem[],
@@ -90,6 +121,7 @@ export function classMatchesFilters({
   item,
   classes,
   subjectLookupClasses,
+  studentsByClassId,
   teacherBindingByClassId,
   subjectOptions,
   filters,
@@ -97,7 +129,7 @@ export function classMatchesFilters({
 }: ClassRuleBase & {
   item: ClassItem;
   filters: ClassFilterState;
-  except?: ClassManagementFilterLayer | null;
+  except?: ClassManagementFilterLayer | 'search' | null;
 }): boolean {
   if (
     except !== 'subject'
@@ -118,6 +150,30 @@ export function classMatchesFilters({
   if (except !== 'grade' && filters.gradeFilter !== '全部' && itemGrade !== filters.gradeFilter) {
     return false;
   }
+  const itemClassType = item.class_type || 'group';
+  const classTypeFilter = filters.classTypeFilter || '全部班型';
+  if (except !== 'classType' && classTypeFilter !== '全部班型' && itemClassType !== classTypeFilter) {
+    return false;
+  }
+  const normalizedQuery = normalizeClassSearchText(filters.searchText || '');
+  if (except !== 'search' && normalizedQuery) {
+    const searchSource = [
+      formatClassDisplayName(item, { showCohortYear: true }),
+      formatClassDisplayName(item),
+      item.name,
+      item.subject,
+      item.teacher_name,
+      item.stage,
+      item.current_grade,
+      item.grade,
+      item.class_number ? `${item.class_number}班` : '',
+      getClassTypeLabel(itemClassType),
+      ...(studentsByClassId?.[item.id] || []).map((student) => student.name),
+    ].map((value) => normalizeClassSearchText(value || '')).join('');
+    if (!searchSource.includes(normalizedQuery)) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -130,7 +186,10 @@ export function resolveClassFilterOptions(args: ClassOptionArgs): {
   teacherOptions: UserItem[];
   stageOptions: string[];
   gradeOptions: string[];
+  classTypeOptions: ClassTypeFilter[];
 } {
+  const availableClassTypeOptions = (['group', 'short_term_drill', '1v1', '1v2', '1v3'] as ClassTypeFilter[])
+    .filter((classType) => getClassFilterOptionBase(args, 'classType').some((item) => (item.class_type || 'group') === classType));
   return {
     subjectOptions: args.subjectOptions,
     teacherOptions: args.users.filter((user) => getClassFilterOptionBase(args, 'teacher').some((item) => (
@@ -147,6 +206,7 @@ export function resolveClassFilterOptions(args: ClassOptionArgs): {
         normalizeAcademicGradeLabel(item.current_grade || item.grade || '') === grade
       ));
     }),
+    classTypeOptions: ['全部班型', ...availableClassTypeOptions],
   };
 }
 
@@ -156,6 +216,8 @@ export function buildClassFilterSummary(filters: ClassFilterState, users: UserIt
     filters.subjectFilter !== '全部学科' ? filters.subjectFilter : '',
     filters.stageFilter !== '全部学段' ? filters.stageFilter : '',
     filters.gradeFilter !== '全部' ? filters.gradeFilter : '',
+    filters.classTypeFilter && filters.classTypeFilter !== '全部班型' ? getClassTypeLabel(filters.classTypeFilter) : '',
+    (filters.searchText || '').trim(),
   ].filter(Boolean).join(' / ') || '全部';
 }
 
@@ -188,6 +250,12 @@ export function buildClassFilterItems(
       label: filters.gradeFilter === '全部' ? '年级' : filters.gradeFilter,
       selected: filters.gradeFilter !== '全部',
     },
+    {
+      key: 'classType',
+      defaultLabel: '班型',
+      label: !filters.classTypeFilter || filters.classTypeFilter === '全部班型' ? '班型' : getClassTypeLabel(filters.classTypeFilter),
+      selected: Boolean(filters.classTypeFilter && filters.classTypeFilter !== '全部班型'),
+    },
   ];
 }
 
@@ -199,6 +267,7 @@ export function resolveActiveClassFilterOptions(
     teacherOptions: UserItem[];
     stageOptions: string[];
     gradeOptions: string[];
+    classTypeOptions: ClassTypeFilter[];
   },
 ): FloatingFilterOption[] {
   if (!activeLayer) {
@@ -213,7 +282,10 @@ export function resolveActiveClassFilterOptions(
   if (activeLayer === 'stage') {
     return options.stageOptions.map((stage) => ({ id: stage, label: stage, selected: filters.stageFilter === stage }));
   }
-  return options.gradeOptions.map((grade) => ({ id: grade, label: grade, selected: filters.gradeFilter === grade }));
+  if (activeLayer === 'grade') {
+    return options.gradeOptions.map((grade) => ({ id: grade, label: grade, selected: filters.gradeFilter === grade }));
+  }
+  return options.classTypeOptions.map((classType) => ({ id: classType, label: classType === '全部班型' ? '全部班型' : getClassTypeLabel(classType), selected: filters.classTypeFilter === classType }));
 }
 
 export function getClassInfoIssues(

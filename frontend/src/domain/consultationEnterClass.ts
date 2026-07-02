@@ -102,6 +102,8 @@ export function buildRecommendedConsultationClassFilters({
     teacherFilter: 'all',
     stageFilter: stage || '全部学段',
     gradeFilter: normalizedGrade || '全部',
+    classTypeFilter: '全部班型',
+    searchText: '',
   };
 }
 

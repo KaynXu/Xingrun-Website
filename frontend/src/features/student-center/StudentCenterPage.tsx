@@ -27,7 +27,7 @@ import {
 } from './model';
 import { CampusOverview } from './CampusOverview';
 import { ClassEditorModal } from './ClassEditorModal';
-import { ClassManagementTab, type ClassLifecycleFilter } from './ClassManagementTab';
+import { ClassManagementTab, type ClassLifecycleFilter, type ClassManagementFilterLayer } from './ClassManagementTab';
 import { StudentManagementTab } from './StudentManagementTab';
 import { StudentProfileModal, type StudentProfileModalMode } from './StudentProfileModal';
 import { getStudentCenterPermissions } from './permissions';
@@ -207,8 +207,10 @@ export function StudentCenterPage({
   const [selectedClassStageFilter, setSelectedClassStageFilter] = useState<string>('全部学段');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
   const [selectedClassTeacherFilter, setSelectedClassTeacherFilter] = useState<number | 'all'>('all');
+  const [selectedClassTypeFilter, setSelectedClassTypeFilter] = useState<'全部班型' | 'group' | 'short_term_drill' | '1v1' | '1v2' | '1v3'>('全部班型');
+  const [classSearchText, setClassSearchText] = useState('');
   const [classLifecycleFilter, setClassLifecycleFilter] = useState<ClassLifecycleFilter>('current');
-  const [activeClassFilterLayer, setActiveClassFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
+  const [activeClassFilterLayer, setActiveClassFilterLayer] = useState<ClassManagementFilterLayer | null>(null);
   const [overviewSubjectFilter, setOverviewSubjectFilter] = useState<string>('全部学科');
   const [overviewTeacherFilter, setOverviewTeacherFilter] = useState<number | 'all'>('all');
   const [overviewStageFilter, setOverviewStageFilter] = useState<string>('全部学段');
@@ -963,12 +965,15 @@ export function StudentCenterPage({
     teacherFilter: selectedClassTeacherFilter,
     stageFilter: selectedClassStageFilter,
     gradeFilter: selectedGradeFilter,
+    classTypeFilter: selectedClassTypeFilter,
+    searchText: classSearchText,
   };
   const classFilterOptions = resolveClassFilterOptions({
     classes: lifecycleScopedClassItems,
     subjectLookupClasses: classes,
     users,
     teacherBindingByClassId,
+    studentsByClassId,
     subjectOptions: academicSubjectOptions,
     stageOptions: studentCenterStageOptions,
     gradeOptions: studentCenterGradeOptions,
@@ -979,6 +984,7 @@ export function StudentCenterPage({
   const classTeacherFilterOptions = classFilterOptions.teacherOptions;
   const classStageFilterOptions = classFilterOptions.stageOptions;
   const classGradeFilterOptions = classFilterOptions.gradeOptions;
+  const classTypeFilterOptions = classFilterOptions.classTypeOptions;
   const activeClassFilterSummary = buildClassFilterSummary(classFilters, users);
   const overviewFilters = {
     subjectFilter: overviewSubjectFilter,
@@ -1068,7 +1074,11 @@ export function StudentCenterPage({
       setSelectedClassStageFilter('全部学段');
       return;
     }
-    setSelectedGradeFilter('全部');
+    if (layer === 'grade') {
+      setSelectedGradeFilter('全部');
+      return;
+    }
+    setSelectedClassTypeFilter('全部班型');
   };
   const handleSelectClassFilterOption = (value: string | number) => {
     if (!activeClassFilterLayer) {
@@ -1080,8 +1090,10 @@ export function StudentCenterPage({
       setSelectedClassTeacherFilter(value === 'all' ? 'all' : Number(value));
     } else if (activeClassFilterLayer === 'stage') {
       setSelectedClassStageFilter(String(value));
-    } else {
+    } else if (activeClassFilterLayer === 'grade') {
       setSelectedGradeFilter(String(value));
+    } else {
+      setSelectedClassTypeFilter(String(value) as typeof selectedClassTypeFilter);
     }
   };
   const handleClassFilterAreaEnter = () => {
@@ -1107,7 +1119,10 @@ export function StudentCenterPage({
     if (selectedGradeFilter !== '全部' && !classGradeFilterOptions.includes(selectedGradeFilter)) {
       setSelectedGradeFilter('全部');
     }
-  }, [classSubjectFilterOptions, classTeacherFilterOptions, classStageFilterOptions, classGradeFilterOptions, selectedSubjectFilter, selectedClassTeacherFilter, selectedClassStageFilter, selectedGradeFilter]);
+    if (selectedClassTypeFilter !== '全部班型' && !classTypeFilterOptions.includes(selectedClassTypeFilter)) {
+      setSelectedClassTypeFilter('全部班型');
+    }
+  }, [classSubjectFilterOptions, classTeacherFilterOptions, classStageFilterOptions, classGradeFilterOptions, classTypeFilterOptions, selectedSubjectFilter, selectedClassTeacherFilter, selectedClassStageFilter, selectedGradeFilter, selectedClassTypeFilter]);
   useEffect(() => {
     if (overviewSubjectFilter !== '全部学科' && !overviewSubjectFilterOptions.includes(overviewSubjectFilter)) {
       setOverviewSubjectFilter('全部学科');
@@ -1136,6 +1151,7 @@ export function StudentCenterPage({
   const filteredClasses = resolveFilteredClasses({
     classes: lifecycleScopedClassItems,
     subjectLookupClasses: classes,
+    studentsByClassId,
     teacherBindingByClassId,
     subjectOptions: academicSubjectOptions,
     filters: classFilters,
@@ -1521,6 +1537,7 @@ export function StudentCenterPage({
           activeClassFilterLayer={activeClassFilterLayer}
           activeClassFilterOptions={activeClassFilterOptions}
           activeClassFilterSummary={activeClassFilterSummary}
+          classSearchText={classSearchText}
           classLifecycleFilter={classLifecycleFilter}
           classLifecycleCounts={classLifecycleCounts}
           showClassCohortYear={showClassCohortYear}
@@ -1532,6 +1549,7 @@ export function StudentCenterPage({
           onActivateClassFilter={setActiveClassFilterLayer}
           onClearClassFilter={handleClearClassFilter}
           onSelectClassFilterOption={handleSelectClassFilterOption}
+          onClassSearchTextChange={setClassSearchText}
           onClassLifecycleFilterChange={setClassLifecycleFilter}
           onShowClassCohortYearChange={setShowClassCohortYear}
           onClassCardClick={handleClassCardClick}

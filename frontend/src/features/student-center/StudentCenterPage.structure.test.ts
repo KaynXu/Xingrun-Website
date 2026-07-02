@@ -89,7 +89,7 @@ test('class management tab display is extracted from the student center page', (
   const studentCenterSource = readFileSync(studentCenterPageUrl, 'utf8');
   const classManagementTabSource = readFileSync(classManagementTabUrl, 'utf8');
 
-  assert.match(studentCenterSource, /import \{ ClassManagementTab, type ClassLifecycleFilter \} from '\.\/ClassManagementTab';/);
+  assert.match(studentCenterSource, /import \{ ClassManagementTab, type ClassLifecycleFilter, type ClassManagementFilterLayer \} from '\.\/ClassManagementTab';/);
   assert.match(studentCenterSource, /<ClassManagementTab[\s\S]*filteredClasses=\{filteredClasses\}/);
   assert.doesNotMatch(studentCenterSource, /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级卡片<\/h4>/);
 

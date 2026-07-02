@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { ChevronRight, PlusCircle } from 'lucide-react';
+import { ChevronRight, PlusCircle, Search } from 'lucide-react';
 import { FloatingFilterBar, type FloatingFilterItem, type FloatingFilterOption } from '../../components/FloatingFilterBar';
 import { getAcademicStageFromGrade, normalizeAcademicGradeLabel } from '../../domain/classNaming';
 import { buildDiceBearAvatarUrl, cn } from '../../workspaceShared';
@@ -12,7 +12,7 @@ import {
   studentCenterSurfaceClass,
 } from './ui';
 
-export type ClassManagementFilterLayer = 'subject' | 'teacher' | 'stage' | 'grade';
+export type ClassManagementFilterLayer = 'subject' | 'teacher' | 'stage' | 'grade' | 'classType';
 export type ClassLifecycleFilter = 'current' | 'pending_graduation' | 'all';
 
 type ClassManagementTabProps = {
@@ -33,6 +33,7 @@ type ClassManagementTabProps = {
   activeClassFilterLayer: ClassManagementFilterLayer | null;
   activeClassFilterOptions: FloatingFilterOption[];
   activeClassFilterSummary: string;
+  classSearchText: string;
   classLifecycleFilter: ClassLifecycleFilter;
   classLifecycleCounts: Record<ClassLifecycleFilter, number>;
   showClassCohortYear: boolean;
@@ -44,6 +45,7 @@ type ClassManagementTabProps = {
   onActivateClassFilter: (key: ClassManagementFilterLayer) => void;
   onClearClassFilter: (key: ClassManagementFilterLayer) => void;
   onSelectClassFilterOption: (value: string | number) => void;
+  onClassSearchTextChange: (value: string) => void;
   onClassLifecycleFilterChange: (value: ClassLifecycleFilter) => void;
   onShowClassCohortYearChange: (checked: boolean) => void;
   onClassCardClick: (event: MouseEvent<HTMLElement>, classId: number) => void;
@@ -71,6 +73,7 @@ export function ClassManagementTab({
   activeClassFilterLayer,
   activeClassFilterOptions,
   activeClassFilterSummary,
+  classSearchText,
   classLifecycleFilter,
   classLifecycleCounts,
   showClassCohortYear,
@@ -82,6 +85,7 @@ export function ClassManagementTab({
   onActivateClassFilter,
   onClearClassFilter,
   onSelectClassFilterOption,
+  onClassSearchTextChange,
   onClassLifecycleFilterChange,
   onShowClassCohortYearChange,
   onClassCardClick,
@@ -152,31 +156,43 @@ export function ClassManagementTab({
         ))}
       </div>
 
-      <FloatingFilterBar
-        items={classFilterItems}
-        activeKey={activeClassFilterLayer}
-        options={activeClassFilterOptions}
-        scopeLabel={classScopeLabel}
-        summary={activeClassFilterSummary}
-        summaryText="未筛选时默认按年级从低到高排列。"
-        tone="slate"
-        onAreaEnter={onClassFilterAreaEnter}
-        onAreaLeave={onClassFilterAreaLeave}
-        onActivate={onActivateClassFilter}
-        onClear={onClearClassFilter}
-        onSelect={onSelectClassFilterOption}
-        extraControls={(
-          <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={showClassCohortYear}
-              onChange={(event) => onShowClassCohortYearChange(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-            />
-            入学年份
-          </label>
-        )}
-      />
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] lg:items-start">
+        <FloatingFilterBar
+          items={classFilterItems}
+          activeKey={activeClassFilterLayer}
+          options={activeClassFilterOptions}
+          scopeLabel={classScopeLabel}
+          summary={activeClassFilterSummary}
+          summaryText="未筛选时默认按年级从低到高排列。"
+          tone="slate"
+          onAreaEnter={onClassFilterAreaEnter}
+          onAreaLeave={onClassFilterAreaLeave}
+          onActivate={onActivateClassFilter}
+          onClear={onClearClassFilter}
+          onSelect={onSelectClassFilterOption}
+          extraControls={(
+            <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={showClassCohortYear}
+                onChange={(event) => onShowClassCohortYearChange(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+              />
+              入学年份
+            </label>
+          )}
+        />
+        <label className="relative mt-4 block lg:mt-[2.25rem]">
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={classSearchText}
+            onChange={(event) => onClassSearchTextChange(event.target.value)}
+            placeholder="搜索班级、老师、班型"
+            className="h-10 w-full rounded-full border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-white/30 dark:focus:ring-white/10"
+          />
+        </label>
+      </div>
 
       {loading ? (
         <div className="rounded-2xl border border-dashed border-slate-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
