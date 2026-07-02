@@ -1,8 +1,11 @@
 import unittest
 
+from reportlab.graphics.shapes import Drawing
 from reportlab.platypus import Image as ReportLabImage
+from reportlab.platypus import Flowable
 
 from review_plan_templates.generate_review_pdfs import (
+    _mathjax_renderer_available,
     build_styles,
     localize_paragraph_text,
     normalize_portable_text,
@@ -11,6 +14,18 @@ from review_plan_templates.generate_review_pdfs import (
     render_latex_formula_flowable,
     rich_text_flowables,
 )
+
+
+def _flowable_width(flowable):
+    return getattr(flowable, "drawWidth", getattr(flowable, "width", 0))
+
+
+def _flowable_height(flowable):
+    return getattr(flowable, "drawHeight", getattr(flowable, "height", 0))
+
+
+def _is_formula_flowable(flowable):
+    return isinstance(flowable, (Drawing, ReportLabImage))
 
 
 class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
@@ -95,9 +110,22 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
             max_width=120,
         )
 
-        self.assertIsInstance(flowable, ReportLabImage)
-        self.assertLessEqual(flowable.drawWidth, 120)
-        self.assertGreater(flowable.drawHeight, 0)
+        self.assertIsInstance(flowable, Flowable)
+        self.assertLessEqual(_flowable_width(flowable), 120)
+        self.assertGreater(_flowable_height(flowable), 0)
+
+    def test_render_latex_formula_flowable_uses_mathjax_when_available(self):
+        if not _mathjax_renderer_available():
+            self.skipTest("MathJax frontend dependencies are not installed")
+
+        flowable = render_latex_formula_flowable(
+            r"\begin{aligned} \tan\alpha&=\frac{1}{2}\\ \alpha+\beta&=45^\circ \end{aligned}",
+            max_width=180,
+        )
+
+        self.assertIsInstance(flowable, Drawing)
+        self.assertLessEqual(_flowable_width(flowable), 180)
+        self.assertGreater(_flowable_height(flowable), 0)
 
     def test_render_latex_formula_flowable_respects_requested_font_size(self):
         latex = r"\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}"
@@ -105,10 +133,10 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         body_formula = render_latex_formula_flowable(latex, max_width=180, font_size=10.3)
         small_formula = render_latex_formula_flowable(latex, max_width=180, font_size=8.6)
 
-        self.assertIsInstance(body_formula, ReportLabImage)
-        self.assertIsInstance(small_formula, ReportLabImage)
-        self.assertLess(small_formula.drawHeight, body_formula.drawHeight)
-        self.assertLess(small_formula.drawWidth, body_formula.drawWidth)
+        self.assertIsInstance(body_formula, Flowable)
+        self.assertIsInstance(small_formula, Flowable)
+        self.assertLess(_flowable_height(small_formula), _flowable_height(body_formula))
+        self.assertLess(_flowable_width(small_formula), _flowable_width(body_formula))
 
     def test_rich_text_flowables_embeds_standalone_fraction_formula_image(self):
         register_fonts()
@@ -120,7 +148,7 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
             True,
         )
 
-        self.assertTrue(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
+        self.assertTrue(any(_is_formula_flowable(flowable) for flowable in flowables))
 
     def test_rich_text_flowables_keeps_inline_fraction_formula_compact(self):
         register_fonts()
@@ -133,7 +161,7 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         )
 
         self.assertEqual(len(flowables), 1)
-        self.assertFalse(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
+        self.assertFalse(any(_is_formula_flowable(flowable) for flowable in flowables))
         self.assertIn("全方和不等式", flowables[0].getPlainText())
 
     def test_rich_text_flowables_formula_size_follows_paragraph_style(self):
@@ -144,17 +172,17 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         body_images = [
             flowable
             for flowable in rich_text_flowables(text, styles["body"], True)
-            if isinstance(flowable, ReportLabImage)
+            if _is_formula_flowable(flowable)
         ]
         small_images = [
             flowable
             for flowable in rich_text_flowables(text, styles["small"], True)
-            if isinstance(flowable, ReportLabImage)
+            if _is_formula_flowable(flowable)
         ]
 
         self.assertTrue(body_images)
         self.assertTrue(small_images)
-        self.assertLess(small_images[0].drawHeight, body_images[0].drawHeight)
+        self.assertLess(_flowable_height(small_images[0]), _flowable_height(body_images[0]))
 
     def test_normalize_portable_text_normalizes_bare_latex_fragments_like_wrong_question_text(self):
         text = (

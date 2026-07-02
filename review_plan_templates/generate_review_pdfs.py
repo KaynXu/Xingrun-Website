@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import sys
 import re
 import importlib.util
@@ -10,6 +13,7 @@ from functools import lru_cache
 from typing import Any
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -23,15 +27,19 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.pdfmetrics import registerFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
+from reportlab.graphics.shapes import Drawing, Group, Rect
+from reportlab.graphics.svgpath import SvgPath
 from reportlab.platypus import CondPageBreak, Flowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 ROOT = Path(__file__).resolve().parent
+REPO_ROOT = ROOT.parent
 OUTPUT_DIR = ROOT / "pdf_output"
 OUTPUT_NAME = "review-plan-bilingual-quotes-10-15-quote-replay-layout.pdf"
 FORMULA_DPI = 240
 FORMULA_DEFAULT_FONT_SIZE = 10.3
 FORMULA_DEFAULT_COLOR = "#5A4034"
+MATHJAX_RENDERER_SCRIPT = REPO_ROOT / "frontend" / "scripts" / "render_mathjax_svg.mjs"
 
 
 LESSON = {
@@ -803,10 +811,11 @@ LATEX_CASES_PATTERN = re.compile(r"\\begin\s*\{\s*cases\s*\}([\s\S]*?)\\end\s*\{
 LATEX_UNDERLINED_SPACE_PATTERN = re.compile(r"\\underline\s*\{\s*\\hspace\s*\{[^{}]*\}\s*\}")
 LATEX_UNDERLINED_PHANTOM_PATTERN = re.compile(r"\\underline\s*\{\s*\\phantom\s*\{[^{}]*\}\s*\}")
 LATEX_HSPACE_PATTERN = re.compile(r"\\hspace\s*\{[^{}]*\}")
-LATEX_VISUAL_RENDER_PATTERN = re.compile(r"\\(?:d?frac|sqrt|sum|int|prod|lim)\b")
+LATEX_VISUAL_RENDER_PATTERN = re.compile(r"\S")
 
 _MATHTEXT_MODULE: Any | None = None
 _MATHTEXT_IMPORT_FAILED = False
+_MATHJAX_RENDER_FAILED = False
 
 
 def _repair_latex_transport_controls(text: str) -> str:
@@ -897,6 +906,179 @@ def _get_mathtext_module():
 
 def _latex_needs_visual_render(latex: str) -> bool:
     return bool(LATEX_VISUAL_RENDER_PATTERN.search(str(latex or "")))
+
+
+def _mathjax_renderer_available() -> bool:
+    if _MATHJAX_RENDER_FAILED:
+        return False
+    if not MATHJAX_RENDERER_SCRIPT.exists():
+        return False
+    node = shutil.which("node")
+    if not node:
+        return False
+    return (REPO_ROOT / "frontend" / "node_modules" / "mathjax-full").exists()
+
+
+@lru_cache(maxsize=512)
+def _render_mathjax_svg(formula: str) -> str | None:
+    global _MATHJAX_RENDER_FAILED
+    if not _mathjax_renderer_available():
+        return None
+
+    node = shutil.which("node")
+    if not node:
+        return None
+    payload = json.dumps({"formula": formula, "display": True}, ensure_ascii=False)
+    try:
+        completed = subprocess.run(
+            [node, str(MATHJAX_RENDERER_SCRIPT)],
+            input=payload,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(REPO_ROOT / "frontend"),
+            timeout=8,
+            check=True,
+        )
+        result = json.loads(completed.stdout or "{}")
+    except subprocess.CalledProcessError as exc:
+        if "ERR_MODULE_NOT_FOUND" in str(exc.stderr):
+            _MATHJAX_RENDER_FAILED = True
+        return None
+    except Exception:
+        return None
+
+    svg = result.get("svg")
+    return svg if isinstance(svg, str) and svg.strip() else None
+
+
+def _svg_attr_number(value: str | None) -> float | None:
+    if not value:
+        return None
+    match = re.match(r"\s*(-?\d+(?:\.\d+)?)", value)
+    return float(match.group(1)) if match else None
+
+
+def _parse_svg_transform(value: str | None) -> tuple[float, float, float, float, float, float] | None:
+    if not value:
+        return None
+
+    matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+    def multiply(left, right):
+        a, b, c, d, e, f = left
+        g, h, i, j, k, l = right
+        return (
+            a * g + c * h,
+            b * g + d * h,
+            a * i + c * j,
+            b * i + d * j,
+            a * k + c * l + e,
+            b * k + d * l + f,
+        )
+
+    for name, raw_args in re.findall(r"(matrix|translate|scale)\(([^)]*)\)", value):
+        args = [float(item) for item in re.findall(r"-?\d+(?:\.\d+)?(?:e[-+]?\d+)?", raw_args, flags=re.IGNORECASE)]
+        if name == "matrix" and len(args) == 6:
+            current = tuple(args)
+        elif name == "translate" and args:
+            current = (1.0, 0.0, 0.0, 1.0, args[0], args[1] if len(args) > 1 else 0.0)
+        elif name == "scale" and args:
+            current = (args[0], 0.0, 0.0, args[1] if len(args) > 1 else args[0], 0.0, 0.0)
+        else:
+            continue
+        matrix = multiply(matrix, current)
+    return matrix
+
+
+def _svg_children_to_group(element: ElementTree.Element, fill_color) -> Group:
+    group = Group()
+    transform = _parse_svg_transform(element.attrib.get("transform"))
+    if transform is not None:
+        group.transform = transform
+
+    for child in list(element):
+        tag = child.tag.rsplit("}", 1)[-1]
+        if tag == "path":
+            path_data = child.attrib.get("d", "")
+            if not path_data:
+                continue
+            path = SvgPath(path_data, fillColor=fill_color, strokeColor=None)
+            path_transform = _parse_svg_transform(child.attrib.get("transform"))
+            if path_transform is not None:
+                wrapper = Group(path)
+                wrapper.transform = path_transform
+                group.add(wrapper)
+            else:
+                group.add(path)
+        elif tag == "rect":
+            x = _svg_attr_number(child.attrib.get("x")) or 0
+            y = _svg_attr_number(child.attrib.get("y")) or 0
+            width = _svg_attr_number(child.attrib.get("width")) or 0
+            height = _svg_attr_number(child.attrib.get("height")) or 0
+            if width <= 0 or height <= 0:
+                continue
+            rect = Rect(x, y, width, height, fillColor=fill_color, strokeColor=None)
+            rect_transform = _parse_svg_transform(child.attrib.get("transform"))
+            if rect_transform is not None:
+                wrapper = Group(rect)
+                wrapper.transform = rect_transform
+                group.add(wrapper)
+            else:
+                group.add(rect)
+        elif tag in {"g", "svg"}:
+            nested = _svg_children_to_group(child, fill_color)
+            if nested.contents:
+                group.add(nested)
+    return group
+
+
+def _mathjax_svg_to_drawing(svg: str, font_size: float, color: Any, max_width: float) -> Drawing | None:
+    try:
+        root = ElementTree.fromstring(svg)
+    except ElementTree.ParseError:
+        return None
+
+    svg_element = root if root.tag.rsplit("}", 1)[-1] == "svg" else root.find(".//{http://www.w3.org/2000/svg}svg")
+    if svg_element is None:
+        return None
+    view_box = [float(item) for item in re.findall(r"-?\d+(?:\.\d+)?", svg_element.attrib.get("viewBox", ""))]
+    if len(view_box) != 4 or view_box[2] <= 0 or view_box[3] <= 0:
+        return None
+
+    min_x, min_y, view_width, view_height = view_box
+    width = view_width / 1000.0 * font_size
+    height = view_height / 1000.0 * font_size
+    attr_width = _svg_attr_number(svg_element.attrib.get("width"))
+    attr_height = _svg_attr_number(svg_element.attrib.get("height"))
+    if attr_width and svg_element.attrib.get("width", "").endswith("em"):
+        width = attr_width * font_size
+    if attr_height and svg_element.attrib.get("height", "").endswith("em"):
+        height = attr_height * font_size
+    if width <= 0 or height <= 0:
+        return None
+
+    scale = width / view_width
+    if width > max_width:
+        fit_scale = max_width / width
+        width *= fit_scale
+        height *= fit_scale
+        scale *= fit_scale
+
+    fill_color = colors.HexColor(_normalize_formula_color_hex(color))
+    content = _svg_children_to_group(svg_element, fill_color)
+    content.transform = (scale, 0.0, 0.0, -scale, -min_x * scale, (min_y + view_height) * scale)
+    drawing = Drawing(width, height)
+    drawing.add(content)
+    return drawing
+
+
+def _render_mathjax_formula_drawing(latex: str, max_width: float, font_size: float, color: Any) -> Drawing | None:
+    prepared = _prepare_latex_for_mathtext(latex)
+    svg = _render_mathjax_svg(prepared)
+    if svg is None:
+        return None
+    return _mathjax_svg_to_drawing(svg, font_size, color, max_width)
 
 
 def _prepare_latex_for_mathtext(latex: str) -> str:
@@ -1012,9 +1194,13 @@ def render_latex_formula_flowable(
     dpi: int = FORMULA_DPI,
     font_size: float = FORMULA_DEFAULT_FONT_SIZE,
     color: Any = FORMULA_DEFAULT_COLOR,
-) -> Image | None:
+) -> Flowable | None:
     if not _latex_needs_visual_render(latex):
         return None
+
+    mathjax_formula = _render_mathjax_formula_drawing(latex, max_width, font_size, color)
+    if mathjax_formula is not None:
+        return mathjax_formula
 
     prepared = _prepare_latex_for_mathtext(latex)
     color_hex = _normalize_formula_color_hex(color)
