@@ -64,6 +64,19 @@ class ReviewPlanValidatorTestCase(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertTrue(any(issue.category == "source_coverage" for issue in result.issues))
 
+    def test_validator_blocks_bare_math_contract_violations(self):
+        plan = valid_plan_v1()
+        plan["practice_tasks"][0]["question"] = "已知tanalpha=(1)/(2)，tanbeta=(1)/(3)，则alpha+beta等于？"
+
+        result = validate_review_plan_delivery(
+            plan,
+            required_review_days=[1],
+            constraints={"requested_question_count": 10},
+        )
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any(issue.category == "math_contract" for issue in result.issues))
+
 
 if __name__ == "__main__":
     unittest.main()

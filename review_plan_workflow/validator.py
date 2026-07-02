@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from review_plan_workflow.math_contract import bare_math_contract_violations
 from review_plan_workflow.printable_questions import count_printable_questions
 from review_plan_workflow.renderer_contract import dry_run_review_plan_renderer
 from review_plan_workflow.schemas import LessonSourcePack, normalize_final_review_plan, validate_final_review_plan
@@ -184,6 +185,14 @@ def validate_review_plan_delivery(
                 severity="high",
                 category="math_blocks",
                 description=f"公式占位符缺少对应 math block：{math_id}",
+            )
+        )
+    if bare_math_contract_violations(normalized):
+        issues.append(
+            ReviewPlanValidationIssue(
+                severity="high",
+                category="math_contract",
+                description="数学表达仍含裸文本片段，请改为 math_blocks 或 `$...$` 标准 LaTeX。",
             )
         )
 

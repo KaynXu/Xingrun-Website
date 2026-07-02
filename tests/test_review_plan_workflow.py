@@ -215,6 +215,39 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("交叉回收", normalized["days"][0]["spiral_review"][0])
         self.assertIn("隔题复现", normalized["days"][0]["spiral_review"][1])
 
+    def test_output_normalization_converts_bare_math_to_latex_contract(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="特殊角推导")
+        plan.setdefault("full_review_topics", []).append("alpha+beta=45°")
+        plan["days"][0]["blanks"] = [
+            {
+                "text": "已知alpha和beta为锐角，且tanalpha=(1)/(2)，tanbeta=(1)/(3)，则alpha+beta等于______。",
+                "answer": "alpha+beta=45°",
+            }
+        ]
+        review_input = ReviewPlanInput(
+            summary_text="已知 alpha 和 beta 为锐角，且 tanalpha=(1)/(2)，tanbeta=(1)/(3)。",
+            subject="数学",
+            grade="高一",
+            topic="特殊角推导",
+            schedule_mode="compressed",
+            review_days=[1],
+        )
+
+        normalized = _normalize_output_plan(plan, review_input)
+        blank = normalized["days"][0]["blanks"][0]
+        topic = normalized["full_review_topics"][0]
+
+        self.assertIn("已知$\\alpha$和$\\beta$为锐角", blank["text"])
+        self.assertIn("$\\tan\\alpha=\\frac{1}{2}$", blank["text"])
+        self.assertIn("$\\tan\\beta=\\frac{1}{3}$", blank["text"])
+        self.assertIn("$\\alpha+\\beta$", blank["text"])
+        self.assertEqual(blank["answer"], "$\\alpha+\\beta=45^\\circ$")
+        self.assertEqual(topic, "$\\alpha+\\beta=45^\\circ$")
+        self.assertNotIn("tanalpha=(1)/(2)", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("tanbeta=(1)/(3)", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("alpha和beta", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("alpha+beta", json.dumps(normalized, ensure_ascii=False))
+
     def test_normalizes_task_blocks_for_compressed_day_quality_gate(self):
         plan = {
             "lesson_info": {"subject": "数学", "grade": "八年级", "date": "2026-07-02", "topic": "勾股数与特殊角复习"},

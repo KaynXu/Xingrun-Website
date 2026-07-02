@@ -30,6 +30,7 @@ from .nodes import (
     time_allocator_node,
 )
 from .quality_gate import review_single_lesson_plan
+from .math_contract import normalize_plan_math_contract
 from .quality_policy import (
     can_soft_pass_after_revision,
     max_revision_attempts_for_quality,
@@ -692,6 +693,7 @@ def _normalize_output_plan(
     source_brief: ReviewPlanSourceBrief | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_final_review_plan(plan)
+    normalized = normalize_plan_math_contract(normalized)
     lesson_info = normalized.setdefault("lesson_info", {})
     if not isinstance(lesson_info, dict):
         lesson_info = {}

@@ -8,6 +8,7 @@ from .printable_questions import (
     count_printable_questions,
     merge_visible_and_raw_counts,
 )
+from .math_contract import bare_math_contract_violations
 from .schemas import QualityIssue, QualityReview, normalize_final_review_plan, validate_final_review_plan
 from .source_coverage import missing_source_coverage_groups as find_missing_source_coverage_groups
 
@@ -541,6 +542,15 @@ def review_single_lesson_plan(
                 category="question_quality",
                 description="数学公式文本出现 LaTeX 传输损坏或不可打印控制片段。",
                 suggested_fix="把分式、根式、对数、分段函数等改成 `$...$` 包裹的 LaTeX；JSON 中反斜杠要转义，禁止 begincases/endcases/sqrt[/log_( 这类坏文本。",
+            )
+        )
+    if subject_key == "math" and bare_math_contract_violations(normalized_plan):
+        issues.append(
+            QualityIssue(
+                severity="high",
+                category="math_contract",
+                description="数学表达含裸文本片段，未使用 math_blocks 或标准 LaTeX。",
+                suggested_fix="把 tanalpha=(1)/(2)、alpha+beta=45° 这类内容改成 `$\\tan\\alpha=\\frac{1}{2}$`、`$\\alpha+\\beta=45^\\circ$`。",
             )
         )
 
