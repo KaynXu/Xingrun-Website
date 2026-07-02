@@ -425,7 +425,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         choice_values = []
 
     task_values = tasks[:5] if tasks else _synthesized_tasks(day_data, topic, method_cards, choice_values)[:5]
-    blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
+    blank_values = blanks or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
     quote_values = _dedupe_real_quotes(day_data.get("quotes"))
     if phrase and _is_real_class_quote(phrase) and phrase not in quote_values:
         quote_values.append(phrase)
