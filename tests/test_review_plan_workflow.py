@@ -14,6 +14,7 @@ import lesson_manager
 import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
+from review_plan_workflow.printable_questions import count_printable_questions
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import (
     NormalizedBrief,
@@ -1483,6 +1484,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         plan = valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导")
         plan["days"] = [plan["days"][0]]
         plan["days"][0]["day"] = 1
+        plan["days"][0]["steps"] = []
+        plan["days"][0]["items"] = []
         plan["full_review_topics"] = ["整数勾股数", "特殊角定义", "基础勾股比", "互余角关系", "二倍角关系"]
         plan["days"][0]["blanks"] = [
             {"text": f"第{i}题：3:4:5 中斜边是______。", "answer": "5"}
@@ -1496,7 +1499,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             }
             for i in range(1, 5)
         ]
-        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "answer": "按课堂顺序。"}]}
+        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "expected": "按课堂顺序。"}]}
+        self.assertEqual(count_printable_questions(plan).total_visible_questions, 10)
 
         initial_review = review_single_lesson_plan(
             plan,
@@ -1526,9 +1530,12 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", labels)
         self.assertIn("配方法推导", labels)
         self.assertFalse(any(issue.category == "source_coverage" for issue in repaired_review.issues))
+        self.assertFalse(any("当前可打印题目为" in issue.description for issue in repaired_review.issues))
+        self.assertEqual(count_printable_questions(repaired).total_visible_questions, 10)
         active_recall_text = json.dumps(repaired["days"][0]["active_recall"], ensure_ascii=False)
         self.assertIn("配方法推导", active_recall_text)
         self.assertIn("勾股逆向", active_recall_text)
+        self.assertIn("expected", active_recall_text)
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_deterministically_repairs_source_coverage_before_returning(self, mock_generate_plan):
@@ -1542,6 +1549,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         plan = valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导")
         plan["days"] = [plan["days"][0]]
         plan["days"][0]["day"] = 1
+        plan["days"][0]["steps"] = []
+        plan["days"][0]["items"] = []
         plan["full_review_topics"] = ["整数勾股数", "特殊角定义", "基础勾股比", "互余角关系", "二倍角关系"]
         plan["days"][0]["blanks"] = [
             {"text": f"第{i}题：3:4:5 中斜边是______。", "answer": "5"}
@@ -1555,7 +1564,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             }
             for i in range(1, 5)
         ]
-        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "answer": "按课堂顺序。"}]}
+        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "expected": "按课堂顺序。"}]}
+        self.assertEqual(count_printable_questions(plan).total_visible_questions, 10)
         mock_generate_plan.return_value = (
             plan,
             {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
@@ -1591,6 +1601,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", output_text)
         self.assertIn("配方法推导", output_text)
         self.assertIn("口述课堂关键链路", output_text)
+        self.assertEqual(count_printable_questions(generated).total_visible_questions, 10)
         review = review_single_lesson_plan(
             generated,
             subject="math",
@@ -1605,6 +1616,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             ),
         )
         self.assertFalse(any(issue.category == "source_coverage" for issue in review.issues))
+        self.assertFalse(any("当前可打印题目为" in issue.description for issue in review.issues))
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIn("source_coverage_repair_initial", run["node_outputs"])
 

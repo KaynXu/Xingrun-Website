@@ -187,7 +187,7 @@ def _repair_source_coverage_gaps(
             items.append(
                 {
                     "text": f"口述课堂关键链路：{group.label}。说明它的判断入口、关键步骤和容易漏掉的条件。",
-                    "answer": f"能围绕 {terms} 说清楚本节课的推导或判定过程。",
+                    "expected": f"能围绕 {terms} 说清楚本节课的推导或判定过程。",
                 }
             )
         day["active_recall"] = {"items": items}
