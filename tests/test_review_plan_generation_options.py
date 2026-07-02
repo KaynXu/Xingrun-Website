@@ -16,7 +16,7 @@ class ReviewPlanGenerationOptionsTestCase(unittest.TestCase):
         self.assertEqual(options["daily_count"], None)
         self.assertEqual(options["user_requirements"], "")
         self.assertEqual(options["source"], "create")
-        self.assertEqual(generation_options_summary(options), "标准 5 次")
+        self.assertEqual(generation_options_summary(options), "5次间隔复习")
 
     def test_compressed_forces_single_day(self):
         options = normalize_generation_options(
@@ -33,21 +33,21 @@ class ReviewPlanGenerationOptionsTestCase(unittest.TestCase):
         self.assertEqual(options["daily_count"], 1)
         self.assertEqual(options["user_requirements"], "明天考试前冲刺")
         self.assertEqual(options["source"], "regenerate")
-        self.assertEqual(generation_options_summary(options), "压缩 1 天")
+        self.assertEqual(generation_options_summary(options), "当天课后复习")
 
     def test_daily_count_expands_to_consecutive_days(self):
         options = normalize_generation_options({"schedule_mode": "daily", "daily_count": 4})
 
         self.assertEqual(options["review_days"], [1, 2, 3, 4])
         self.assertEqual(options["daily_count"], 4)
-        self.assertEqual(generation_options_summary(options), "连续 4 天")
+        self.assertEqual(generation_options_summary(options), "每日连续 4 天")
 
     def test_custom_accepts_comma_string_sorts_and_dedupes(self):
         options = normalize_generation_options({"schedule_mode": "custom", "review_days": "7, 1, 3, 3"})
 
         self.assertEqual(options["review_days"], [1, 3, 7])
         self.assertEqual(options["daily_count"], None)
-        self.assertEqual(generation_options_summary(options), "自定义 1,3,7")
+        self.assertEqual(generation_options_summary(options), "自定义日期 1,3,7")
 
     def test_rejects_zero_negative_and_more_than_30_days(self):
         for payload in (

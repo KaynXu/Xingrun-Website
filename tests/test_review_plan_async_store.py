@@ -144,9 +144,9 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["generation_options"]["daily_count"], 3)
         self.assertEqual(saved["generation_options"]["user_requirements"], "题量少一点")
         self.assertEqual(saved["generation_options"]["source"], "create")
-        self.assertEqual(saved["generation_summary"], "连续 3 天")
+        self.assertEqual(saved["generation_summary"], "每日连续 3 天")
         self.assertEqual(lesson["review_generation_options"], saved["generation_options"])
-        self.assertEqual(lesson["review_generation_summary"], "连续 3 天")
+        self.assertEqual(lesson["review_generation_summary"], "每日连续 3 天")
 
     def test_review_plan_generation_options_default_for_old_rows(self):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -167,7 +167,7 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
 
         self.assertEqual(saved["generation_options"]["schedule_mode"], "standard")
         self.assertEqual(saved["generation_options"]["review_days"], [1, 2, 7, 14, 30])
-        self.assertEqual(saved["generation_summary"], "标准 5 次")
+        self.assertEqual(saved["generation_summary"], "5次间隔复习")
 
     def test_update_review_plan_version_generation_options_preserves_regenerate_source(self):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -193,7 +193,7 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["generation_options"]["schedule_mode"], "custom")
         self.assertEqual(saved["generation_options"]["review_days"], [1, 5])
         self.assertEqual(saved["generation_options"]["source"], "regenerate")
-        self.assertEqual(saved["generation_summary"], "自定义 1,5")
+        self.assertEqual(saved["generation_summary"], "自定义日期 1,5")
 
     def test_fail_review_plan_version_records_error_without_current_pointer(self):
         lesson_id = lesson_manager.create_pending_lesson(

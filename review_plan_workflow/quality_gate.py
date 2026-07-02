@@ -456,8 +456,8 @@ def review_single_lesson_plan(
                 QualityIssue(
                     severity="high",
                     category="task_actionability",
-                    description="压缩 1 天计划的可打印题目密度不足，无法承载整节课复习。",
-                    suggested_fix="压缩 1 天时至少提供 5 个不重复的可打印填空/选择/口述任务，并覆盖主要错因。",
+                    description="当天课后复习的可打印题目密度不足，无法承载整节课复习。",
+                    suggested_fix="当天课后复习至少提供 5 个不重复的可打印填空/选择/口述任务，并覆盖主要错因。",
                 )
             )
 

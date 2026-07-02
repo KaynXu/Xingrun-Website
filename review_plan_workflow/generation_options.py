@@ -133,13 +133,13 @@ def generation_options_summary(options: Mapping[str, object]) -> str:
     mode = str(options.get("schedule_mode") or "standard")
     review_days = options.get("review_days") if isinstance(options.get("review_days"), list) else []
     if mode == "compressed":
-        return "压缩 1 天"
+        return "当天课后复习"
     if mode == "daily":
         daily_count = options.get("daily_count") or len(review_days)
-        return f"连续 {daily_count} 天"
+        return f"每日连续 {daily_count} 天"
     if mode == "custom":
-        return "自定义 " + ",".join(str(day) for day in review_days)
-    return f"标准 {len(review_days) or len(STANDARD_REVIEW_DAYS)} 次"
+        return "自定义日期 " + ",".join(str(day) for day in review_days)
+    return f"{len(review_days) or len(STANDARD_REVIEW_DAYS)}次间隔复习"
 
 
 def generation_options_trace_summary(options: Mapping[str, object]) -> dict[str, object]:

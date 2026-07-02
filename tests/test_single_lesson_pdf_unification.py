@@ -124,6 +124,18 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(reminders[0], "当天课后复习要完整扫过课堂主线。")
         self.assertEqual(filename, "代数基础巩固-96-v1.pdf")
 
+    def test_adapt_plan_to_review_template_replaces_legacy_compressed_day_label(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["label"] = "第1天集中复习"
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(days[0]["day"], "当天课后复习")
+
     def test_adapt_plan_to_review_template_preserves_method_map_density(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template, extract_knowledge_sections
 

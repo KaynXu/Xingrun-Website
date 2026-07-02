@@ -163,7 +163,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(version["generation_options"]["schedule_mode"], "custom")
         self.assertEqual(version["generation_options"]["review_days"], [1, 5])
         self.assertEqual(version["generation_options"]["user_requirements"], "明天考试前压缩题量")
-        self.assertEqual(version["generation_summary"], "自定义 1,5")
+        self.assertEqual(version["generation_summary"], "自定义日期 1,5")
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["generation_options"], version["generation_options"])
 
