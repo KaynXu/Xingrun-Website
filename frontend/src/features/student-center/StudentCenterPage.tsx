@@ -596,7 +596,7 @@ export function StudentCenterPage({
     }
 
     if (findDuplicateClass(classes, classId, payload)) {
-      setFormError('已存在相同学科、学段、年级、班号和入学年份的班级，请调整后再保存。');
+      setFormError('已存在同一上课教师的相同学科、学段、年级、班号和入学年份班级，请调整后再保存。');
       return;
     }
 

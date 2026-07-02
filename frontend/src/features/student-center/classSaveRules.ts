@@ -355,7 +355,7 @@ export function validateClassSaveDraft({
 export function findDuplicateClass(
   classes: ClassItem[],
   classId: number | 'new',
-  payload: Pick<ClassSavePayload, 'name' | 'class_type' | 'subject' | 'stage' | 'current_grade' | 'class_number' | 'cohort_year'>,
+  payload: Pick<ClassSavePayload, 'name' | 'class_type' | 'subject' | 'stage' | 'current_grade' | 'class_number' | 'cohort_year' | 'teacher_name' | 'teacher_user_id'>,
 ): ClassItem | undefined {
   return classes.find((item) => {
     if (classId !== 'new' && item.id === classId) {
@@ -364,6 +364,16 @@ export function findDuplicateClass(
     const itemClassType = item.class_type || 'group';
     const payloadClassType = payload.class_type || 'group';
     if (itemClassType !== payloadClassType) {
+      return false;
+    }
+    const itemTeacherUserId = Number(item.teacher_user_id || 0);
+    const payloadTeacherUserId = Number(payload.teacher_user_id || 0);
+    const itemTeacherName = normalizeClassNameInput(item.teacher_name || '');
+    const payloadTeacherName = normalizeClassNameInput(payload.teacher_name || '');
+    const sameTeacher = itemTeacherUserId > 0 && payloadTeacherUserId > 0
+      ? itemTeacherUserId === payloadTeacherUserId
+      : itemTeacherName !== '' && itemTeacherName === payloadTeacherName;
+    if (!sameTeacher) {
       return false;
     }
     if (payloadClassType !== 'group') {
