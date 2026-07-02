@@ -6,6 +6,7 @@ from review_plan_templates.generate_review_pdfs import (
     build_styles,
     localize_paragraph_text,
     normalize_portable_text,
+    normalize_portable_text_preserving_latex,
     register_fonts,
     render_latex_formula_flowable,
     rich_text_flowables,
@@ -74,6 +75,19 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertNotIn("angle", normalized)
         self.assertNotIn("^circ", normalized)
         self.assertNotIn("cong", normalized)
+
+    def test_normalize_portable_text_normalizes_bare_greek_trig_fragments(self):
+        question = "已知alpha和beta为锐角，且tanalpha=(1)/(2)，tanbeta=(1)/(3)，则alpha+beta等于？"
+
+        normalized_question = normalize_portable_text_preserving_latex(question)
+        normalized_answer = normalize_portable_text_preserving_latex("alpha+beta=45°")
+
+        self.assertEqual(normalized_question, "已知α和β为锐角，且tanα=1/2，tanβ=1/3，则α+β等于？")
+        self.assertEqual(normalized_answer, "α+β=45°")
+        self.assertNotIn("tanalpha", normalized_question)
+        self.assertNotIn("tanbeta", normalized_question)
+        self.assertNotIn("(1)/(2)", normalized_question)
+        self.assertEqual(normalize_portable_text("alphabet"), "alphabet")
 
     def test_render_latex_formula_flowable_renders_fraction_as_image(self):
         flowable = render_latex_formula_flowable(

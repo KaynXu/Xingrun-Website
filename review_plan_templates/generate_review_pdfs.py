@@ -689,6 +689,10 @@ PORTABLE_SYMBOL_REPLACEMENTS = (
     ("☆", "-"),
     ("→", "->"),
 )
+BARE_GREEK_NAME_REPLACEMENTS = {
+    "alpha": "α",
+    "beta": "β",
+}
 
 LATEX_BLOCK_DOLLAR_PATTERN = re.compile(r"(?<!\\)\$\$(.+?)(?<!\\)\$\$", re.DOTALL)
 LATEX_INLINE_PATTERN = re.compile(r"(?<!\\)\$(?!\$)(.+?)(?<!\\)\$(?!\$)")
@@ -853,6 +857,15 @@ def _normalize_latex_structures(text: str) -> str:
 def _normalize_bare_math_words(text: str) -> str:
     normalized = str(text or "")
     normalized = re.sub(r"\^\\?circ\b", "°", normalized)
+    normalized = re.sub(
+        r"(?<![A-Za-z\\])(?P<func>sin|cos|tan)\s*(?P<name>alpha|beta)(?![A-Za-z])",
+        lambda match: f"{match.group('func').lower()}{BARE_GREEK_NAME_REPLACEMENTS[match.group('name').lower()]}",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    for source, target in BARE_GREEK_NAME_REPLACEMENTS.items():
+        normalized = re.sub(rf"(?<![A-Za-z\\]){source}(?![A-Za-z])", target, normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"([=＝])\s*\(([0-9]+)\)\s*/\s*\(([0-9]+)\)", r"\1\2/\3", normalized)
     normalized = re.sub(r"(?<![A-Za-z\\])triangle\s*", "△", normalized)
     normalized = re.sub(r"(?<![A-Za-z\\])angle\s*", "∠", normalized)
     normalized = re.sub(r"(?<![A-Za-z\\])cong(?![A-Za-z])", "≌", normalized)
