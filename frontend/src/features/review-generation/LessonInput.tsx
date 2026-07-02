@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, Cpu, Upload } from 'lucide-react';
+import { AlertCircle, ArrowRight, ChevronDown, Cpu, FileText, Upload, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ClassItem, CurrentUser } from '../../appTypes';
 import {
   apiFetch,
   apiUploadFormWithProgress,
   cn,
-  workspaceFieldClass,
-  workspaceGhostButtonClass,
-  workspacePrimaryButtonClass,
 } from '../../workspaceShared';
+import {
+  DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  buildGenerationOptionsPayload,
+  getGenerationOptionsValidationError,
+  getGenerationOptionsFormSummary,
+  type ReviewPlanGenerationOptionsFormValue,
+} from './reviewPlanGenerationOptions';
 
 type ReviewPlanCreateResponse = {
   id: number;
@@ -19,10 +23,6 @@ type ReviewPlanCreateResponse = {
 };
 
 const academicSubjectOptions = ['数学', '物理', '国际数学'];
-const reviewFormSectionClass = 'space-y-4 border-b border-slate-200/80 pb-6 dark:border-white/10';
-const reviewFormSectionTitleClass = 'text-sm font-semibold text-slate-900 dark:text-white';
-const reviewFormSectionTextClass = 'mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400';
-const reviewFormFieldClass = `${workspaceFieldClass} border-slate-200 focus:border-slate-300 focus:ring-slate-100`;
 
 function syncMemberScopedClassSelection(
   role: CurrentUser['role'],
@@ -51,36 +51,207 @@ const WorkspaceLoading = ({ label = '正在处理中...' }: { label?: string }) 
   </div>
 );
 
-function SubjectSelect({
-  value,
-  onChange,
-  className,
+function SectionHeader({
+  number,
+  title,
+  optional = false,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  className?: string;
+  number: number;
+  title: string;
+  optional?: boolean;
 }) {
   return (
-    <select
-      aria-label="科目"
-      value={academicSubjectOptions.includes(value) ? value : ''}
-      onChange={(event) => onChange(event.target.value)}
-      className={cn(reviewFormFieldClass, 'w-full', className)}
-    >
-      <option value="">选择科目</option>
-      {academicSubjectOptions.map((option) => (
-        <option key={option} value={option}>{option}</option>
-      ))}
-    </select>
+    <div className="flex items-center gap-2.5 mb-3">
+      <span
+        className="inline-flex shrink-0 items-center justify-center"
+        style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '9999px',
+          background: optional ? '#f1f5f9' : 'rgba(30, 41, 59, 0.05)',
+          color: optional ? '#94a3b8' : '#1e293b',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          border: optional ? '1px solid #e2e8f0' : 'none',
+        }}
+      >
+        {number}
+      </span>
+      <h2
+        className="text-sm font-semibold"
+        style={{ color: '#64748b', fontSize: '0.875rem' }}
+      >
+        {title}
+      </h2>
+      {optional && (
+        <span
+          className="text-xs"
+          style={{ color: '#94a3b8', fontSize: '0.75rem' }}
+        >
+          可选
+        </span>
+      )}
+    </div>
   );
-};
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  icon,
+}: {
+  label: string;
+  value: string | number;
+  onChange: (v: string | number) => void;
+  options: Array<{ value: string | number; label: string }>;
+  placeholder?: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="px-4 py-3">
+      <label
+        className="block mb-1.5 text-xs font-medium"
+        style={{ color: '#94a3b8', fontSize: '0.75rem' }}
+      >
+        {label}
+      </label>
+      <div
+        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer"
+        style={{
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+        }}
+      >
+        {icon && <span style={{ color: '#94a3b8' }}>{icon}</span>}
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="truncate min-w-0 flex-1 appearance-none text-sm bg-transparent outline-none cursor-pointer"
+          style={{
+            color: value ? '#0f172a' : '#94a3b8',
+            fontSize: '0.875rem',
+            appearance: 'none',
+            WebkitAppearance: 'none',
+            MozAppearance: 'none',
+          }}
+        >
+          {placeholder && <option value="" disabled>{placeholder}</option>}
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#94a3b8' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function InputField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  icon,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: 'text' | 'date';
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="px-4 py-3">
+      <label
+        className="block mb-1.5 text-xs font-medium"
+        style={{ color: '#94a3b8', fontSize: '0.75rem' }}
+      >
+        {label}
+      </label>
+      <div
+        className="flex items-center gap-2 px-3 py-2.5"
+        style={{
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+        }}
+      >
+        {icon && <span style={{ color: '#94a3b8' }}>{icon}</span>}
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="truncate flex-1 text-sm bg-transparent outline-none"
+          style={{ color: value ? '#0f172a' : '#94a3b8', fontSize: '0.875rem' }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SegmentedControl({
+  options,
+  value,
+  onChange,
+  columns = 4,
+}: {
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (v: string) => void;
+  columns?: number;
+}) {
+  return (
+    <div
+      className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1"
+      style={{
+        background: '#ffffff',
+        borderRadius: '8px',
+      }}
+    >
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium whitespace-nowrap"
+          style={{
+            borderRadius: '8px',
+            background: value === opt.value ? '#1e293b' : 'transparent',
+            color: value === opt.value ? '#ffffff' : '#64748b',
+            fontSize: '0.875rem',
+            transition: 'background 0.15s, color 0.15s',
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const scheduleModes = [
+  { value: 'standard', label: '5次间隔', description: '第1、2、7、14、30天复习' },
+  { value: 'compressed', label: '1天集中', description: '只生成第1天,集中完成' },
+  { value: 'daily', label: '每日连续', description: '连续每天生成,默认7天' },
+  { value: 'custom', label: '自定义日期', description: '按填写的日期点生成' },
+];
 
 export function LessonInput({
   onSuccess,
   currentUser,
+  onCancel,
 }: {
   onSuccess: (result: ReviewPlanCreateResponse) => void;
   currentUser: CurrentUser;
+  onCancel?: () => void;
 }) {
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
@@ -88,8 +259,12 @@ export function LessonInput({
   const [weakPoints, setWeakPoints] = useState('');
   const [summaryText, setSummaryText] = useState('');
   const [sameLessonMaterials, setSameLessonMaterials] = useState('');
+  const [generationOptions, setGenerationOptions] = useState<ReviewPlanGenerationOptionsFormValue>({
+    ...DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  });
   const [inputType, setInputType] = useState<'text' | 'file'>('text');
   const [file, setFile] = useState<File | null>(null);
+  const [isMaterialDragActive, setIsMaterialDragActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -97,6 +272,7 @@ export function LessonInput({
   const [error, setError] = useState('');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
+  const [supplementOpen, setSupplementOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -145,11 +321,32 @@ export function LessonInput({
   }, [classes, classesLoading, currentUser.role]);
 
   const hasNoAssignableClasses = currentUser.role === 'member' && !classesLoading && classes.length === 0;
+  const generationOptionsError = getGenerationOptionsValidationError(generationOptions);
+  const missingItems = [
+    hasNoAssignableClasses || !classId ? '班级' : '',
+    inputType === 'text' && !summaryText.trim() ? '课堂材料' : '',
+    inputType === 'file' && !file ? '课堂材料' : '',
+  ].filter(Boolean);
+  const formStatusText = hasNoAssignableClasses
+    ? '未分配班级'
+    : generationOptionsError || (missingItems.length ? `缺少:${missingItems.join(',')}` : '可生成');
+  const canGenerate = !hasNoAssignableClasses && !generationOptionsError && missingItems.length === 0 && !isLoading;
 
   const handleClassChange = (id: number) => {
     setClassId(id);
     const cls = classes.find((c) => c.id === id);
     if (cls?.subject && academicSubjectOptions.includes(cls.subject)) setSubject(cls.subject);
+  };
+
+  const handleMaterialFileSelect = (nextFile: File | null) => {
+    setFile(nextFile);
+    setIsMaterialDragActive(false);
+  };
+
+  const handleMaterialFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    handleMaterialFileSelect(event.dataTransfer.files?.[0] ?? null);
   };
 
   const handleAnalyze = async () => {
@@ -164,7 +361,7 @@ export function LessonInput({
       if (result.topic) setTopic(result.topic);
       if (result.weak_points) setWeakPoints(result.weak_points);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '识别失败，请重试');
+      setError(e instanceof Error ? e.message : '识别失败,请重试');
     } finally {
       setIsAnalyzing(false);
     }
@@ -173,19 +370,23 @@ export function LessonInput({
   const handleGenerate = async () => {
     setError('');
     if (hasNoAssignableClasses) {
-      setError('当前账号未分配负责班级，请先联系管理员分配班级');
+      setError('未分配班级');
       return;
     }
     if (!classId) {
-      setError('请选择班级后再生成复习记录');
+      setError('请选择班级');
       return;
     }
     if (inputType === 'text' && !summaryText.trim()) {
-      setError('请填写课堂笔记内容');
+      setError('请输入课堂材料');
       return;
     }
     if (inputType === 'file' && !file) {
-      setError('请选择上传文件');
+      setError('请选择文件');
+      return;
+    }
+    if (generationOptionsError) {
+      setError(generationOptionsError);
       return;
     }
 
@@ -204,6 +405,7 @@ export function LessonInput({
             weak_points: weakPoints,
             summary_text: summaryText,
             same_lesson_materials: sameLessonMaterials,
+            generation_options: buildGenerationOptionsPayload(generationOptions),
           }),
         });
       } else {
@@ -215,12 +417,13 @@ export function LessonInput({
         formData.append('date', lessonDate);
         formData.append('weak_points', weakPoints);
         formData.append('same_lesson_materials', sameLessonMaterials);
+        formData.append('generation_options', JSON.stringify(buildGenerationOptionsPayload(generationOptions)));
         if (file) formData.append('upload_file', file);
         result = await apiUploadFormWithProgress<ReviewPlanCreateResponse>('/api/review-plans', formData, setUploadProgress);
       }
       onSuccess(result);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '提交失败，请重试');
+      setError(e instanceof Error ? e.message : '提交失败,请重试');
     } finally {
       setIsLoading(false);
     }
@@ -259,34 +462,418 @@ export function LessonInput({
             animate={{ opacity: 1, y: 0 }}
             className="space-y-6"
           >
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
-              <SubjectSelect
-                value={subject}
-                onChange={setSubject}
-                className="w-full"
-              />
-              <select
-                value={classId ?? ''}
-                onChange={(e) => handleClassChange(Number(e.target.value))}
-                className={`${reviewFormFieldClass} w-full`}
+            {/* ① 基本信息 */}
+            <section>
+              <SectionHeader number={1} title="基本信息" />
+              <div
+                className="grid grid-cols-1 sm:grid-cols-3 overflow-hidden"
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                }}
               >
-                <option value="">选择班级</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <input
-                type="date"
-                value={lessonDate}
-                onChange={(e) => setLessonDate(e.target.value)}
-                className={`${reviewFormFieldClass} w-full`}
-              />
-            </div>
+                <SelectField
+                  label="科目"
+                  value={subject}
+                  onChange={setSubject}
+                  placeholder="选择科目"
+                  options={academicSubjectOptions.map(opt => ({ value: opt, label: opt }))}
+                />
+                <div className="sm:border-l" style={{ borderTop: '1px solid #e2e8f0', borderLeftColor: '#e2e8f0' }}>
+                  <SelectField
+                    label="班级"
+                    value={classId ?? ''}
+                    onChange={(v) => handleClassChange(Number(v))}
+                    placeholder="选择班级"
+                    options={classes.map(c => ({ value: c.id, label: c.name }))}
+                  />
+                </div>
+                <div className="sm:border-l" style={{ borderTop: '1px solid #e2e8f0', borderLeftColor: '#e2e8f0' }}>
+                  <InputField
+                    label="日期"
+                    type="date"
+                    value={lessonDate}
+                    onChange={setLessonDate}
+                    icon={
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                    }
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* ② 生成设置 */}
+            <section>
+              <SectionHeader number={2} title="生成设置" />
+              <div
+                className="rounded-xl p-4"
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                }}
+              >
+                <SegmentedControl
+                  options={scheduleModes.map(m => ({ value: m.value, label: m.label }))}
+                  value={generationOptions.scheduleMode}
+                  onChange={(v) => setGenerationOptions({ ...generationOptions, scheduleMode: v })}
+                />
+                <p
+                  className="text-xs mt-3 mb-4"
+                  style={{ color: '#94a3b8', fontSize: '0.75rem', lineHeight: '1.5' }}
+                >
+                  {scheduleModes.find(m => m.value === generationOptions.scheduleMode)?.description}
+                </p>
+
+                {generationOptions.scheduleMode === 'daily' && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <label className="text-xs font-medium whitespace-nowrap" style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                      复习天数
+                    </label>
+                    <div
+                      className="inline-flex items-center px-3 py-2"
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={generationOptions.dailyCount}
+                        onChange={(e) => setGenerationOptions({
+                          ...generationOptions,
+                          dailyCount: Math.max(1, Math.min(30, Number(e.target.value) || 1)),
+                        })}
+                        className="text-sm bg-transparent outline-none w-12"
+                        style={{ color: '#0f172a', fontSize: '0.875rem' }}
+                      />
+                    </div>
+                    <span className="text-xs" style={{ color: '#94a3b8', fontSize: '0.75rem' }}>天</span>
+                  </div>
+                )}
+
+                {generationOptions.scheduleMode === 'custom' && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <label className="text-xs font-medium whitespace-nowrap" style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                      日期点
+                    </label>
+                    <div
+                      className="inline-flex items-center px-3 py-2 flex-1"
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={generationOptions.customDays}
+                        onChange={(e) => setGenerationOptions({ ...generationOptions, customDays: e.target.value })}
+                        placeholder="1,3,7"
+                        className="text-sm bg-transparent outline-none flex-1"
+                        style={{ color: '#0f172a', fontSize: '0.875rem' }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <label className="block text-xs font-medium mb-1.5" style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                  本次要求
+                </label>
+                <textarea
+                  value={generationOptions.userRequirements}
+                  onChange={(e) => setGenerationOptions({ ...generationOptions, userRequirements: e.target.value })}
+                  placeholder="例如:重点复习三角函数和数列..."
+                  rows={3}
+                  maxLength={1000}
+                  className="px-3 py-2.5 text-sm w-full resize-none outline-none"
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    color: generationOptions.userRequirements ? '#0f172a' : '#94a3b8',
+                    fontSize: '0.875rem',
+                    minHeight: '60px',
+                  }}
+                />
+              </div>
+            </section>
+
+            {/* ③ 课堂材料 */}
+            <section>
+              <SectionHeader number={3} title="课堂材料" />
+              <div
+                className="rounded-xl p-4"
+                style={{
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                }}
+              >
+                <div
+                  className="flex gap-1 p-1 mb-3 w-fit"
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setInputType('text')}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium whitespace-nowrap"
+                    style={{
+                      borderRadius: '8px',
+                      background: inputType === 'text' ? '#1e293b' : 'transparent',
+                      color: inputType === 'text' ? '#ffffff' : '#64748b',
+                      fontSize: '0.875rem',
+                      transition: 'background 0.15s, color 0.15s',
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    文字
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputType('file')}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium whitespace-nowrap"
+                    style={{
+                      borderRadius: '8px',
+                      background: inputType === 'file' ? '#1e293b' : 'transparent',
+                      color: inputType === 'file' ? '#ffffff' : '#64748b',
+                      fontSize: '0.875rem',
+                      transition: 'background 0.15s, color 0.15s',
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    文件
+                  </button>
+                </div>
+
+                {inputType === 'text' ? (
+                  <>
+                    <textarea
+                      value={summaryText}
+                      onChange={(e) => setSummaryText(e.target.value)}
+                      placeholder="请在此粘贴课堂笔记内容,支持直接从教案、课件中复制文本粘贴..."
+                      rows={7}
+                      className="rounded-lg px-3 py-2.5 text-sm mb-3 w-full resize-none outline-none"
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        color: summaryText ? '#0f172a' : '#94a3b8',
+                        fontSize: '0.875rem',
+                        minHeight: '140px',
+                        lineHeight: '1.625',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAnalyze}
+                      disabled={!summaryText.trim() || isAnalyzing}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap"
+                      style={{
+                        background: 'rgba(30, 41, 59, 0.05)',
+                        color: '#1e293b',
+                        border: '1px solid #1e293b',
+                        borderRadius: '12px',
+                        fontSize: '0.875rem',
+                        opacity: !summaryText.trim() || isAnalyzing ? 0.6 : 1,
+                        cursor: !summaryText.trim() || isAnalyzing ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+                        <path d="M5 3v4" />
+                        <path d="M19 17v4" />
+                        <path d="M3 5h4" />
+                        <path d="M17 19h4" />
+                      </svg>
+                      {isAnalyzing ? 'AI 识别中...' : 'AI 识别'}
+                    </button>
+                  </>
+                ) : (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setIsMaterialDragActive(true);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      event.dataTransfer.dropEffect = 'copy';
+                      setIsMaterialDragActive(true);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setIsMaterialDragActive(false);
+                      }
+                    }}
+                    onDrop={handleMaterialFileDrop}
+                    className={cn(
+                      'cursor-pointer rounded-xl border border-dashed px-6 py-8 text-center transition',
+                      isMaterialDragActive
+                        ? 'border-slate-500 bg-slate-100'
+                        : 'border-slate-200 bg-slate-50/70 hover:border-slate-400 hover:bg-slate-50',
+                    )}
+                    style={{
+                      border: isMaterialDragActive ? '1px dashed #475569' : '1px dashed #e2e8f0',
+                      background: isMaterialDragActive ? '#f1f5f9' : '#ffffff',
+                      borderRadius: '8px',
+                      minHeight: '140px',
+                    }}
+                  >
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center text-slate-700 dark:text-slate-200">
+                      <Upload size={22} />
+                    </div>
+                    <div className="flex items-center justify-center gap-2">
+                      <h4 className="max-w-full truncate font-semibold text-slate-900 dark:text-white">
+                        {file ? file.name : '点击或拖拽上传课堂材料文件'}
+                      </h4>
+                      {file && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleMaterialFileSelect(null);
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = '';
+                            }
+                          }}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                          aria-label="删除文件"
+                          title="删除"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".mp3,.m4a,.mp4,.wav,.ogg,.webm,.flac,.txt,.md"
+                      className="hidden"
+                      onChange={(e) => handleMaterialFileSelect(e.target.files?.[0] ?? null)}
+                    />
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* ④ 补充信息(可选) */}
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <SectionHeader number={4} title="补充信息" optional />
+                <button
+                  type="button"
+                  onClick={() => setSupplementOpen(!supplementOpen)}
+                  className="flex items-center gap-2 text-xs"
+                  style={{ color: '#94a3b8', fontSize: '0.75rem' }}
+                >
+                  <span>{supplementOpen ? '收起' : '展开'}</span>
+                  <ChevronDown
+                    size={14}
+                    style={{
+                      transform: supplementOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.15s',
+                    }}
+                  />
+                </button>
+              </div>
+              {supplementOpen && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                      复习主题
+                    </label>
+                    <div
+                      className="flex items-center px-3 py-2.5"
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                        placeholder="例如:三角函数"
+                        className="text-sm truncate flex-1 bg-transparent outline-none"
+                        style={{ color: topic ? '#0f172a' : '#94a3b8', fontSize: '0.875rem' }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                      薄弱知识点
+                    </label>
+                    <div
+                      className="flex items-center px-3 py-2.5"
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={weakPoints}
+                        onChange={(e) => setWeakPoints(e.target.value)}
+                        placeholder="例如:诱导公式"
+                        className="text-sm truncate flex-1 bg-transparent outline-none"
+                        style={{ color: weakPoints ? '#0f172a' : '#94a3b8', fontSize: '0.875rem' }}
+                      />
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                      补充材料
+                    </label>
+                    <div
+                      className="flex items-center px-3 py-2.5 cursor-pointer"
+                      style={{
+                        background: '#ffffff',
+                        border: '1px dashed #e2e8f0',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#94a3b8' }}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      <span className="text-sm ml-2 truncate" style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
+                        点击或拖拽上传补充材料文件
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
 
             {hasNoAssignableClasses && (
-              <p className="text-sm text-amber-600 dark:text-amber-300">
-                当前账号未分配负责班级，请先联系管理员分配班级后再生成复习记录。
-              </p>
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-300">未分配班级</p>
             )}
 
             {error && (
@@ -296,138 +883,70 @@ export function LessonInput({
               </div>
             )}
 
-            <div className="grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_280px]">
-              <div className="space-y-6">
-                <section className={reviewFormSectionClass}>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className={reviewFormSectionTitleClass}>课堂材料</h4>
-                    </div>
-                    <div className="inline-flex gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-1 dark:border-white/10 dark:bg-white/5">
-                      <button
-                        onClick={() => setInputType('text')}
-                        className={cn(
-                          'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                          inputType === 'text' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
-                        )}
-                      >
-                        文字笔记
-                      </button>
-                      <button
-                        onClick={() => setInputType('file')}
-                        className={cn(
-                          'rounded-xl px-4 py-2 text-sm font-medium transition-all',
-                          inputType === 'file' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100',
-                        )}
-                      >
-                        上传文件
-                      </button>
-                    </div>
-                  </div>
-
-                  {inputType === 'file' ? (
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="cursor-pointer rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-6 py-10 text-center transition hover:border-slate-400 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
-                    >
-                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center text-slate-700 dark:text-slate-200">
-                        <Upload size={24} />
-                      </div>
-                      <h4 className="font-semibold text-slate-900 dark:text-white">{file ? file.name : '上传课后录音或文本'}</h4>
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">支持 m4a、mp3、wav、txt、md</p>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".mp3,.m4a,.mp4,.wav,.ogg,.webm,.flac,.txt,.md"
-                        className="hidden"
-                        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[420px] flex-col">
-                      <div className="mb-4 flex items-center justify-between gap-4">
-                        <h4 className={reviewFormSectionTitleClass}>课堂笔记</h4>
-                        <button
-                          onClick={handleAnalyze}
-                          disabled={!summaryText.trim() || isAnalyzing}
-                          className={workspaceGhostButtonClass}
-                        >
-                          <Cpu size={13} className={isAnalyzing ? 'text-sky-500' : 'text-slate-500 dark:text-slate-400'} />
-                          {isAnalyzing ? '识别中...' : '识别课程信息'}
-                        </button>
-                      </div>
-                      <textarea
-                        placeholder="在此处粘贴课堂笔记、结构化大纲或老师补充说明..."
-                        value={summaryText}
-                        onChange={(e) => setSummaryText(e.target.value)}
-                        className="min-h-[340px] flex-1 resize-none rounded-2xl border border-slate-200 bg-[#fcfdff] px-5 py-4 text-sm leading-relaxed text-slate-700 outline-none transition focus:border-slate-300 focus:ring-4 focus:ring-slate-100 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:border-slate-600 dark:focus:ring-white/10"
-                      />
-                    </div>
-                  )}
-                </section>
-
-                <section className={reviewFormSectionClass}>
-                  <h4 className={reviewFormSectionTitleClass}>教学信息</h4>
-                  <div className="space-y-4">
-                    <input
-                      type="text"
-                      placeholder="课程主题（选填）"
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      className={reviewFormFieldClass}
-                    />
-                    <textarea
-                      placeholder="薄弱点（选填）"
-                      value={weakPoints}
-                      onChange={(e) => setWeakPoints(e.target.value)}
-                      rows={4}
-                      className={`${reviewFormFieldClass} resize-none`}
-                    />
-                    <textarea
-                      placeholder="同一节课补充材料（选填）：第二段录音纪要、飞书智能纪要或老师补充说明"
-                      value={sameLessonMaterials}
-                      onChange={(e) => setSameLessonMaterials(e.target.value)}
-                      rows={6}
-                      className={`${reviewFormFieldClass} resize-none`}
-                    />
-                  </div>
-                </section>
+            {/* Footer Action Bar */}
+            <div
+              className="flex flex-col-reverse sm:flex-row items-center justify-between shrink-0 gap-3 sm:gap-0 px-6 py-4 mt-6"
+              style={{
+                borderTop: '1px solid #e2e8f0',
+                background: '#ffffff',
+                borderRadius: '16px',
+              }}
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span
+                  className="inline-block shrink-0"
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '9999px',
+                    background: canGenerate ? '#22c55e' : '#94a3b8',
+                  }}
+                />
+                <span
+                  className="text-sm truncate"
+                  style={{ color: '#94a3b8', fontSize: '0.875rem' }}
+                >
+                  {formStatusText}
+                </span>
               </div>
-
-              <aside className="xl:border-l xl:border-slate-200/80 xl:pl-6 dark:xl:border-white/10">
-                <section className="space-y-4 xl:sticky xl:top-0">
-                  <div className="flex items-center gap-2 text-slate-900 dark:text-white">
-                    <CheckCircle2 size={18} className="text-sky-500" />
-                    <h4 className={reviewFormSectionTitleClass}>生成前检查</h4>
-                  </div>
-                  <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>班级</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">
-                        {classes.find((item) => item.id === classId)?.name || '未选择'}
-                      </span>
-                    </div>
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>科目</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">{subject || '未选择'}</span>
-                    </div>
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>日期</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">{lessonDate}</span>
-                    </div>
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 pb-3 dark:border-white/10">
-                      <span>材料来源</span>
-                      <span className="text-right font-medium text-slate-900 dark:text-white">
-                        {inputType === 'text' ? '文字笔记' : file?.name || '上传文件'}
-                      </span>
-                    </div>
-                  </div>
-                  <button onClick={handleGenerate} className={`${workspacePrimaryButtonClass} self-start bg-slate-950 px-4 py-3 text-base font-semibold text-white shadow-none hover:bg-slate-800`}>
-                    生成复习文档
-                    <ArrowRight size={20} />
+              <div className="flex items-center gap-3 shrink-0 w-full sm:w-auto">
+                {onCancel && (
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-medium whitespace-nowrap flex-1 sm:flex-initial"
+                    style={{
+                      background: '#f1f5f9',
+                      color: '#64748b',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    取消
                   </button>
-                </section>
-              </aside>
+                )}
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={!canGenerate}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium whitespace-nowrap flex-1 sm:flex-initial"
+                  style={{
+                    background: canGenerate ? '#1e293b' : '#94a3b8',
+                    color: '#ffffff',
+                    borderRadius: '12px',
+                    fontSize: '0.875rem',
+                    opacity: canGenerate ? 1 : 0.6,
+                    cursor: canGenerate ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  生成复习文档
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </motion.div>
         )}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.schemas import NormalizedBrief, ReviewPlanInput
+from review_plan_workflow.source_brief import source_text_hash
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -50,7 +51,22 @@ def _run(input_data: ReviewPlanInput, context: WorkflowContext) -> NormalizedBri
     )
 
 
+def _trace_safe_normalized_brief(brief: NormalizedBrief) -> dict:
+    data = brief.model_dump()
+    materials = list(brief.materials or [])
+    data["materials"] = [
+        {
+            "chars": len(str(item or "")),
+            "source_text_hash": source_text_hash(str(item or "")) if item else "",
+        }
+        for item in materials[:10]
+    ]
+    data["materials_count"] = len(materials)
+    return data
+
+
 intake_normalizer_node: WorkflowNode[ReviewPlanInput, NormalizedBrief] = WorkflowNode(
     name="intake_normalizer",
     run=_run,
+    output_serializer=_trace_safe_normalized_brief,
 )

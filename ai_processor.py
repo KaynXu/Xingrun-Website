@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import wave
 from pathlib import Path
 from class_commentary import (
     build_class_commentary_generation_payload,
@@ -32,6 +33,11 @@ from class_commentary import (
 )
 from config_runtime import get_runtime_config, normalize_chat_provider, normalize_vision_provider
 from lesson_manager import CONSULTATION_FOLLOW_UP_STATUS_OPTIONS
+from review_plan_workflow.transcript_polish import (
+    REVIEW_PLAN_TRANSCRIPT_POLISH_SYSTEM_PROMPT,
+    build_review_plan_transcript_polish_payload,
+    normalize_review_plan_transcript_polish_text,
+)
 
 # ─── 配置加载 ──────────────────────────────────────────────────────────────────
 def _load_config() -> dict:
@@ -389,48 +395,133 @@ def _extract_tencent_flash_transcript(payload: object) -> str:
     return "".join(part for part in parts if part).strip()
 
 
+def _iter_resampled_audio_frames(resampler, frame):
+    frames = resampler.resample(frame)
+    if frames is None:
+        return
+    if isinstance(frames, list):
+        yield from frames
+        return
+    yield frames
+
+
+def _audio_frame_to_pcm_bytes(frame) -> bytes:
+    to_ndarray = getattr(frame, "to_ndarray", None)
+    if callable(to_ndarray):
+        return to_ndarray().tobytes()
+    planes = getattr(frame, "planes", None) or []
+    if not planes:
+        return b""
+    return bytes(planes[0])
+
+
+def _transcode_audio_to_tencent_wav(audio_path: Path) -> Path:
+    try:
+        import av
+    except ImportError as exc:
+        raise RuntimeError("腾讯 ASR 音频转码需要 PyAV，请先安装最新依赖。") from exc
+
+    tmp_file = tempfile.NamedTemporaryFile(
+        prefix=f"{audio_path.stem}_tencent_",
+        suffix=".wav",
+        delete=False,
+    )
+    tmp_path = Path(tmp_file.name)
+    tmp_file.close()
+    bytes_written = 0
+    try:
+        with av.open(str(audio_path)) as container, wave.open(str(tmp_path), "wb") as wav_file:
+            audio_streams = [stream for stream in container.streams if getattr(stream, "type", "") == "audio"]
+            if not audio_streams:
+                raise ValueError("音频文件没有可转码的音轨")
+            resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=16000)
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            for frame in container.decode(audio=0):
+                for resampled_frame in _iter_resampled_audio_frames(resampler, frame):
+                    pcm_bytes = _audio_frame_to_pcm_bytes(resampled_frame)
+                    if pcm_bytes:
+                        wav_file.writeframes(pcm_bytes)
+                        bytes_written += len(pcm_bytes)
+            for resampled_frame in _iter_resampled_audio_frames(resampler, None):
+                pcm_bytes = _audio_frame_to_pcm_bytes(resampled_frame)
+                if pcm_bytes:
+                    wav_file.writeframes(pcm_bytes)
+                    bytes_written += len(pcm_bytes)
+        if bytes_written <= 0:
+            raise ValueError("音频转码后没有可识别声音")
+        return tmp_path
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise RuntimeError(f"腾讯 ASR 音频转码失败：{exc}") from exc
+
+
 def _transcribe_audio_path_with_tencent_flash(audio_path: Path) -> str:
     appid, secret_id, secret_key = _tencent_asr_credentials()
-    if audio_path.stat().st_size > 100 * 1024 * 1024:
-        raise ValueError("腾讯云极速版单个音频不能超过 100MB")
-    now = int(time.time())
-    params = {
-        "engine_type": _tencent_asr_engine_type(),
-        "voice_format": _tencent_voice_format(audio_path),
-        "secretid": secret_id,
-        "timestamp": now,
-        "expired": now + 24 * 60 * 60,
-        "nonce": random.randint(1, 2_147_483_647),
-        "filter_dirty": 0,
-        "filter_modal": 0,
-        "filter_punc": 0,
-        "convert_num_mode": 1,
-        "word_info": 0,
-    }
-    signature = _tencent_flash_asr_signature(appid=appid, secret_key=secret_key, params=params)
-    url = (
-        f"https://{_TENCENT_FLASH_ASR_HOST}{_TENCENT_FLASH_ASR_PATH_TEMPLATE.format(appid=appid)}?"
-        f"{urllib.parse.urlencode(params)}"
-    )
-    request = urllib.request.Request(
-        url,
-        data=audio_path.read_bytes(),
-        headers={
-            "Authorization": signature,
-            "Content-Type": "application/octet-stream",
-        },
-        method="POST",
-    )
+    request_audio_path = _transcode_audio_to_tencent_wav(audio_path)
     try:
+        if request_audio_path.stat().st_size > 100 * 1024 * 1024:
+            raise ValueError("腾讯云极速版单个音频不能超过 100MB")
+        now = int(time.time())
+        params = {
+            "engine_type": _tencent_asr_engine_type(),
+            "voice_format": _tencent_voice_format(request_audio_path),
+            "secretid": secret_id,
+            "timestamp": now,
+            "expired": now + 24 * 60 * 60,
+            "nonce": random.randint(1, 2_147_483_647),
+            "filter_dirty": 0,
+            "filter_modal": 0,
+            "filter_punc": 0,
+            "convert_num_mode": 1,
+            "word_info": 0,
+        }
+        signature = _tencent_flash_asr_signature(appid=appid, secret_key=secret_key, params=params)
+        url = (
+            f"https://{_TENCENT_FLASH_ASR_HOST}{_TENCENT_FLASH_ASR_PATH_TEMPLATE.format(appid=appid)}?"
+            f"{urllib.parse.urlencode(params)}"
+        )
+        request = urllib.request.Request(
+            url,
+            data=request_audio_path.read_bytes(),
+            headers={
+                "Authorization": signature,
+                "Content-Type": "application/octet-stream",
+            },
+            method="POST",
+        )
         with urllib.request.urlopen(request, timeout=180) as response:
             response_payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"腾讯云 ASR 请求失败：HTTP {exc.code} {error_body}") from exc
+    finally:
+        request_audio_path.unlink(missing_ok=True)
     transcript_text = _extract_tencent_flash_transcript(response_payload)
     if not transcript_text:
         raise ValueError("腾讯云 ASR 返回空转写文本")
     return transcript_text
+
+
+def _should_fallback_to_local_asr_after_tencent_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "audio decode failed",
+            "decode failed",
+            "解码",
+            "返回空转写文本",
+            "音频转码失败",
+            "timed out",
+            "timeout",
+            "write operation timed out",
+            "urlopen error",
+            "不能超过 100mb",
+            "超过 100mb",
+        )
+    )
 
 
 WRONG_QUESTION_RECOGNITION_PROMPT = """你是错题识别助手。
@@ -2205,8 +2296,15 @@ def transcribe_audio(audio_path: str, *, include_usage: bool = False):
     provider = _audio_transcription_provider()
     print(f"正在转录音频：{audio_path.name} ...")
     if provider == "tencent":
-        transcription = _transcribe_audio_path_with_tencent_flash(audio_path)
-        usage = _tencent_asr_usage_dict()
+        try:
+            transcription = _transcribe_audio_path_with_tencent_flash(audio_path)
+            usage = _tencent_asr_usage_dict()
+        except Exception as exc:
+            if not _should_fallback_to_local_asr_after_tencent_error(exc):
+                raise
+            print(f"腾讯云 ASR 无法解码音频，切换本地 faster-whisper 兜底：{exc}")
+            transcription = _transcribe_audio_path_locally(str(audio_path))
+            usage = _local_whisper_usage_dict()
     else:
         transcription = _transcribe_audio_path_locally(str(audio_path))
         usage = _local_whisper_usage_dict()
@@ -2309,8 +2407,10 @@ def generate_class_commentary_feedback(
     system_prompt = (
         "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
         "Do not invent facts. Do not include roster students who are not clearly mentioned. "
-        "Use the supplied colleague skill only for voice, structure, and phrasing. "
-        "Return plain text only, with one block per mentioned student."
+        "Treat the supplied colleague skill as the primary working instructions for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
+        "Infer the selected skill's emoji system from its examples, including tokens, density, placement, and meaning; match it when appropriate, and do not force emojis for low-emoji skills. "
+        "Use the transcript and roster as the only source of student facts. "
+        "Return plain text only. Do not flatten every student into one long paragraph."
     )
     response = client.chat.completions.create(
         model=model,
@@ -2318,7 +2418,7 @@ def generate_class_commentary_feedback(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": payload_to_json(payload)},
         ],
-        temperature=0.35,
+        temperature=0.55,
     )
     text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
     if include_usage:
@@ -2365,6 +2465,41 @@ def polish_class_commentary_transcript(
         temperature=0.1,
     )
     text = (response.choices[0].message.content or "").strip()
+    if include_usage:
+        return text, _usage_dict(response, provider=provider, model_fallback=model)
+    return text
+
+
+def polish_review_plan_transcript(
+    *,
+    raw_transcript_text: str,
+    subject: str = "",
+    grade: str = "",
+    topic: str = "",
+    teacher_requirements: str = "",
+    provider: str = "",
+    model: str = "",
+    include_usage: bool = False,
+):
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_client(provider=provider)
+    payload = build_review_plan_transcript_polish_payload(
+        raw_transcript_text=raw_transcript_text,
+        subject=subject,
+        grade=grade,
+        topic=topic,
+        teacher_requirements=teacher_requirements,
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": REVIEW_PLAN_TRANSCRIPT_POLISH_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        temperature=0.1,
+    )
+    text = normalize_review_plan_transcript_polish_text(response.choices[0].message.content or "")
     if include_usage:
         return text, _usage_dict(response, provider=provider, model_fallback=model)
     return text

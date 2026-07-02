@@ -157,9 +157,12 @@ from lesson_manager import (
     get_registration_request,
     get_user_by_id,
     get_user_class_ids,
+    get_latest_review_plan_run_for_version,
     init_db,
     list_all_users,
     list_class_history,
+    list_class_commentary_tasks_for_classes,
+    list_class_commentary_tasks_for_organization,
     list_class_teacher_bindings,
     list_classes,
     list_classes_for_actor,
@@ -214,6 +217,7 @@ from lesson_manager import (
     mark_class_commentary_task_failed,
     mark_class_commentary_task_transcribing,
     mark_class_commentary_raw_transcription_succeeded,
+    mark_class_commentary_transcription_succeeded,
     mark_class_commentary_transcript_polish_failed,
     mark_class_commentary_transcript_polish_succeeded,
     mark_review_plan_version_transcription_succeeded,
@@ -261,12 +265,16 @@ from lesson_manager import (
     change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_review_plan_version_source_artifact,
     update_user_avatar_preferences,
 )
-from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, transcribe_audio
+from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import list_colleague_skills, load_colleague_skill, payload_to_json, sanitize_class_commentary_roster
 import smart_wrong_questions
 import master_data
+from review_plan_workflow.generation_options import normalize_generation_options
+from review_plan_workflow.source_brief import build_deterministic_source_brief
+from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
     CreditBalanceError,
@@ -325,8 +333,8 @@ def _audio_transcription_model_name() -> str:
     return "faster-whisper"
 
 
-def _review_plan_chat_model_name() -> str:
-    provider = _review_plan_ai_provider_name()
+def _review_plan_chat_model_name(provider: str = "") -> str:
+    provider = provider or _review_plan_ai_provider_name()
     return resolve_review_plan_model(get_config(), provider=provider)
 
 
@@ -845,6 +853,7 @@ def _get_or_create_compat_review_plan_version_for_job(
     audio_path: str = "",
     audio_request_key: str | None = None,
     same_lesson_materials: list[str] | None = None,
+    generation_options: object | None = None,
 ) -> dict | None:
     active_version = lesson.get("active_version")
     if isinstance(active_version, dict) and active_version.get("id"):
@@ -863,14 +872,15 @@ def _get_or_create_compat_review_plan_version_for_job(
         chat_provider=chat_provider or str(lesson.get("review_chat_provider") or ""),
         chat_model=chat_model or str(lesson.get("review_chat_model") or ""),
         same_lesson_materials=same_lesson_materials or lesson.get("review_same_lesson_materials") or [],
+        generation_options=generation_options or lesson.get("review_generation_options"),
     )
 
 
-def _review_plan_quality_failure_message(lesson_id: int) -> str:
+def _review_plan_quality_failure_message(version_id: int) -> str:
     try:
-        latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
+        latest_run = get_latest_review_plan_run_for_version(version_id)
     except Exception:
-        logger.exception("Failed to read review plan quality run for lesson %s", lesson_id)
+        logger.exception("Failed to read review plan quality run for version %s", version_id)
         return ""
     if not latest_run or str(latest_run.get("status") or "") != "succeeded":
         return ""
@@ -883,19 +893,51 @@ def _review_plan_quality_failure_message(lesson_id: int) -> str:
     if not (must_revise or failed):
         return ""
 
-    raw_score = quality.get("score")
-    score_text = f"（得分 {raw_score}）" if isinstance(raw_score, int) else ""
     first_issue = ""
     issues = quality.get("issues")
     if isinstance(issues, list):
         for issue in issues:
             if not isinstance(issue, dict):
                 continue
+            category = str(issue.get("category") or "").strip().lower()
             description = str(issue.get("description") or "").strip()
-            if description:
-                first_issue = f"：{description.rstrip('。.')}"
+            readable = _review_plan_readable_quality_issue(category, description)
+            if readable:
+                first_issue = f"{readable.rstrip('。.')}。"
                 break
-    return f"复习计划质量门禁未通过{score_text}{first_issue}。请补充课程主题或重新生成。"
+    reason_text = f"原因：{first_issue}" if first_issue else ""
+    return (
+        "这次生成的复习计划不够完整，系统已先拦截，避免生成半成品文档。"
+        f"{reason_text}"
+        "请点击“重新生成”；如果再次失败，请补充课程主题、重点题型或本次要求。"
+    )
+
+
+def _review_plan_readable_quality_issue(category: str, description: str) -> str:
+    text = description.strip()
+    lowered = text.lower()
+    if category == "schema" or "schema" in lowered or "review plan must include review days" in lowered:
+        return "没有生成出完整的每日复习安排"
+    if "复习日没有严格匹配" in text:
+        return "生成结果没有按本次选择的复习日期安排"
+    if "lesson_info.topic" in text or "空壳标题" in text:
+        return "生成结果缺少明确的课程主题"
+    if "全课覆盖清单" in text:
+        return "生成结果缺少清晰的复习范围"
+    if "唯一可打印题目不足" in text:
+        return text.replace("唯一可打印题目", "可直接给学生练习的题目").replace("PDF", "文档")
+    if not text:
+        return ""
+    for technical in (
+        "schema",
+        "Schema",
+        "Value error,",
+        "lesson_info.topic",
+        "`",
+        "PDF",
+    ):
+        text = text.replace(technical, "文档" if technical == "PDF" else "")
+    return " ".join(text.split())
 
 
 def _run_review_plan_generation_job(
@@ -910,6 +952,7 @@ def _run_review_plan_generation_job(
     audio_path: str = "",
     audio_request_key: str | None = None,
     same_lesson_materials: list[str] | None = None,
+    generation_options: object | None = None,
 ) -> None:
     try:
         lesson = get_lesson(lesson_id)
@@ -929,6 +972,7 @@ def _run_review_plan_generation_job(
                 audio_path=audio_path,
                 audio_request_key=audio_request_key,
                 same_lesson_materials=same_lesson_materials,
+                generation_options=generation_options,
             )
             version_id = int((version or {}).get("id") or 0)
         if not version:
@@ -938,6 +982,10 @@ def _run_review_plan_generation_job(
                 lesson_id,
             )
             return
+        generation_options = normalize_generation_options(
+            generation_options or version.get("generation_options"),
+            source=str((version.get("generation_options") or {}).get("source") or "create"),
+        )
 
         record_status = str(version.get("status") or "")
         if record_status == "transcribing":
@@ -946,24 +994,75 @@ def _run_review_plan_generation_job(
                 fail_review_plan_version(version_id, "音频转录失败，请重新上传")
                 return
             try:
-                from ai_processor import transcribe_audio
+                from ai_processor import polish_review_plan_transcript, transcribe_audio
                 transcription = _run_ai_feature_with_charge(
                     user=user,
                     feature_key="audio_transcription",
                     source_record_type="lesson_upload",
                     source_record_id=f"upload:{lesson_id}",
                     producer=lambda: _call_ai_helper_with_usage(transcribe_audio, str(audio_file_path)),
-                    provider="local",
-                    model="faster-whisper-base",
+                    provider=_audio_transcription_provider_name(),
+                    model=_audio_transcription_model_name(),
                     request_key=audio_request_key or str(version.get("audio_request_key") or "") or request_key,
                 )
                 raw_transcription = str(transcription or "").strip()
                 if not raw_transcription:
                     fail_review_plan_version(version_id, "音频转录失败，请稍后重试")
                     return
+                raw_source_text_hash = review_plan_transcript_source_text_hash(raw_transcription)
+                source_brief_snapshot = version.get("source_brief") or {}
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=raw_transcription,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
+                )
+                transcript_for_generation = raw_transcription
+                try:
+                    polish_provider = _review_plan_ai_provider_name()
+                    polish_model = _review_plan_chat_model_name(polish_provider)
+                    polished_text = _run_ai_feature_with_charge(
+                        user=user,
+                        feature_key="review_plan_transcript_polish",
+                        source_record_type="review_plan_transcript_polish",
+                        source_record_id=version_id or lesson_id,
+                        producer=lambda: _call_ai_helper_with_usage(
+                            polish_review_plan_transcript,
+                            raw_transcript_text=raw_transcription,
+                            subject=str(lesson.get("subject") or ""),
+                            grade=str(lesson.get("grade") or ""),
+                            topic=str(lesson.get("topic") or ""),
+                            teacher_requirements=str((generation_options or {}).get("user_requirements") or ""),
+                            provider=polish_provider,
+                            model=polish_model,
+                        ),
+                        provider=polish_provider,
+                        model=polish_model,
+                        request_key=request_key,
+                        claim_request_identity=False,
+                    )
+                    polished_text = str(polished_text or "").strip()
+                    if not polished_text:
+                        raise ValueError("review plan transcript polish returned empty text")
+                    transcript_for_generation = polished_text
+                except Exception as polish_exc:
+                    logger.warning(
+                        "Review plan transcript polish failed for lesson %s version %s: %s",
+                        lesson_id,
+                        version_id,
+                        polish_exc,
+                    )
                 merged_summary = _merge_review_plan_materials(
-                    raw_transcription,
+                    transcript_for_generation,
                     same_lesson_materials or version.get("same_lesson_materials") or [],
+                )
+                update_review_plan_version_source_artifact(
+                    version_id,
+                    source_text=raw_transcription,
+                    cleaned_source_text=merged_summary,
+                    source_text_hash=raw_source_text_hash,
+                    source_brief=source_brief_snapshot,
                 )
                 mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)
@@ -1011,6 +1110,27 @@ def _run_review_plan_generation_job(
         topic = str(lesson.get("topic") or "")
         weak_points = str(lesson.get("weak_points") or "")
         raw_text = str(lesson.get("summary") or "")
+        version_cleaned_source_text = str((version or {}).get("cleaned_source_text") or "").strip()
+        version_source_text = str((version or {}).get("source_text") or "").strip()
+        source_text_for_generation = version_cleaned_source_text or version_source_text or raw_text
+        source_snapshot_text = version_source_text or source_text_for_generation
+
+        if version_id and not str((version or {}).get("source_text_hash") or "").strip():
+            source_brief = build_deterministic_source_brief(
+                raw_text=source_text_for_generation,
+                subject=subject,
+                topic=topic,
+                weak_points=weak_points,
+                user_requirements=str((generation_options or {}).get("user_requirements") or ""),
+            )
+            update_review_plan_version_source_artifact(
+                version_id,
+                source_text=source_snapshot_text,
+                cleaned_source_text=source_brief.cleaned_text,
+                source_text_hash=source_brief.source_text_hash,
+                source_brief=source_brief.model_dump(),
+            )
+            version = get_review_plan_version_for_lesson(lesson_id, version_id)
 
         from review_plan_workflow.service import generate_single_lesson_review_plan
         try:
@@ -1021,15 +1141,17 @@ def _run_review_plan_generation_job(
                 source_record_id=lesson_id,
                 producer=lambda: _call_ai_helper_with_usage(
                     generate_single_lesson_review_plan,
-                    summary_text=raw_text,
+                    summary_text=source_text_for_generation,
                     subject=subject,
                     grade=grade,
                     topic=topic,
                     weak_points=weak_points,
                     lesson_date=lesson_date,
+                    generation_options=generation_options,
                     provider=chat_provider,
                     model=chat_model,
                     lesson_id=lesson_id,
+                    version_id=version_id,
                     organization_id=int(user["organization_id"]),
                 ),
                 provider=chat_provider,
@@ -1062,7 +1184,7 @@ def _run_review_plan_generation_job(
         if isinstance(plan, tuple) and len(plan) == 2 and isinstance(plan[1], dict):
             plan = plan[0]
 
-        quality_error = _review_plan_quality_failure_message(lesson_id)
+        quality_error = _review_plan_quality_failure_message(version_id)
         if quality_error:
             logger.warning("Review plan quality gate blocked lesson %s: %s", lesson_id, quality_error)
             try:
@@ -1217,6 +1339,7 @@ def _recover_interrupted_review_plan_jobs() -> int:
                 audio_path=audio_path,
                 audio_request_key=str(version.get("audio_request_key") or ""),
                 same_lesson_materials=version.get("same_lesson_materials") or [],
+                generation_options=version.get("generation_options"),
             )
             recovered_count += 1
     return recovered_count
@@ -2638,6 +2761,7 @@ def _serialize_review_plan_version_for_response(lesson_id: int, version: object)
         return None
     serialized = dict(version)
     serialized.pop("plan_json", None)
+    serialized.pop("generation_options_json", None)
     pdf_path = str(serialized.get("pdf_path") or "")
     is_ready = str(serialized.get("status") or "") == "ready"
     pdf_exists = bool(pdf_path and Path(pdf_path).exists())
@@ -3323,7 +3447,7 @@ def _dashboard_build_platform_payload(user: dict) -> dict:
     stats = [
         {"label": "机构数", "value": str(len(organizations)), "note": "当前在库机构"},
         {"label": "待审批", "value": str(total_pending_approvals), "note": "机构申请和成员申请"},
-        {"label": "待反馈", "value": str(sum(pending_feedback_by_org.values())), "note": "课堂反馈任务"},
+        {"label": "待咨询", "value": str(sum(pending_consultations_by_org.values())), "note": "当前未结束咨询"},
         {"label": "低余额机构", "value": str(len(low_credit_by_org)), "note": "余额 20 及以下"},
     ]
 
@@ -7732,6 +7856,20 @@ def api_lesson_regenerate(lesson_id):
     raw_text = str(lesson.get("summary") or "").strip()
     if not raw_text:
         return jsonify({"error": "这份记录缺少课堂内容，无法重新生成"}), 400
+    current_version = get_current_review_plan_version(lesson_id)
+    current_source_text = str((current_version or {}).get("source_text") or "").strip()
+    cleaned_source_text = str((current_version or {}).get("cleaned_source_text") or "").strip()
+    source_text_hash_value = str((current_version or {}).get("source_text_hash") or "").strip()
+    source_brief = (current_version or {}).get("source_brief") or {}
+    has_source_artifact = bool(current_source_text or cleaned_source_text or source_text_hash_value or source_brief)
+    source_text = current_source_text or raw_text
+    generation_options, generation_options_error = _extract_generation_options_or_error(
+        request.json if request.is_json else (request.form or {}),
+        source="regenerate",
+        fallback=(current_version or {}).get("generation_options"),
+    )
+    if generation_options_error:
+        return generation_options_error
 
     organization_id = int(user["organization_id"])
     request_key = _current_ai_request_key()
@@ -7753,7 +7891,6 @@ def api_lesson_regenerate(lesson_id):
             organization_id=organization_id,
             feature_key="lesson_plan_generate",
         )
-        current_version = get_current_review_plan_version(lesson_id)
         version = create_review_plan_version(
             lesson_id=lesson_id,
             status="generating",
@@ -7763,7 +7900,18 @@ def api_lesson_regenerate(lesson_id):
             chat_provider=chat_provider,
             chat_model=chat_model,
             same_lesson_materials=(current_version or {}).get("same_lesson_materials") or [],
+            generation_options=generation_options,
+            generation_options_source="regenerate",
         )
+        if has_source_artifact:
+            update_review_plan_version_source_artifact(
+                int(version["id"]),
+                source_text=source_text,
+                cleaned_source_text=cleaned_source_text,
+                source_text_hash=source_text_hash_value,
+                source_brief=source_brief,
+            )
+            version = get_review_plan_version_for_lesson(lesson_id, int(version["id"])) or version
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
             version_id=int(version["id"]),
@@ -7776,6 +7924,7 @@ def api_lesson_regenerate(lesson_id):
             request_key=request_key,
             request_id=str(version.get("request_id") or request_id),
             same_lesson_materials=version.get("same_lesson_materials") or [],
+            generation_options=version.get("generation_options"),
         )
     except DuplicateAiRequestError as exc:
         return jsonify({"error": str(exc)}), 409
@@ -7813,6 +7962,56 @@ def _extract_same_lesson_materials(data) -> list[str]:
             if text:
                 materials.append(text)
     return materials
+
+
+def _extract_generation_options_payload(data) -> object | None:
+    if hasattr(data, "get") and data.get("generation_options") not in (None, ""):
+        return data.get("generation_options")
+    if not isinstance(data, dict) and not hasattr(data, "get"):
+        return None
+
+    payload: dict[str, object] = {}
+    for key in ("schedule_mode", "daily_count", "user_requirements"):
+        value = data.get(key)
+        if value not in (None, ""):
+            payload[key] = value
+    if hasattr(data, "getlist"):
+        values = [value for value in data.getlist("review_days") if value not in (None, "")]
+        if values:
+            payload["review_days"] = values if len(values) > 1 else values[0]
+    else:
+        value = data.get("review_days") if isinstance(data, dict) else None
+        if value not in (None, ""):
+            payload["review_days"] = value
+    return payload or None
+
+
+def _extract_generation_options_or_error(data, *, source: str, fallback: object | None = None):
+    payload = _extract_generation_options_payload(data)
+    try:
+        return normalize_generation_options(payload if payload is not None else fallback, source=source), None
+    except ValueError as exc:
+        return None, (jsonify({"error": f"生成设置无效：{_readable_generation_options_error(str(exc))}"}), 400)
+
+
+def _readable_generation_options_error(message: str) -> str:
+    if "review_days must not be empty" in message:
+        return "请至少填写一个复习日期点，例如 1,3,7"
+    if "review_days must contain positive integers" in message:
+        return "复习日期点只能填写 1 到 30 之间的正整数"
+    if "review_days can contain at most" in message:
+        return "自定义复习日期最多填写 30 个"
+    if "review_days must be a list or comma string" in message:
+        return "复习日期点请用逗号分隔，例如 1,3,7"
+    if "daily_count must be a positive integer" in message:
+        return "连续生成天数请填写 1 到 30 之间的正整数"
+    if "daily_count must be at most" in message:
+        return "连续生成天数最多 30 天"
+    if "schedule_mode must be" in message:
+        return "请选择有效的生成节奏"
+    if "generation_options must be valid JSON" in message:
+        return "生成设置格式不正确，请刷新页面后重试"
+    return message or "请检查生成设置"
 
 
 def _merge_review_plan_materials(primary_text: str, same_lesson_materials: list[str]) -> str:
@@ -7855,6 +8054,9 @@ def api_lesson_create():
     topic       = data.get("topic", "").strip()
     weak_points = data.get("weak_points", "").strip()
     same_lesson_materials = _extract_same_lesson_materials(data)
+    generation_options, generation_options_error = _extract_generation_options_or_error(data, source="create")
+    if generation_options_error:
+        return generation_options_error
     
     input_type = data.get("input_type", "text")
     raw_text = ""
@@ -7971,6 +8173,8 @@ def api_lesson_create():
             chat_provider=chat_provider,
             chat_model=chat_model,
             same_lesson_materials=same_lesson_materials,
+            generation_options=generation_options,
+            generation_options_source="create",
         )
         _start_review_plan_generation_thread(
             lesson_id=lesson_id,
@@ -7986,6 +8190,7 @@ def api_lesson_create():
             audio_path=audio_path,
             audio_request_key=audio_request_key,
             same_lesson_materials=same_lesson_materials,
+            generation_options=generation_options,
         )
     except Exception:
         if lesson_id:
@@ -8049,6 +8254,51 @@ def api_class_commentary_tasks_create():
         str(task.get("transcription_request_key") or ""),
     )
     return jsonify(_serialize_class_commentary_task_for_response(task)), 202
+
+
+@app.route("/api/class-commentary/tasks/text", methods=["POST"])
+def api_class_commentary_tasks_create_text():
+    user, error = _require_auth()
+    if error:
+        return error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    try:
+        class_id = int((data or {}).get("class_id") or 0)
+    except (TypeError, ValueError):
+        class_id = 0
+    if class_id <= 0:
+        return jsonify({"error": "class_id is required"}), 400
+    cls, class_error = _get_accessible_class_or_error(user, class_id)
+    if class_error:
+        return class_error
+    confirmed_transcript_text = str((data or {}).get("confirmed_transcript_text") or "").strip()
+    if not confirmed_transcript_text:
+        return jsonify({"error": "confirmed_transcript_text is required"}), 400
+    task = create_class_commentary_task(
+        organization_id=int(user["organization_id"]),
+        class_id=int(cls["id"]),
+        teacher_user_id=int(user["id"]),
+        audio_path="",
+        audio_filename="手动输入",
+        transcription_request_key="",
+    )
+    task = mark_class_commentary_transcription_succeeded(int(task["id"]), confirmed_transcript_text)
+    return jsonify(_serialize_class_commentary_task_for_response(task)), 201
+
+
+@app.route("/api/class-commentary/tasks", methods=["GET"])
+def api_class_commentary_tasks_list():
+    user, error = _require_auth()
+    if error:
+        return error
+    if user.get("role") == "member":
+        tasks = list_class_commentary_tasks_for_classes(get_user_class_ids(int(user["id"])), limit=30)
+    else:
+        tasks = list_class_commentary_tasks_for_organization(int(user["organization_id"]), limit=30)
+    visible_tasks = [_serialize_class_commentary_task_for_response(task) for task in tasks]
+    return jsonify({"tasks": visible_tasks})
 
 
 @app.route("/api/class-commentary/tasks/<int:task_id>", methods=["GET"])

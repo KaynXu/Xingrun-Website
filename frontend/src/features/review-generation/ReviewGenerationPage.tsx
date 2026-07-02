@@ -24,6 +24,14 @@ import {
   workspaceSectionTitleClass,
 } from '../../workspaceShared';
 import { ReviewPlanDetailView } from './ReviewPlanDetailView';
+import { ReviewPlanRegenerateDialog } from './ReviewPlanRegenerateDialog';
+import {
+  DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  buildGenerationOptionsPayload,
+  formValueFromGenerationOptions,
+  getGenerationOptionsValidationError,
+  type ReviewPlanGenerationOptionsFormValue,
+} from './reviewPlanGenerationOptions';
 
 type ReviewPlanCreateResult = {
   id: number;
@@ -33,7 +41,7 @@ type ReviewPlanCreateResult = {
 
 type ReviewGenerationPageProps = {
   onSuccess: () => void;
-  renderLessonInput: (onSuccess: (result: ReviewPlanCreateResult) => void) => ReactNode;
+  renderLessonInput: (onSuccess: (result: ReviewPlanCreateResult) => void, onCancel: () => void) => ReactNode;
   taskControls: ReviewGenerationTaskControls;
 };
 
@@ -200,13 +208,13 @@ function getLessonStatusMeta(
 export function ReviewGenerationTaskDock({
   lessons,
   notice,
-  onDismissNotice,
+  onDismiss,
   progressNow,
   taskStartedAtById,
 }: {
   lessons: ReviewLessonRecord[];
   notice: ReviewGenerationFloatingNotice | null;
-  onDismissNotice: () => void;
+  onDismiss: () => void;
   progressNow: number;
   taskStartedAtById: Record<number, number>;
 }) {
@@ -217,7 +225,11 @@ export function ReviewGenerationTaskDock({
   }).slice(0, 4);
   const activeCount = lessons.filter(isReviewLessonPending).length;
 
-  if (typeof document === 'undefined' || (!notice && dockLessons.length === 0)) {
+  if (!notice && dockLessons.length === 0) {
+    return null;
+  }
+
+  if (typeof document === 'undefined') {
     return null;
   }
 
@@ -236,19 +248,18 @@ export function ReviewGenerationTaskDock({
           <div>
             <p className="text-sm font-semibold">复习计划生成</p>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              {activeCount > 0 ? `${activeCount} 个任务进行中，可先去处理其他页面` : '任务状态会在这里更新'}
+              {activeCount > 0 ? `${activeCount} 个任务进行中` : '任务状态会在这里更新'}
             </p>
           </div>
-          {notice && (
-            <button
-              type="button"
-              onClick={onDismissNotice}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200"
-              aria-label="关闭提示"
-            >
-              <X size={15} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-200"
+            aria-label="关闭生成状态浮层"
+            title="关闭"
+          >
+            <X size={15} />
+          </button>
         </div>
 
         {notice && (
@@ -314,6 +325,10 @@ function ReviewDocumentHistory({
   const [historyPage, setHistoryPage] = useState(1);
   const [regeneratingLessonIds, setRegeneratingLessonIds] = useState<Set<number>>(() => new Set());
   const [selectedDetailLessonId, setSelectedDetailLessonId] = useState<number | null>(null);
+  const [regenerateTarget, setRegenerateTarget] = useState<ReviewLessonRecord | null>(null);
+  const [regenerateOptions, setRegenerateOptions] = useState<ReviewPlanGenerationOptionsFormValue>({
+    ...DEFAULT_REVIEW_PLAN_GENERATION_OPTIONS,
+  });
 
   const load = useCallback((quiet = false) => {
     if (!quiet) {
@@ -377,11 +392,24 @@ function ReviewDocumentHistory({
     void load();
   };
 
-  const handleRegenerate = async (lesson: ReviewLessonRecord) => {
+  const openRegenerateDialog = (lesson: ReviewLessonRecord) => {
     if (isReviewLessonPending(lesson) || regeneratingLessonIds.has(lesson.id)) {
       return;
     }
-    if (!window.confirm(`确定重新生成《${getLessonTitle(lesson)}》吗？这会重新消耗一次复习计划生成额度。`)) {
+    setRegenerateTarget(lesson);
+    setRegenerateOptions(formValueFromGenerationOptions(lesson.review_generation_options));
+  };
+
+  const handleRegenerate = async (
+    lesson: ReviewLessonRecord,
+    options: ReviewPlanGenerationOptionsFormValue,
+  ) => {
+    if (isReviewLessonPending(lesson) || regeneratingLessonIds.has(lesson.id)) {
+      return;
+    }
+    const generationOptionsError = getGenerationOptionsValidationError(options);
+    if (generationOptionsError) {
+      onFloatingNotice({ type: 'error', text: generationOptionsError });
       return;
     }
 
@@ -390,6 +418,9 @@ function ReviewDocumentHistory({
     try {
       const payload = await apiFetch<ReviewPlanCreateResult>(`/api/review-plans/${lesson.id}/regenerate`, {
         method: 'POST',
+        body: JSON.stringify({
+          generation_options: buildGenerationOptionsPayload(options),
+        }),
       });
       const nextStatus = payload.status || 'generating';
       onTaskStarted(lesson.id, startedAtMs);
@@ -407,6 +438,7 @@ function ReviewDocumentHistory({
           : item
       )));
       onFloatingNotice({ type: 'info', text: `《${getLessonTitle(lesson)}》已开始重新生成。` });
+      setRegenerateTarget(null);
       void load(true);
     } catch (error) {
       onFloatingNotice({
@@ -429,7 +461,7 @@ function ReviewDocumentHistory({
         lessonId={selectedDetailLessonId}
         onBack={() => setSelectedDetailLessonId(null)}
         onChanged={() => void load(true)}
-        onRegenerate={() => selectedLesson ? handleRegenerate(selectedLesson) : Promise.resolve()}
+        onRegenerate={(options) => selectedLesson ? handleRegenerate(selectedLesson, options) : Promise.resolve()}
       />
     );
   }
@@ -553,7 +585,7 @@ function ReviewDocumentHistory({
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleRegenerate(lesson)}
+                        onClick={() => openRegenerateDialog(lesson)}
                         disabled={status.state === 'pending' || regeneratingLessonIds.has(lesson.id)}
                         className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-slate-500 transition-colors hover:border-sky-200 hover:text-sky-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-sky-500/10 dark:hover:text-sky-200"
                         title="重新生成"
@@ -601,6 +633,16 @@ function ReviewDocumentHistory({
           </div>
         </div>
       )}
+      {regenerateTarget && (
+        <ReviewPlanRegenerateDialog
+          title={getLessonTitle(regenerateTarget)}
+          value={regenerateOptions}
+          onChange={setRegenerateOptions}
+          onCancel={() => setRegenerateTarget(null)}
+          onSubmit={() => void handleRegenerate(regenerateTarget, regenerateOptions)}
+          submitting={regeneratingLessonIds.has(regenerateTarget.id)}
+        />
+      )}
     </div>
   );
 }
@@ -635,10 +677,10 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControl
     setComposerOpen(false);
     setHighlightedLessonId(result.id);
     if (result.duplicate) {
-      taskControls.onFloatingNotice({ type: 'info', text: `这份录音已处理过，已复用已有复习文档 #${result.id}。` });
+      taskControls.onFloatingNotice({ type: 'info', text: `已复用文档 #${result.id}` });
     } else {
       taskControls.onTaskStarted(result.id, Date.now());
-      taskControls.onFloatingNotice({ type: 'info', text: '复习计划已开始生成，可先去处理其他页面。' });
+      taskControls.onFloatingNotice({ type: 'info', text: '已开始生成' });
     }
     setHistoryRefreshToken((current) => current + 1);
     onSuccess();
@@ -677,24 +719,69 @@ export function ReviewGenerationPage({ onSuccess, renderLessonInput, taskControl
       />
 
       {composerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm sm:p-6">
-          <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-[#ffffff] shadow-none">
-            <div className="flex items-center justify-between border-b border-slate-200/70 bg-[#ffffff] px-5 py-4 sm:px-6">
-              <h3 className="text-xl font-semibold text-slate-900">生成复习文档</h3>
-              <button
-                type="button"
-                onClick={() => setComposerOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                aria-label="关闭"
+        <>
+          {/* Backdrop with gradient */}
+          <div
+            className="fixed inset-0 z-[10]"
+            style={{
+              background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #f8fafc 100%)',
+            }}
+          />
+          {/* Dim overlay */}
+          <div
+            className="fixed inset-0 z-[15]"
+            style={{
+              background: 'rgba(15, 23, 42, 0.45)',
+            }}
+          />
+          {/* Modal container */}
+          <div className="fixed inset-0 z-[20] flex items-center justify-center p-4 sm:p-6">
+            <div
+              className="relative flex w-full max-w-[720px] max-h-[85vh] flex-col overflow-hidden"
+              style={{
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.1)',
+              }}
+            >
+              {/* Header */}
+              <div
+                className="flex shrink-0 items-center justify-between px-6 py-5"
+                style={{ borderBottom: '1px solid #e2e8f0' }}
               >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="overflow-y-auto bg-[#ffffff] px-5 py-5 sm:px-6 sm:py-6">
-              {renderLessonInput(handleFormSuccess)}
+                <h1 className="text-lg font-semibold truncate" style={{ color: '#0f172a', fontSize: '1.125rem' }}>
+                  新建复习文档
+                </h1>
+                <button
+                  type="button"
+                  onClick={() => setComposerOpen(false)}
+                  className="inline-flex shrink-0 items-center justify-center"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    color: '#94a3b8',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                  onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                  aria-label="关闭"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+                {renderLessonInput(handleFormSuccess, () => setComposerOpen(false))}
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

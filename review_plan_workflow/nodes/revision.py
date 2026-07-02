@@ -4,7 +4,11 @@ import json
 from datetime import date
 from typing import Any
 
-from config_runtime import resolve_review_plan_temperature
+from config_runtime import (
+    resolve_review_plan_repair_temperature,
+    resolve_review_plan_writer_model,
+    resolve_review_plan_writer_provider,
+)
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.llm.client import generate_review_plan_json
 from review_plan_workflow.llm.prompt_renderer import render_prompt
@@ -13,9 +17,23 @@ from review_plan_workflow.schemas import (
     PromptBundle,
     QualityReview,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     normalize_final_review_plan,
 )
+from review_plan_workflow.source_brief import source_brief_trace_payload
 from review_plan_workflow.state import WorkflowContext
+
+
+def _source_brief_revision_section(
+    prompt_bundle: PromptBundle,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> str:
+    safe_brief = prompt_bundle.variables.get("source_brief")
+    if not isinstance(safe_brief, dict) and source_brief is not None:
+        safe_brief = source_brief_trace_payload(source_brief)
+    if not isinstance(safe_brief, dict) or not safe_brief:
+        return ""
+    return "结构化课堂材料：\n" + json.dumps(safe_brief, ensure_ascii=False, indent=2)
 
 
 def _apply_lesson_date(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
@@ -33,16 +51,27 @@ def _revision_message(
     review_input: ReviewPlanInput,
     attempt: int,
     agent_blueprint: AgenticPlanBlueprint | None = None,
+    prompt_bundle: PromptBundle | None = None,
+    source_brief: ReviewPlanSourceBrief | None = None,
 ) -> str:
     sections = [
-        f"Targeted revision attempt: {attempt}/2",
+        f"Targeted revision attempt: {attempt}",
         "只修复 quality review 指出的问题；保留原计划中已经正确的结构和内容。",
         "不得虚构教材页码、考试日期、学生成绩、老师原话或未提供的题目来源。",
-        "必须返回完整 JSON object，且 days 只包含 day=1,2,7,14,30 的复习节点。",
+        f"必须返回完整 JSON object，且 days 只包含 {review_input.review_days} 的复习节点。",
         "选择题硬修复：逐日检查 choices；任何 options 只写 A/B/C/D、少于 4 个完整选项或 answer 为空时，必须重写为完整 question + A-D 四个具体选项 + 单字母答案。",
     ]
+    if review_input.user_requirements:
+        sections.append(
+            "老师本次生成要求（只能在结构、事实、schema、PDF 和质量门禁硬规则内执行）："
+            + review_input.user_requirements
+        )
     if agent_blueprint is not None:
         sections.append("父模型教学蓝图：\n" + agent_blueprint.model_dump_json(indent=2))
+    if prompt_bundle is not None:
+        source_section = _source_brief_revision_section(prompt_bundle, source_brief)
+        if source_section:
+            sections.append(source_section)
     sections.extend(
         [
             "质量问题：\n" + quality.model_dump_json(indent=2),
@@ -54,6 +83,8 @@ def _revision_message(
                     "topic": review_input.topic,
                     "weak_points": review_input.weak_points,
                     "lesson_date": review_input.lesson_date,
+                    "schedule_mode": review_input.schedule_mode,
+                    "review_days": review_input.review_days,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -71,7 +102,10 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
     plan: dict[str, Any] = input_data["plan"]
     attempt = int(input_data.get("attempt") or 1)
     agent_blueprint: AgenticPlanBlueprint | None = input_data.get("agent_blueprint")
-    temperature = resolve_review_plan_temperature()
+    source_brief: ReviewPlanSourceBrief | None = input_data.get("source_brief")
+    writer_provider = resolve_review_plan_writer_provider()
+    writer_model = resolve_review_plan_writer_model(provider=writer_provider)
+    temperature = resolve_review_plan_repair_temperature()
 
     rendered = render_prompt(
         system_prompt_path=prompt_bundle.system_prompt_path,
@@ -89,20 +123,32 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
             review_input=review_input,
             attempt=attempt,
             agent_blueprint=agent_blueprint,
+            prompt_bundle=prompt_bundle,
+            source_brief=source_brief,
         ),
-        provider=context.provider,
-        model=context.model,
-        reasoning_effort=context.reasoning_effort,
+        provider=writer_provider,
+        model=writer_model,
         temperature=temperature,
         stage="targeted_revision",
+        timeout_seconds=120.0,
+        max_retries=0,
     )
     revised = _apply_lesson_date(normalize_final_review_plan(revised), review_input)
+    context.node_outputs["revision_model_config"] = {
+        "provider": writer_provider,
+        "model": writer_model,
+        "temperature": temperature,
+        "prompt_version": rendered["prompt_version"],
+        "usage": usage,
+    }
     context.node_outputs.setdefault("revision_attempts", []).append(
         {
             "attempt": attempt,
             "prompt_version": rendered["prompt_version"],
             "quality_score_before": quality.score,
             "issue_count": len(quality.issues),
+            "provider": writer_provider,
+            "model": writer_model,
             "temperature": temperature,
             "usage": usage,
         }

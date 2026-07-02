@@ -1,3 +1,4 @@
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from review_plan_workflow.evals.runner import (
     FIXTURE_ROOT,
     INTERNATIONAL_COURSE_TERMS,
     evaluate_plan_against_fixture,
+    evaluate_fixture_assertions,
     iter_fixture_paths,
     load_fixture,
     run_workflow_eval,
@@ -19,7 +21,27 @@ from review_plan_workflow.evals.runner import (
     validate_fixture_definition,
     workflow_kwargs_from_fixture,
 )
-from tests.review_plan_test_utils import valid_single_lesson_plan
+from tests.review_plan_test_utils import (
+    dynamic_geometry_source_brief_plan,
+    text_only_low_density_review_plan,
+    valid_single_lesson_plan,
+)
+
+
+def _run_fixture_assertions(plan: dict, fixture: dict) -> None:
+    results = evaluate_fixture_assertions(plan, fixture)
+    failures = [result for result in results if not result["passed"]]
+    if failures:
+        rendered = "; ".join(f"{result['name']} failed: {result.get('error', '')}" for result in failures)
+        raise AssertionError(rendered)
+
+
+def _only_assertion(fixture: dict, name: str) -> dict:
+    assertions = [assertion for assertion in fixture.get("assertions") or [] if assertion.get("name") == name]
+    assert assertions, f"missing fixture assertion: {name}"
+    return {
+        "assertions": assertions
+    }
 
 
 class ReviewPlanEvalRunnerTestCase(unittest.TestCase):
@@ -77,6 +99,129 @@ class ReviewPlanEvalRunnerTestCase(unittest.TestCase):
         default_check = next(check for check in result["checks"] if check["name"] == "no_international_course_default")
         self.assertFalse(default_check["passed"])
         self.assertEqual(default_check["forbidden_found"], ["A-Level"])
+
+    def test_task8_dynamic_geometry_fixture_preserves_source_brief_context(self):
+        fixture_path = FIXTURE_ROOT / "math" / "dynamic-geometry-source-brief.json"
+        fixture = load_fixture(fixture_path)
+
+        errors = validate_fixture_definition(fixture, fixture_path=str(fixture_path.relative_to(FIXTURE_ROOT)))
+        kwargs = workflow_kwargs_from_fixture(fixture)
+
+        self.assertFalse(errors)
+        self.assertEqual(kwargs["topic"], "动点与立体几何综合")
+        self.assertIn("老师强调", kwargs["summary_text"])
+        self.assertIn("动点 P", kwargs["summary_text"])
+        self.assertIn("空间轨迹判断", kwargs["weak_points"])
+        self.assertEqual(kwargs["generation_options"]["review_days"], [1, 2, 7, 14, 30])
+        self.assertIn("真实数学判断", kwargs["generation_options"]["user_requirements"])
+        self.assertEqual(fixture["input"]["generation_options"]["review_days"], [1, 2, 7, 14, 30])
+        self.assertIn("真实数学判断", fixture["input"]["generation_options"]["user_requirements"])
+
+    def test_task8_dynamic_geometry_assertions_pass_realistic_plan(self):
+        fixture_path = FIXTURE_ROOT / "math" / "dynamic-geometry-source-brief.json"
+        fixture = load_fixture(fixture_path)
+        plan = dynamic_geometry_source_brief_plan()
+
+        result = evaluate_plan_against_fixture(plan, fixture, fixture_path=str(fixture_path))
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(all(assertion["passed"] for assertion in result["assertions"]))
+        _run_fixture_assertions(plan, fixture)
+
+    def test_task8_dynamic_geometry_assertions_reject_choice_regressions(self):
+        fixture_path = FIXTURE_ROOT / "math" / "dynamic-geometry-source-brief.json"
+        fixture = load_fixture(fixture_path)
+        cases = {
+            "choices_have_complete_options": lambda plan: plan["days"][0]["choices"][0].update(
+                {"options": ["A. 球面"], "answer": "A"}
+            ),
+            "no_generic_checklist_choices": lambda plan: plan["days"][0]["choices"][0].update(
+                {
+                    "question": "今天应选择哪一组执行清单？",
+                    "options": ["A. 先看固定量", "B. 检查边界", "C. 完成复盘", "D. 执行清单"],
+                    "answer": "A",
+                }
+            ),
+        }
+
+        for assertion_name, mutate in cases.items():
+            with self.subTest(assertion_name=assertion_name):
+                plan = dynamic_geometry_source_brief_plan()
+                mutate(plan)
+                with self.assertRaisesRegex(AssertionError, assertion_name):
+                    _run_fixture_assertions(plan, _only_assertion(fixture, assertion_name))
+
+    def test_task8_dynamic_geometry_workflow_eval_rejects_checklist_choices(self):
+        fixture_path = FIXTURE_ROOT / "math" / "dynamic-geometry-source-brief.json"
+        fixture = load_fixture(fixture_path)
+
+        def fake_generator(**kwargs):
+            self.assertEqual(kwargs["generation_options"]["review_days"], [1, 2, 7, 14, 30])
+            self.assertIn("真实数学判断", kwargs["generation_options"]["user_requirements"])
+            plan = dynamic_geometry_source_brief_plan()
+            plan["days"][0]["choices"][0].update(
+                {
+                    "question": "今天应选择哪一组执行清单？",
+                    "options": ["A. 先看固定量", "B. 检查边界", "C. 完成复盘", "D. 执行清单"],
+                    "answer": "A",
+                }
+            )
+            return plan, {}
+
+        result = run_workflow_for_fixture(fixture, fixture_path=str(fixture_path), generator=fake_generator)
+
+        self.assertFalse(result["passed"], result)
+        failed = [item for item in result["evaluation"]["assertions"] if not item["passed"]]
+        self.assertEqual(failed[0]["name"], "no_generic_checklist_choices")
+
+    def test_task8_text_only_low_density_assertions_pass_dense_plan(self):
+        fixture_path = FIXTURE_ROOT / "math" / "text-only-low-density-review-plan.json"
+        fixture = load_fixture(fixture_path)
+        plan = text_only_low_density_review_plan()
+
+        result = evaluate_plan_against_fixture(plan, fixture, fixture_path=str(fixture_path))
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(all(assertion["passed"] for assertion in result["assertions"]))
+        _run_fixture_assertions(plan, fixture)
+
+    def test_task8_text_only_low_density_assertions_reject_known_failures(self):
+        fixture_path = FIXTURE_ROOT / "math" / "text-only-low-density-review-plan.json"
+        fixture = load_fixture(fixture_path)
+        cases = {
+            "topic_not_empty": lambda plan: plan["lesson_info"].update({"topic": ""}),
+            "full_review_topics_minimum": lambda plan: plan.update({"full_review_topics": ["等式判断"]}),
+            "minimum_printable_items_per_day": lambda plan: plan["days"][0].update(
+                {"items": [], "blanks": plan["days"][0]["blanks"][:1], "choices": []}
+            ),
+            "no_duplicate_printable_tasks": lambda plan: plan["days"][0]["blanks"].append(
+                copy.deepcopy(plan["days"][0]["blanks"][0])
+            ),
+        }
+
+        for assertion_name, mutate in cases.items():
+            with self.subTest(assertion_name=assertion_name):
+                plan = text_only_low_density_review_plan()
+                mutate(plan)
+                with self.assertRaisesRegex(AssertionError, assertion_name):
+                    _run_fixture_assertions(plan, _only_assertion(fixture, assertion_name))
+
+    def test_task8_text_only_workflow_eval_rejects_duplicate_printable_tasks(self):
+        fixture_path = FIXTURE_ROOT / "math" / "text-only-low-density-review-plan.json"
+        fixture = load_fixture(fixture_path)
+
+        def fake_generator(**kwargs):
+            self.assertEqual(kwargs["generation_options"]["review_days"], [1, 2, 7, 14, 30])
+            self.assertIn("执行清单不能全做选择题", kwargs["generation_options"]["user_requirements"])
+            plan = text_only_low_density_review_plan()
+            plan["days"][0]["blanks"].append(copy.deepcopy(plan["days"][0]["blanks"][0]))
+            return plan, {}
+
+        result = run_workflow_for_fixture(fixture, fixture_path=str(fixture_path), generator=fake_generator)
+
+        self.assertFalse(result["passed"], result)
+        failed = [item for item in result["evaluation"]["assertions"] if not item["passed"]]
+        self.assertEqual(failed[0]["name"], "no_duplicate_printable_tasks")
 
     def test_workflow_kwargs_from_fixture_preserves_subject_context(self):
         fixture_path = FIXTURE_ROOT / "physics" / "mechanics-electricity-units-experiment.json"

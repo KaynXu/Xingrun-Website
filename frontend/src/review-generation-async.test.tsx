@@ -9,6 +9,8 @@ import {
 } from './features/review-generation/reviewPlanVersions';
 
 const reviewGenerationSource = readFileSync(new URL('./features/review-generation/ReviewGenerationPage.tsx', import.meta.url), 'utf8');
+const reviewPlanRegenerateDialogSource = readFileSync(new URL('./features/review-generation/ReviewPlanRegenerateDialog.tsx', import.meta.url), 'utf8');
+const reviewPlanGenerationOptionsSource = readFileSync(new URL('./features/review-generation/reviewPlanGenerationOptions.ts', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const workspacePageContentSource = readFileSync(new URL('./features/navigation/WorkspacePageContent.tsx', import.meta.url), 'utf8');
 const lessonInputSource = readFileSync(new URL('./features/review-generation/LessonInput.tsx', import.meta.url), 'utf8');
@@ -28,12 +30,22 @@ test('review history source normalizes malformed task polling responses', () => 
 
 test('review history source exposes regenerate action and immediate progress feedback', () => {
   assert.match(reviewGenerationSource, /\/api\/review-plans\/\$\{lesson\.id\}\/regenerate/);
-  assert.match(reviewGenerationSource, /确定重新生成《\$\{getLessonTitle\(lesson\)\}》吗/);
+  assert.match(reviewGenerationSource, /<ReviewPlanRegenerateDialog/);
+  assert.match(reviewPlanRegenerateDialogSource, /重新生成设置/);
+  assert.match(reviewPlanRegenerateDialogSource, /<ReviewPlanGenerationOptionsFields/);
+  assert.match(reviewGenerationSource, /generation_options: buildGenerationOptionsPayload\(options\)/);
+  assert.match(reviewGenerationSource, /openRegenerateDialog\(lesson\)/);
   assert.match(reviewGenerationSource, /onTaskStarted\(lesson\.id, startedAtMs\);/);
   assert.match(reviewGenerationSource, /onFloatingNotice\(\{ type: 'info', text: `《\$\{getLessonTitle\(lesson\)\}》已开始重新生成。` \}\);/);
   assert.match(reviewGenerationSource, /has_version_generating: true/);
   assert.match(reviewGenerationSource, /active_version_status: nextStatus/);
   assert.match(reviewGenerationSource, /title="重新生成"/);
+  assert.doesNotMatch(reviewGenerationSource, /确定重新生成《/);
+});
+
+test('regenerate dialog keeps source reuse copy terse', () => {
+  assert.match(reviewPlanRegenerateDialogSource, /复用原课堂材料/);
+  assert.doesNotMatch(reviewPlanRegenerateDialogSource, /重新上传|重新转录|原始逐字稿会/);
 });
 
 test('review history opens lightweight version detail view', () => {
@@ -74,6 +86,8 @@ test('review plan version helper requires a ready version with an available PDF 
     has_version_generating: false,
     active_version_status: '',
     latest_generation_error: '',
+    review_generation_options: null,
+    review_generation_summary: '',
     versions: [],
   };
   const baseVersion: ReviewPlanVersionRecord = {
@@ -85,6 +99,8 @@ test('review plan version helper requires a ready version with an available PDF 
     pdf_url: '/api/review-plans/12/versions/32/pdf',
     download_url: '/api/review-plans/12/versions/32/download',
     generation_error: '',
+    generation_options: null,
+    generation_summary: '',
     created_at: '2026-05-02T12:30:00',
     updated_at: '2026-05-02T12:30:00',
     completed_at: '2026-05-02T12:35:00',
@@ -96,14 +112,20 @@ test('review plan version helper requires a ready version with an available PDF 
   assert.equal(canMakeReviewPlanVersionCurrent(detail, { ...baseVersion, status: 'failed' }), false);
 });
 
-test('review generation source keeps progress feedback in a bottom-right dock instead of inline color banners', () => {
+test('review generation source keeps progress feedback in a dismissible floating dock', () => {
   assert.match(reviewGenerationSource, /function ReviewGenerationTaskDock\(/);
   assert.match(reviewGenerationSource, /createPortal\(dock, document\.body\)/);
   assert.match(reviewGenerationSource, /fixed bottom-5 right-5/);
+  assert.match(reviewGenerationSource, /aria-label=\"关闭生成状态浮层\"/);
   assert.match(reviewGenerationSource, /复习计划生成/);
   assert.match(reviewGenerationSource, /dotClassName: 'bg-amber-500'/);
   assert.match(reviewGenerationSource, /return state === 'pending' \|\| state === 'failed';/);
   assert.match(workspacePageContentSource, /return state === 'pending' \|\| state === 'failed';/);
+  assert.match(workspacePageContentSource, /reviewTaskDockDismissed/);
+  assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(false\);/);
+  assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(true\);/);
+  assert.match(workspacePageContentSource, /const hasReviewDockContent = Boolean\(reviewFloatingNotice\) \|\| hasReviewFloatingTask;/);
+  assert.match(workspacePageContentSource, /onReviewTaskDockAvailableChange\(hasReviewDockContent\);/);
   assert.match(workspacePageContentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);
   assert.match(workspacePageContentSource, /setReviewProgressNow\(Date\.now\(\)\);/);
   assert.match(workspacePageContentSource, /activeWorkspacePage === 'review-generation' \? 6000 : 3000/);
@@ -118,4 +140,68 @@ test('review generation source synchronizes member class selection against acces
   assert.match(lessonInputSource, /setClassId\(\(current\) => syncMemberScopedClassSelection\(currentUser\.role, classes, current\)\);/);
   assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
   assert.match(workspacePageContentSource, /import \{ LessonInput \} from '\.\.\/review-generation\/LessonInput';/);
+});
+
+test('review generation validates custom review days before creating or regenerating', () => {
+  assert.match(reviewPlanGenerationOptionsSource, /export function parseCustomReviewDays/);
+  assert.match(reviewPlanGenerationOptionsSource, /replace\(\/，\/g, ','\)/);
+  assert.match(reviewPlanGenerationOptionsSource, /export function getGenerationOptionsValidationError/);
+  assert.match(reviewPlanGenerationOptionsSource, /请输入日期点/);
+  assert.match(reviewPlanGenerationOptionsSource, /日期点格式错误/);
+  assert.match(reviewPlanGenerationOptionsSource, /review_days: parseCustomReviewDays\(value\.customDays\)/);
+  assert.match(lessonInputSource, /getGenerationOptionsValidationError\(generationOptions\)/);
+  assert.match(lessonInputSource, /setError\(generationOptionsError\);/);
+  assert.match(reviewPlanRegenerateDialogSource, /const validationError = getGenerationOptionsValidationError\(value\);/);
+  assert.match(reviewPlanRegenerateDialogSource, /disabled=\{submitting \|\| Boolean\(validationError\)\}/);
+  assert.match(reviewGenerationSource, /getGenerationOptionsValidationError\(options\)/);
+  assert.match(reviewGenerationSource, /onFloatingNotice\(\{ type: 'error', text: generationOptionsError \}\);/);
+});
+
+test('review generation schedule mode labels show concrete day counts', () => {
+  const optionsFieldsSource = readFileSync(new URL('./features/review-generation/ReviewPlanGenerationOptionsFields.tsx', import.meta.url), 'utf8');
+
+  for (const label of ['5次间隔', '1天集中', '每日连续', '自定义日期']) {
+    assert.match(lessonInputSource, new RegExp(label));
+    assert.match(optionsFieldsSource, new RegExp(label));
+  }
+  assert.match(reviewPlanGenerationOptionsSource, /return '1天集中复习';/);
+  assert.match(reviewPlanGenerationOptionsSource, /return `每日连续 \$\{value\.dailyCount\} 天`;/);
+  assert.match(reviewPlanGenerationOptionsSource, /return `自定义日期 \$\{value\.customDays\.trim\(\) \|\| '未填写'\}`;/);
+  assert.match(reviewPlanGenerationOptionsSource, /return '5次间隔复习';/);
+  assert.doesNotMatch(lessonInputSource, /label: '压缩'/);
+  assert.doesNotMatch(optionsFieldsSource, /label: '压缩'/);
+});
+
+test('review generation places generation settings directly under top class metadata', () => {
+  const optionsIndex = lessonInputSource.indexOf('title="生成设置"');
+  const noClassWarningIndex = lessonInputSource.indexOf('{hasNoAssignableClasses &&');
+  const materialSectionIndex = lessonInputSource.indexOf('title="课堂材料"');
+
+  assert.notEqual(optionsIndex, -1);
+  assert.ok(optionsIndex < noClassWarningIndex);
+  assert.ok(optionsIndex < materialSectionIndex);
+});
+
+test('review generation composer uses compact single-column layout', () => {
+  assert.match(reviewGenerationSource, /新建复习文档/);
+  assert.match(reviewGenerationSource, /max-w-\[720px\]/);
+  assert.match(lessonInputSource, /function SectionHeader\(/);
+  assert.match(lessonInputSource, /title="基本信息"/);
+  assert.match(lessonInputSource, /title="生成设置"/);
+  assert.match(lessonInputSource, /title="课堂材料"/);
+  assert.match(lessonInputSource, /const \[supplementOpen, setSupplementOpen\] = useState\(false\);/);
+  assert.match(lessonInputSource, /title="补充信息" optional/);
+  assert.match(lessonInputSource, /formStatusText/);
+  assert.match(lessonInputSource, /disabled=\{!canGenerate\}/);
+  assert.doesNotMatch(lessonInputSource, /生成前检查/);
+  assert.doesNotMatch(lessonInputSource, /xl:grid-cols-\[minmax\(0,1\.35fr\)_280px\]/);
+});
+
+test('review generation material upload supports drag and drop', () => {
+  assert.match(lessonInputSource, /const \[isMaterialDragActive, setIsMaterialDragActive\] = useState\(false\);/);
+  assert.match(lessonInputSource, /const handleMaterialFileDrop = \(event: React\.DragEvent<HTMLDivElement>\)/);
+  assert.match(lessonInputSource, /event\.dataTransfer\.dropEffect = 'copy';/);
+  assert.match(lessonInputSource, /onDrop=\{handleMaterialFileDrop\}/);
+  assert.match(lessonInputSource, /handleMaterialFileSelect\(event\.dataTransfer\.files\?\.\[0\] \?\? null\)/);
+  assert.match(lessonInputSource, /onChange=\{\(e\) => handleMaterialFileSelect\(e\.target\.files\?\.\[0\] \?\? null\)\}/);
 });

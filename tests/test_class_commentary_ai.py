@@ -10,7 +10,7 @@ import class_commentary
 
 
 class ClassCommentaryAiTest(unittest.TestCase):
-    def test_skill_scanner_lists_only_top_level_skill_files(self):
+    def test_skill_scanner_lists_legacy_skill_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "teacher-a.skill").write_text("style a", encoding="utf-8")
@@ -23,6 +23,44 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in skills], ["teacher-a"])
         self.assertEqual(skills[0]["filename"], "teacher-a.skill")
         self.assertEqual(skills[0]["name"], "teacher-a")
+
+    def test_skill_scanner_lists_directory_skill_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-b"
+            package.mkdir()
+            (package / "SKILL.md").write_text("# Teacher B\nUse warm emoji.", encoding="utf-8")
+            (package / "work.md").write_text("Work notes", encoding="utf-8")
+            (package / "persona.md").write_text("Persona notes", encoding="utf-8")
+            (package / "meta.json").write_text('{"name": "橘子老师"}', encoding="utf-8")
+            (root / "draft").mkdir()
+
+            skills = class_commentary.list_colleague_skills(str(root))
+            loaded = class_commentary.load_colleague_skill(str(root), "teacher-b")
+
+        self.assertEqual([item["id"] for item in skills], ["teacher-b"])
+        self.assertEqual(skills[0]["filename"], "teacher-b/SKILL.md")
+        self.assertEqual(skills[0]["name"], "橘子老师")
+        self.assertEqual(loaded["name"], "橘子老师")
+        self.assertEqual(loaded["filename"], "teacher-b/SKILL.md")
+        self.assertIn("Use warm emoji.", loaded["content"])
+        self.assertIn("Work notes", loaded["content"])
+        self.assertIn("Persona notes", loaded["content"])
+
+    def test_skill_scanner_accepts_colleague_skill_repo_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "colleagues" / "teacher-c"
+            package.mkdir(parents=True)
+            (package / "SKILL.md").write_text("# Teacher C", encoding="utf-8")
+            (package / "persona.md").write_text("Use parent-friendly emojis.", encoding="utf-8")
+
+            skills = class_commentary.list_colleague_skills(str(root))
+            loaded = class_commentary.load_colleague_skill(str(root), "teacher-c")
+
+        self.assertEqual([item["id"] for item in skills], ["teacher-c"])
+        self.assertEqual(skills[0]["filename"], "teacher-c/SKILL.md")
+        self.assertIn("Use parent-friendly emojis.", loaded["content"])
 
     def test_load_skill_rejects_path_traversal(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,7 +76,18 @@ class ClassCommentaryAiTest(unittest.TestCase):
         )
         self.assertEqual(payload["class"]["name"], "数学·七年级·4班")
         self.assertEqual(payload["students"], [{"id": 1, "name": "小王"}, {"id": 2, "name": "小李"}])
-        self.assertIn("Only include students", "\n".join(payload["output_rules"]))
+        output_rules = "\n".join(payload["output_rules"])
+        self.assertIn("Only include students", output_rules)
+        self.assertIn("feedback structure", output_rules)
+        self.assertIn("2-4 short paragraphs", output_rules)
+        self.assertIn("emoji habits", output_rules)
+        self.assertIn("Infer the selected skill's emoji tokens", output_rules)
+        self.assertIn("density, placement, and meaning", output_rules)
+        self.assertIn("Do not force emojis", output_rules)
+        self.assertIn("Do not hard-code a different colleague's emoji set", output_rules)
+        self.assertNotIn("[呲牙]", output_rules)
+        self.assertNotIn("[破涕为笑]", output_rules)
+        self.assertNotIn("one sendable paragraph", output_rules)
         self.assertIn("小王今天计算有进步", payload["transcript"])
         self.assertIn("warm concise style", payload["skill"]["content"])
 
@@ -125,7 +174,22 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertEqual(text, "小王:\n今天计算有进步.")
         messages = fake_client.chat.completions.kwargs["messages"]
         self.assertIn("Do not invent facts", messages[0]["content"])
+        self.assertIn("primary working instructions", messages[0]["content"])
+        self.assertIn("paragraph rhythm", messages[0]["content"])
+        self.assertIn("emoji habits", messages[0]["content"])
+        self.assertIn("Infer the selected skill's emoji system", messages[0]["content"])
+        self.assertIn("do not force emojis", messages[0]["content"])
+        self.assertNotIn("with one block per mentioned student", messages[0]["content"])
+        self.assertNotIn("only for voice, structure, and phrasing", messages[0]["content"])
         self.assertIn("小王", messages[1]["content"])
+        self.assertIn("primary working contract", messages[1]["content"])
+        self.assertIn("facts only from the transcript and roster", messages[1]["content"])
+        self.assertIn("2-4 short paragraphs", messages[1]["content"])
+        self.assertIn("Infer the selected skill's emoji tokens", messages[1]["content"])
+        self.assertNotIn("[呲牙]", messages[1]["content"])
+        self.assertNotIn("[破涕为笑]", messages[1]["content"])
+        self.assertNotIn("only as expression style and feedback framing", messages[1]["content"])
+        self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 0.55)
 
     def test_generate_class_commentary_feedback_uses_class_commentary_openai_override(self):
         class FakeMessage:

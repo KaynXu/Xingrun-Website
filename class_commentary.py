@@ -29,40 +29,106 @@ def _safe_skill_filename(skill_id: str) -> str:
     return f"{normalized}.skill"
 
 
+def _safe_skill_id(skill_id: str) -> str:
+    normalized = str(skill_id or "").strip()
+    if normalized.endswith(".skill"):
+        normalized = normalized[:-6]
+    if not normalized or "/" in normalized or "\\" in normalized or normalized in {".", ".."}:
+        raise ValueError("invalid skill_id")
+    return normalized
+
+
+def _read_skill_package_name(path: Path) -> str:
+    meta_path = path / "meta.json"
+    if not meta_path.is_file():
+        return path.name
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return path.name
+    name = str(meta.get("name") or "").strip() if isinstance(meta, dict) else ""
+    return name or path.name
+
+
+def _skill_package_updated_at(path: Path) -> str:
+    mtimes = [path.stat().st_mtime]
+    for filename in ("SKILL.md", "work.md", "persona.md", "meta.json"):
+        file_path = path / filename
+        if file_path.is_file():
+            mtimes.append(file_path.stat().st_mtime)
+    return str(int(max(mtimes)))
+
+
+def _read_skill_package_content(path: Path) -> str:
+    parts = []
+    for filename in ("SKILL.md", "work.md", "persona.md"):
+        file_path = path / filename
+        if not file_path.is_file():
+            continue
+        content = file_path.read_text(encoding="utf-8").strip()
+        if content:
+            parts.append(f"## {filename}\n{content}")
+    return "\n\n".join(parts).strip()
+
+
+def _colleague_skill_roots(root: Path) -> list[Path]:
+    roots = [root]
+    colleagues_root = root / "colleagues"
+    if colleagues_root.is_dir():
+        roots.append(colleagues_root)
+    return roots
+
+
 def list_colleague_skills(skill_dir: str) -> list[dict]:
     root = Path(str(skill_dir or "")).expanduser()
     if not skill_dir or not root.exists() or not root.is_dir():
         return []
-    skills = []
-    for path in sorted(root.iterdir(), key=lambda item: item.name.lower()):
-        if not path.is_file() or path.suffix != ".skill":
-            continue
-        stat = path.stat()
-        skills.append(
-            {
-                "id": path.stem,
-                "name": path.stem,
-                "filename": path.name,
-                "updated_at": str(int(stat.st_mtime)),
-            }
-        )
-    return skills
+    skills_by_id = {}
+    for scan_root in _colleague_skill_roots(root):
+        for path in sorted(scan_root.iterdir(), key=lambda item: item.name.lower()):
+            if path.is_dir() and (path / "SKILL.md").is_file():
+                skills_by_id[path.name] = {
+                    "id": path.name,
+                    "name": _read_skill_package_name(path),
+                    "filename": f"{path.name}/SKILL.md",
+                    "updated_at": _skill_package_updated_at(path),
+                }
+            elif path.is_file() and path.suffix == ".skill" and path.stem not in skills_by_id:
+                stat = path.stat()
+                skills_by_id[path.stem] = {
+                    "id": path.stem,
+                    "name": path.stem,
+                    "filename": path.name,
+                    "updated_at": str(int(stat.st_mtime)),
+                }
+    return [skills_by_id[key] for key in sorted(skills_by_id, key=str.lower)]
 
 
 def load_colleague_skill(skill_dir: str, skill_id: str) -> dict:
-    filename = _safe_skill_filename(skill_id)
+    normalized_id = _safe_skill_id(skill_id)
     root = Path(str(skill_dir or "")).expanduser()
-    path = root / filename
-    if not root.exists() or not root.is_dir() or not path.is_file():
+    if not root.exists() or not root.is_dir():
         raise FileNotFoundError("skill not found")
-    content = path.read_text(encoding="utf-8")
-    return {
-        "id": path.stem,
-        "name": path.stem,
-        "filename": path.name,
-        "path": str(path),
-        "content": content,
-    }
+    for scan_root in _colleague_skill_roots(root):
+        package_path = scan_root / normalized_id
+        if package_path.is_dir() and (package_path / "SKILL.md").is_file():
+            return {
+                "id": package_path.name,
+                "name": _read_skill_package_name(package_path),
+                "filename": f"{package_path.name}/SKILL.md",
+                "path": str(package_path / "SKILL.md"),
+                "content": _read_skill_package_content(package_path),
+            }
+    path = root / _safe_skill_filename(normalized_id)
+    if path.is_file():
+        return {
+            "id": path.stem,
+            "name": path.stem,
+            "filename": path.name,
+            "path": str(path),
+            "content": path.read_text(encoding="utf-8"),
+        }
+    raise FileNotFoundError("skill not found")
 
 
 def sanitize_class_commentary_roster(students: list[dict]) -> list[dict]:
@@ -103,9 +169,16 @@ def build_class_commentary_generation_payload(
             "Do not include unmentioned students.",
             "Feedback can include praise, problem, reminder, next action, or suggestion.",
             "Do not invent facts not supported by the transcript.",
-            "Use the selected skill only as expression style and feedback framing, not as a source of student facts.",
-            "Output one plain text block.",
-            "Format each block exactly as: student name, colon, newline, one sendable paragraph.",
+            "Use the selected skill as the primary working contract for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits.",
+            "Use facts only from the transcript and roster; do not treat the skill as a source of student facts.",
+            "Output plain text only.",
+            "Use each mentioned student name as a visible section label, but do not force a single long paragraph.",
+            "When a student has multiple feedback points, write 2-4 short paragraphs instead of squeezing everything into one paragraph.",
+            "Each paragraph should focus on one idea, such as current state, concrete problem, next action, or parent cooperation.",
+            "Infer the selected skill's emoji tokens, density, placement, and meaning from the supplied skill content, then match that emoji system when it fits the transcript.",
+            "If the selected skill uses emojis as part of its normal parent-group voice, use comparable emoji frequency across the opening, transitions, encouragement, softened criticism, and student-specific feedback.",
+            "Do not force emojis when the selected skill rarely uses them. Do not hard-code a different colleague's emoji set into this output.",
+            "Do not over-polish into formal report language; keep the selected colleague's live parent-group speaking style.",
         ],
     }
 

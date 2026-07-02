@@ -11,6 +11,7 @@ from config_runtime import (
 )
 
 from .executor import run_workflow_node
+from .generation_options import normalize_generation_options
 from .nodes import (
     intake_normalizer_node,
     parent_planner_node,
@@ -20,11 +21,13 @@ from .nodes import (
     revision_node,
     scope_planner_node,
     source_analyzer_node,
+    source_brief_builder_node,
     subject_router_node,
     task_blueprint_node,
     time_allocator_node,
 )
 from .quality_gate import review_single_lesson_plan
+from .quality_policy import max_revision_attempts_for_quality, should_run_llm_quality_review
 from .llm.client import merge_usage
 from .observability import (
     flush,
@@ -38,6 +41,7 @@ from .schemas import (
     QualityIssue,
     QualityReview,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     normalize_final_review_plan,
 )
 from .state import WorkflowContext
@@ -46,6 +50,7 @@ from .state import WorkflowContext
 def _record_run(
     *,
     lesson_id: int,
+    version_id: int = 0,
     organization_id: int,
     context: WorkflowContext,
     status: str,
@@ -58,6 +63,7 @@ def _record_run(
 
         save_review_plan_run(
             lesson_id=lesson_id,
+            version_id=version_id,
             organization_id=organization_id,
             trace_id=context.trace_id,
             status=status,
@@ -77,8 +83,20 @@ def _record_run(
         return
 
 
-def _score_quality(plan: dict[str, Any], *, subject: str, context: WorkflowContext, node_key: str) -> QualityReview:
-    quality = review_single_lesson_plan(plan, subject=subject)
+def _score_quality(
+    plan: dict[str, Any],
+    *,
+    subject: str,
+    review_input: ReviewPlanInput,
+    context: WorkflowContext,
+    node_key: str,
+) -> QualityReview:
+    quality = review_single_lesson_plan(
+        plan,
+        subject=subject,
+        required_review_days=review_input.review_days,
+        schedule_mode=review_input.schedule_mode,
+    )
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
@@ -93,6 +111,31 @@ def _fallback_agent_blueprint(
 ) -> AgenticPlanBlueprint:
     confirmed_topics = getattr(source, "confirmed_topics", []) or []
     required_components = getattr(task_blueprint, "required_components", []) or []
+    if not required_components and str(subject or "").lower() == "math":
+        required_components = [
+            "worked_example",
+            "targeted_practice",
+            "error_log",
+            "timed_practice",
+            "spiral_review",
+            "checkpoint_quiz",
+        ]
+    compressed_single_day = review_input.schedule_mode == "compressed" and review_input.review_days == [1]
+    writer_instructions = [
+        "每一天必须绑定本节课主题和学生薄弱点，不能输出模板化任务。",
+        "题目必须自洽可作答；课堂原题信息不足时改成同知识点同错因的同类题。",
+        "严格保留本次输入指定的 review_days 结构。",
+        "每个复习日直接输出可打印 blanks 与 choices；不要只输出执行说明或 checklist。",
+        "填空题答案必须是具体数值、符号、条件、公式对象或方法名，不能留空。",
+    ]
+    if compressed_single_day:
+        writer_instructions.extend(
+            [
+                "当前是 1 天集中复习：只输出 day=1，但这一天要压缩承载整节课内容。",
+                "第1天必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz 对应内容。",
+                "第1天至少提供 5 个不重复的可打印题目，其中填空不少于 3 个，选择诊断不少于 2 个。",
+            ]
+        )
     return AgenticPlanBlueprint(
         strategy_summary=(
             "父模型蓝图不可用，退回本地规则：围绕课堂主题、薄弱点和固定间隔复习日生成。"
@@ -110,11 +153,7 @@ def _fallback_agent_blueprint(
             for topic in confirmed_topics[:6]
             if str(topic or "").strip()
         ],
-        writer_instructions=[
-            "每一天必须绑定本节课主题和学生薄弱点，不能输出模板化任务。",
-            "题目必须自洽可作答；课堂原题信息不足时改成同知识点同错因的同类题。",
-            "保留固定 day=1,2,7,14,30 结构。",
-        ],
+        writer_instructions=writer_instructions,
         quality_risks=[
             "父模型蓝图缺失时，writer 更容易泛化或机械重复。",
             "必须特别检查题目是否只是结构完整但没有学科诊断价值。",
@@ -146,6 +185,7 @@ def _run_parent_planner_with_fallback(
     scope: Any,
     time_allocation: Any,
     task_blueprint: Any,
+    source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
 ) -> tuple[AgenticPlanBlueprint, dict[str, Any]]:
     if not _has_runtime_key_for_provider(context.provider):
@@ -172,6 +212,7 @@ def _run_parent_planner_with_fallback(
                 "scope": scope,
                 "time_allocation": time_allocation,
                 "task_blueprint": task_blueprint,
+                "source_brief": source_brief,
             },
             context,
         )
@@ -231,9 +272,22 @@ def _review_with_llm_quality_gate(
     local_quality: QualityReview,
     prompt_bundle: Any,
     agent_blueprint: AgenticPlanBlueprint,
+    source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
     node_key: str,
 ) -> tuple[QualityReview, dict[str, Any]]:
+    if not should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief):
+        skipped = {
+            "mode": "skipped",
+            "reason": "local_quality_passed_with_high_source_confidence",
+            "score": local_quality.score,
+            "source_confidence": source_brief.confidence if source_brief is not None else None,
+        }
+        context.node_outputs[node_key] = skipped
+        context.node_outputs["quality_reviewer_llm_skipped"] = skipped
+        context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        return local_quality, {}
+
     if not _has_runtime_key_for_provider(context.provider):
         context.node_outputs["quality_reviewer_llm_skipped"] = {
             "reason": "missing_runtime_key_for_direct_service_call",
@@ -250,6 +304,7 @@ def _review_with_llm_quality_gate(
                 "local_quality": local_quality,
                 "prompt_bundle": prompt_bundle,
                 "agent_blueprint": agent_blueprint,
+                "source_brief": source_brief,
             },
             context,
         )
@@ -284,6 +339,7 @@ def _maybe_revise_plan(
     review_input: ReviewPlanInput,
     prompt_bundle: Any,
     agent_blueprint: AgenticPlanBlueprint,
+    source_brief: ReviewPlanSourceBrief | None = None,
     subject: str,
     context: WorkflowContext,
 ) -> tuple[dict[str, Any], QualityReview, dict[str, Any]]:
@@ -295,8 +351,11 @@ def _maybe_revise_plan(
     current_plan = plan
     current_quality = quality
     total_usage = usage
+    max_attempts = max_revision_attempts_for_quality(quality=quality, source_brief=source_brief)
+    if max_attempts <= 0:
+        return plan, quality, usage
 
-    for attempt in range(1, 3):
+    for attempt in range(1, max_attempts + 1):
         try:
             revised_plan, revision_usage = run_workflow_node(
                 revision_node,
@@ -307,6 +366,7 @@ def _maybe_revise_plan(
                     "quality": current_quality,
                     "attempt": attempt,
                     "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
                 },
                 context,
             )
@@ -323,6 +383,7 @@ def _maybe_revise_plan(
         local_quality = _score_quality(
             current_plan,
             subject=subject,
+            review_input=review_input,
             context=context,
             node_key=f"quality_reviewer_rules_after_revision_{attempt}",
         )
@@ -331,6 +392,7 @@ def _maybe_revise_plan(
             local_quality=local_quality,
             prompt_bundle=prompt_bundle,
             agent_blueprint=agent_blueprint,
+            source_brief=source_brief,
             context=context,
             node_key=f"quality_reviewer_after_revision_{attempt}",
         )
@@ -344,7 +406,7 @@ def _maybe_revise_plan(
     if best_quality.must_revise:
         context.add_warning(
             "quality_revision_required",
-            "质量门禁在最多 2 次 revision 后仍建议人工复核；已返回当前最高分版本。",
+            f"质量门禁在 {max_attempts} 次 revision 后仍建议人工复核；已返回当前最高分版本。",
             "high",
         )
     return best_plan, best_quality, total_usage
@@ -361,11 +423,14 @@ def generate_single_lesson_review_plan(
     provider: str = "",
     model: str = "",
     lesson_id: int = 0,
+    version_id: int = 0,
     organization_id: int = 0,
+    generation_options: object | None = None,
     include_usage: bool = False,
 ) -> Union[dict[str, Any], Tuple[dict[str, Any], dict[str, Any]]]:
     resolved_provider = provider or resolve_review_plan_provider()
     resolved_model = model or resolve_review_plan_model(provider=resolved_provider)
+    options = normalize_generation_options(generation_options)
     context = WorkflowContext(
         provider=resolved_provider,
         model=resolved_model,
@@ -378,8 +443,12 @@ def generate_single_lesson_review_plan(
         topic=topic,
         weak_points=weak_points,
         lesson_date=lesson_date,
+        schedule_mode=str(options["schedule_mode"]),
+        review_days=list(options["review_days"]),
+        daily_count=options.get("daily_count") if isinstance(options.get("daily_count"), int) else None,
+        user_requirements=str(options.get("user_requirements") or ""),
     )
-    _record_run(lesson_id=lesson_id, organization_id=organization_id, context=context, status="running")
+    _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="running")
 
     try:
         with workflow_trace(
@@ -389,11 +458,26 @@ def generate_single_lesson_review_plan(
             organization_id=organization_id,
         ):
             normalized = run_workflow_node(intake_normalizer_node, review_input, context)
+            source_brief = run_workflow_node(
+                source_brief_builder_node,
+                {"input": review_input, "normalized": normalized},
+                context,
+            )
             route = run_workflow_node(subject_router_node, normalized, context)
-            source = run_workflow_node(source_analyzer_node, normalized, context)
+            source = run_workflow_node(
+                source_analyzer_node,
+                {"normalized": normalized, "source_brief": source_brief},
+                context,
+            )
             scope = run_workflow_node(
                 scope_planner_node,
-                {"input": review_input, "normalized": normalized, "route": route, "source": source},
+                {
+                    "input": review_input,
+                    "normalized": normalized,
+                    "route": route,
+                    "source": source,
+                    "source_brief": source_brief,
+                },
                 context,
             )
             time_allocation = run_workflow_node(
@@ -407,6 +491,7 @@ def generate_single_lesson_review_plan(
                     "normalized": normalized,
                     "route": route,
                     "source": source,
+                    "source_brief": source_brief,
                     "scope": scope,
                     "time_allocation": time_allocation,
                 },
@@ -420,17 +505,20 @@ def generate_single_lesson_review_plan(
                 scope=scope,
                 time_allocation=time_allocation,
                 task_blueprint=task_blueprint,
+                source_brief=source_brief,
                 context=context,
             )
             prompt_bundle = run_workflow_node(
                 prompt_bundle_builder_node,
                 {
+                    "input": review_input,
                     "route": route,
                     "source": source,
                     "scope": scope,
                     "time_allocation": time_allocation,
                     "task_blueprint": task_blueprint,
                     "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
                 },
                 context,
             )
@@ -446,16 +534,24 @@ def generate_single_lesson_review_plan(
                     "task_blueprint": task_blueprint,
                     "prompt_bundle": prompt_bundle,
                     "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
                 },
                 context,
             )
             plan = _normalize_output_plan(plan, review_input)
-            local_quality = _score_quality(plan, subject=route.selected_subject, context=context, node_key="quality_reviewer_rules_initial")
+            local_quality = _score_quality(
+                plan,
+                subject=route.selected_subject,
+                review_input=review_input,
+                context=context,
+                node_key="quality_reviewer_rules_initial",
+            )
             quality, reviewer_usage = _review_with_llm_quality_gate(
                 plan=plan,
                 local_quality=local_quality,
                 prompt_bundle=prompt_bundle,
                 agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
                 context=context,
                 node_key="quality_reviewer_initial",
             )
@@ -467,6 +563,7 @@ def generate_single_lesson_review_plan(
                 review_input=review_input,
                 prompt_bundle=prompt_bundle,
                 agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
                 subject=route.selected_subject,
                 context=context,
             )
@@ -476,6 +573,7 @@ def generate_single_lesson_review_plan(
 
             _record_run(
                 lesson_id=lesson_id,
+                version_id=version_id,
                 organization_id=organization_id,
                 context=context,
                 status="succeeded",
@@ -486,7 +584,7 @@ def generate_single_lesson_review_plan(
             return plan
     except Exception as exc:
         record_workflow_failure(context=context, error=exc)
-        _record_run(lesson_id=lesson_id, organization_id=organization_id, context=context, status="failed")
+        _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="failed")
         raise
     finally:
         flush()

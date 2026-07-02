@@ -58,6 +58,9 @@ export function WorkspacePageContent({
   handleOpenClassBinding,
   handleLogout,
   onCurrentUserUpdated,
+  reviewTaskDockDismissed,
+  setReviewTaskDockDismissed,
+  onReviewTaskDockAvailableChange,
 }: {
   activeWorkspacePage: WorkspaceShellPage;
   currentUser: CurrentUser;
@@ -73,6 +76,9 @@ export function WorkspacePageContent({
   handleOpenClassBinding: (target: ClassBindingTarget) => void;
   handleLogout: () => void;
   onCurrentUserUpdated: (user: CurrentUser) => void;
+  reviewTaskDockDismissed: boolean;
+  setReviewTaskDockDismissed: (dismissed: boolean) => void;
+  onReviewTaskDockAvailableChange: (available: boolean) => void;
 }) {
   const consultationMeetingMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('consultationMeeting') === '1';
   const [reviewFloatingNotice, setReviewFloatingNotice] = useState<ReviewGenerationFloatingNotice | null>(null);
@@ -100,15 +106,26 @@ export function WorkspacePageContent({
   const handleReviewTaskStarted = useCallback((lessonId: number, startedAtMs: number) => {
     setReviewTaskStartedAtById((current) => ({ ...current, [lessonId]: startedAtMs }));
     setActiveReviewTaskIds((current) => new Set(current).add(lessonId));
+    setReviewTaskDockDismissed(false);
     void refreshReviewLessons();
   }, [refreshReviewLessons]);
+
+  const handleReviewFloatingNotice = useCallback((notice: ReviewGenerationFloatingNotice) => {
+    setReviewFloatingNotice(notice);
+    setReviewTaskDockDismissed(false);
+  }, []);
 
   const hasReviewFloatingTask = reviewLatestLessons.some((lesson) => {
     const state = getReviewLessonTaskState(lesson);
     return state === 'pending' || state === 'failed';
   });
+  const hasReviewDockContent = Boolean(reviewFloatingNotice) || hasReviewFloatingTask;
   const hasReviewPendingTask = reviewLatestLessons.some(isReviewLessonPending);
   const shouldPollReviewTasks = activeReviewTaskIds.size > 0 || hasReviewPendingTask;
+
+  useEffect(() => {
+    onReviewTaskDockAvailableChange(hasReviewDockContent);
+  }, [hasReviewDockContent, onReviewTaskDockAvailableChange]);
 
   useEffect(() => {
     if (!hasReviewFloatingTask && activeReviewTaskIds.size === 0) {
@@ -154,7 +171,7 @@ export function WorkspacePageContent({
     taskStartedAtById: reviewTaskStartedAtById,
     onLessonsChange: handleReviewLessonsChange,
     onTaskStarted: handleReviewTaskStarted,
-    onFloatingNotice: setReviewFloatingNotice,
+    onFloatingNotice: handleReviewFloatingNotice,
   };
 
   return (
@@ -184,8 +201,8 @@ export function WorkspacePageContent({
             <ReviewGenerationPage
               onSuccess={handleReviewGenerationSuccess}
               taskControls={reviewTaskControls}
-              renderLessonInput={(handleFormSuccess) => (
-                <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} />
+              renderLessonInput={(handleFormSuccess, handleFormCancel) => (
+                <LessonInput onSuccess={handleFormSuccess} currentUser={currentUser} onCancel={handleFormCancel} />
               )}
             />
           )}
@@ -210,13 +227,18 @@ export function WorkspacePageContent({
         </motion.div>
       </AnimatePresence>
 
-      <ReviewGenerationTaskDock
-        lessons={reviewLatestLessons}
-        notice={reviewFloatingNotice}
-        onDismissNotice={() => setReviewFloatingNotice(null)}
-        progressNow={reviewProgressNow}
-        taskStartedAtById={reviewTaskStartedAtById}
-      />
+      {!reviewTaskDockDismissed && hasReviewDockContent && (
+        <ReviewGenerationTaskDock
+          lessons={reviewLatestLessons}
+          notice={reviewFloatingNotice}
+          onDismiss={() => {
+            setReviewFloatingNotice(null);
+            setReviewTaskDockDismissed(true);
+          }}
+          progressNow={reviewProgressNow}
+          taskStartedAtById={reviewTaskStartedAtById}
+        />
+      )}
     </>
   );
 }

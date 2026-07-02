@@ -9,12 +9,15 @@ from review_plan_workflow.llm.prompt_registry import PROMPT_ROOT
 from review_plan_workflow.schemas import (
     AgenticPlanBlueprint,
     PromptBundle,
+    ReviewPlanInput,
+    ReviewPlanSourceBrief,
     ScopePlan,
     SourceSummary,
     SubjectRoute,
     TaskBlueprint,
     TimeAllocation,
 )
+from review_plan_workflow.source_brief import source_brief_trace_payload, source_evidence_list_trace_payload
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -28,22 +31,40 @@ def _relative_prompt_path(path: str, fallback: str) -> str:
     return fallback
 
 
+def _source_payload(source: SourceSummary) -> dict[str, Any]:
+    payload = source.model_dump()
+    payload["evidence_map"] = source_evidence_list_trace_payload(payload.get("evidence_map"))
+    if source.source_brief is not None:
+        payload["source_brief"] = source_brief_trace_payload(source.source_brief)
+    return payload
+
+
 def _run(input_data: dict[str, Any], context: WorkflowContext) -> PromptBundle:
+    review_input: ReviewPlanInput = input_data["input"]
     route: SubjectRoute = input_data["route"]
     source: SourceSummary = input_data["source"]
     scope: ScopePlan = input_data["scope"]
     time_allocation: TimeAllocation = input_data["time_allocation"]
     task_blueprint: TaskBlueprint = input_data["task_blueprint"]
     agent_blueprint: AgenticPlanBlueprint | None = input_data.get("agent_blueprint")
+    source_brief: ReviewPlanSourceBrief | None = input_data.get("source_brief") or source.source_brief
 
     subject_pack_path = _relative_prompt_path(route.subject_pack_path or "", "subjects/common.yaml")
     variables = {
         "trace_id": context.trace_id,
         "selected_subject": route.selected_subject,
-        "source": source.model_dump(),
+        "source": _source_payload(source),
+        "source_brief": source_brief_trace_payload(source_brief),
         "scope": scope.model_dump(),
         "time_allocation": time_allocation.model_dump(),
         "task_blueprint": task_blueprint.model_dump(),
+        "generation_options": {
+            "schedule_mode": review_input.schedule_mode,
+            "review_days": review_input.review_days,
+            "daily_count": review_input.daily_count,
+            "has_user_requirements": bool(review_input.user_requirements),
+            "user_requirements": review_input.user_requirements,
+        },
     }
     if agent_blueprint is not None:
         variables["agent_blueprint"] = agent_blueprint.model_dump()

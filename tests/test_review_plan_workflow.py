@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -14,8 +15,8 @@ import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
-from review_plan_workflow.schemas import validate_final_review_plan
-from review_plan_workflow.service import generate_single_lesson_review_plan
+from review_plan_workflow.schemas import ReviewPlanInput, SourceSummary, TaskBlueprint, normalize_final_review_plan, validate_final_review_plan
+from review_plan_workflow.service import _fallback_agent_blueprint, generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -103,6 +104,376 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(plan.lesson_info.grade, "9")
         self.assertEqual([day.day for day in plan.days], [1, 2, 7, 14, 30])
 
+    def test_normalizes_section_questions_for_compressed_day_quality_gate(self):
+        plan = {
+            "lesson_info": {"subject": "数学", "grade": "三年级", "date": "2026-07-01", "topic": "几何最短路径复习"},
+            "full_review_topics": ["面积比转高的比例", "动点轨迹判断", "轴对称最短路径", "桥模型端点对应", "分段关系式"],
+            "quotes": ["面积比不是直接给面积，而是告诉高的关系。"],
+            "days": [
+                {
+                    "day_number": 1,
+                    "date": "2026-07-02",
+                    "objective": "用错因、步骤和模型复盘几何最短路径。",
+                    "sections": [
+                        {
+                            "type": "mixed",
+                            "title": "填空与选择诊断",
+                            "instructions": "完成后标注错因。",
+                            "questions": [
+                                {
+                                    "id": "blank1",
+                                    "type": "blank",
+                                    "question": "同底三角形面积比等于对应______的比。",
+                                    "answer": ["高"],
+                                },
+                                {
+                                    "id": "blank2",
+                                    "type": "blank",
+                                    "question": "点到直线的距离固定时，动点轨迹是一条与该直线______的直线。",
+                                    "answer": "平行",
+                                },
+                                {
+                                    "id": "blank3",
+                                    "type": "blank",
+                                    "question": "轴对称最短路径先作一个定点关于轨迹线的______。",
+                                    "answer": "对称点",
+                                },
+                                {
+                                    "id": "choice1",
+                                    "type": "choice",
+                                    "question": "求定点 A 到直线 l 上动点 P 再到定点 B 的最短路径，第一步通常是？",
+                                    "options": ["A. 作 A 关于 l 的对称点", "B. 直接量 AP", "C. 随便取 P", "D. 先算面积"],
+                                    "answer": "A",
+                                },
+                                {
+                                    "id": "choice2",
+                                    "type": "choice",
+                                    "question": "动点面积图像写关系式时，最容易漏掉的是？",
+                                    "options": ["A. 时间范围", "B. 图像颜色", "C. 题号", "D. 字体大小"],
+                                    "answer": "A",
+                                },
+                            ],
+                        }
+                    ],
+                    "completion_criteria": "能说清轨迹、变换、锁点、计算四步。",
+                }
+            ],
+        }
+
+        normalized = normalize_final_review_plan(plan)
+        day = normalized["days"][0]
+        self.assertEqual(len(day["blanks"]), 3)
+        self.assertEqual(len(day["choices"]), 2)
+        self.assertEqual(day["blanks"][0]["answer"], "高")
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_normalization_keeps_blank_answer_aliases_without_duplicate_fill_items(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
+        plan["days"] = [
+            {
+                "day": 1,
+                "goal": "复盘二次函数图像与参数。",
+                "items": [{"type": "body", "text": "先口述开口、对称轴、顶点三步。"}],
+                "blanks": [
+                    {"text": "二次函数图像开口由______决定。", "reference_answer": "a 的符号"},
+                    {"text": "顶点式中顶点坐标是______。", "answers": ["(h, k)"]},
+                    {"text": "对称轴公式是______。", "answer_hint": "$x=-b/(2a)$"},
+                ],
+                "choices": [
+                    {
+                        "question": "二次函数 y=ax²+bx+c 中，a>0 时图像开口方向是？",
+                        "options": ["A. 向上", "B. 向下", "C. 向左", "D. 向右"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": "判断最值前应先看什么？",
+                        "options": ["A. 开口方向", "B. 字体", "C. 题号", "D. 页码"],
+                        "answer": "A",
+                    },
+                ],
+                "self_test_phrase": "能说清参数与图像的对应关系。",
+            }
+        ]
+
+        normalized = normalize_final_review_plan(plan)
+
+        self.assertEqual(
+            [blank["answer"] for blank in normalized["days"][0]["blanks"]],
+            ["a 的符号", "(h, k)", "$x=-b/(2a)$"],
+        )
+        self.assertFalse(any(item.get("type") == "fill" for item in normalized["days"][0]["items"]))
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_compressed_fallback_blueprint_requires_complete_one_day_density(self):
+        blueprint = _fallback_agent_blueprint(
+            review_input=ReviewPlanInput(
+                summary_text="课堂讲了勾股定理和勾股数应用。",
+                subject="数学",
+                topic="勾股定理及勾股数应用",
+                schedule_mode="compressed",
+                review_days=[1],
+            ),
+            subject="math",
+            source=SourceSummary(confirmed_topics=["勾股定理", "勾股数"]),
+            task_blueprint=TaskBlueprint(subject="math", required_components=[]),
+        )
+
+        instructions = "\n".join(blueprint.writer_instructions)
+        criteria = "\n".join(blueprint.success_criteria)
+        self.assertIn("只输出 day=1", instructions)
+        self.assertIn("至少提供 5 个不重复的可打印题目", instructions)
+        self.assertIn("worked_example", instructions)
+        self.assertIn("error_log", criteria)
+
+    def test_review_plan_input_accepts_custom_review_days(self):
+        review_input = ReviewPlanInput(
+            summary_text="课堂总结",
+            schedule_mode="custom",
+            review_days=[1, 5],
+            user_requirements="只做考前两次",
+        )
+
+        self.assertEqual(review_input.review_days, [1, 5])
+        self.assertEqual(review_input.user_requirements, "只做考前两次")
+
+    def test_quality_policy_skips_llm_reviewer_for_high_confidence_local_pass(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(score=96, passed=True, must_revise=False, issues=[], revision_instructions=[])
+        source_brief = ReviewPlanSourceBrief(
+            source_text_hash="sha256:" + "c" * 64,
+            cleaned_text="课堂材料",
+            lesson_title_candidates=["一次函数"],
+            confidence=0.86,
+        )
+
+        self.assertFalse(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
+
+    def test_quality_policy_runs_llm_reviewer_when_source_confidence_is_low(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(score=92, passed=True, must_revise=False, issues=[], revision_instructions=[])
+        source_brief = ReviewPlanSourceBrief(confidence=0.5, missing_fields=["topic"])
+
+        self.assertTrue(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
+
+    def test_quality_policy_caps_structural_revision_attempts_to_one(self):
+        from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
+        from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
+
+        quality = QualityReview(
+            score=40,
+            passed=False,
+            must_revise=True,
+            issues=[QualityIssue(severity="high", category="pdf_readiness", description="题量不足")],
+            revision_instructions=["补足题目"],
+        )
+        source_brief = ReviewPlanSourceBrief(confidence=0.82)
+
+        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
+
+    def test_quality_policy_allows_second_revision_for_question_factual_errors(self):
+        from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
+        from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
+
+        quality = QualityReview(
+            score=62,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="第1天选择题答案错误，应为锐角三角形。",
+                    suggested_fix="重写该选择题并校验答案。",
+                )
+            ],
+            revision_instructions=["重写选择题并校验答案"],
+        )
+        source_brief = ReviewPlanSourceBrief(confidence=0.82)
+
+        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 2)
+
+    def test_source_brief_builder_records_structured_source_before_writer(self):
+        from review_plan_workflow.executor import run_workflow_node
+        from review_plan_workflow.nodes.intake_normalizer import intake_normalizer_node
+        from review_plan_workflow.nodes.source_brief_builder import source_brief_builder_node
+        from review_plan_workflow.state import WorkflowContext
+
+        review_input = ReviewPlanInput(
+            summary_text=(
+                "本节课主题：动点与立体几何综合\n"
+                "老师强调：先看固定量，再判断轨迹。\n"
+                "例题：动点 P 到定点 O 的距离恒为 r，轨迹是什么？"
+            ),
+            subject="数学",
+            grade="六年级",
+            user_requirements="压缩成一天，少一点题量",
+        )
+        context = WorkflowContext(provider="deepseek", model="deepseek-v4-pro")
+        normalized = run_workflow_node(intake_normalizer_node, review_input, context)
+        brief = run_workflow_node(
+            source_brief_builder_node,
+            {"input": review_input, "normalized": normalized},
+            context,
+        )
+
+        self.assertEqual(brief.lesson_title_candidates[0], "动点与立体几何综合")
+        self.assertTrue(brief.evidence_map)
+        self.assertIn("source_brief", context.node_outputs)
+        trace_source_brief = context.node_outputs["source_brief"]
+        self.assertEqual(trace_source_brief["schema_version"], "2026-07-01")
+        self.assertIn("cleaned_text_length", trace_source_brief)
+        self.assertNotIn("cleaned_text", trace_source_brief)
+        self.assertNotIn("压缩成一天，少一点题量", str(trace_source_brief))
+        executor_source_brief = context.node_outputs["source_brief_builder"]
+        self.assertIn("cleaned_text_length", executor_source_brief)
+        self.assertNotIn("cleaned_text", executor_source_brief)
+
+    def test_source_brief_builder_warns_on_missing_fields_without_leaking_cleaned_text(self):
+        from review_plan_workflow.executor import run_workflow_node
+        from review_plan_workflow.nodes.intake_normalizer import intake_normalizer_node
+        from review_plan_workflow.nodes.source_brief_builder import source_brief_builder_node
+        from review_plan_workflow.state import WorkflowContext
+
+        review_input = ReviewPlanInput(
+            summary_text="今天讲了很多内容，学生容易把条件看漏。",
+            subject="数学",
+            grade="六年级",
+        )
+        context = WorkflowContext(provider="deepseek", model="deepseek-v4-pro")
+        normalized = run_workflow_node(intake_normalizer_node, review_input, context)
+        brief = run_workflow_node(
+            source_brief_builder_node,
+            {"input": review_input, "normalized": normalized},
+            context,
+        )
+
+        self.assertIn("topic", brief.missing_fields)
+        self.assertIn("source_brief_missing_fields", [warning.code for warning in context.warnings])
+        self.assertNotIn("cleaned_text", context.node_outputs["source_brief_builder"])
+
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_service_passes_source_brief_and_user_requirements_to_planner_and_writer(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-key"})
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "按源材料聚焦空间轨迹",
+                "student_diagnosis": ["空间轨迹判断不稳"],
+                "knowledge_map": [{"name": "空间轨迹", "role": "核心", "evidence": "ev-001"}],
+                "day_strategies": [
+                    {
+                        "day": 1,
+                        "objective": "压缩复习",
+                        "retrieval_focus": ["轨迹"],
+                        "question_design": ["填空"],
+                        "review_loop": ["自检"],
+                        "risk_controls": ["不虚构"],
+                    }
+                ],
+                "writer_instructions": ["只用源材料证据"],
+                "quality_risks": [],
+                "success_criteria": ["题目可打印"],
+                "assumptions": [],
+                "confidence": 0.9,
+            },
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 1, "output_tokens": 2},
+        )
+        mock_generate_plan.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合"),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4},
+        )
+        mock_llm_review.return_value = (
+            {"score": 96, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 5, "output_tokens": 6},
+        )
+
+        generate_single_lesson_review_plan(
+            summary_text=(
+                "本节课主题：动点与立体几何综合\n"
+                "老师强调：先看固定量，再判断轨迹。\n"
+                "例题：动点 P 到定点 O 的距离恒为 r，轨迹是什么？"
+            ),
+            subject="数学",
+            grade="六年级",
+            topic="",
+            weak_points="空间轨迹",
+            lesson_date="2026-07-01",
+            generation_options={
+                "schedule_mode": "compressed",
+                "user_requirements": "压缩成一天，少一点题量，多做诊断",
+            },
+            provider="deepseek",
+            model="deepseek-v4-pro",
+        )
+
+        parent_message = mock_parent_plan.call_args.kwargs["user_message"]
+        writer_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn("source_brief", parent_message)
+        self.assertIn("压缩成一天，少一点题量，多做诊断", parent_message)
+        self.assertIn("结构化课堂材料", writer_message)
+        self.assertIn("动点与立体几何综合", writer_message)
+        self.assertIn("压缩成一天，少一点题量，多做诊断", writer_message)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_node_outputs_do_not_store_source_text_quotes(self, mock_generate_plan):
+        classroom_phrase = "这段课堂材料不要落库：先看固定量，再判断轨迹。"
+        mock_generate_plan.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合"),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary=classroom_phrase,
+            weak_points="空间轨迹",
+        )
+
+        generate_single_lesson_review_plan(
+            summary_text=classroom_phrase,
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            weak_points="空间轨迹",
+            lesson_date="2026-07-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+        )
+
+        writer_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn(classroom_phrase, writer_message)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        node_outputs_blob = json.dumps(run["node_outputs"], ensure_ascii=False)
+        self.assertNotIn(classroom_phrase, node_outputs_blob)
+        self.assertNotIn("先看固定量，再判断轨迹", node_outputs_blob)
+        self.assertNotIn('"cleaned_text":', node_outputs_blob)
+
     def test_validate_final_review_plan_normalizes_components_only_writer_shape(self):
         plan, errors = validate_final_review_plan(components_only_single_lesson_plan())
         self.assertIsNotNone(plan)
@@ -113,6 +484,65 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(plan.days[0].blanks[0]["text"], "已知 x>0,y>0，且 1/x+2/y=1，则 x+2y 的最小值是______。")
         self.assertEqual(plan.days[0].choices[0]["question"], "下列函数中，与 f(x)=(x²-1)/(x-1) 相等的是（ ）。")
         self.assertIn("解函数不等式时，第一步先判断", plan.days[0].items[-1]["text"])
+
+    def test_validate_final_review_plan_normalizes_nested_tasks_into_printable_fields(self):
+        raw_plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        for day in raw_plan["days"]:
+            day["blanks"] = []
+            day["choices"] = []
+            day["items"] = []
+            day["tasks"] = {
+                "blanks": [
+                    {"stem": f"第{day['day']}天：定长线段在立体中的轨迹是______。", "answer": "球面"},
+                    {"stem": f"第{day['day']}天：球面被平面截得的图形是______。", "answer": "圆"},
+                    {"stem": f"第{day['day']}天：面积最值先找固定底或固定______。", "answer": "高"},
+                ],
+                "choices": [
+                    {
+                        "question": f"第{day['day']}天：到定点距离为定长的动点轨迹是？",
+                        "options": ["A. 球面", "B. 直线", "C. 射线", "D. 折线"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": f"第{day['day']}天：定底三角形面积最值优先看什么？",
+                        "options": ["A. 动高", "B. 颜色", "C. 页码", "D. 字体"],
+                        "answer": "A",
+                    },
+                ],
+                "active_recall": {
+                    "cards": [
+                        {"stem": f"第{day['day']}天：为什么线面角最大值要找线段最短？", "answer_hint": "垂高固定时，斜线越短角越大。"}
+                    ]
+                },
+            }
+        raw_plan["days"][2]["tasks"] = {
+            "blanks_spiral": [
+                {"stem": "第7天：定长线段在立体中的轨迹是______。", "answer": "球面"},
+                {"stem": "第7天：球面被平面截得的图形是______。", "answer": "圆"},
+            ],
+            "oral_cards": [
+                {"stem": "题干：动点 P 满足 PA·PB=0。", "answer_hint": "以 AB 为直径的圆。"},
+                {"stem": "题干：动点 P 到定点距离固定。", "answer_hint": "轨迹是球面。"},
+                {"stem": "题干：线面角垂高固定。", "answer_hint": "找线段最短。"},
+            ],
+        }
+        raw_plan["days"][3]["tasks"]["multiple_choice_diagnosis"] = {
+            "question": "第14天：下列哪一步最能避免空间直觉误判？",
+            "options": ["A. 先画关系图", "B. 直接猜", "C. 只看答案", "D. 跳过证明"],
+            "answer": "A",
+        }
+
+        plan, errors = validate_final_review_plan(raw_plan)
+        review = review_single_lesson_plan(raw_plan, subject="math")
+
+        self.assertIsNotNone(plan)
+        self.assertEqual(errors, [])
+        self.assertEqual(plan.days[0].blanks[0]["text"], "第1天：定长线段在立体中的轨迹是______。")
+        self.assertEqual(plan.days[0].choices[0]["question"], "第1天：到定点距离为定长的动点轨迹是？")
+        self.assertEqual(len(plan.days[2].blanks), 2)
+        self.assertTrue(any("PA·PB=0" in item["text"] for item in plan.days[2].items))
+        self.assertTrue(review.passed, review.model_dump())
+        self.assertFalse(any(issue.category in {"pdf_readiness", "task_actionability"} for issue in review.issues))
 
     def test_validate_final_review_plan_normalizes_wrapped_camel_case_writer_shape(self):
         wrapped_plan = {
@@ -176,6 +606,89 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         review = review_single_lesson_plan(desktop_writer_single_lesson_plan(), subject="math")
         self.assertTrue(review.passed)
         self.assertFalse(any(issue.category in {"schema", "completeness"} for issue in review.issues))
+
+    def test_quality_gate_accepts_nested_plan_wrapper_after_normalization(self):
+        inner_plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        days = [dict(day) for day in inner_plan["days"]]
+        days[2] = {
+            "day": 7,
+            "objective": "从会做到会讲：完整口述方法链。",
+            "oral_cards": [
+                {
+                    "stem": "题干：动点 P 满足 PA·PB=0。",
+                    "question": "为什么这个条件能推出 P 的轨迹是圆？",
+                },
+                {
+                    "stem": "题干：动点 P 到定点距离固定。",
+                    "question": "试说出 P 点的轨迹，并解释最值转化思路。",
+                },
+                {
+                    "stem": "题干：线面角垂高固定。",
+                    "question": "为什么求最大值时要找线段最短？",
+                },
+            ],
+            "mini_test": {
+                "blanks": [
+                    {"stem": "定长线段在立体中的轨迹是______。", "answer": "球面"},
+                    {"stem": "球面被平面截得的图形是______。", "answer": "圆"},
+                    {"stem": "求面积最值时先找不变量，再求______。", "answer": "高或底"},
+                ],
+                "choices": [
+                    {
+                        "question": "关于线面角，以下说法正确的是？",
+                        "options": ["A. 越长角越大", "B. 越短角越小", "C. 三余弦定理给出最小角", "D. 最大值等于二面角"],
+                        "answer": "C",
+                    }
+                ],
+            },
+            "active_recall": {
+                "items": ["步骤1：判断______；", "步骤2：找到______；", "步骤3：转化为______。"],
+                "answers": ["轨迹模型", "不变量", "几何量最值"],
+            },
+            "completion_criteria": "能流畅口述方法链，并完成当天自测。",
+        }
+        full_review_topics = [
+            "平面动点轨迹判圆",
+            "立体动点定长模型",
+            "球面截圆",
+            "圆锥侧面轨迹",
+            "面积最值转化",
+            "体积最值转化",
+        ]
+        wrapped_plan = {
+            "subject": "数学",
+            "grade": "六年级",
+            "topic": "动点与立体几何综合",
+            "lesson_date": "2026-07-01",
+            "review_days": [1, 2, 7, 14, 30],
+            "plan": {
+                "full_review_topics": full_review_topics,
+                "quotes": ["动点问题的核心是先判断轨迹，再处理最值。"],
+                "days": days,
+            },
+        }
+
+        review = review_single_lesson_plan(wrapped_plan, subject="math")
+
+        self.assertTrue(review.passed, review.model_dump())
+        self.assertFalse(any(issue.category in {"schema", "completeness"} for issue in review.issues))
+
+    def test_quality_gate_uses_required_review_days(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] in {1, 7}]
+
+        review = review_single_lesson_plan(plan, subject="math", required_review_days=[1, 7], schedule_mode="custom")
+
+        self.assertTrue(review.passed, review.model_dump())
+        self.assertFalse(any(issue.category == "completeness" for issue in review.issues))
+
+    def test_quality_gate_rejects_extra_default_days_for_custom_schedule(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+
+        review = review_single_lesson_plan(plan, subject="math", required_review_days=[1], schedule_mode="compressed")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(any(issue.category == "completeness" for issue in review.issues))
 
     def test_quality_gate_rejects_pdf_fallback_content(self):
         broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")
@@ -287,17 +800,19 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             },
         )()
         create_mock = unittest.mock.Mock(return_value=response)
-        fake_client = type(
-            "Client",
-            (),
-            {
-                "chat": type(
-                    "Chat",
-                    (),
-                    {"completions": type("Completions", (), {"create": create_mock})()},
-                )()
-            },
-        )()
+
+        class FakeClient:
+            def __init__(self):
+                self.with_options_kwargs = None
+                self.chat = type("Chat", (), {})()
+                self.chat.completions = type("Completions", (), {})()
+                self.chat.completions.create = create_mock
+
+            def with_options(self, **kwargs):
+                self.with_options_kwargs = kwargs
+                return self
+
+        fake_client = FakeClient()
         with patch.object(llm_client_module, "get_chat_client", return_value=fake_client):
             payload, usage = llm_client_module.generate_review_plan_json(
                 system_prompt="system",
@@ -306,13 +821,16 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                 model="deepseek-v4-pro",
                 temperature=0.17,
                 stage="unit_test_stage",
+                timeout_seconds=42.0,
+                max_retries=0,
             )
 
         self.assertEqual(payload, {"ok": True})
         self.assertEqual(usage["input_tokens"], 11)
         self.assertEqual(usage["output_tokens"], 22)
-        self.assertEqual(create_mock.call_args.kwargs["timeout"], llm_client_module.REVIEW_PLAN_LLM_TIMEOUT_SECONDS)
+        self.assertEqual(create_mock.call_args.kwargs["timeout"], 42.0)
         self.assertEqual(create_mock.call_args.kwargs["temperature"], 0.17)
+        self.assertEqual(fake_client.with_options_kwargs, {"timeout": 42.0, "max_retries": 0})
 
     def test_generate_review_plan_json_passes_openai_reasoning_effort(self):
         response = type(
@@ -426,21 +944,100 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(parent_kwargs["reasoning_effort"], "high")
         self.assertEqual(parent_kwargs["temperature"], 0.21)
         self.assertEqual(parent_kwargs["stage"], "parent_planner")
+        self.assertEqual(parent_kwargs["timeout_seconds"], 35.0)
+        self.assertEqual(parent_kwargs["max_retries"], 0)
         writer_kwargs = mock_generate_plan.call_args.kwargs
         self.assertEqual(writer_kwargs["provider"], "deepseek")
         self.assertEqual(writer_kwargs["model"], "deepseek-v4-pro")
         self.assertEqual(writer_kwargs["temperature"], 0.36)
         self.assertEqual(writer_kwargs["stage"], "plan_generator")
+        self.assertEqual(writer_kwargs["timeout_seconds"], 180.0)
+        self.assertEqual(writer_kwargs["max_retries"], 0)
         self.assertIn("父模型教学蓝图", writer_kwargs["user_message"])
         self.assertIn("定义域", writer_kwargs["user_message"])
         reviewer_kwargs = mock_llm_review.call_args.kwargs
         self.assertEqual(reviewer_kwargs["provider"], "openai")
         self.assertEqual(reviewer_kwargs["temperature"], 0.08)
         self.assertEqual(reviewer_kwargs["stage"], "quality_reviewer_llm")
+        self.assertEqual(reviewer_kwargs["timeout_seconds"], 90.0)
+        self.assertEqual(reviewer_kwargs["max_retries"], 0)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIn("parent_planner", run["node_outputs"])
         self.assertIn("quality_reviewer_llm", run["node_outputs"])
         self.assertEqual(run["node_outputs"]["plan_generator_model_config"]["temperature"], 0.36)
+
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_service_skips_llm_reviewer_for_high_confidence_local_pass(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "围绕一次函数表达式和斜率判断复习。",
+                "student_diagnosis": ["斜率判断不稳"],
+                "knowledge_map": [{"name": "一次函数", "role": "核心", "evidence": "ev-001"}],
+                "day_strategies": [
+                    {"day": day, "objective": "一次函数复习", "retrieval_focus": ["斜率", "表达式"]}
+                    for day in [1, 2, 7, 14, 30]
+                ],
+                "writer_instructions": ["每天绑定斜率判断。"],
+                "quality_risks": [],
+                "success_criteria": ["题目可打印"],
+                "assumptions": [],
+                "confidence": 0.9,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 1, "output_tokens": 2},
+        )
+        mock_generate_plan.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="一次函数"),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂材料",
+            weak_points="斜率判断",
+        )
+        _generated, usage = generate_single_lesson_review_plan(
+            summary_text=(
+                "本节课主题：一次函数\n"
+                "知识点：函数表达式与图像。\n"
+                "方法：先代入 -> 再化简 -> 最后检验。\n"
+                "老师强调：先看斜率，再判断增减性。\n"
+                "例题：已知 y=2x+1，求 x=3 时 y 的值？"
+            ),
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        mock_llm_review.assert_not_called()
+        self.assertEqual(usage["input_tokens"], 4)
+        self.assertEqual(usage["output_tokens"], 6)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["node_outputs"]["quality_reviewer_initial"]["mode"], "skipped")
+        self.assertEqual(
+            run["node_outputs"]["quality_reviewer_initial"]["reason"],
+            "local_quality_passed_with_high_source_confidence",
+        )
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
@@ -529,11 +1126,98 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(mock_revise_plan.call_count, 1)
         revise_kwargs = mock_revise_plan.call_args.kwargs
         self.assertEqual(revise_kwargs["stage"], "targeted_revision")
-        self.assertEqual(revise_kwargs["temperature"], 0.22)
+        self.assertEqual(revise_kwargs["provider"], "deepseek")
+        self.assertEqual(revise_kwargs["model"], "deepseek-v4-pro")
+        self.assertEqual(revise_kwargs["temperature"], 0.1)
+        self.assertEqual(revise_kwargs["timeout_seconds"], 120.0)
+        self.assertEqual(revise_kwargs["max_retries"], 0)
         self.assertIn("父模型教学蓝图", revise_kwargs["user_message"])
         self.assertIn("定义域遗漏", revise_kwargs["user_message"])
         self.assertEqual(usage["input_tokens"], 75)
         self.assertEqual(usage["output_tokens"], 34)
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_question_answer_error_gets_second_targeted_revision(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "校验勾股定理逆定理和三角形分类。",
+                "student_diagnosis": ["容易把锐角三角形误判为直角三角形"],
+                "knowledge_map": [{"name": "勾股逆定理", "role": "判断三角形类型", "evidence": "课堂"}],
+                "day_strategies": [{"day": day, "objective": "勾股数判断"} for day in [1, 2, 7, 14, 30]],
+                "writer_instructions": ["每道选择题必须验算答案。"],
+                "quality_risks": ["选择题答案可能算错。"],
+                "success_criteria": ["选择题答案必须与验算一致。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
+        first_revision = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
+        fixed_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
+        fixed_plan["weak_points_summary"] = "已修正三边根式判断题，答案与验算一致。"
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        factual_issue = {
+            "severity": "high",
+            "category": "question_quality",
+            "description": "第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+            "suggested_fix": "重写第1天选择题第2题，并重新验算答案。",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {"score": 62, "passed": False, "must_revise": True, "issues": [factual_issue], "revision_instructions": ["重写错题"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 70, "passed": False, "must_revise": True, "issues": [factual_issue], "revision_instructions": ["继续重写错题"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 95, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_revise_plan.side_effect = [
+            (first_revision, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4}),
+            (fixed_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4}),
+        ]
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="九年级",
+            topic="勾股定理及勾股数应用",
+            weak_points="勾股逆定理分类判断",
+            lesson_date="2026-07-02",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], "已修正三边根式判断题，答案与验算一致。")
+        self.assertEqual(mock_revise_plan.call_count, 2)
+        self.assertEqual(mock_llm_review.call_count, 3)
+        self.assertEqual(mock_revise_plan.call_args_list[0].kwargs["stage"], "targeted_revision")
+        self.assertEqual(mock_revise_plan.call_args_list[1].kwargs["stage"], "targeted_revision")
+        self.assertEqual(usage["provider"], "openai")
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
@@ -587,6 +1271,49 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("formula_sheet", run["node_outputs"]["task_blueprint"]["required_components"])
         self.assertEqual(run["node_outputs"]["time_allocator"]["review_schedule"][0]["day"], 1)
         self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_passes_generation_options_through_workflow(self, mock_generate_plan):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] in {1, 7}]
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={
+                "schedule_mode": "custom",
+                "review_days": [1, 7],
+                "user_requirements": "只做两次，题量轻一点",
+            },
+            include_usage=True,
+        )
+
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 7])
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["node_outputs"]["scope_planner"]["review_days"], [1, 7])
+        options = run["node_outputs"]["prompt_bundle_builder"]["variables"]["generation_options"]
+        self.assertEqual(options["schedule_mode"], "custom")
+        self.assertEqual(options["review_days"], [1, 7])
+        self.assertEqual(options["user_requirements"], "只做两次，题量轻一点")
+        self.assertIn("复习日必须且只能覆盖 [1, 7]", mock_generate_plan.call_args.kwargs["user_message"])
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_uses_writer_model_when_chain_model_differs(self, mock_generate_plan):
@@ -721,7 +1448,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(generated["days"][0]["items"][0]["text"], "回顾分式方程的定义、去分母和增根检验。")
         self.assertEqual(generated["days"][0]["choices"][0]["question"], "下列哪一步最容易产生增根？")
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
-        self.assertEqual(run["warnings"], [])
+        self.assertFalse(any(warning["code"].startswith("plan_generator_schema") for warning in run["warnings"]))
         self.assertTrue(run["quality_review"]["passed"])
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
@@ -762,8 +1489,97 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             ["二次函数最值", "将军饮马最短路径", "上减下/右减左", "设参数表达坐标", "轴对称转化", "顶点公式求最值"],
         )
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
-        self.assertEqual(run["warnings"], [])
+        self.assertFalse(any(warning["code"].startswith("plan_generator_schema") for warning in run["warnings"]))
         self.assertTrue(run["quality_review"]["passed"])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_normalizes_nested_plan_wrapper_without_schema_warning(self, mock_generate_plan):
+        inner_plan = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        full_review_topics = [
+            "平面动点轨迹判圆",
+            "立体动点定长模型",
+            "球面截圆",
+            "圆锥侧面轨迹",
+            "面积最值转化",
+            "体积最值转化",
+        ]
+        mock_generate_plan.return_value = (
+            {
+                "subject": "数学",
+                "lesson_date": "2026-07-01",
+                "lesson_info": {"subject": "math", "topic": "", "grade": "", "date": "2026-07-01", "key_categories": []},
+                "full_review_topics": [],
+                "quotes": [],
+                "days": [],
+                "review_days": [1, 2, 7, 14, 30],
+                "plan": {
+                    "full_review_topics": full_review_topics,
+                    "quotes": ["动点问题的核心是先判断轨迹，再处理最值。"],
+                    "days": inner_plan["days"],
+                },
+            },
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="课堂总结文本",
+            weak_points="",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            lesson_date="2026-07-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "动点与立体几何综合")
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertFalse(any(warning["code"].startswith("plan_generator_schema") for warning in run["warnings"]))
+        self.assertTrue(run["quality_review"]["passed"])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_normalizes_common_result_wrapper_without_schema_repair(self, mock_generate_plan):
+        inner_plan = valid_single_lesson_plan(subject="数学", topic="圆与动点综合")
+        mock_generate_plan.return_value = (
+            {
+                "result": {
+                    "plan": inner_plan,
+                },
+            },
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="六年级",
+            topic="圆与动点综合",
+            lesson_date="2026-07-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "圆与动点综合")
+        self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
+        self.assertEqual(mock_generate_plan.call_count, 1)
+        user_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn("顶层必须直接包含 lesson_info, full_review_topics, quotes, days", user_message)
+        self.assertIn("禁止输出 plan, reviewPlan, result, data, output, content, response 等包裹字段", user_message)
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
@@ -803,7 +1619,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
-    def test_service_returns_best_plan_with_warning_after_two_failed_revisions(self, mock_generate_plan, mock_revise_plan):
+    def test_service_returns_best_plan_with_warning_after_one_failed_revision(self, mock_generate_plan, mock_revise_plan):
         low_quality_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
         low_quality_plan["weak_points_summary"] = "（具体题目）"
         still_low_quality_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
@@ -844,9 +1660,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(generated["weak_points_summary"], still_low_quality_plan["weak_points_summary"])
         self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
         self.assertEqual(validate_final_review_plan(generated)[1], [])
-        self.assertEqual(usage["input_tokens"], 12)
-        self.assertEqual(usage["output_tokens"], 24)
-        self.assertEqual(mock_revise_plan.call_count, 2)
+        self.assertEqual(usage["input_tokens"], 11)
+        self.assertEqual(usage["output_tokens"], 22)
+        self.assertEqual(mock_revise_plan.call_count, 1)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertEqual(run["quality_review"]["passed"], False)
         self.assertTrue(any(warning["code"] == "quality_revision_required" for warning in run["warnings"]))

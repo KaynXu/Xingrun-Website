@@ -23,6 +23,96 @@ def valid_single_lesson_plan(*, subject: str = "数学", topic: str = "一次函
     return plan
 
 
+def dynamic_geometry_source_brief_plan() -> dict:
+    day_dates = ((1, "2026-07-02"), (2, "2026-07-03"), (7, "2026-07-08"), (14, "2026-07-15"), (30, "2026-07-31"))
+    return {
+        "lesson_info": {
+            "subject": "数学",
+            "grade": "六年级",
+            "topic": "动点与立体几何综合",
+            "key_categories": ["固定量", "空间轨迹", "球面判断", "边界条件", "错因辨析"],
+        },
+        "weak_points_summary": "学生容易把空间球面误看成平面圆，需要先找固定量再判断轨迹对象。",
+        "full_review_topics": ["动点定义", "固定量识别", "空间球面", "平面圆误判", "边界条件"],
+        "days": [
+            {
+                "day": day,
+                "date": date_text,
+                "label": f"第{day}天复习",
+                "time": "12分钟",
+                "goal": "复现动点轨迹判断链条。",
+                "focus": "固定量、轨迹对象、空间边界。",
+                "items": [
+                    {"type": "body", "text": f"第{day}天先复述：固定量 -> 轨迹对象 -> 边界条件。"}
+                ],
+                "blanks": [
+                    {"text": f"第{day}天：动点 P 到定点 O 的距离恒为 r，空间轨迹是______。", "answer": "球面"},
+                    {"text": f"第{day}天：判断轨迹前先找不会变化的______。", "answer": "固定量"},
+                    {"text": f"第{day}天：把空间球面误判为平面圆，是因为忽略了______。", "answer": "空间范围"},
+                ],
+                "choices": [
+                    {
+                        "question": f"第{day}天：已知动点 P 满足 OP=r，P 在空间内运动，下列轨迹判断正确的是？",
+                        "options": ["A. 球面", "B. 圆周", "C. 线段", "D. 射线"],
+                        "answer": "A",
+                    }
+                ],
+                "self_test_phrase": "能说清固定量为什么决定轨迹维度。",
+            }
+            for day, date_text in day_dates
+        ],
+    }
+
+
+def text_only_low_density_review_plan() -> dict:
+    day_dates = ((1, "2026-07-02"), (2, "2026-07-03"), (7, "2026-07-08"), (14, "2026-07-15"), (30, "2026-07-31"))
+    return {
+        "lesson_info": {
+            "subject": "数学",
+            "grade": "六年级",
+            "topic": "等式推导边界与审题列式",
+            "key_categories": ["等式判断", "取倒数限制", "平方相等边界", "绝对值边界", "应用题列式"],
+        },
+        "weak_points_summary": "学生需要巩固等式推导的前提条件，并在应用题中辨清价格和数量方向。",
+        "full_review_topics": [
+            "等式判断",
+            "取倒数的分母限制",
+            "平方相等边界",
+            "绝对值相等边界",
+            "相等或互为相反数",
+            "应用题语义列式",
+            "若则关系方向",
+        ],
+        "days": [
+            {
+                "day": day,
+                "date": date_text,
+                "label": f"第{day}天复习",
+                "time": "12分钟",
+                "goal": "复现等式推导的条件边界和应用题方向。",
+                "focus": "不为0、平方/绝对值边界、贵20元方向。",
+                "items": [
+                    {"type": "body", "text": f"第{day}天先口述每个变形前要检查的条件。"}
+                ],
+                "blanks": [
+                    {"text": f"第{day}天：取倒数前必须确认分母______。", "answer": "不为0"},
+                    {"text": f"第{day}天：若 a²=b²，只能推出 a=b 或 a=______。", "answer": "-b"},
+                    {"text": f"第{day}天：贵20元列式时要先确认______对象。", "answer": "比较"},
+                ],
+                "choices": [
+                    {
+                        "question": f"第{day}天：理想购买数量比实际多2件，设实际为 x，理想数量应表示为？",
+                        "options": ["A. x+2", "B. x-2", "C. 2x", "D. x/2"],
+                        "answer": "A",
+                    }
+                ],
+                "self_test_phrase": "能说明每一步等式变形的前提条件。",
+            }
+            for day, date_text in day_dates
+        ],
+    }
+
+
 def writer_style_single_lesson_plan() -> dict:
     return {
         "lesson_info": {

@@ -25,6 +25,8 @@ export interface ReviewLessonRecord {
   pdf_path: string;
   record_status?: string;
   generation_error?: string;
+  review_generation_options?: Record<string, unknown> | null;
+  review_generation_summary?: string;
 }
 
 export type ReviewLessonTaskState = 'pending' | 'failed' | 'ready' | 'missing-output' | 'empty';
@@ -48,6 +50,10 @@ function pickNullableNumber(value: unknown): number | null {
 
 function pickBoolean(value: unknown): boolean {
   return value === true;
+}
+
+function pickRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
 }
 
 function pickTaskStatus(lesson: Pick<ReviewLessonRecord, 'active_version_status' | 'record_status'>): string {
@@ -91,6 +97,8 @@ export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRe
       pdf_path: pickString(item.pdf_path),
       record_status: pickString(item.record_status),
       generation_error: pickString(item.generation_error),
+      review_generation_options: pickRecord(item.review_generation_options),
+      review_generation_summary: pickString(item.review_generation_summary),
     }];
   });
 }

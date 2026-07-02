@@ -114,6 +114,87 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["chat_model"], "deepseek-v4-flash")
         self.assertEqual(saved["same_lesson_materials"], ["补充材料"])
 
+    def test_review_plan_version_persists_generation_options(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+            created_by_user_id=7,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            generation_options={
+                "schedule_mode": "daily",
+                "daily_count": 3,
+                "user_requirements": "题量少一点",
+            },
+            generation_options_source="create",
+        )
+
+        saved = lesson_manager.get_review_plan_version(version["id"])
+        lesson = lesson_manager.get_lesson(lesson_id)
+
+        self.assertEqual(saved["generation_options"]["schedule_mode"], "daily")
+        self.assertEqual(saved["generation_options"]["review_days"], [1, 2, 3])
+        self.assertEqual(saved["generation_options"]["daily_count"], 3)
+        self.assertEqual(saved["generation_options"]["user_requirements"], "题量少一点")
+        self.assertEqual(saved["generation_options"]["source"], "create")
+        self.assertEqual(saved["generation_summary"], "连续 3 天")
+        self.assertEqual(lesson["review_generation_options"], saved["generation_options"])
+        self.assertEqual(lesson["review_generation_summary"], "连续 3 天")
+
+    def test_review_plan_generation_options_default_for_old_rows(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+        )
+
+        saved = lesson_manager.get_review_plan_version(version["id"])
+
+        self.assertEqual(saved["generation_options"]["schedule_mode"], "standard")
+        self.assertEqual(saved["generation_options"]["review_days"], [1, 2, 7, 14, 30])
+        self.assertEqual(saved["generation_summary"], "标准 5 次")
+
+    def test_update_review_plan_version_generation_options_preserves_regenerate_source(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="斜率判断",
+            class_id=self.class_id,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+        )
+
+        lesson_manager.update_review_plan_version_generation_options(
+            version["id"],
+            {"schedule_mode": "custom", "review_days": "5, 1, 5"},
+        )
+        saved = lesson_manager.get_review_plan_version(version["id"])
+
+        self.assertEqual(saved["generation_options"]["schedule_mode"], "custom")
+        self.assertEqual(saved["generation_options"]["review_days"], [1, 5])
+        self.assertEqual(saved["generation_options"]["source"], "regenerate")
+        self.assertEqual(saved["generation_summary"], "自定义 1,5")
+
     def test_fail_review_plan_version_records_error_without_current_pointer(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",

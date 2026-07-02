@@ -13,12 +13,14 @@ from review_plan_workflow.schemas import (
     AgenticPlanBlueprint,
     NormalizedBrief,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     ScopePlan,
     SourceSummary,
     SubjectRoute,
     TaskBlueprint,
     TimeAllocation,
 )
+from review_plan_workflow.source_brief import source_brief_trace_payload, source_evidence_list_trace_payload
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -44,7 +46,12 @@ def _planner_message(
     scope: ScopePlan,
     time_allocation: TimeAllocation,
     task_blueprint: TaskBlueprint,
+    source_brief: ReviewPlanSourceBrief | None = None,
 ) -> str:
+    source_payload = source.model_dump()
+    source_payload["evidence_map"] = source_evidence_list_trace_payload(source_payload.get("evidence_map"))
+    if source.source_brief is not None:
+        source_payload["source_brief"] = source_brief_trace_payload(source.source_brief)
     payload = {
         "input": {
             "subject": review_input.subject,
@@ -53,10 +60,14 @@ def _planner_message(
             "weak_points": review_input.weak_points,
             "lesson_date": review_input.lesson_date,
             "summary_text": review_input.summary_text,
+            "schedule_mode": review_input.schedule_mode,
+            "review_days": review_input.review_days,
+            "user_requirements": review_input.user_requirements,
         },
         "normalized": normalized.model_dump(),
         "route": route.model_dump(),
-        "source": source.model_dump(),
+        "source": source_payload,
+        "source_brief": source_brief_trace_payload(source_brief or source.source_brief),
         "scope": scope.model_dump(),
         "time_allocation": time_allocation.model_dump(),
         "task_blueprint": task_blueprint.model_dump(),
@@ -100,6 +111,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[AgenticP
     scope: ScopePlan = input_data["scope"]
     time_allocation: TimeAllocation = input_data["time_allocation"]
     task_blueprint: TaskBlueprint = input_data["task_blueprint"]
+    source_brief: ReviewPlanSourceBrief | None = input_data.get("source_brief")
     subject_pack_path = _relative_prompt_path(route.subject_pack_path or "", "subjects/common.yaml")
     temperature = resolve_review_plan_temperature()
 
@@ -125,12 +137,15 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[AgenticP
             scope=scope,
             time_allocation=time_allocation,
             task_blueprint=task_blueprint,
+            source_brief=source_brief,
         ),
         provider=context.provider,
         model=context.model,
         reasoning_effort=context.reasoning_effort,
         temperature=temperature,
         stage="parent_planner",
+        timeout_seconds=35.0,
+        max_retries=0,
     )
     raw_blueprint = payload
     for wrapper_key in ("agenticPlanBlueprint", "blueprint", "plan_blueprint"):

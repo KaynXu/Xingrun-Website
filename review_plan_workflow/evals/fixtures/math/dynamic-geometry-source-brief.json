@@ -1,0 +1,36 @@
+{
+  "name": "dynamic-geometry-source-brief",
+  "input": {
+    "subject": "math",
+    "courseSystem": "中国小学数学",
+    "grade": "六年级",
+    "target": "动点与立体几何综合课后复习",
+    "topic": "动点与立体几何综合",
+    "summary_text": "本节课主题：动点与立体几何综合\n老师强调：先看固定量，再判断轨迹。\n例题：动点 P 到定点 O 的距离恒为 r，轨迹是什么？\n易错：把空间球面误看成平面圆。\n方法：固定量 -> 轨迹对象 -> 边界条件。",
+    "knownWeaknesses": ["空间轨迹判断"],
+    "generation_options": {
+      "schedule_mode": "standard",
+      "review_days": [1, 2, 7, 14, 30],
+      "user_requirements": "选择题不要全是执行清单，要有真实数学判断。"
+    }
+  },
+  "expectedCriteria": [
+    "must preserve dynamic-geometry source brief evidence",
+    "must include fixed 1/2/7/14/30 review days",
+    "must include printable tasks every day",
+    "must include complete multiple-choice questions",
+    "must avoid checklist-like choice questions"
+  ],
+  "checks": [
+    {"name": "dynamic_geometry_terms", "containsAll": ["动点", "轨迹"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "quality_gate_threshold", "minQualityScore": 85}
+  ],
+  "assertions": [
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "topic_contains", "contains": "动点"},
+    {"name": "minimum_printable_items_per_day", "minimum": 3},
+    {"name": "choices_have_complete_options", "minimumChoices": 1},
+    {"name": "no_generic_checklist_choices"}
+  ]
+}

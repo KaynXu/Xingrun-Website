@@ -62,8 +62,8 @@ test('review generation source replaces separate lesson input and library pages 
   assert.match(appSource, /'review-generation': '复习生成'/);
   assert.match(appSource, /import \{ WorkspacePageContent \} from '\.\/features\/navigation\/WorkspacePageContent';/);
   assert.match(contentSource, /ReviewGenerationPage,[\s\S]*ReviewGenerationTaskDock,[\s\S]*from '\.\.\/review-generation\/ReviewGenerationPage';/);
-  assert.match(contentSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*renderLessonInput=\{\(handleFormSuccess\) => \(/);
-  assert.match(contentSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
+  assert.match(contentSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}[\s\S]*renderLessonInput=\{\(handleFormSuccess, handleFormCancel\) => \(/);
+  assert.match(contentSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} onCancel=\{handleFormCancel\} \/>/);
   assert.doesNotMatch(appSource, /activePage === 'input'/);
   assert.doesNotMatch(appSource, /activePage === 'library'/);
 });
@@ -73,14 +73,27 @@ test('review generation source defaults to history documents and expands the sha
   assert.match(reviewGenerationSource, /<h3 className=\{workspaceSectionTitleClass\}>历史文档<\/h3>/);
   assert.match(reviewGenerationSource, /inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white shadow-none transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60/);
   assert.match(reviewGenerationSource, /新建/);
-  assert.match(reviewGenerationSource, /生成复习文档/);
+  assert.match(reviewGenerationSource, /新建复习文档/);
   assert.match(reviewGenerationSource, /<ReviewDocumentHistory[\s\S]*refreshToken=\{historyRefreshToken\}[\s\S]*highlightedLessonId=\{highlightedLessonId\}[\s\S]*onFloatingNotice=\{taskControls\.onFloatingNotice\}/);
   assert.match(contentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);
+  assert.match(appSource, /const \[reviewTaskDockDismissed, setReviewTaskDockDismissed\] = useState\(false\);/);
+  assert.match(appSource, /const \[reviewTaskDockAvailable, setReviewTaskDockAvailable\] = useState\(false\);/);
+  assert.match(appSource, /showReviewTaskLauncher=\{reviewTaskDockDismissed && reviewTaskDockAvailable\}/);
+  assert.match(shellSource, /showReviewTaskLauncher: boolean;/);
+  assert.match(shellSource, /onOpenReviewTaskDock: \(\) => void;/);
+  assert.match(shellSource, /showReviewTaskLauncher=\{showReviewTaskLauncher\}/);
+  assert.match(shellSource, /onOpenReviewTaskDock=\{onOpenReviewTaskDock\}/);
+  assert.match(sidebarSource, /showReviewTaskLauncher\?: boolean;/);
+  assert.match(sidebarSource, /onOpenReviewTaskDock\?: \(\) => void;/);
+  assert.match(sidebarSource, /aria-label="打开生成进度"/);
+  assert.match(sidebarSource, /title="生成进度"/);
+  assert.doesNotMatch(sidebarSource, /aria-label="回到顶部"/);
 });
 
 test('review generation source closes the shared composer after successful generation and refreshes history', () => {
   assert.match(reviewGenerationSource, /const handleFormSuccess = \(result: ReviewPlanCreateResult\) => \{\s*setComposerOpen\(false\);\s*setHighlightedLessonId\(result\.id\);[\s\S]*setHistoryRefreshToken\(\(current\) => current \+ 1\);\s*onSuccess\(\);\s*\};/);
-  assert.match(reviewGenerationSource, /这份录音已处理过，已复用已有复习文档/);
+  assert.match(reviewGenerationSource, /已复用文档/);
+  assert.match(reviewGenerationSource, /已开始生成/);
   assert.doesNotMatch(reviewGenerationSource, /setActivePage\('library'\)/);
 });
 
@@ -115,17 +128,23 @@ test('review generation source renders history as a paginated list with merged d
 });
 
 test('lesson input source keeps subject class and date controls in a fluid grid without fixed width clashes', () => {
-  assert.match(lessonInputSource, /className="grid gap-3 md:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(0,1fr\)_minmax\(0,0\.9fr\)\]"/);
-  assert.match(lessonInputSource, /reviewFormFieldClass = `\$\{workspaceFieldClass\} border-slate-200 focus:border-slate-300 focus:ring-slate-100`;/);
-  assert.match(lessonInputSource, /className=\{`\$\{reviewFormFieldClass\} w-full`\}/);
+  assert.match(lessonInputSource, /title="基本信息"/);
+  assert.match(lessonInputSource, /function SelectField\(/);
+  assert.match(lessonInputSource, /function InputField\(/);
+  assert.match(lessonInputSource, /className="grid grid-cols-1 sm:grid-cols-3 overflow-hidden"/);
+  assert.match(lessonInputSource, /className="truncate min-w-0 flex-1 appearance-none text-sm bg-transparent outline-none cursor-pointer"/);
+  assert.match(lessonInputSource, /appearance: 'none'/);
+  assert.match(lessonInputSource, /<SelectField[\s\S]*label="科目"/);
+  assert.match(lessonInputSource, /<SelectField[\s\S]*label="班级"/);
+  assert.match(lessonInputSource, /<InputField[\s\S]*label="日期"/);
   assert.doesNotMatch(lessonInputSource, /sm:w-40/);
   assert.doesNotMatch(appSource, /sm:w-32/);
 });
 
 test('review generation source requires class selection before generation and carries currentUser into LessonInput', () => {
-  assert.match(lessonInputSource, /if \(!classId\) \{\s*setError\('请选择班级后再生成复习记录'\);\s*return;\s*\}/);
+  assert.match(lessonInputSource, /if \(!classId\) \{\s*setError\('请选择班级'\);\s*return;\s*\}/);
   assert.match(contentSource, /import \{ LessonInput \} from '\.\.\/review-generation\/LessonInput';/);
-  assert.match(contentSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} \/>/);
+  assert.match(contentSource, /<LessonInput onSuccess=\{handleFormSuccess\} currentUser=\{currentUser\} onCancel=\{handleFormCancel\} \/>/);
   assert.doesNotMatch(reviewGenerationSource, /initialLesson=\{/);
   assert.match(contentSource, /activeWorkspacePage === 'review-generation'[\s\S]*<ReviewGenerationPage[\s\S]*onSuccess=\{handleReviewGenerationSuccess\}/);
 });
@@ -133,7 +152,7 @@ test('review generation source requires class selection before generation and ca
 test('review generation source submits same lesson supplemental materials', () => {
   assert.match(lessonInputSource, /sameLessonMaterials/);
   assert.match(lessonInputSource, /same_lesson_materials:\s*sameLessonMaterials/);
-  assert.match(lessonInputSource, /同一节课补充材料/);
+  assert.match(lessonInputSource, /补充材料/);
 });
 
 test('lesson input source refreshes assignable classes when the signed-in user changes so stale class options cannot trigger forbidden', () => {

@@ -37,6 +37,8 @@ export function WorkspaceShellLayout({
   showAccounts,
   canOpenPage,
   roleLabel,
+  showReviewTaskLauncher,
+  onOpenReviewTaskDock,
   children,
 }: {
   activeWorkspacePage: WorkspaceShellPage;
@@ -56,6 +58,8 @@ export function WorkspaceShellLayout({
   showAccounts: boolean;
   canOpenPage: (page: WorkspaceShellPage) => boolean;
   roleLabel: string;
+  showReviewTaskLauncher: boolean;
+  onOpenReviewTaskDock: () => void;
   children: ReactNode;
 }) {
   return (
@@ -74,6 +78,8 @@ export function WorkspaceShellLayout({
             canOpenPage={canOpenPage}
             roleLabel={roleLabel}
             onProfileUpdated={onProfileUpdated}
+            showReviewTaskLauncher={showReviewTaskLauncher}
+            onOpenReviewTaskDock={onOpenReviewTaskDock}
           />
         </div>
         <AnimatePresence>
@@ -113,6 +119,8 @@ export function WorkspaceShellLayout({
                   canOpenPage={canOpenPage}
                   roleLabel={roleLabel}
                   onProfileUpdated={onProfileUpdated}
+                  showReviewTaskLauncher={showReviewTaskLauncher}
+                  onOpenReviewTaskDock={onOpenReviewTaskDock}
                 />
               </motion.div>
             </motion.div>

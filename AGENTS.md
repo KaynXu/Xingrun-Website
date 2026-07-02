@@ -142,6 +142,7 @@ Xingrun-Website/
 
 - Before editing project code, `cd` to the project root, which is the directory containing this `AGENTS.md`.
 - Keep commits focused. Do not mix local runtime files like `config.json` or `data/*.db` into normal code commits unless explicitly intended.
+- Generated PDF artifacts, including wrong-question practice PDFs, review-plan exports, zip packages, proof screenshots, and metadata created for one-off delivery, are local-only by default. Do not automatically add or commit them unless the user explicitly asks for those files to be versioned.
 - After meaningful changes, verify first, then commit.
 - The user has very low tolerance for a messy workspace. Keep branches, worktrees, staged files, runtime noise, and uncommitted state as clean and short-lived as possible.
 

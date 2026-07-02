@@ -111,6 +111,12 @@ export async function fetchClassCommentarySkills(): Promise<ClassCommentarySkill
   return skills.map((item) => normalizeClassCommentarySkill(item));
 }
 
+export async function fetchClassCommentaryTasks(): Promise<ClassCommentaryTask[]> {
+  const payload = await apiFetch<{ tasks?: unknown[] }>('/api/class-commentary/tasks');
+  const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+  return tasks.map((item) => normalizeClassCommentaryTask(item && typeof item === 'object' ? item as Record<string, unknown> : {}));
+}
+
 export async function createClassCommentaryTask(
   classId: number,
   audio: File,
@@ -124,6 +130,14 @@ export async function createClassCommentaryTask(
     body,
     onProgress,
   );
+  return normalizeClassCommentaryTask(payload);
+}
+
+export async function createClassCommentaryTextTask(classId: number, text: string): Promise<ClassCommentaryTask> {
+  const payload = await apiFetch<Record<string, unknown>>('/api/class-commentary/tasks/text', {
+    method: 'POST',
+    body: JSON.stringify({ class_id: classId, confirmed_transcript_text: text }),
+  });
   return normalizeClassCommentaryTask(payload);
 }
 
