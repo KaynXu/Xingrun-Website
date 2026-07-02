@@ -715,9 +715,8 @@ def _maybe_revise_plan(
                 node_key=f"quality_reviewer_after_question_repair_{attempt}",
             )
             total_usage = merge_usage(total_usage, reviewer_usage)
-            if repaired_quality.score >= best_quality.score:
-                best_plan = repaired_plan
-                best_quality = repaired_quality
+            best_plan = repaired_plan
+            best_quality = repaired_quality
             if not repaired_quality.must_revise:
                 return repaired_plan, repaired_quality, total_usage
         except Exception as exc:
