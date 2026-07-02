@@ -21,6 +21,7 @@ from review_plan_workflow.evals.runner import (
     validate_fixture_definition,
     workflow_kwargs_from_fixture,
 )
+from tests.test_review_plan_plan_v1 import valid_plan_v1
 from tests.review_plan_test_utils import (
     dynamic_geometry_source_brief_plan,
     text_only_low_density_review_plan,
@@ -42,6 +43,74 @@ def _only_assertion(fixture: dict, name: str) -> dict:
     return {
         "assertions": assertions
     }
+
+
+def _pythagorean_one_day_10q_plan() -> dict:
+    plan = valid_plan_v1()
+    plan["document_title"] = "勾股数与特殊角"
+    plan["audience"]["subject"] = "数学"
+    plan["audience"]["grade"] = "高一"
+    fill_questions = [
+        ("勾股定理中，两条直角边 a、b 和斜边 c 满足______。", "$a^2+b^2=c^2$"),
+        ("3、4、5 这组三边中，斜边是______。", "5"),
+        ("1:1:√2 对应的直角三角形两个锐角都是______。", "45°"),
+        ("1:√3:2 中，短直角边所对的锐角是______。", "30°"),
+        ("α 表示 1:2:√5 中短边 1 所对的______。", "锐角"),
+    ]
+    choice_questions = [
+        (
+            "下列哪一组是整数勾股数？",
+            ["A. 3:4:5", "B. 2:3:4", "C. 1:1:3", "D. 4:4:9"],
+            "A",
+        ),
+        (
+            "β 对应的是哪组比例中短边 1 所对的角？",
+            ["A. 1:3:√10", "B. 1:1:√2", "C. 3:4:5", "D. 5:12:13"],
+            "A",
+        ),
+        (
+            "课堂推导得到 α+β 的结果是？",
+            ["A. 45°", "B. 60°", "C. 90°", "D. 30°"],
+            "A",
+        ),
+        (
+            "构造二倍角时，课堂强调的辅助线是？",
+            ["A. 斜边的垂直平分线", "B. 任意中线", "C. 角平分线", "D. 平行线"],
+            "A",
+        ),
+    ]
+    plan["practice_tasks"] = [
+        {
+            "id": f"b{index}",
+            "day": 1,
+            "task_type": "blank",
+            "question": question,
+            "answer": answer,
+            "knowledge_ids": ["k1"],
+        }
+        for index, (question, answer) in enumerate(fill_questions, start=1)
+    ]
+    plan["practice_tasks"].extend(
+        {
+            "id": f"c{index}",
+            "day": 1,
+            "task_type": "choice",
+            "question": question,
+            "options": options,
+            "answer": answer,
+            "knowledge_ids": ["k1"],
+        }
+        for index, (question, options, answer) in enumerate(choice_questions, start=1)
+    )
+    plan["self_check_questions"] = [
+        {
+            "id": "s1",
+            "day": 1,
+            "question": "口述 α+β 推导最终得到______。",
+            "answer": "45°",
+        }
+    ]
+    return plan
 
 
 class ReviewPlanEvalRunnerTestCase(unittest.TestCase):
@@ -222,6 +291,60 @@ class ReviewPlanEvalRunnerTestCase(unittest.TestCase):
         self.assertFalse(result["passed"], result)
         failed = [item for item in result["evaluation"]["assertions"] if not item["passed"]]
         self.assertEqual(failed[0]["name"], "no_duplicate_printable_tasks")
+
+    def test_task52_pythagorean_one_day_fixture_checks_renderer_and_source_pack(self):
+        fixture_path = FIXTURE_ROOT / "math" / "pythagorean-alpha-beta-one-day-10q.json"
+        fixture = load_fixture(fixture_path)
+        plan = _pythagorean_one_day_10q_plan()
+
+        result = evaluate_plan_against_fixture(plan, fixture, fixture_path=str(fixture_path))
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(all(assertion["passed"] for assertion in result["assertions"]))
+        _run_fixture_assertions(plan, fixture)
+
+    def test_task52_visible_question_count_assertion_rejects_dropped_questions(self):
+        fixture_path = FIXTURE_ROOT / "math" / "pythagorean-alpha-beta-one-day-10q.json"
+        fixture = load_fixture(fixture_path)
+        plan = _pythagorean_one_day_10q_plan()
+        plan["practice_tasks"] = plan["practice_tasks"][:-1]
+
+        with self.assertRaisesRegex(AssertionError, "visible_question_count_equals"):
+            _run_fixture_assertions(plan, _only_assertion(fixture, "visible_question_count_equals"))
+
+    def test_task52_renderer_assertion_rejects_unresolved_math_placeholder(self):
+        fixture_path = FIXTURE_ROOT / "math" / "sections-questions-normalization.json"
+        fixture = load_fixture(fixture_path)
+        plan = dynamic_geometry_source_brief_plan()
+        plan["days"][0]["blanks"][0]["text"] = "公式 {{math:missing}} 对应的结论是______。"
+
+        with self.assertRaisesRegex(AssertionError, "renderer_has_no_dropped_items"):
+            _run_fixture_assertions(plan, _only_assertion(fixture, "renderer_has_no_dropped_items"))
+
+    def test_task52_source_pack_assertion_rejects_missing_math_extraction(self):
+        fixture_path = FIXTURE_ROOT / "math" / "formula-transport.json"
+        fixture = load_fixture(fixture_path)
+        fixture = copy.deepcopy(fixture)
+        fixture["input"]["summary_text"] = "主题：课堂复习\n重点：只做普通文字整理。"
+        plan = valid_plan_v1()
+
+        with self.assertRaisesRegex(AssertionError, "source_pack_has_math_blocks"):
+            _run_fixture_assertions(plan, _only_assertion(fixture, "source_pack_has_math_blocks"))
+
+    def test_task52_source_pack_trace_assertion_rejects_raw_text_leak(self):
+        fixture_path = FIXTURE_ROOT / "math" / "regeneration-same-source.json"
+        fixture = load_fixture(fixture_path)
+        fixture = copy.deepcopy(fixture)
+        fixture["assertions"] = [
+            {
+                "name": "source_pack_no_raw_text_in_trace_payload",
+                "notContainsAny": ["source_pack_parser_v2"],
+            }
+        ]
+        plan = valid_plan_v1()
+
+        with self.assertRaisesRegex(AssertionError, "source_pack_no_raw_text_in_trace_payload"):
+            _run_fixture_assertions(plan, fixture)
 
     def test_workflow_kwargs_from_fixture_preserves_subject_context(self):
         fixture_path = FIXTURE_ROOT / "physics" / "mechanics-electricity-units-experiment.json"

@@ -129,7 +129,7 @@ test('executeStudentCenterLoadRequest loads classes, staff users, teacher bindin
   const students = [{ id: 21, name: '张三' }];
   const apiFetch = async <T>(endpoint: string, init?: RequestInit): Promise<T> => {
     requests.push({ endpoint, init });
-    if (endpoint === '/api/classes') {
+    if (endpoint === '/api/classes?scope=all') {
       return classes as T;
     }
     if (endpoint === '/api/admin/users') {
@@ -151,7 +151,7 @@ test('executeStudentCenterLoadRequest loads classes, staff users, teacher bindin
     teacherBindingData: { teacher_bindings: { 8: 3, 9: null } },
   });
   assert.deepEqual(requests, [
-    { endpoint: '/api/classes', init: undefined },
+    { endpoint: '/api/classes?scope=all', init: undefined },
     { endpoint: '/api/admin/users', init: undefined },
     { endpoint: '/api/classes/teacher-bindings', init: undefined },
     { endpoint: '/api/students', init: undefined },
@@ -162,9 +162,6 @@ test('executeStudentCenterLoadRequest skips staff-only and organization-wide stu
   const requests: string[] = [];
   const apiFetch = async <T>(endpoint: string): Promise<T> => {
     requests.push(endpoint);
-    if (endpoint === '/api/students') {
-      return { students: [] } as T;
-    }
     return classes as T;
   };
 
@@ -177,7 +174,7 @@ test('executeStudentCenterLoadRequest skips staff-only and organization-wide stu
     allStudents: [],
     teacherBindingData: { teacher_bindings: {} },
   });
-  assert.deepEqual(requests, ['/api/classes']);
+  assert.deepEqual(requests, ['/api/classes?scope=all']);
 });
 
 test('class load request lifecycle rules increment versions and identify stale requests', () => {

@@ -11,12 +11,14 @@ from config_runtime import (
 )
 
 from .executor import run_workflow_node
+from .evaluator import build_review_plan_evaluation
 from .generation_options import normalize_generation_options
 from .nodes import (
     intake_normalizer_node,
     parent_planner_node,
     plan_generator_node,
     prompt_bundle_builder_node,
+    question_repair_node,
     quality_reviewer_llm_node,
     revision_node,
     scope_planner_node,
@@ -27,9 +29,18 @@ from .nodes import (
     time_allocator_node,
 )
 from .quality_gate import review_single_lesson_plan
-from .quality_policy import max_revision_attempts_for_quality, should_run_llm_quality_review
+from .quality_policy import (
+    can_soft_pass_after_revision,
+    max_revision_attempts_for_quality,
+    should_run_llm_quality_review,
+    soften_quality_after_revision,
+    soft_pass_warning_for_quality,
+)
+from .printable_questions import collect_day_printable_question_counts
+from .nodes.question_repair import can_repair_questions
 from .llm.client import merge_usage
 from .observability import (
+    build_workflow_runtime_summary,
     flush,
     record_quality_score,
     record_workflow_failure,
@@ -38,6 +49,7 @@ from .observability import (
 )
 from .schemas import (
     AgenticPlanBlueprint,
+    LessonSourcePack,
     QualityIssue,
     QualityReview,
     ReviewPlanInput,
@@ -45,6 +57,7 @@ from .schemas import (
     normalize_final_review_plan,
 )
 from .state import WorkflowContext
+from .validator import ReviewPlanValidationResult, validate_review_plan_delivery
 
 
 def _record_run(
@@ -96,10 +109,29 @@ def _score_quality(
         subject=subject,
         required_review_days=review_input.review_days,
         schedule_mode=review_input.schedule_mode,
+        constraints=review_input.constraints,
     )
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
+
+
+def _validate_delivery(
+    plan: dict[str, Any],
+    *,
+    review_input: ReviewPlanInput,
+    context: WorkflowContext,
+    node_key: str,
+) -> ReviewPlanValidationResult:
+    validation = validate_review_plan_delivery(
+        plan,
+        required_review_days=review_input.review_days,
+        constraints=review_input.constraints,
+        source_pack=review_input.source_pack,
+    )
+    context.node_outputs[node_key] = validation.model_dump()
+    context.node_outputs["review_plan_validator"] = validation.model_dump()
+    return validation
 
 
 def _fallback_agent_blueprint(
@@ -131,9 +163,10 @@ def _fallback_agent_blueprint(
     if compressed_single_day:
         writer_instructions.extend(
             [
-                "当前是 1 天集中复习：只输出 day=1，但这一天要压缩承载整节课内容。",
-                "第1天必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz 对应内容。",
-                "第1天至少提供 5 个不重复的可打印题目，其中填空不少于 3 个，选择诊断不少于 2 个。",
+                "当前是当天课后复习模式：只输出 day=1，把本节课内容压缩成当天可完成的复习。",
+                "当天课后复习必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz、spiral_review 对应内容。",
+                "spiral_review 只做本课内部交叉回收：把本节课 2-3 个关键点混在一起隔题复现，不要写成长期第7天/第30天安排。",
+                "当天课后复习至少提供 5 个不重复的可打印题目，其中填空不少于 3 个，选择诊断不少于 2 个。",
             ]
         )
     return AgenticPlanBlueprint(
@@ -161,11 +194,56 @@ def _fallback_agent_blueprint(
         success_criteria=[
             "每天有可打印填空、完整选择题、主动回忆和完成标准。",
             "复习任务能对应课堂主题、错因和薄弱点。",
-            *[f"包含组件：{component}" for component in required_components[:5]],
+            *[f"包含组件：{component}" for component in required_components[:7]],
         ],
         assumptions=["parent_planner_failed_or_disabled"],
         confidence=0.45,
     )
+
+
+def _is_compressed_single_day(review_input: ReviewPlanInput) -> bool:
+    return review_input.schedule_mode == "compressed" and list(review_input.review_days or []) == [1]
+
+
+def _has_spiral_review(day: dict[str, Any]) -> bool:
+    value = day.get("spiral_review")
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(str(item or "").strip() for item in value)
+    if isinstance(value, dict):
+        return any(str(item or "").strip() for item in value.values())
+    return False
+
+
+def _ensure_single_day_spiral_review(plan: dict[str, Any], review_input: ReviewPlanInput) -> None:
+    if not _is_compressed_single_day(review_input):
+        return
+    days = plan.get("days") if isinstance(plan.get("days"), list) else []
+    if len(days) != 1 or not isinstance(days[0], dict) or _has_spiral_review(days[0]):
+        return
+    day = days[0]
+    counts = collect_day_printable_question_counts(day)
+    if counts.visible_question_count < 5:
+        return
+
+    lesson_info = plan.get("lesson_info") if isinstance(plan.get("lesson_info"), dict) else {}
+    topic_candidates = []
+    for source in (
+        plan.get("full_review_topics"),
+        lesson_info.get("key_categories") if isinstance(lesson_info, dict) else None,
+    ):
+        if isinstance(source, list):
+            topic_candidates.extend(str(item).strip() for item in source if str(item or "").strip())
+    topic = str(lesson_info.get("topic") or review_input.topic or "本课内容").strip() if isinstance(lesson_info, dict) else "本课内容"
+    if not topic_candidates and topic:
+        topic_candidates.append(topic)
+    focus_text = "、".join(topic_candidates[:3]) or topic or "本课关键点"
+
+    day["spiral_review"] = [
+        f"交叉回收：把{focus_text}混在同一轮练习中检查，做题时标出每题对应的知识点。",
+        "隔题复现：每完成 2 道题，用一句话复述本题用到的公式、条件或错因。",
+    ]
 
 
 def _has_runtime_key_for_provider(provider: str) -> bool:
@@ -270,22 +348,34 @@ def _review_with_llm_quality_gate(
     *,
     plan: dict[str, Any],
     local_quality: QualityReview,
+    review_input: ReviewPlanInput,
     prompt_bundle: Any,
     agent_blueprint: AgenticPlanBlueprint,
     source_brief: ReviewPlanSourceBrief | None = None,
+    validation: ReviewPlanValidationResult | None = None,
     context: WorkflowContext,
     node_key: str,
 ) -> tuple[QualityReview, dict[str, Any]]:
-    if not should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief):
+    validator_passed = validation.passed if validation is not None else True
+    if not should_run_llm_quality_review(
+        local_quality=local_quality,
+        source_brief=source_brief,
+        validator_passed=validator_passed,
+    ):
         skipped = {
             "mode": "skipped",
-            "reason": "local_quality_passed_with_high_source_confidence",
+            "reason": "validator_blocked_llm_review" if not validator_passed else "local_quality_passed_with_high_source_confidence",
             "score": local_quality.score,
             "source_confidence": source_brief.confidence if source_brief is not None else None,
+            "validator_passed": validator_passed,
         }
         context.node_outputs[node_key] = skipped
         context.node_outputs["quality_reviewer_llm_skipped"] = skipped
         context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+            local_quality=local_quality,
+            validator_result=validation,
+        ).model_dump()
         return local_quality, {}
 
     if not _has_runtime_key_for_provider(context.provider):
@@ -295,6 +385,10 @@ def _review_with_llm_quality_gate(
         }
         context.node_outputs[node_key] = local_quality.model_dump()
         context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+            local_quality=local_quality,
+            validator_result=validation,
+        ).model_dump()
         return local_quality, {}
     try:
         llm_quality, usage = run_workflow_node(
@@ -302,6 +396,7 @@ def _review_with_llm_quality_gate(
             {
                 "plan": plan,
                 "local_quality": local_quality,
+                "review_input": review_input,
                 "prompt_bundle": prompt_bundle,
                 "agent_blueprint": agent_blueprint,
                 "source_brief": source_brief,
@@ -316,18 +411,60 @@ def _review_with_llm_quality_gate(
         )
         context.node_outputs[node_key] = local_quality.model_dump()
         context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+            local_quality=local_quality,
+            validator_result=validation,
+        ).model_dump()
         return local_quality, {}
 
     merged = _merge_quality_reviews(local_quality, llm_quality)
     context.node_outputs[node_key] = merged.model_dump()
     context.node_outputs["quality_reviewer"] = merged.model_dump()
+    context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+        local_quality=local_quality,
+        validator_result=validation,
+        llm_quality=llm_quality,
+    ).model_dump()
     return merged, usage
 
 
-def _normalize_output_plan(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
+def _assumption_mentions_trusted_metadata(value: object) -> bool:
+    text = str(value or "")
+    if not text:
+        return False
+    return any(marker in text for marker in ("年级", "科目", "上课日期", "复习日", "review_days")) and any(
+        marker in text for marker in ("用户输入", "学生用户输入", "课堂材料", "转录", "可核验")
+    )
+
+
+def _normalize_output_plan(
+    plan: dict[str, Any],
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None = None,
+) -> dict[str, Any]:
     normalized = normalize_final_review_plan(plan)
+    lesson_info = normalized.setdefault("lesson_info", {})
+    if not isinstance(lesson_info, dict):
+        lesson_info = {}
+        normalized["lesson_info"] = lesson_info
+    if review_input.subject:
+        lesson_info["subject"] = review_input.subject
+    if review_input.grade:
+        lesson_info["grade"] = review_input.grade
     if review_input.lesson_date:
-        normalized.setdefault("lesson_info", {})["date"] = review_input.lesson_date
+        lesson_info["date"] = review_input.lesson_date
+    if isinstance(lesson_info.get("assumptions"), list):
+        lesson_info["assumptions"] = [
+            item for item in lesson_info["assumptions"] if not _assumption_mentions_trusted_metadata(item)
+        ]
+    if source_brief is not None and not source_brief.teacher_emphasis:
+        normalized["quotes"] = []
+        if isinstance(lesson_info.get("quotes"), list):
+            lesson_info["quotes"] = []
+        for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
+            if isinstance(day, dict) and isinstance(day.get("quotes"), list):
+                day["quotes"] = []
+    _ensure_single_day_spiral_review(normalized, review_input)
     return normalized
 
 
@@ -357,19 +494,39 @@ def _maybe_revise_plan(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            revised_plan, revision_usage = run_workflow_node(
-                revision_node,
-                {
-                    "input": review_input,
-                    "prompt_bundle": prompt_bundle,
-                    "plan": current_plan,
-                    "quality": current_quality,
-                    "attempt": attempt,
-                    "agent_blueprint": agent_blueprint,
-                    "source_brief": source_brief,
-                },
-                context,
-            )
+            revision_input = {
+                "input": review_input,
+                "prompt_bundle": prompt_bundle,
+                "plan": current_plan,
+                "quality": current_quality,
+                "attempt": attempt,
+                "agent_blueprint": agent_blueprint,
+                "source_brief": source_brief,
+            }
+            if can_repair_questions(current_plan, current_quality):
+                try:
+                    revised_plan, revision_usage = run_workflow_node(
+                        question_repair_node,
+                        revision_input,
+                        context,
+                    )
+                except Exception as exc:
+                    context.add_warning(
+                        "question_repair_fallback",
+                        f"第 {attempt} 次题目级修复失败，已改用完整修订：{exc}",
+                        "medium",
+                    )
+                    revised_plan, revision_usage = run_workflow_node(
+                        revision_node,
+                        revision_input,
+                        context,
+                    )
+            else:
+                revised_plan, revision_usage = run_workflow_node(
+                    revision_node,
+                    revision_input,
+                    context,
+                )
         except Exception as exc:
             context.add_warning(
                 "quality_revision_failed",
@@ -379,7 +536,13 @@ def _maybe_revise_plan(
             break
 
         total_usage = merge_usage(total_usage, revision_usage)
-        current_plan = revised_plan
+        current_plan = _normalize_output_plan(revised_plan, review_input, source_brief)
+        current_validation = _validate_delivery(
+            current_plan,
+            review_input=review_input,
+            context=context,
+            node_key=f"review_plan_validator_after_revision_{attempt}",
+        )
         local_quality = _score_quality(
             current_plan,
             subject=subject,
@@ -390,9 +553,11 @@ def _maybe_revise_plan(
         current_quality, reviewer_usage = _review_with_llm_quality_gate(
             plan=current_plan,
             local_quality=local_quality,
+            review_input=review_input,
             prompt_bundle=prompt_bundle,
             agent_blueprint=agent_blueprint,
             source_brief=source_brief,
+            validation=current_validation,
             context=context,
             node_key=f"quality_reviewer_after_revision_{attempt}",
         )
@@ -402,6 +567,16 @@ def _maybe_revise_plan(
             best_quality = current_quality
         if not current_quality.must_revise:
             return current_plan, current_quality, total_usage
+
+    if best_quality.must_revise and can_soft_pass_after_revision(best_quality):
+        softened_quality = soften_quality_after_revision(best_quality)
+        warning_code, warning_message = soft_pass_warning_for_quality(best_quality)
+        context.add_warning(
+            warning_code,
+            warning_message,
+            "medium",
+        )
+        return best_plan, softened_quality, total_usage
 
     if best_quality.must_revise:
         context.add_warning(
@@ -426,6 +601,7 @@ def generate_single_lesson_review_plan(
     version_id: int = 0,
     organization_id: int = 0,
     generation_options: object | None = None,
+    source_pack: object | None = None,
     include_usage: bool = False,
 ) -> Union[dict[str, Any], Tuple[dict[str, Any], dict[str, Any]]]:
     resolved_provider = provider or resolve_review_plan_provider()
@@ -447,6 +623,8 @@ def generate_single_lesson_review_plan(
         review_days=list(options["review_days"]),
         daily_count=options.get("daily_count") if isinstance(options.get("daily_count"), int) else None,
         user_requirements=str(options.get("user_requirements") or ""),
+        constraints=options.get("constraints") if isinstance(options.get("constraints"), dict) else {},
+        source_pack=LessonSourcePack.model_validate(source_pack) if source_pack else None,
     )
     _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="running")
 
@@ -538,7 +716,13 @@ def generate_single_lesson_review_plan(
                 },
                 context,
             )
-            plan = _normalize_output_plan(plan, review_input)
+            plan = _normalize_output_plan(plan, review_input, source_brief)
+            validation = _validate_delivery(
+                plan,
+                review_input=review_input,
+                context=context,
+                node_key="review_plan_validator_initial",
+            )
             local_quality = _score_quality(
                 plan,
                 subject=route.selected_subject,
@@ -549,9 +733,11 @@ def generate_single_lesson_review_plan(
             quality, reviewer_usage = _review_with_llm_quality_gate(
                 plan=plan,
                 local_quality=local_quality,
+                review_input=review_input,
                 prompt_bundle=prompt_bundle,
                 agent_blueprint=agent_blueprint,
                 source_brief=source_brief,
+                validation=validation,
                 context=context,
                 node_key="quality_reviewer_initial",
             )
@@ -567,7 +753,12 @@ def generate_single_lesson_review_plan(
                 subject=route.selected_subject,
                 context=context,
             )
-            plan = _normalize_output_plan(plan, review_input)
+            plan = _normalize_output_plan(plan, review_input, source_brief)
+            context.node_outputs["workflow_runtime"] = build_workflow_runtime_summary(
+                context,
+                usage=usage,
+                review_input=review_input,
+            )
             record_quality_score(context=context, quality=quality)
             record_workflow_result(context=context, plan=plan, quality=quality, usage=usage, status="succeeded")
 

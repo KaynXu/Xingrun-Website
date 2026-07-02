@@ -157,7 +157,7 @@ from lesson_manager import (
     get_registration_request,
     get_user_by_id,
     get_user_class_ids,
-    get_latest_review_plan_run_for_version,
+    get_latest_completed_review_plan_quality_run_for_version,
     init_db,
     list_all_users,
     list_class_history,
@@ -173,6 +173,7 @@ from lesson_manager import (
     list_course_calendar_schedules_for_actor,
     list_lessons,
     list_lessons_for_actor,
+    list_lessons_page_for_actor,
     list_review_plan_versions,
     list_wrong_question_practice_sheets_for_student,
     list_wrong_question_practice_pack_jobs_for_class,
@@ -265,6 +266,7 @@ from lesson_manager import (
     change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_review_plan_version_pdf_path,
     update_review_plan_version_source_artifact,
     update_user_avatar_preferences,
 )
@@ -273,7 +275,9 @@ from class_commentary import list_colleague_skills, load_colleague_skill, payloa
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
-from review_plan_workflow.source_brief import build_deterministic_source_brief
+from review_plan_workflow.schemas import normalize_final_review_plan
+from review_plan_workflow.source_brief import build_deterministic_source_brief, clean_source_text, source_text_hash
+from review_plan_workflow.source_pack import source_pack_needs_rebuild
 from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
@@ -300,7 +304,8 @@ _AI_REQUEST_IDENTITY_TTL_SECONDS = 7200.0
 _AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 300.0
 _AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
 _AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
-_AI_ORGANIZATION_IN_FLIGHT: dict[int, float] = {}
+_AI_ORGANIZATION_CONCURRENCY_LIMIT = 10
+_AI_ORGANIZATION_IN_FLIGHT: dict[int, list[float]] = {}
 _AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
 WRONG_QUESTION_CHAT_ARCHIVE_SCHEMA_VERSION = "wrong_question_archive_schema.v1"
 WRONG_QUESTION_CHAT_ARCHIVE_PROMPT_VERSION = "wrong_question_chat_prompt.2026-06-03"
@@ -763,21 +768,33 @@ def _release_ai_request_identity(request_id: str) -> None:
 def _claim_ai_organization_execution(organization_id: int) -> None:
     now = monotonic()
     with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
-        expired = [
-            org_id
-            for org_id, started_at in _AI_ORGANIZATION_IN_FLIGHT.items()
-            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
-        ]
-        for org_id in expired:
-            _AI_ORGANIZATION_IN_FLIGHT.pop(org_id, None)
-        if organization_id in _AI_ORGANIZATION_IN_FLIGHT:
-            raise DuplicateAiRequestError("当前机构已有 AI 请求正在处理中，请稍后再试")
-        _AI_ORGANIZATION_IN_FLIGHT[organization_id] = now
+        for org_id, started_slots in list(_AI_ORGANIZATION_IN_FLIGHT.items()):
+            active_slots = [
+                started_at
+                for started_at in started_slots
+                if (now - started_at) <= _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+            ]
+            if active_slots:
+                _AI_ORGANIZATION_IN_FLIGHT[org_id] = active_slots
+            else:
+                _AI_ORGANIZATION_IN_FLIGHT.pop(org_id, None)
+        active_slots = list(_AI_ORGANIZATION_IN_FLIGHT.get(organization_id) or [])
+        if len(active_slots) >= _AI_ORGANIZATION_CONCURRENCY_LIMIT:
+            raise DuplicateAiRequestError(f"当前机构已有 {_AI_ORGANIZATION_CONCURRENCY_LIMIT} 个 AI 请求正在处理中，请稍后再试")
+        active_slots.append(now)
+        _AI_ORGANIZATION_IN_FLIGHT[organization_id] = active_slots
 
 
 def _release_ai_organization_execution(organization_id: int) -> None:
     with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
-        _AI_ORGANIZATION_IN_FLIGHT.pop(organization_id, None)
+        active_slots = _AI_ORGANIZATION_IN_FLIGHT.get(organization_id)
+        if not active_slots:
+            return
+        active_slots.pop()
+        if active_slots:
+            _AI_ORGANIZATION_IN_FLIGHT[organization_id] = active_slots
+        else:
+            _AI_ORGANIZATION_IN_FLIGHT.pop(organization_id, None)
 
 
 def _call_ai_helper_with_usage(helper, /, *args, **kwargs):
@@ -816,8 +833,10 @@ def _run_ai_feature_with_charge(
             organization_id=organization_id,
             request_id=request_id,
         )
+    organization_execution_claimed = False
     try:
         _claim_ai_organization_execution(organization_id)
+        organization_execution_claimed = True
         ensure_feature_credits_available(
             organization_id=organization_id,
             feature_key=feature_key,
@@ -837,7 +856,8 @@ def _run_ai_feature_with_charge(
         )
         return business_value
     finally:
-        _release_ai_organization_execution(organization_id)
+        if organization_execution_claimed:
+            _release_ai_organization_execution(organization_id)
         if claim_request_identity:
             _release_ai_request_identity(request_id)
 
@@ -878,11 +898,11 @@ def _get_or_create_compat_review_plan_version_for_job(
 
 def _review_plan_quality_failure_message(version_id: int) -> str:
     try:
-        latest_run = get_latest_review_plan_run_for_version(version_id)
+        latest_run = get_latest_completed_review_plan_quality_run_for_version(version_id)
     except Exception:
         logger.exception("Failed to read review plan quality run for version %s", version_id)
         return ""
-    if not latest_run or str(latest_run.get("status") or "") != "succeeded":
+    if not latest_run:
         return ""
 
     quality = latest_run.get("quality_review")
@@ -896,7 +916,12 @@ def _review_plan_quality_failure_message(version_id: int) -> str:
     first_issue = ""
     issues = quality.get("issues")
     if isinstance(issues, list):
-        for issue in issues:
+        severity_rank = {"high": 0, "medium": 1, "low": 2}
+        ordered_issues = sorted(
+            [issue for issue in issues if isinstance(issue, dict)],
+            key=lambda item: severity_rank.get(str(item.get("severity") or "").strip().lower(), 3),
+        )
+        for issue in ordered_issues:
             if not isinstance(issue, dict):
                 continue
             category = str(issue.get("category") or "").strip().lower()
@@ -924,6 +949,12 @@ def _review_plan_readable_quality_issue(category: str, description: str) -> str:
         return "生成结果缺少明确的课程主题"
     if "全课覆盖清单" in text:
         return "生成结果缺少清晰的复习范围"
+    if "模糊指代" in text:
+        return "部分题目没有写完整题干"
+    if "lesson_info" in lowered and "grade" in lowered:
+        return "生成结果对课程信息的来源判断不清"
+    if "teacher_emphasis" in lowered or "quotes" in lowered or "课堂原话" in text:
+        return "生成结果包含没有课堂证据的老师原话"
     if "唯一可打印题目不足" in text:
         return text.replace("唯一可打印题目", "可直接给学生练习的题目").replace("PDF", "文档")
     if not text:
@@ -1017,6 +1048,7 @@ def _run_review_plan_generation_job(
                     cleaned_source_text=raw_transcription,
                     source_text_hash=raw_source_text_hash,
                     source_brief=source_brief_snapshot,
+                    source_type="transcript",
                 )
                 transcript_for_generation = raw_transcription
                 try:
@@ -1063,6 +1095,7 @@ def _run_review_plan_generation_job(
                     cleaned_source_text=merged_summary,
                     source_text_hash=raw_source_text_hash,
                     source_brief=source_brief_snapshot,
+                    source_type="transcript",
                 )
                 mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)
@@ -1114,8 +1147,17 @@ def _run_review_plan_generation_job(
         version_source_text = str((version or {}).get("source_text") or "").strip()
         source_text_for_generation = version_cleaned_source_text or version_source_text or raw_text
         source_snapshot_text = version_source_text or source_text_for_generation
+        expected_source_hash = str((version or {}).get("source_text_hash") or "").strip() or source_text_hash(source_snapshot_text)
+        expected_cleaned_hash = source_text_hash(version_cleaned_source_text or clean_source_text(source_text_for_generation))
 
-        if version_id and not str((version or {}).get("source_text_hash") or "").strip():
+        if version_id and (
+            not str((version or {}).get("source_text_hash") or "").strip()
+            or source_pack_needs_rebuild(
+                (version or {}).get("source_pack"),
+                raw_source_hash=expected_source_hash,
+                cleaned_source_hash=expected_cleaned_hash,
+            )
+        ):
             source_brief = build_deterministic_source_brief(
                 raw_text=source_text_for_generation,
                 subject=subject,
@@ -1129,6 +1171,7 @@ def _run_review_plan_generation_job(
                 cleaned_source_text=source_brief.cleaned_text,
                 source_text_hash=source_brief.source_text_hash,
                 source_brief=source_brief.model_dump(),
+                source_type=str(((version or {}).get("source_pack") or {}).get("source_type") or "text"),
             )
             version = get_review_plan_version_for_lesson(lesson_id, version_id)
 
@@ -1148,6 +1191,7 @@ def _run_review_plan_generation_job(
                     weak_points=weak_points,
                     lesson_date=lesson_date,
                     generation_options=generation_options,
+                    source_pack=(version or {}).get("source_pack"),
                     provider=chat_provider,
                     model=chat_model,
                     lesson_id=lesson_id,
@@ -1193,12 +1237,8 @@ def _run_review_plan_generation_job(
                 logger.exception("Failed to mark lesson %s as failed after quality gate error", lesson_id)
             return
 
-        from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
-            version_suffix = version.get("version_no") or version_id
-            pdf_name = build_single_lesson_pdf_filename(plan, suffix=f"{lesson_id}-v{version_suffix}")
-            pdf_path = str(PDF_DIR / pdf_name)
-            generate_single_lesson_pdf(plan, pdf_path)
+            pdf_path = _render_review_plan_version_pdf(lesson_id=lesson_id, version=version, plan=plan)
         except Exception:
             logger.exception("Review plan PDF generation failed for lesson %s", lesson_id)
             try:
@@ -1226,6 +1266,16 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
         kwargs=job_kwargs,
         daemon=True,
     ).start()
+
+
+def _render_review_plan_version_pdf(*, lesson_id: int, version: dict, plan: dict) -> str:
+    from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
+
+    version_suffix = version.get("version_no") or version.get("id") or "latest"
+    pdf_name = build_single_lesson_pdf_filename(plan, suffix=f"{lesson_id}-v{version_suffix}")
+    pdf_path = str(PDF_DIR / pdf_name)
+    generate_single_lesson_pdf(plan, pdf_path)
+    return pdf_path
 
 
 def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dict, request_key: str) -> None:
@@ -2756,6 +2806,90 @@ def _weekly_activity_student_item_payload(item: dict) -> dict:
     }
 
 
+def _review_plan_preview_text(value: object, limit: int = 240) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _serialize_review_plan_math_blocks(plan: dict) -> list[dict]:
+    blocks: list[dict] = []
+    knowledge_sections = plan.get("knowledge_sections") if isinstance(plan.get("knowledge_sections"), dict) else {}
+    raw_blocks = plan.get("math_blocks") if isinstance(plan.get("math_blocks"), list) else knowledge_sections.get("math_blocks")
+    if not isinstance(raw_blocks, list):
+        return []
+    for index, block in enumerate(raw_blocks[:40]):
+        if not isinstance(block, dict):
+            continue
+        latex = _review_plan_preview_text(block.get("latex") or block.get("formula") or block.get("text"), 500)
+        if not latex:
+            continue
+        block_id = _review_plan_preview_text(block.get("id") or block.get("key") or f"math_{index + 1}", 80)
+        blocks.append(
+            {
+                "id": block_id,
+                "latex": latex,
+                "display": block.get("display") is True,
+            }
+        )
+    return blocks
+
+
+def _serialize_review_plan_preview_question(item: object, question_type: str) -> Optional[dict]:
+    if not isinstance(item, dict):
+        return None
+    question = _review_plan_preview_text(item.get("question") or item.get("stem") or item.get("text"), 300)
+    answer = _review_plan_preview_text(item.get("answer"), 160)
+    if not question and not answer:
+        return None
+    options = item.get("options") if isinstance(item.get("options"), list) else []
+    return {
+        "type": question_type,
+        "question": question,
+        "options": [_review_plan_preview_text(option, 160) for option in options[:6] if str(option or "").strip()],
+        "answer": answer,
+    }
+
+
+def _serialize_review_plan_current_preview(plan: object) -> dict:
+    if not isinstance(plan, dict) or not plan:
+        return {}
+    try:
+        normalized = normalize_final_review_plan(plan)
+    except Exception:
+        normalized = plan
+    lesson_info = normalized.get("lesson_info") if isinstance(normalized.get("lesson_info"), dict) else {}
+    days_payload: list[dict] = []
+    for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
+        if not isinstance(day, dict):
+            continue
+        questions: list[dict] = []
+        for blank in day.get("blanks", []) if isinstance(day.get("blanks"), list) else []:
+            question = _serialize_review_plan_preview_question(blank, "blank")
+            if question:
+                questions.append(question)
+        for choice in day.get("choices", []) if isinstance(day.get("choices"), list) else []:
+            question = _serialize_review_plan_preview_question(choice, "choice")
+            if question:
+                questions.append(question)
+        days_payload.append(
+            {
+                "day": day.get("day") or day.get("offset") or "",
+                "label": _review_plan_preview_text(day.get("label") or day.get("day_label") or day.get("title"), 80),
+                "goal": _review_plan_preview_text(day.get("goal"), 180),
+                "focus": _review_plan_preview_text(day.get("focus"), 180),
+                "questions": questions[:12],
+            }
+        )
+    return {
+        "title": _review_plan_preview_text(lesson_info.get("topic") or normalized.get("title") or normalized.get("plan_title"), 120),
+        "summary": _review_plan_preview_text(normalized.get("weak_points_summary") or normalized.get("lesson_summary"), 300),
+        "math_blocks": _serialize_review_plan_math_blocks(normalized),
+        "days": days_payload[:7],
+    }
+
+
 def _serialize_review_plan_version_for_response(lesson_id: int, version: object) -> Optional[dict]:
     if not isinstance(version, dict):
         return None
@@ -2781,7 +2915,12 @@ def _serialize_review_plan_version_for_response(lesson_id: int, version: object)
     return serialized
 
 
-def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = False) -> Optional[dict]:
+def _serialize_lesson_for_response(
+    lesson: object,
+    *,
+    include_versions: bool = False,
+    include_runtime: bool = False,
+) -> Optional[dict]:
     if not isinstance(lesson, dict):
         return None
     serialized = dict(lesson)
@@ -2810,26 +2949,36 @@ def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = F
         if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_exists
         else ""
     )
+    serialized["current_plan_preview"] = (
+        _serialize_review_plan_current_preview(current_version.get("plan"))
+        if include_versions and current_version
+        else {}
+    )
     serialized["pdf_path"] = current_pdf_path if current_pdf_exists else ""
-    try:
-        latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
-    except Exception:
-        latest_run = None
-    if latest_run:
-        serialized["trace_id"] = latest_run.get("trace_id", "")
-        serialized["workflow_warnings"] = latest_run.get("warnings", [])
-        serialized["quality_review"] = latest_run.get("quality_review", {})
-        serialized["prompt_version"] = latest_run.get("prompt_version", "")
-        serialized["style_version"] = latest_run.get("style_version", "")
+    if include_runtime:
+        try:
+            latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
+        except Exception:
+            latest_run = None
+        if latest_run:
+            serialized["trace_id"] = latest_run.get("trace_id", "")
+            serialized["workflow_warnings"] = latest_run.get("warnings", [])
+            serialized["quality_review"] = latest_run.get("quality_review", {})
+            serialized["prompt_version"] = latest_run.get("prompt_version", "")
+            serialized["style_version"] = latest_run.get("style_version", "")
     creator_user_id = int(serialized.get("created_by_user_id") or 0)
-    creator = get_user_by_id(creator_user_id) if creator_user_id else None
+    creator = None
+    if creator_user_id and not (serialized.get("creator_display_name") or serialized.get("creator_username")):
+        creator = get_user_by_id(creator_user_id)
     serialized["creator_display_name"] = str(
-        (creator or {}).get("display_name")
+        serialized.get("creator_display_name")
+        or (creator or {}).get("display_name")
         or (creator or {}).get("username")
         or ""
     ).strip()
     serialized["creator_username"] = str(
-        (creator or {}).get("username")
+        serialized.get("creator_username")
+        or (creator or {}).get("username")
         or ""
     ).strip()
     if include_versions:
@@ -6710,7 +6859,12 @@ def api_classes_list():
     user, error = _require_auth()
     if error:
         return error
-    return jsonify(list_classes_for_actor(user) if user.get("role") in {"super_owner", "owner", "admin"} else _filter_classes_for_user(user, list_classes()))
+    scope = (request.args.get("scope") or "current").strip().lower()
+    if scope not in {"current", "history", "all"}:
+        return jsonify({"error": "scope must be current, history, or all"}), 400
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return jsonify(list_classes_for_actor(user, scope=scope))
+    return jsonify(_filter_classes_for_user(user, list_classes(scope=scope)))
 
 
 @app.route("/api/course-calendar/schedules", methods=["GET"])
@@ -6900,7 +7054,7 @@ def api_class_create():
         return jsonify({"error": "student_ids must be a list"}), 400
     if class_type == "group" and not name and not class_number:
         return jsonify({"error": "班级名称不能为空"}), 400
-    if class_type != "group" and not student_ids:
+    if class_type in {"1v1", "1v2", "1v3"} and not student_ids:
         return jsonify({"error": "请选择学员"}), 400
     if not subject:
         return jsonify({"error": "学科不能为空"}), 400
@@ -7743,12 +7897,29 @@ def api_lessons_list():
         return error
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
-    lessons = list_lessons_for_actor(
+    scope = (request.args.get("scope") or "current").strip().lower()
+    if scope not in {"current", "history", "all"}:
+        return jsonify({"error": "scope must be current, history, or all"}), 400
+    page = request.args.get("page", 1, type=int) or 1
+    page_size = request.args.get("page_size", 12, type=int) or 12
+    if page < 1:
+        return jsonify({"error": "page must be greater than 0"}), 400
+    if page_size < 1 or page_size > 100:
+        return jsonify({"error": "page_size must be between 1 and 100"}), 400
+    result = list_lessons_page_for_actor(
         user,
         month_str=month if month else "",
         class_id=class_id if class_id else 0,
+        class_scope=scope,
+        page=page,
+        page_size=page_size,
     )
-    return jsonify(_serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)))
+    return jsonify({
+        "items": _serialize_lessons_for_response(result.get("items", [])),
+        "total": int(result.get("total") or 0),
+        "page": int(result.get("page") or page),
+        "page_size": int(result.get("page_size") or page_size),
+    })
 
 
 @app.route("/api/review-plans/<int:lesson_id>", methods=["GET"])
@@ -7759,7 +7930,7 @@ def api_lesson_get(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
-    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True)
+    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True, include_runtime=True)
     if serialized_lesson is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(serialized_lesson)
@@ -7807,6 +7978,35 @@ def api_review_plan_version_download(lesson_id, version_id):
     if not pdf_path:
         abort(404)
     return send_file(pdf_path, as_attachment=True, download_name=Path(pdf_path).name)
+
+
+@app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/rerender-pdf", methods=["POST"])
+def api_review_plan_version_rerender_pdf(lesson_id, version_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not _can_access_lesson(user, lesson):
+        return jsonify({"error": "not found"}), 404
+    version = get_review_plan_version_for_lesson(lesson_id, version_id)
+    if not version:
+        return jsonify({"error": "not found"}), 404
+    if str(version.get("status") or "") != "ready":
+        return jsonify({"error": "只有已生成的版本可以重新渲染 PDF"}), 400
+    plan = version.get("plan") if isinstance(version.get("plan"), dict) else {}
+    if not plan:
+        return jsonify({"error": "当前版本缺少复习计划内容，无法重新渲染 PDF"}), 400
+    try:
+        pdf_path = _render_review_plan_version_pdf(lesson_id=lesson_id, version=version, plan=plan)
+        update_review_plan_version_pdf_path(version_id, pdf_path=pdf_path)
+    except Exception:
+        logger.exception("Review plan PDF rerender failed for lesson %s version %s", lesson_id, version_id)
+        return jsonify({"error": "PDF 重新渲染失败，请稍后重试"}), 500
+    lesson = get_lesson(lesson_id)
+    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True)
+    if serialized_lesson is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(serialized_lesson)
 
 
 @app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/make-current", methods=["POST"])
@@ -7910,6 +8110,7 @@ def api_lesson_regenerate(lesson_id):
                 cleaned_source_text=cleaned_source_text,
                 source_text_hash=source_text_hash_value,
                 source_brief=source_brief,
+                source_type=str(((current_version or {}).get("source_pack") or {}).get("source_type") or "text"),
             )
             version = get_review_plan_version_for_lesson(lesson_id, int(version["id"])) or version
         _start_review_plan_generation_thread(

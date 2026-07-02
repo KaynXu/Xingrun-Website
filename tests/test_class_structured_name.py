@@ -90,6 +90,7 @@ class ClassStructuredNameTestCase(unittest.TestCase):
             stage="初中",
             current_grade="七年级",
             class_type="1v2",
+            cohort_year=2025,
             show_cohort_year=True,
         )
         self.assertEqual(lesson_manager.get_class(class_id)["name"], "数学·1v2·初2025级·七年级·张李")
@@ -118,6 +119,10 @@ class ClassStructuredNameTestCase(unittest.TestCase):
         self.assertEqual(
             lesson_manager.build_small_class_name("1v2", "七年级", ["张三", "李四"], False, "", "初中", "数学", 2025, True),
             "数学·1v2·初2025级·七年级·张李",
+        )
+        self.assertEqual(
+            lesson_manager.build_short_term_drill_class_name("物理", 2024, "九年级", False, "", "初中", True),
+            "物理·初2024级·九年级·短期刷题班",
         )
 
 

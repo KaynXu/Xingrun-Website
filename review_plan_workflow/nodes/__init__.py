@@ -3,6 +3,7 @@ from .llm_quality_reviewer import quality_reviewer_llm_node
 from .parent_planner import parent_planner_node
 from .plan_generator import plan_generator_node
 from .prompt_bundle_builder import prompt_bundle_builder_node
+from .question_repair import question_repair_node
 from .revision import revision_node
 from .scope_planner import scope_planner_node
 from .source_analyzer import source_analyzer_node
@@ -17,6 +18,7 @@ __all__ = [
     "plan_generator_node",
     "quality_reviewer_llm_node",
     "prompt_bundle_builder_node",
+    "question_repair_node",
     "revision_node",
     "scope_planner_node",
     "source_analyzer_node",

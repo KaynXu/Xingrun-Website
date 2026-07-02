@@ -30,6 +30,10 @@ export interface ClassItem {
   bridge_target?: string;
   content_track?: string;
   last_promoted_at?: string;
+  lifecycle_status?: 'active' | 'pending_graduation' | 'graduated' | 'archived' | string;
+  lifecycle_status_updated_at?: string;
+  graduated_at?: string;
+  graduation_academic_year_start?: number;
   teacher_name?: string;
   teacher_email?: string;
   teacher_user_id?: number | null;

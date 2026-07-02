@@ -9,6 +9,56 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 SubjectKey = Literal["math", "physics", "ielts", "unknown"]
 
 
+class SourceSegment(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    text: str
+    offset_start: int = 0
+    offset_end: int = 0
+    kind: str = "text"
+
+
+class SourceMathBlock(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    raw: str
+    latex: str = ""
+    display: bool = False
+    segment_id: str = ""
+
+
+class SourceTeacherAction(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    text: str
+    action_type: str = "instruction"
+    segment_id: str = ""
+
+
+class LessonSourcePack(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: str = "lesson_source_pack_v1"
+    parser_version: str = "source_pack_parser_v2"
+    source_id: str = ""
+    source_type: str = "text"
+    title: str = ""
+    language: str = "zh-CN"
+    segments: list[SourceSegment] = Field(default_factory=list)
+    detected_topics: list[str] = Field(default_factory=list)
+    math_blocks: list[SourceMathBlock] = Field(default_factory=list)
+    teacher_actions: list[SourceTeacherAction] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    source_hash: str = ""
+    raw_source_hash: str = ""
+    cleaned_source_hash: str = ""
+    cache_key: str = ""
+    created_at: str = ""
+
+
 class ReviewPlanInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -22,6 +72,8 @@ class ReviewPlanInput(BaseModel):
     review_days: list[int] = Field(default_factory=lambda: [1, 2, 7, 14, 30])
     daily_count: Optional[int] = None
     user_requirements: str = ""
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    source_pack: Optional[LessonSourcePack] = None
     output_language: str = "zh-CN"
 
     @field_validator("review_days")
@@ -219,10 +271,24 @@ class PromptBundle(BaseModel):
 
 
 class QualityIssue(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     severity: Literal["low", "medium", "high"] = "medium"
     category: str = "completeness"
     description: str
     suggested_fix: str = ""
+    target_path: str = ""
+    day: Optional[int] = None
+    day_index: Optional[int] = None
+    question_index: Optional[int] = None
+    question_type: str = ""
+
+    @field_validator("category", "description", "suggested_fix", "target_path", "question_type", mode="before")
+    @classmethod
+    def coerce_nullable_text_fields(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value)
 
 
 class QualityReview(BaseModel):
@@ -511,6 +577,35 @@ def _normalize_task_payload(value: Any) -> tuple[list[dict[str, Any]], list[dict
     return blanks, choices, body_items
 
 
+def _normalize_task_blocks_payload(value: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    blanks: list[dict[str, Any]] = []
+    choices: list[dict[str, Any]] = []
+    body_items: list[str] = []
+    if not isinstance(value, list):
+        return blanks, choices, body_items
+    for block in value:
+        if not isinstance(block, dict):
+            continue
+        block_type = _clean_text(block.get("type")).replace("-", "_").lower()
+        block_items = block.get("items")
+        if block_type in {"blank", "blanks", "fill", "fills", "fill_in_blanks", "fillinblanks", "blanks_card"}:
+            block_blanks, _, block_body = _normalize_task_payload({"blanks": block_items if isinstance(block_items, list) else []})
+            block_choices = []
+        elif block_type in {"choice", "choices", "multiple_choice", "multiplechoice", "choices_card"}:
+            _, block_choices, block_body = _normalize_task_payload({"choices": block_items if isinstance(block_items, list) else []})
+            block_blanks = []
+        else:
+            block_blanks, block_choices, block_body = _normalize_task_payload(block_items if isinstance(block_items, list) else block)
+        for blank in block_blanks:
+            _append_unique_blank(blanks, blank)
+        for choice in block_choices:
+            _append_unique_choice(choices, choice)
+        for text in block_body:
+            if text not in body_items:
+                body_items.append(text)
+    return blanks, choices, body_items
+
+
 def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(day)
     try:
@@ -562,6 +657,7 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
 
     component_blanks, component_choices, component_body_items, component_quotes = _normalize_component_payload(normalized)
     task_blanks, task_choices, task_body_items = _normalize_task_payload(normalized.get("tasks"))
+    task_block_blanks, task_block_choices, task_block_body_items = _normalize_task_blocks_payload(normalized.get("task_blocks"))
     section_blanks, section_choices, section_body_items = _normalize_task_payload(normalized.get("sections"))
     question_blanks, question_choices, question_body_items = _normalize_task_payload(normalized.get("questions"))
     items = [copy.deepcopy(item) for item in normalized.get("items", []) if isinstance(item, dict)]
@@ -570,6 +666,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     for text in component_body_items:
         _append_unique_body(items, text)
     for text in task_body_items:
+        _append_unique_body(items, text)
+    for text in task_block_body_items:
         _append_unique_body(items, text)
     for text in section_body_items:
         _append_unique_body(items, text)
@@ -633,6 +731,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         _append_unique_blank(normalized_blanks, blank)
     for blank in task_blanks:
         _append_unique_blank(normalized_blanks, blank)
+    for blank in task_block_blanks:
+        _append_unique_blank(normalized_blanks, blank)
     for blank in section_blanks:
         _append_unique_blank(normalized_blanks, blank)
     for blank in question_blanks:
@@ -666,6 +766,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     for choice in component_choices:
         _append_unique_choice(normalized_choices, choice)
     for choice in task_choices:
+        _append_unique_choice(normalized_choices, choice)
+    for choice in task_block_choices:
         _append_unique_choice(normalized_choices, choice)
     for choice in section_choices:
         _append_unique_choice(normalized_choices, choice)
@@ -737,6 +839,10 @@ def _find_wrapped_final_plan(value: dict[str, Any], depth: int = 0) -> dict[str,
 
 def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(plan or {})
+    if normalized.get("schema_version") == "lesson_review_plan_v1":
+        from review_plan_workflow.plan_v1 import adapt_lesson_review_plan_v1_to_final_review_plan
+
+        normalized = adapt_lesson_review_plan_v1_to_final_review_plan(normalized)
     wrapped_plan = _find_wrapped_final_plan(normalized)
     if isinstance(wrapped_plan, dict):
         for source_key, target_key in (

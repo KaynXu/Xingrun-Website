@@ -22,10 +22,13 @@ test('review history source polls review plans while pending lessons exist', () 
 });
 
 test('review history source normalizes malformed task polling responses', () => {
-  assert.match(reviewGenerationSource, /apiFetch<unknown>\('\/api\/review-plans'\)/);
-  assert.match(reviewGenerationSource, /const nextLessons = normalizeReviewLessonsResponse\(payload\);/);
-  assert.match(reviewGenerationSource, /setLessons\(nextLessons\);/);
-  assert.match(reviewGenerationSource, /onLessonsChange\(nextLessons\);/);
+  assert.match(reviewGenerationSource, /new URLSearchParams\(\{\s*page: String\(historyPage\),\s*page_size: String\(REVIEW_HISTORY_PAGE_SIZE\),\s*\}\)/);
+  assert.match(reviewGenerationSource, /apiFetch<unknown>\(`\/api\/review-plans\?\$\{params\.toString\(\)\}`\)/);
+  assert.match(reviewGenerationSource, /const nextPage = normalizeReviewLessonsPageResponse\(payload\);/);
+  assert.match(reviewGenerationSource, /setLessons\(nextPage\.items\);/);
+  assert.match(reviewGenerationSource, /setTotalLessons\(nextPage\.total\);/);
+  assert.match(reviewGenerationSource, /onLessonsChange\(nextPage\.items\);/);
+  assert.doesNotMatch(reviewGenerationSource, /lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE/);
 });
 
 test('review history source exposes regenerate action and immediate progress feedback', () => {
@@ -59,7 +62,14 @@ test('review plan detail source fetches versions and can make a ready version cu
   const detailSource = readFileSync(new URL('./features/review-generation/ReviewPlanDetailView.tsx', import.meta.url), 'utf8');
   assert.match(detailSource, /apiFetch<unknown>\(`\/api\/review-plans\/\$\{lessonId\}`\)/);
   assert.match(detailSource, /\/api\/review-plans\/\$\{lessonId\}\/versions\/\$\{version\.id\}\/make-current/);
+  assert.match(detailSource, /\/api\/review-plans\/\$\{lessonId\}\/versions\/\$\{version\.id\}\/rerender-pdf/);
+  assert.match(detailSource, /handleRerenderPdf\(version\)/);
+  assert.match(detailSource, /重渲染PDF/);
   assert.match(detailSource, /current_pdf_url/);
+  assert.match(detailSource, /current_plan_preview/);
+  assert.match(detailSource, /buildWrongQuestionLatexPreviewModel/);
+  assert.match(detailSource, /resolveReviewPlanMathText/);
+  assert.match(detailSource, /结构预览/);
   assert.match(detailSource, /版本历史/);
   assert.match(detailSource, /iframe/);
   assert.match(detailSource, /detail\?\.has_version_generating/);
@@ -88,6 +98,7 @@ test('review plan version helper requires a ready version with an available PDF 
     latest_generation_error: '',
     review_generation_options: null,
     review_generation_summary: '',
+    current_plan_preview: { title: '', summary: '', math_blocks: [], days: [] },
     versions: [],
   };
   const baseVersion: ReviewPlanVersionRecord = {
@@ -160,16 +171,18 @@ test('review generation validates custom review days before creating or regenera
 test('review generation schedule mode labels show concrete day counts', () => {
   const optionsFieldsSource = readFileSync(new URL('./features/review-generation/ReviewPlanGenerationOptionsFields.tsx', import.meta.url), 'utf8');
 
-  for (const label of ['5次间隔', '1天集中', '每日连续', '自定义日期']) {
+  for (const label of ['5次间隔复习', '当天课后复习', '每日连续复习', '自定义日期']) {
     assert.match(lessonInputSource, new RegExp(label));
     assert.match(optionsFieldsSource, new RegExp(label));
   }
-  assert.match(reviewPlanGenerationOptionsSource, /return '1天集中复习';/);
+  assert.match(reviewPlanGenerationOptionsSource, /return '当天课后复习';/);
   assert.match(reviewPlanGenerationOptionsSource, /return `每日连续 \$\{value\.dailyCount\} 天`;/);
   assert.match(reviewPlanGenerationOptionsSource, /return `自定义日期 \$\{value\.customDays\.trim\(\) \|\| '未填写'\}`;/);
   assert.match(reviewPlanGenerationOptionsSource, /return '5次间隔复习';/);
   assert.doesNotMatch(lessonInputSource, /label: '压缩'/);
   assert.doesNotMatch(optionsFieldsSource, /label: '压缩'/);
+  assert.doesNotMatch(lessonInputSource, /第1天集中复习|压缩 1 天/);
+  assert.doesNotMatch(optionsFieldsSource, /第1天集中复习|压缩 1 天/);
 });
 
 test('review generation places generation settings directly under top class metadata', () => {

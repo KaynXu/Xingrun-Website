@@ -9,7 +9,7 @@ import {
   getReviewLessonTaskState,
   hasReviewLessonOutput,
   isReviewLessonPending,
-  normalizeReviewLessonsResponse,
+  normalizeReviewLessonsPageResponse,
   type ReviewLessonRecord,
 } from '../../reviewGenerationAsync';
 import {
@@ -321,6 +321,7 @@ function ReviewDocumentHistory({
   onFloatingNotice,
 }: ReviewDocumentHistoryProps) {
   const [lessons, setLessons] = useState<ReviewLessonRecord[]>([]);
+  const [totalLessons, setTotalLessons] = useState(0);
   const [loading, setLoading] = useState(true);
   const [historyPage, setHistoryPage] = useState(1);
   const [regeneratingLessonIds, setRegeneratingLessonIds] = useState<Set<number>>(() => new Set());
@@ -335,11 +336,21 @@ function ReviewDocumentHistory({
       setLoading(true);
     }
 
-    return apiFetch<unknown>('/api/review-plans')
+    const params = new URLSearchParams({
+      page: String(historyPage),
+      page_size: String(REVIEW_HISTORY_PAGE_SIZE),
+    });
+
+    return apiFetch<unknown>(`/api/review-plans?${params.toString()}`)
       .then((payload) => {
-        const nextLessons = normalizeReviewLessonsResponse(payload);
-        setLessons(nextLessons);
-        onLessonsChange(nextLessons);
+        const nextPage = normalizeReviewLessonsPageResponse(payload);
+        setLessons(nextPage.items);
+        setTotalLessons(nextPage.total);
+        const nextTotalPages = Math.max(1, Math.ceil(nextPage.total / REVIEW_HISTORY_PAGE_SIZE));
+        if (nextPage.page > nextTotalPages) {
+          setHistoryPage(nextTotalPages);
+        }
+        onLessonsChange(nextPage.items);
       })
       .catch(console.error)
       .finally(() => {
@@ -347,7 +358,7 @@ function ReviewDocumentHistory({
           setLoading(false);
         }
       });
-  }, [onLessonsChange]);
+  }, [historyPage, onLessonsChange]);
 
   useEffect(() => {
     void load();
@@ -367,21 +378,15 @@ function ReviewDocumentHistory({
     return () => window.clearInterval(timer);
   }, [hasPendingLesson, load]);
 
-  const totalHistoryPages = Math.max(1, Math.ceil(lessons.length / REVIEW_HISTORY_PAGE_SIZE));
+  const totalHistoryPages = Math.max(1, Math.ceil(totalLessons / REVIEW_HISTORY_PAGE_SIZE));
   const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
-  const paginatedLessons = lessons.slice((currentHistoryPage - 1) * REVIEW_HISTORY_PAGE_SIZE, currentHistoryPage * REVIEW_HISTORY_PAGE_SIZE);
+  const paginatedLessons = lessons;
 
   useEffect(() => {
     if (highlightedLessonId) {
-      const highlightedIndex = lessons.findIndex((lesson) => lesson.id === highlightedLessonId);
-      if (highlightedIndex >= 0) {
-        setHistoryPage(Math.floor(highlightedIndex / REVIEW_HISTORY_PAGE_SIZE) + 1);
-        return;
-      }
+      setHistoryPage(1);
     }
-
-    setHistoryPage(1);
-  }, [highlightedLessonId, lessons]);
+  }, [highlightedLessonId]);
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('确定删除此课程？相关 PDF 也会被删除。')) {
@@ -470,7 +475,7 @@ function ReviewDocumentHistory({
     <div className={reviewHistoryPanelClass}>
       <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-white/10 sm:px-6">
         <h3 className={workspaceSectionTitleClass}>历史文档</h3>
-        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">共 {lessons.length} 份</span>
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">共 {totalLessons} 份</span>
       </div>
       {loading ? (
         <ReviewHistorySkeleton />

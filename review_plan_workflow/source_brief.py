@@ -25,6 +25,8 @@ _NOISE_PATTERNS = (
 _TITLE_MARKERS = ("本节课主题：", "主题：", "topic:")
 _SENTENCE_SCAN_RE = re.compile(r"[^。\n！？!?；;]+[。！？!?；;]?")
 _METHOD_SPLIT_RE = re.compile(r"\s*(?:->|→|、|，|,|；|;)\s*")
+_SECTION_HEADING_RE = re.compile(r"^\s*(?:第[一二三四五六七八九十0-9]+部分|[一二三四五六七八九十0-9]+[、.．]|课堂收尾)\s*[:：]?\s*(.{2,80})\s*$")
+_TITLE_SUFFIX_RE = re.compile(r"(?:完整)?课堂逐字稿$|复习计划源文件$")
 _KNOWLEDGE_MARKERS = ("知识点：", "知识点:", "重点：", "重点:", "结论：", "结论:", "定理：", "定理:", "公式：", "公式:", "性质：", "性质:")
 _EXAMPLE_MARKERS = ("例题：", "例题:", "题目：", "题目:", "已知", "求证", "求解", "证明")
 _MISTAKE_MARKERS = ("易错：", "易错:", "常错：", "常错:", "常见错误", "错误：", "错误:", "误区：", "误区:", "误看", "看漏", "混淆", "漏看", "把")
@@ -145,6 +147,11 @@ def _title_candidates(cleaned: str, explicit_topic: str) -> list[str]:
     titles: list[str] = []
     if explicit_topic.strip():
         titles.append(explicit_topic.strip())
+    first_line = next((line.strip() for line in cleaned.splitlines() if line.strip()), "")
+    if _looks_like_title_line(first_line):
+        title = _normalize_title_candidate(first_line)
+        if title and title not in titles:
+            titles.append(title)
     for marker in _TITLE_MARKERS:
         if marker in cleaned:
             candidate = cleaned.split(marker, 1)[1].splitlines()[0].strip(" ：:。；;")
@@ -152,6 +159,48 @@ def _title_candidates(cleaned: str, explicit_topic: str) -> list[str]:
                 titles.append(candidate)
             break
     return titles[:3]
+
+
+def _normalize_title_candidate(value: str) -> str:
+    text = _TITLE_SUFFIX_RE.sub("", value.strip(" ：:。；; "))
+    return text[:60].strip(" ：:。；; ")
+
+
+def _looks_like_title_line(value: str) -> bool:
+    text = value.strip()
+    if not 4 <= len(text) <= 80:
+        return False
+    if any(marker in text for marker in _TITLE_MARKERS):
+        return False
+    if text.startswith(("说话人", "老师", "学生")):
+        return False
+    if any(mark in text for mark in "。！？!?；;"):
+        return False
+    title_signals = (
+        "逐字稿",
+        "讲解",
+        "复习",
+        "综合",
+        "定理",
+        "公式",
+        "函数",
+        "方程",
+        "几何",
+        "角",
+        "勾股",
+        "题型",
+        "应用",
+        "物理",
+        "数学",
+    )
+    return any(signal in text for signal in title_signals)
+
+
+def _section_heading_payload(sentence: str) -> str:
+    match = _SECTION_HEADING_RE.match(sentence.strip("。；; "))
+    if not match:
+        return ""
+    return match.group(1).strip(" ：:。；; ")
 
 
 def _sentence_has_marker(sentence: str, markers: tuple[str, ...]) -> bool:
@@ -162,6 +211,9 @@ def _strip_marker_payload(sentence: str, markers: tuple[str, ...]) -> str:
     for marker in markers:
         if marker in sentence:
             return sentence.split(marker, 1)[1].strip(" ：:。；;")
+    heading = _section_heading_payload(sentence)
+    if heading:
+        return heading
     return sentence.strip("。；; ")
 
 
@@ -179,6 +231,9 @@ def _looks_like_method_chain(sentence: str) -> bool:
 
 def _looks_like_knowledge_point(sentence: str) -> bool:
     if _sentence_has_marker(sentence, _KNOWLEDGE_MARKERS):
+        return True
+    heading = _section_heading_payload(sentence)
+    if heading and not heading.startswith(("今天", "课堂", "收尾")):
         return True
     return False
 

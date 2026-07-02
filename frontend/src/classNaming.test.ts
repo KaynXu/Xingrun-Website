@@ -127,6 +127,23 @@ test('builds subject-prefixed group names and existing-student small class names
   );
 });
 
+test('builds short-term drill class names without class number or selected students', () => {
+  assert.equal(
+    buildClassDisplayName({
+      subject: '物理',
+      class_type: 'short_term_drill',
+      stage: '初中',
+      current_grade: '九年级',
+      grade: '',
+      class_number: '',
+      cohort_year: '2024',
+      show_cohort_year: true,
+      is_bridge: false,
+    }),
+    '物理·初2024级·九年级·短期刷题班',
+  );
+});
+
 test('keeps group class and small class naming rules as separate entry points', () => {
   assert.equal(
     buildGroupClassDisplayName({

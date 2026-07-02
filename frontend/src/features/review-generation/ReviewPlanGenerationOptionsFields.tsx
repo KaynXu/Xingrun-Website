@@ -5,9 +5,9 @@ import type { ReviewPlanGenerationOptionsFormValue, ReviewPlanScheduleMode } fro
 import { getGenerationOptionsFormSummary, getGenerationOptionsValidationError, parseCustomReviewDays } from './reviewPlanGenerationOptions';
 
 const scheduleModes: Array<{ value: ReviewPlanScheduleMode; label: string }> = [
-  { value: 'standard', label: '5次间隔' },
-  { value: 'compressed', label: '1天集中' },
-  { value: 'daily', label: '每日连续' },
+  { value: 'standard', label: '5次间隔复习' },
+  { value: 'compressed', label: '当天课后复习' },
+  { value: 'daily', label: '每日连续复习' },
   { value: 'custom', label: '自定义日期' },
 ];
 

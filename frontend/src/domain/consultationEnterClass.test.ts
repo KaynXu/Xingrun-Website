@@ -92,6 +92,8 @@ test('buildRecommendedConsultationClassFilters preselects consultation values as
     teacherFilter: 'all',
     stageFilter: '小奥',
     gradeFilter: '六年级',
+    classTypeFilter: '全部班型',
+    searchText: '',
   });
 });
 
@@ -149,6 +151,7 @@ test('consultation class filter defaults recommend subject grade and teacher wit
     stageFilter: '小奥',
     gradeFilter: '六年级',
     classTypeFilter: 'all',
+    searchText: '',
   });
 });
 
@@ -163,6 +166,7 @@ test('consultation class filter defaults stay editable when consultation fields 
     stageFilter: '全部学段',
     gradeFilter: '全部',
     classTypeFilter: 'all',
+    searchText: '',
   });
 });
 

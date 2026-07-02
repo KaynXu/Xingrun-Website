@@ -1,0 +1,35 @@
+{
+  "name": "regeneration-same-source",
+  "input": {
+    "subject": "math",
+    "courseSystem": "中国小学数学",
+    "grade": "六年级",
+    "source_type": "text",
+    "target": "重新生成必须复用同一份 source pack，而不是换一套输入摘要",
+    "topic": "等式推导与审题列式",
+    "summary_text": "主题：等式推导与审题列式\n重点：取倒数前确认分母不为0；a²=b² 只能推出 a=b 或 a=-b；绝对值相等也要讨论正负。\n例题：理想购买数量比实际多2件，实际为 x，则理想数量是 x+2。\n老师强调：重新生成时仍要基于同一份材料，不要改题目主题。",
+    "knownWeaknesses": ["重新生成漂移", "审题列式方向"],
+    "generation_options": {
+      "schedule_mode": "standard",
+      "review_days": [1, 2, 7, 14, 30],
+      "user_requirements": "重新生成不要覆盖旧版本，主题和来源必须稳定。"
+    }
+  },
+  "expectedCriteria": [
+    "must keep same source pack cache metadata for same input",
+    "must keep the source-derived topic stable",
+    "must include fixed spaced-review days"
+  ],
+  "checks": [
+    {"name": "source_topic_terms", "containsAny": ["等式", "列式"]},
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "schema_boundary", "schemaValid": true}
+  ],
+  "assertions": [
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1, 2, 7, 14, 30]},
+    {"name": "topic_contains", "contains": "等式"},
+    {"name": "source_pack_min_segments", "minimum": 4},
+    {"name": "source_pack_detects_topics", "containsAny": ["等式推导", "审题列式"]},
+    {"name": "source_pack_no_raw_text_in_trace_payload", "notContainsAny": ["重新生成时仍要基于同一份材料"]}
+  ]
+}

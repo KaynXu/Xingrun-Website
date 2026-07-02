@@ -29,6 +29,13 @@ export interface ReviewLessonRecord {
   review_generation_summary?: string;
 }
 
+export interface ReviewLessonsPage {
+  items: ReviewLessonRecord[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export type ReviewLessonTaskState = 'pending' | 'failed' | 'ready' | 'missing-output' | 'empty';
 
 export type ReviewLessonProgressOptions = {
@@ -60,7 +67,7 @@ function pickTaskStatus(lesson: Pick<ReviewLessonRecord, 'active_version_status'
   return lesson.active_version_status.trim() || lesson.record_status?.trim() || '';
 }
 
-export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRecord[] {
+function normalizeReviewLessonItems(payload: unknown): ReviewLessonRecord[] {
   if (!Array.isArray(payload)) {
     return [];
   }
@@ -101,6 +108,40 @@ export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRe
       review_generation_summary: pickString(item.review_generation_summary),
     }];
   });
+}
+
+export function normalizeReviewLessonsPageResponse(payload: unknown): ReviewLessonsPage {
+  if (!isRecord(payload)) {
+    const items = normalizeReviewLessonItems(payload);
+    return {
+      items,
+      total: items.length,
+      page: 1,
+      page_size: items.length,
+    };
+  }
+
+  const items = normalizeReviewLessonItems(payload.items);
+  const total = typeof payload.total === 'number' && Number.isFinite(payload.total)
+    ? Math.max(0, Math.floor(payload.total))
+    : items.length;
+  const page = typeof payload.page === 'number' && Number.isFinite(payload.page)
+    ? Math.max(1, Math.floor(payload.page))
+    : 1;
+  const pageSize = typeof payload.page_size === 'number' && Number.isFinite(payload.page_size)
+    ? Math.max(1, Math.floor(payload.page_size))
+    : Math.max(1, items.length);
+
+  return {
+    items,
+    total,
+    page,
+    page_size: pageSize,
+  };
+}
+
+export function normalizeReviewLessonsResponse(payload: unknown): ReviewLessonRecord[] {
+  return normalizeReviewLessonsPageResponse(payload).items;
 }
 
 export function hasReviewLessonOutput(

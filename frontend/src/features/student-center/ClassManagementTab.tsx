@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { ChevronRight, PlusCircle } from 'lucide-react';
+import { ChevronRight, PlusCircle, Search } from 'lucide-react';
 import { FloatingFilterBar, type FloatingFilterItem, type FloatingFilterOption } from '../../components/FloatingFilterBar';
 import { getAcademicStageFromGrade, normalizeAcademicGradeLabel } from '../../domain/classNaming';
 import { buildDiceBearAvatarUrl, cn } from '../../workspaceShared';
@@ -12,7 +12,8 @@ import {
   studentCenterSurfaceClass,
 } from './ui';
 
-export type ClassManagementFilterLayer = 'subject' | 'teacher' | 'stage' | 'grade';
+export type ClassManagementFilterLayer = 'subject' | 'teacher' | 'stage' | 'grade' | 'classType';
+export type ClassLifecycleFilter = 'current' | 'pending_graduation' | 'all';
 
 type ClassManagementTabProps = {
   loading: boolean;
@@ -32,6 +33,9 @@ type ClassManagementTabProps = {
   activeClassFilterLayer: ClassManagementFilterLayer | null;
   activeClassFilterOptions: FloatingFilterOption[];
   activeClassFilterSummary: string;
+  classSearchText: string;
+  classLifecycleFilter: ClassLifecycleFilter;
+  classLifecycleCounts: Record<ClassLifecycleFilter, number>;
   showClassCohortYear: boolean;
   subjectOptions: string[];
   onRefresh: () => void;
@@ -41,6 +45,8 @@ type ClassManagementTabProps = {
   onActivateClassFilter: (key: ClassManagementFilterLayer) => void;
   onClearClassFilter: (key: ClassManagementFilterLayer) => void;
   onSelectClassFilterOption: (value: string | number) => void;
+  onClassSearchTextChange: (value: string) => void;
+  onClassLifecycleFilterChange: (value: ClassLifecycleFilter) => void;
   onShowClassCohortYearChange: (checked: boolean) => void;
   onClassCardClick: (event: MouseEvent<HTMLElement>, classId: number) => void;
   onToggleExpandedClass: (classId: number | 'new') => void;
@@ -67,6 +73,9 @@ export function ClassManagementTab({
   activeClassFilterLayer,
   activeClassFilterOptions,
   activeClassFilterSummary,
+  classSearchText,
+  classLifecycleFilter,
+  classLifecycleCounts,
   showClassCohortYear,
   subjectOptions,
   onRefresh,
@@ -76,6 +85,8 @@ export function ClassManagementTab({
   onActivateClassFilter,
   onClearClassFilter,
   onSelectClassFilterOption,
+  onClassSearchTextChange,
+  onClassLifecycleFilterChange,
   onShowClassCohortYearChange,
   onClassCardClick,
   onToggleExpandedClass,
@@ -115,6 +126,36 @@ export function ClassManagementTab({
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {[
+          { key: 'current' as const, label: '当前班级', count: classLifecycleCounts.current },
+          { key: 'pending_graduation' as const, label: '待结业', count: classLifecycleCounts.pending_graduation },
+          { key: 'all' as const, label: '全部', count: classLifecycleCounts.all },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onClassLifecycleFilterChange(item.key)}
+            className={cn(
+              'inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm font-semibold transition',
+              classLifecycleFilter === item.key
+                ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.08] dark:hover:text-white',
+            )}
+          >
+            <span>{item.label}</span>
+            <span className={cn(
+              'rounded-full px-1.5 text-xs',
+              classLifecycleFilter === item.key
+                ? 'bg-white/15 text-white dark:bg-slate-950/10 dark:text-slate-950'
+                : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300',
+            )}>
+              {item.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       <FloatingFilterBar
         items={classFilterItems}
         activeKey={activeClassFilterLayer}
@@ -129,15 +170,27 @@ export function ClassManagementTab({
         onClear={onClearClassFilter}
         onSelect={onSelectClassFilterOption}
         extraControls={(
-          <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={showClassCohortYear}
-              onChange={(event) => onShowClassCohortYearChange(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
-            />
-            入学年份
-          </label>
+          <>
+            <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={showClassCohortYear}
+                onChange={(event) => onShowClassCohortYearChange(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+              />
+              入学年份
+            </label>
+            <label className="relative block w-full sm:w-72 xl:w-80">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={classSearchText}
+                onChange={(event) => onClassSearchTextChange(event.target.value)}
+                placeholder="搜索班级、老师、班型"
+                className="h-10 w-full rounded-full border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-white/30 dark:focus:ring-white/10"
+              />
+            </label>
+          </>
         )}
       />
 
@@ -212,6 +265,9 @@ export function ClassManagementTab({
                       ) : null}
                       {item.is_bridge ? (
                         <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-400/10 dark:text-amber-200">衔接</span>
+                      ) : null}
+                      {item.lifecycle_status && item.lifecycle_status !== 'active' ? (
+                        <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-400/10 dark:text-rose-200">待结业</span>
                       ) : null}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">

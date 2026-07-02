@@ -371,6 +371,7 @@ export function ClassEditorModal({
                         className={studentCenterFieldClass}
                       >
                         <option value="group">多人班课</option>
+                        <option value="short_term_drill">短期刷题班</option>
                         <option value="1v1">1v1</option>
                         <option value="1v2">1v2</option>
                         <option value="1v3">1v3</option>
@@ -412,7 +413,7 @@ export function ClassEditorModal({
                         <span className="text-slate-500 dark:text-slate-400">班号</span>
                         <input type="number" min="1" value={newClass.form.class_number} onChange={(e) => actions.onFieldChange('new', 'class_number', e.target.value)} className={studentCenterFieldClass} />
                       </label>
-                    ) : (
+                    ) : newClass.form.class_type === 'short_term_drill' ? null : (
                       <div className="space-y-2 text-sm md:col-span-2">
                         <span className="text-slate-500 dark:text-slate-400">选择学员</span>
                         <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.04]">
@@ -570,6 +571,7 @@ export function ClassEditorModal({
                               className={studentCenterFieldClass}
                             >
                               <option value="group">多人班课</option>
+                              <option value="short_term_drill">短期刷题班</option>
                               <option value="1v1">1v1</option>
                               <option value="1v2">1v2</option>
                               <option value="1v3">1v3</option>

@@ -15,8 +15,19 @@ import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
-from review_plan_workflow.schemas import ReviewPlanInput, SourceSummary, TaskBlueprint, normalize_final_review_plan, validate_final_review_plan
-from review_plan_workflow.service import _fallback_agent_blueprint, generate_single_lesson_review_plan
+from review_plan_workflow.schemas import (
+    NormalizedBrief,
+    QualityIssue,
+    QualityReview,
+    ReviewPlanInput,
+    ReviewPlanSourceBrief,
+    ScopePlan,
+    SourceSummary,
+    TaskBlueprint,
+    normalize_final_review_plan,
+    validate_final_review_plan,
+)
+from review_plan_workflow.service import _fallback_agent_blueprint, _normalize_output_plan, generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -174,6 +185,94 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
         self.assertTrue(review.passed, [issue.description for issue in review.issues])
 
+    def test_compressed_single_day_normalization_adds_lightweight_spiral_review(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0].pop("spiral_review", None)
+        review_input = ReviewPlanInput(
+            summary_text="勾股数、特殊角度αβ与和角推导完整课堂逐字稿",
+            subject="数学",
+            grade="高一",
+            topic="勾股数与特殊角推导",
+            schedule_mode="compressed",
+            review_days=[1],
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+        )
+
+        normalized = _normalize_output_plan(plan, review_input)
+
+        self.assertIn("spiral_review", normalized["days"][0])
+        self.assertIn("交叉回收", normalized["days"][0]["spiral_review"][0])
+        self.assertIn("隔题复现", normalized["days"][0]["spiral_review"][1])
+
+    def test_normalizes_task_blocks_for_compressed_day_quality_gate(self):
+        plan = {
+            "lesson_info": {"subject": "数学", "grade": "八年级", "date": "2026-07-02", "topic": "勾股数与特殊角复习"},
+            "full_review_topics": ["整数勾股数", "根式勾股数", "特殊角 α β", "α+β=45°"],
+            "quotes": ["难题高频勾股比要求脱口而出。"],
+            "days": [
+                {
+                    "day": 1,
+                    "label": "当天课后复习",
+                    "goal": "用填空、选择和口述卡复盘勾股数组与特殊角推导。",
+                    "completion_standard": "填空和选择订正完成，并能口述 α+β=45° 的关键比例。",
+                    "blanks": [],
+                    "choices": [],
+                    "task_blocks": [
+                        {
+                            "type": "blanks",
+                            "items": [
+                                {"question": "最基础的整数勾股数组是什么？", "answer": "3:4:5"},
+                                {"question": "1:1:√2 对应的直角三角形两个锐角都是______。", "answer": "45°"},
+                                {"question": "1:√3:2 中短直角边对应的角是______。", "answer": "30°"},
+                                {"question": "α 对应的勾股比是______。", "answer": "1:2:√5"},
+                                {"question": "β 对应的勾股比是______。", "answer": "1:3:√10"},
+                            ],
+                        },
+                        {
+                            "type": "choices",
+                            "items": [
+                                {
+                                    "question": "若三边满足 a²+b²=c²，可以判断三角形是什么三角形？",
+                                    "options": ["A. 直角三角形", "B. 锐角三角形", "C. 钝角三角形", "D. 等边三角形"],
+                                    "answer": "A",
+                                },
+                                {
+                                    "question": "2α 与 2β 的关系是？",
+                                    "options": ["A. 互余", "B. 相等", "C. 互补", "D. 无法判断"],
+                                    "answer": "A",
+                                },
+                            ],
+                        },
+                        {
+                            "type": "active_recall",
+                            "items": [
+                                {"question": "口述 α+β=45° 的构造思路。"},
+                                {"question": "说明为什么 2α、2β 对应 3:4:5。"},
+                            ],
+                        },
+                    ],
+                }
+            ],
+        }
+
+        normalized = normalize_final_review_plan(plan)
+        day = normalized["days"][0]
+        self.assertEqual(len(day["blanks"]), 5)
+        self.assertEqual(len(day["choices"]), 2)
+        self.assertEqual(day["blanks"][0]["answer"], "3:4:5")
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
+        self.assertFalse(any(issue.category == "pdf_readiness" for issue in review.issues))
+
     def test_normalization_keeps_blank_answer_aliases_without_duplicate_fill_items(self):
         plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
         plan["days"] = [
@@ -217,6 +316,72 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
         self.assertTrue(review.passed, [issue.description for issue in review.issues])
 
+    def test_quality_gate_does_not_treat_option_word_tihao_as_vague_reference(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
+        plan["days"] = [
+            {
+                "day": 1,
+                "goal": "复盘二次函数图像与参数。",
+                "blanks": [
+                    {"text": "二次函数图像开口由______决定。", "answer": "a 的符号"},
+                    {"text": "顶点式中顶点坐标是______。", "answer": "(h, k)"},
+                    {"text": "对称轴公式是______。", "answer": "$x=-b/(2a)$"},
+                ],
+                "choices": [
+                    {
+                        "question": "判断二次函数图像最值前，应先看哪一项？",
+                        "options": ["A. 开口方向", "B. 字体大小", "C. 题号颜色", "D. 页码位置"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": "顶点式最适合先读出什么信息？",
+                        "options": ["A. 顶点坐标", "B. 题号", "C. 字体", "D. 页码"],
+                        "answer": "A",
+                    },
+                ],
+                "self_test_phrase": "能说清参数与图像的对应关系。",
+            }
+        ]
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_quality_gate_flags_actual_vague_question_reference(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
+        plan["days"] = [
+            {
+                "day": 1,
+                "goal": "复盘二次函数图像与参数。",
+                "blanks": [
+                    {"text": "二次函数图像开口由______决定。", "answer": "a 的符号"},
+                    {"text": "顶点式中顶点坐标是______。", "answer": "(h, k)"},
+                    {"text": "对称轴公式是______。", "answer": "$x=-b/(2a)$"},
+                ],
+                "choices": [
+                    {
+                        "question": "原题中这个题的正确入口是什么？",
+                        "options": ["A. 先看开口", "B. 先看题号", "C. 先看字体", "D. 先看页码"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": "顶点式最适合先读出什么信息？",
+                        "options": ["A. 顶点坐标", "B. 字体大小", "C. 页码", "D. 颜色"],
+                        "answer": "A",
+                    },
+                ],
+            }
+        ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertTrue(any("模糊指代" in issue.description for issue in review.issues))
+
     def test_compressed_fallback_blueprint_requires_complete_one_day_density(self):
         blueprint = _fallback_agent_blueprint(
             review_input=ReviewPlanInput(
@@ -238,16 +403,48 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("worked_example", instructions)
         self.assertIn("error_log", criteria)
 
+    def test_time_allocator_uses_readable_label_for_compressed_one_day_plan(self):
+        from review_plan_workflow.nodes.time_allocator import time_allocator_node
+        from review_plan_workflow.executor import run_workflow_node
+        from review_plan_workflow.state import WorkflowContext
+
+        allocation = run_workflow_node(
+            time_allocator_node,
+            {
+                "normalized": NormalizedBrief(subject="math", confidence=0.8),
+                "scope": ScopePlan(review_days=[1], review_loop=["定义回看", "错因复盘"]),
+            },
+            WorkflowContext(),
+        )
+
+        self.assertEqual(allocation.review_schedule[0]["label"], "当天课后复习")
+
     def test_review_plan_input_accepts_custom_review_days(self):
         review_input = ReviewPlanInput(
             summary_text="课堂总结",
             schedule_mode="custom",
             review_days=[1, 5],
             user_requirements="只做考前两次",
+            constraints={"requested_question_count": 10},
         )
 
         self.assertEqual(review_input.review_days, [1, 5])
         self.assertEqual(review_input.user_requirements, "只做考前两次")
+        self.assertEqual(review_input.constraints["requested_question_count"], 10)
+
+    def test_quality_issue_accepts_nullable_locator_fields_from_llm_reviewer(self):
+        issue = QualityIssue(
+            severity="high",
+            category="question_quality",
+            description="第1天选择题第2题答案错误。",
+            question_type=None,
+            target_path=None,
+            suggested_fix=None,
+        )
+
+        self.assertEqual(issue.question_type, "")
+        self.assertEqual(issue.target_path, "")
+        self.assertEqual(issue.suggested_fix, "")
 
     def test_quality_policy_skips_llm_reviewer_for_high_confidence_local_pass(self):
         from review_plan_workflow.quality_policy import should_run_llm_quality_review
@@ -272,6 +469,21 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertTrue(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
 
+    def test_quality_policy_skips_llm_reviewer_when_validator_blocks_delivery(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(score=50, passed=False, must_revise=True, issues=[], revision_instructions=[])
+        source_brief = ReviewPlanSourceBrief(confidence=0.2, missing_fields=["topic"])
+
+        self.assertFalse(
+            should_run_llm_quality_review(
+                local_quality=local_quality,
+                source_brief=source_brief,
+                validator_passed=False,
+            )
+        )
+
     def test_quality_policy_caps_structural_revision_attempts_to_one(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
         from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
@@ -287,9 +499,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
 
-    def test_quality_policy_allows_second_revision_for_question_factual_errors(self):
+    def test_quality_policy_limits_question_factual_errors_to_one_targeted_repair(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
-        from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
+        from review_plan_workflow.schemas import ReviewPlanSourceBrief
 
         quality = QualityReview(
             score=62,
@@ -307,7 +519,230 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
         source_brief = ReviewPlanSourceBrief(confidence=0.82)
 
-        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 2)
+        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
+
+    def test_quality_policy_softens_workload_after_revision_only_when_no_other_high_issue(self):
+        from review_plan_workflow.quality_policy import can_soft_pass_after_revision, soften_quality_after_revision
+
+        workload_quality = QualityReview(
+            score=70,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="workload_sanity",
+                    description="第1天任务量超过30分钟。",
+                    suggested_fix="减少任务或调整时间。",
+                )
+            ],
+            revision_instructions=["减少任务或调整时间"],
+        )
+
+        self.assertTrue(can_soft_pass_after_revision(workload_quality))
+        softened = soften_quality_after_revision(workload_quality)
+        self.assertTrue(softened.passed)
+        self.assertFalse(softened.must_revise)
+        self.assertEqual(softened.score, 85)
+        self.assertEqual(softened.issues[0].severity, "medium")
+
+        mixed_quality = QualityReview(
+            score=50,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(severity="high", category="workload_sanity", description="任务太多。"),
+                QualityIssue(severity="high", category="question_quality", description="选择题答案错误。"),
+            ],
+            revision_instructions=["修复问题"],
+        )
+        self.assertFalse(can_soft_pass_after_revision(mixed_quality))
+
+    def test_quality_policy_softens_low_source_evidence_issue_but_not_wrong_answer(self):
+        from review_plan_workflow.quality_policy import can_soft_pass_after_revision, soften_quality_after_revision
+
+        evidence_quality = QualityReview(
+            score=72,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="factuality",
+                    description=(
+                        "计划把具体知识点作为复习主体，但 source_brief 明确缺失 topic 和 "
+                        "knowledge_points，lesson_title_candidates_count 为 0，属于证据边界问题。"
+                    ),
+                    suggested_fix="改成待确认复习范围。",
+                )
+            ],
+            revision_instructions=["将推测内容写入 assumptions"],
+        )
+
+        self.assertTrue(can_soft_pass_after_revision(evidence_quality))
+        softened = soften_quality_after_revision(evidence_quality)
+        self.assertTrue(softened.passed)
+        self.assertFalse(softened.must_revise)
+        self.assertEqual(softened.issues[0].severity, "medium")
+
+        wrong_answer_quality = QualityReview(
+            score=62,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="factuality",
+                    description="第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+                    suggested_fix="重写该题并校验答案。",
+                )
+            ],
+            revision_instructions=["修复错题"],
+        )
+
+        self.assertFalse(can_soft_pass_after_revision(wrong_answer_quality))
+
+        schema_quality = QualityReview(
+            score=40,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="schema",
+                    description="review_days 缺失，PDF 无法渲染。",
+                    suggested_fix="补齐 days。",
+                )
+            ],
+            revision_instructions=["补齐结构"],
+        )
+
+        self.assertFalse(can_soft_pass_after_revision(schema_quality))
+
+    def test_quality_policy_softens_spiral_review_only_issue_after_revision(self):
+        from review_plan_workflow.quality_policy import (
+            can_soft_pass_after_revision,
+            soften_quality_after_revision,
+            soft_pass_warning_for_quality,
+        )
+
+        quality = QualityReview(
+            score=82,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="review_loop",
+                    description="计划缺少明确的 spiral_review 组件，需要补充交叉回收或隔题复现。",
+                    suggested_fix="补一个轻量 spiral_review。",
+                )
+            ],
+            revision_instructions=["补充 spiral_review"],
+        )
+
+        self.assertTrue(can_soft_pass_after_revision(quality))
+        softened = soften_quality_after_revision(quality)
+        self.assertTrue(softened.passed)
+        self.assertFalse(softened.must_revise)
+        self.assertEqual(softened.issues[0].severity, "medium")
+        self.assertEqual(soft_pass_warning_for_quality(quality)[0], "quality_review_loop_soft_pass")
+
+    def test_question_repair_localizes_cn_choice_issue(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        quality = QualityReview(
+            score=62,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+                    suggested_fix="重写第1天选择题第2题，并重新验算答案。",
+                )
+            ],
+            revision_instructions=["重写错题"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0].target_id, "day1_choice2")
+        self.assertEqual(targets[0].kind, "choice")
+        self.assertEqual(targets[0].question["question"], "解分式方程后为什么要代回原分母检验？")
+
+    def test_question_repair_rejects_unlocalized_structural_issue(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        quality = QualityReview(
+            score=40,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="schema",
+                    description="review plan must include review days",
+                    suggested_fix="补齐 days",
+                )
+            ],
+            revision_instructions=["补齐结构"],
+        )
+
+        self.assertEqual(find_question_repair_targets(writer_style_single_lesson_plan(), quality), [])
+
+    def test_question_repair_uses_structured_target_path(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        quality = QualityReview(
+            score=60,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="factuality",
+                    description="答案验算错误。",
+                    suggested_fix="重写该选择题答案。",
+                    target_path="days[0].choices[1]",
+                )
+            ],
+            revision_instructions=["按 target_path 修复"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0].target_id, "day1_choice2")
+
+    def test_question_repair_target_path_uses_day_array_position(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        quality = QualityReview(
+            score=60,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="factuality",
+                    description="第 7 天第二道选择题答案验算错误。",
+                    suggested_fix="重写该选择题答案。",
+                    target_path="days[2].choices[1]",
+                )
+            ],
+            revision_instructions=["按 target_path 修复"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0].target_id, "day7_choice2")
 
     def test_source_brief_builder_records_structured_source_before_writer(self):
         from review_plan_workflow.executor import run_workflow_node
@@ -690,6 +1125,35 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertFalse(review.passed)
         self.assertTrue(any(issue.category == "completeness" for issue in review.issues))
 
+    def test_quality_gate_enforces_requested_question_count_constraint(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = ["勾股定理", "整数勾股数", "根式勾股数", "特殊角", "和角推导"]
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：勾股定理等式为______。", "answer": "$a^2+b^2=c^2$"}
+            for i in range(1, 6)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 3)
+        ]
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+        )
+
+        self.assertFalse(review.passed)
+        self.assertTrue(any("老师要求题目控制在 10 道" in issue.description for issue in review.issues))
+
     def test_quality_gate_rejects_pdf_fallback_content(self):
         broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")
         broken_plan["lesson_info"]["topic"] = ""
@@ -955,12 +1419,17 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(writer_kwargs["max_retries"], 0)
         self.assertIn("父模型教学蓝图", writer_kwargs["user_message"])
         self.assertIn("定义域", writer_kwargs["user_message"])
+        self.assertIn("弱素材兜底契约", writer_kwargs["user_message"])
         reviewer_kwargs = mock_llm_review.call_args.kwargs
         self.assertEqual(reviewer_kwargs["provider"], "openai")
         self.assertEqual(reviewer_kwargs["temperature"], 0.08)
         self.assertEqual(reviewer_kwargs["stage"], "quality_reviewer_llm")
         self.assertEqual(reviewer_kwargs["timeout_seconds"], 90.0)
         self.assertEqual(reviewer_kwargs["max_retries"], 0)
+        self.assertIn("trusted_workflow_metadata", reviewer_kwargs["user_message"])
+        self.assertIn('"grade": "高一"', reviewer_kwargs["user_message"])
+        self.assertIn("不要因为课堂材料里没重复出现这些字段", reviewer_kwargs["user_message"])
+        self.assertIn("弱素材降级", reviewer_kwargs["user_message"])
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIn("parent_planner", run["node_outputs"])
         self.assertIn("quality_reviewer_llm", run["node_outputs"])
@@ -1033,6 +1502,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(usage["input_tokens"], 4)
         self.assertEqual(usage["output_tokens"], 6)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(run["node_outputs"]["review_plan_validator_initial"]["passed"])
+        self.assertTrue(run["node_outputs"]["review_plan_evaluator"]["passed"])
         self.assertEqual(run["node_outputs"]["quality_reviewer_initial"]["mode"], "skipped")
         self.assertEqual(
             run["node_outputs"]["quality_reviewer_initial"]["reason"],
@@ -1140,11 +1611,212 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
     @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
-    def test_question_answer_error_gets_second_targeted_revision(
+    def test_workload_sanity_issue_revises_once_then_soft_passes(
         self,
         mock_parent_plan,
         mock_generate_plan,
         mock_llm_review,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "压缩复习，但保持任务可执行。",
+                "student_diagnosis": ["需要集中复习"],
+                "knowledge_map": [{"name": "小数运算", "role": "核心", "evidence": "课堂"}],
+                "day_strategies": [{"day": 1, "objective": "小数运算集中复习"}],
+                "writer_instructions": ["优先减少任务量，不要阻断生成。"],
+                "quality_risks": ["任务量可能偏重。"],
+                "success_criteria": ["能完成核心题目。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = valid_single_lesson_plan(subject="数学", topic="小数运算")
+        initial_plan["days"] = initial_plan["days"][:1]
+        initial_plan["days"][0]["day"] = 1
+        revised_plan = valid_single_lesson_plan(subject="数学", topic="小数运算")
+        revised_plan["days"] = revised_plan["days"][:1]
+        revised_plan["days"][0]["day"] = 1
+        revised_plan["days"][0]["completion_standard"] = "完成核心题后记录一个错因即可。"
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        workload_issue = {
+            "severity": "high",
+            "category": "workload_sanity",
+            "description": "第1天标注30分钟，但实际包含20多项产出，五年级学生无法稳定完成。",
+            "suggested_fix": "减少任务量或调整完成标准。",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {"score": 70, "passed": False, "must_revise": True, "issues": [workload_issue], "revision_instructions": ["压缩任务量"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 76, "passed": False, "must_revise": True, "issues": [workload_issue], "revision_instructions": ["仍偏重，但不影响内容可用"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="五年级",
+            topic="小数运算",
+            summary="课堂总结文本",
+            weak_points="任务量偏重",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="五年级",
+            topic="小数运算",
+            lesson_date="2026-07-02",
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual([day["day"] for day in generated["days"]], [1])
+        self.assertEqual(mock_revise_plan.call_count, 1)
+        self.assertEqual(mock_llm_review.call_count, 2)
+        self.assertEqual(usage["input_tokens"], 28)
+        self.assertEqual(usage["output_tokens"], 13)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["quality_review"]["passed"], True)
+        self.assertEqual(run["quality_review"]["must_revise"], False)
+        self.assertEqual(run["quality_review"]["score"], 85)
+        self.assertEqual(run["quality_review"]["issues"][0]["severity"], "medium")
+        self.assertTrue(any(warning["code"] == "quality_workload_soft_pass" for warning in run["warnings"]))
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_low_source_evidence_issue_revises_once_then_soft_passes(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "课堂材料证据弱，生成数学通用基础复习。",
+                "student_diagnosis": ["课堂主题需老师确认"],
+                "knowledge_map": [
+                    {"name": "数学基础复习（待确认）", "role": "保持可练习", "evidence": "low_source_fallback"}
+                ],
+                "day_strategies": [{"day": 1, "objective": "完成通用基础复习"}],
+                "writer_instructions": ["标注待确认，不要伪装成课堂事实。"],
+                "quality_risks": ["source_brief 缺 topic/knowledge_points。"],
+                "success_criteria": ["题目可打印且答案正确。"],
+                "assumptions": ["课堂主题需老师确认"],
+                "confidence": 0.55,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = valid_single_lesson_plan(subject="数学", topic="数学基础复习（待确认）")
+        initial_plan["days"] = initial_plan["days"][:1]
+        initial_plan["days"][0]["day"] = 1
+        initial_plan["assumptions"] = ["课堂主题需老师确认"]
+        revised_plan = valid_single_lesson_plan(subject="数学", topic="数学基础复习（待确认）")
+        revised_plan["days"] = revised_plan["days"][:1]
+        revised_plan["days"][0]["day"] = 1
+        revised_plan["assumptions"] = ["课堂主题需老师确认"]
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        evidence_issue = {
+            "severity": "high",
+            "category": "factuality",
+            "description": (
+                "计划使用待确认知识点，但 source_brief 明确缺失 topic 和 knowledge_points，"
+                "lesson_title_candidates_count 为 0，属于低证据边界提醒。"
+            ),
+            "suggested_fix": "保留可用题目，但把知识点标为待确认范围。",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {"score": 72, "passed": False, "must_revise": True, "issues": [evidence_issue], "revision_instructions": ["标注待确认范围"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 78, "passed": False, "must_revise": True, "issues": [evidence_issue], "revision_instructions": ["仍是低证据提醒"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="五年级",
+            topic="",
+            summary="课堂材料很短。",
+            weak_points="",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂材料很短。",
+            subject="数学",
+            grade="五年级",
+            topic="",
+            lesson_date="2026-07-02",
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual([day["day"] for day in generated["days"]], [1])
+        self.assertEqual(mock_revise_plan.call_count, 1)
+        self.assertEqual(mock_llm_review.call_count, 2)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["quality_review"]["passed"], True)
+        self.assertEqual(run["quality_review"]["must_revise"], False)
+        self.assertEqual(run["quality_review"]["score"], 85)
+        self.assertEqual(run["quality_review"]["issues"][0]["severity"], "medium")
+        self.assertTrue(any(warning["code"] == "quality_evidence_soft_pass" for warning in run["warnings"]))
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.question_repair.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_question_answer_error_gets_single_targeted_repair(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_question_repair,
         mock_revise_plan,
     ):
         config_runtime.write_file_config({
@@ -1169,10 +1841,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             },
             {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
         )
-        initial_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
-        first_revision = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
-        fixed_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
-        fixed_plan["weak_points_summary"] = "已修正三边根式判断题，答案与验算一致。"
+        initial_plan = writer_style_single_lesson_plan()
+        initial_plan["lesson_info"]["topic"] = "勾股定理及勾股数应用"
         mock_generate_plan.return_value = (
             initial_plan,
             {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
@@ -1189,18 +1859,27 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                 {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
             ),
             (
-                {"score": 70, "passed": False, "must_revise": True, "issues": [factual_issue], "revision_instructions": ["继续重写错题"]},
-                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
-            ),
-            (
                 {"score": 95, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
                 {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
             ),
         ]
-        mock_revise_plan.side_effect = [
-            (first_revision, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4}),
-            (fixed_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4}),
-        ]
+        mock_question_repair.return_value = (
+            (
+                {
+                    "repairs": [
+                        {
+                            "target_id": "day1_choice2",
+                            "kind": "choice",
+                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
+                            "options": ["A. 直角三角形", "B. 锐角三角形", "C. 钝角三角形", "D. 不存在"],
+                            "answer": "B",
+                            "analysis": "最大边平方为 5，另外两边平方和为 7，5<7，所以是锐角三角形。",
+                        }
+                    ]
+                },
+                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4},
+            )
+        )
 
         generated, usage = generate_single_lesson_review_plan(
             summary_text="课堂总结文本",
@@ -1212,11 +1891,17 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated["weak_points_summary"], "已修正三边根式判断题，答案与验算一致。")
-        self.assertEqual(mock_revise_plan.call_count, 2)
-        self.assertEqual(mock_llm_review.call_count, 3)
-        self.assertEqual(mock_revise_plan.call_args_list[0].kwargs["stage"], "targeted_revision")
-        self.assertEqual(mock_revise_plan.call_args_list[1].kwargs["stage"], "targeted_revision")
+        self.assertEqual(generated["days"][0]["choices"][1]["answer"], "B")
+        self.assertIn("锐角三角形", generated["days"][0]["choices"][1]["analysis"])
+        self.assertEqual(mock_question_repair.call_count, 1)
+        mock_revise_plan.assert_not_called()
+        self.assertEqual(mock_llm_review.call_count, 2)
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["stage"], "question_repair")
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["provider"], "deepseek")
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["model"], "deepseek-v4-pro")
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["timeout_seconds"], 45.0)
+        self.assertIn("day1_choice2", mock_question_repair.call_args_list[0].kwargs["user_message"])
+        self.assertNotIn("当前计划 JSON", mock_question_repair.call_args_list[0].kwargs["user_message"])
         self.assertEqual(usage["provider"], "openai")
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
@@ -1271,6 +1956,18 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("formula_sheet", run["node_outputs"]["task_blueprint"]["required_components"])
         self.assertEqual(run["node_outputs"]["time_allocator"]["review_schedule"][0]["day"], 1)
         self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
+        runtime = run["node_outputs"]["workflow_runtime"]
+        self.assertEqual(runtime["path"], "fast_path")
+        self.assertEqual(runtime["model_call_count"], 1)
+        self.assertEqual(runtime["writer_model_call_count"], 1)
+        self.assertEqual(runtime["llm_reviewer_model_call_count"], 0)
+        self.assertIn("plan_generator", runtime["latency_by_stage"])
+        self.assertEqual(runtime["delivery_contract"]["generation_mode"], "standard")
+        self.assertGreater(runtime["delivery_contract"]["visible_question_count"], 0)
+        self.assertEqual(
+            runtime["delivery_contract"]["visible_question_count"],
+            runtime["delivery_contract"]["answer_key_count"],
+        )
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_passes_generation_options_through_workflow(self, mock_generate_plan):
@@ -1361,6 +2058,37 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(run["node_outputs"]["plan_generator_model_config"]["model"], "deepseek-v4-pro")
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_output_normalization_trusts_lesson_metadata_and_removes_unsupported_quotes(self, mock_generate_plan):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["lesson_info"]["subject"] = ""
+        plan["lesson_info"]["grade"] = ""
+        plan["lesson_info"]["assumptions"] = ["年级'九年级'为学生用户输入，课堂材料中不可核验。", "主题来自课堂材料。"]
+        plan["quotes"] = ["老师说一定要这样做。"]
+        plan["days"][0]["quotes"] = ["老师原话：先看题号。"]
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="九年级",
+            topic="一次函数",
+            lesson_date="2026-07-02",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["subject"], "数学")
+        self.assertEqual(generated["lesson_info"]["grade"], "九年级")
+        self.assertEqual(generated["lesson_info"]["date"], "2026-07-02")
+        self.assertEqual(generated["lesson_info"]["assumptions"], ["主题来自课堂材料。"])
+        self.assertEqual(generated["quotes"], [])
+        self.assertEqual(generated["days"][0].get("quotes"), [])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_repairs_invalid_schema_once(self, mock_generate_plan):
         valid_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
         mock_generate_plan.side_effect = [
@@ -1386,6 +2114,45 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(usage["input_tokens"], 8)
         self.assertEqual(usage["output_tokens"], 10)
         self.assertEqual(mock_generate_plan.call_count, 2)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_retries_transient_connection_error_once(self, mock_generate_plan):
+        valid_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.side_effect = [
+            RuntimeError("Connection error."),
+            (valid_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 5, "output_tokens": 6}),
+        ]
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "一次函数")
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
+        self.assertEqual(usage["input_tokens"], 5)
+        self.assertEqual(mock_generate_plan.call_count, 2)
+        self.assertEqual(mock_generate_plan.call_args_list[0].kwargs["stage"], "plan_generator")
+        self.assertEqual(mock_generate_plan.call_args_list[1].kwargs["stage"], "plan_generator_retry")
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(any(warning["code"] == "plan_generator_transient_retry" for warning in run["warnings"]))
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_repairs_json_parse_failure_once(self, mock_generate_plan):
@@ -1482,7 +2249,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         self.assertEqual(generated["lesson_info"]["topic"], "二次函数最值与将军饮马综合复习")
-        self.assertEqual(generated["lesson_info"]["grade"], "9")
+        self.assertEqual(generated["lesson_info"]["grade"], "九年级")
         self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
         self.assertEqual(
             generated["full_review_topics"],
@@ -1693,7 +2460,10 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             logs=[{"node_name": "quality_reviewer", "status": "success", "latency_ms": 1}],
         )
 
-        serialized = app_module._serialize_lesson_for_response(lesson_manager.get_lesson(lesson_id))
+        serialized = app_module._serialize_lesson_for_response(
+            lesson_manager.get_lesson(lesson_id),
+            include_runtime=True,
+        )
 
         self.assertEqual(serialized["trace_id"], "trace-serialization")
         self.assertEqual(serialized["workflow_warnings"][0]["code"], "demo")

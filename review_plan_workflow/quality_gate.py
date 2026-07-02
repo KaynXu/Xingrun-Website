@@ -3,6 +3,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .printable_questions import (
+    collect_day_printable_question_counts,
+    count_printable_questions,
+    merge_visible_and_raw_counts,
+)
 from .schemas import QualityIssue, QualityReview, normalize_final_review_plan, validate_final_review_plan
 
 
@@ -68,7 +73,12 @@ BAD_BLANK_ANSWERS = {
     "动作",
     "提醒",
 }
-VAGUE_STEM_PATTERNS = ("某题", "这个题", "原题中", "题号")
+VAGUE_STEM_PATTERNS = ("某题", "这个题", "原题中")
+VAGUE_REFERENCE_REGEXES = (
+    re.compile(r"第\s*[0-9一二三四五六七八九十、,，和及]+\s*题"),
+    re.compile(r"上述\s*(?:填空题|选择题|题目|问题)"),
+    re.compile(r"以上\s*(?:填空题|选择题|题目|问题)"),
+)
 SKELETAL_OPTION_LABELS = {
     "A",
     "B",
@@ -144,6 +154,37 @@ def _iter_strings(value: Any) -> list[str]:
     return []
 
 
+def _iter_vague_reference_texts(value: Any, *, parent_key: str = "") -> list[str]:
+    skipped_keys = {"options", "answer", "answers", "reference_answer", "answer_hint"}
+    if isinstance(value, str):
+        if parent_key in skipped_keys:
+            return []
+        return [value]
+    if isinstance(value, dict):
+        strings: list[str] = []
+        for key, item in value.items():
+            strings.extend(_iter_vague_reference_texts(item, parent_key=str(key)))
+        return strings
+    if isinstance(value, list):
+        if parent_key in skipped_keys:
+            return []
+        strings = []
+        for item in value:
+            strings.extend(_iter_vague_reference_texts(item, parent_key=parent_key))
+        return strings
+    return []
+
+
+def _find_vague_references(plan: dict[str, Any]) -> list[str]:
+    hits: list[str] = []
+    for text in _iter_vague_reference_texts(plan):
+        if _contains_any(text, VAGUE_STEM_PATTERNS) or any(pattern.search(text) for pattern in VAGUE_REFERENCE_REGEXES):
+            normalized = " ".join(text.split())
+            if normalized and normalized not in hits:
+                hits.append(normalized)
+    return hits
+
+
 def _collect_quotes(plan: dict[str, Any]) -> list[str]:
     quotes: list[str] = []
     for source in (plan.get("quotes"), plan.get("lesson_info", {}).get("quotes")):
@@ -201,52 +242,11 @@ def _day_renderable_counts(day: dict[str, Any]) -> tuple[int, int, int]:
     return blanks, choices, bodies
 
 
-def _question_signature(value: object) -> str:
-    return _compact_text(_clean_text(value))
-
-
-def _collect_day_unique_question_counts(day: dict[str, Any]) -> tuple[int, int, int]:
-    fill_signatures: set[str] = set()
-    choice_signatures: set[str] = set()
-    raw_fill_count = 0
-
-    def add_fill(value: object) -> None:
-        nonlocal raw_fill_count
-        signature = _question_signature(value)
-        if not signature:
-            return
-        raw_fill_count += 1
-        fill_signatures.add(signature)
-
-    def walk(value: Any) -> None:
-        if isinstance(value, dict):
-            item_type = _clean_text(value.get("type")).lower()
-            fill_text = value.get("text") or value.get("stem") or value.get("question") or value.get("label")
-            if item_type == "fill" or (
-                fill_text and any(key in value for key in ("answer", "answer_hint", "reference_answer"))
-            ):
-                add_fill(fill_text)
-            for nested in value.values():
-                walk(nested)
-        elif isinstance(value, list):
-            for nested in value:
-                walk(nested)
-
-    walk(day.get("blanks", []))
-    walk(day.get("items", []))
-    walk(day.get("steps", []))
-    walk(day.get("active_recall", {}))
-    walk(day.get("tasks", {}))
-    walk(day.get("oral_cards", []))
-
-    for choice in day.get("choices", []) if isinstance(day.get("choices"), list) else []:
-        if not isinstance(choice, dict):
-            continue
-        signature = _question_signature(choice.get("question") or choice.get("stem"))
-        if signature:
-            choice_signatures.add(signature)
-
-    return len(fill_signatures), len(choice_signatures), raw_fill_count
+def _collect_day_unique_question_counts(day: dict[str, Any], raw_day: dict[str, Any] | None = None) -> tuple[int, int, int]:
+    visible_counts = collect_day_printable_question_counts(day)
+    raw_counts = collect_day_printable_question_counts(raw_day) if isinstance(raw_day, dict) else None
+    counts = merge_visible_and_raw_counts(visible_counts, raw_counts)
+    return counts.unique_fill_count, counts.unique_choice_count, counts.raw_fill_count
 
 
 def _choice_answer_is_valid(choice: dict[str, Any]) -> bool:
@@ -279,6 +279,7 @@ def review_single_lesson_plan(
     subject: str = "",
     required_review_days: list[int] | None = None,
     schedule_mode: str = "standard",
+    constraints: dict[str, Any] | None = None,
 ) -> QualityReview:
     normalized_plan = normalize_final_review_plan(plan)
     issues: list[QualityIssue] = []
@@ -296,6 +297,26 @@ def review_single_lesson_plan(
         )
 
     days = normalized_plan.get("days") if isinstance(normalized_plan.get("days"), list) else []
+    raw_days = plan.get("days") if isinstance(plan.get("days"), list) else []
+
+    def matching_raw_day(normalized_day: dict[str, Any], index: int) -> dict[str, Any] | None:
+        try:
+            day_key = int(normalized_day.get("day") or normalized_day.get("day_number") or 0)
+        except (TypeError, ValueError):
+            day_key = 0
+        if day_key:
+            for raw_day in raw_days:
+                if not isinstance(raw_day, dict):
+                    continue
+                try:
+                    raw_key = int(raw_day.get("day") or raw_day.get("day_number") or 0)
+                except (TypeError, ValueError):
+                    raw_key = 0
+                if raw_key == day_key:
+                    return raw_day
+        if index < len(raw_days) and isinstance(raw_days[index], dict):
+            return raw_days[index]
+        return None
     day_numbers = {int(day.get("day") or 0) for day in days if isinstance(day, dict)}
     missing_days = set(required_days) - day_numbers
     extra_days = day_numbers - set(required_days)
@@ -357,7 +378,7 @@ def review_single_lesson_plan(
             )
         )
 
-    for day in days:
+    for index, day in enumerate(days):
         if not isinstance(day, dict):
             continue
         blanks_count, choices_count, bodies_count = _day_renderable_counts(day)
@@ -379,7 +400,7 @@ def review_single_lesson_plan(
                     suggested_fix="补充执行清单、具体填空、选择诊断和主动回忆卡片。",
                 )
             )
-        unique_fills, unique_choices, raw_fills = _collect_day_unique_question_counts(day)
+        unique_fills, unique_choices, raw_fills = _collect_day_unique_question_counts(day, matching_raw_day(day, index))
         if subject_key == "math" and unique_fills < 3 and unique_choices < 2:
             issues.append(
                 QualityIssue(
@@ -435,8 +456,23 @@ def review_single_lesson_plan(
                 QualityIssue(
                     severity="high",
                     category="task_actionability",
-                    description="压缩 1 天计划的可打印题目密度不足，无法承载整节课复习。",
-                    suggested_fix="压缩 1 天时至少提供 5 个不重复的可打印填空/选择/口述任务，并覆盖主要错因。",
+                    description="当天课后复习的可打印题目密度不足，无法承载整节课复习。",
+                    suggested_fix="当天课后复习至少提供 5 个不重复的可打印填空/选择/口述任务，并覆盖主要错因。",
+                )
+            )
+
+    requested_question_count = None
+    if isinstance(constraints, dict) and isinstance(constraints.get("requested_question_count"), int):
+        requested_question_count = int(constraints["requested_question_count"])
+    if requested_question_count is not None and days:
+        printable_question_count = count_printable_questions(normalized_plan).total_visible_questions
+        if printable_question_count != requested_question_count:
+            issues.append(
+                QualityIssue(
+                    severity="high",
+                    category="task_actionability",
+                    description=f"老师要求题目控制在 {requested_question_count} 道，但当前可打印题目为 {printable_question_count} 道。",
+                    suggested_fix=f"把可打印填空题和选择题总数调整为 {requested_question_count} 道，并同步答案区。",
                 )
             )
 
@@ -471,12 +507,13 @@ def review_single_lesson_plan(
                 suggested_fix="重写相关题目，确保题干、选项、答案和解析一致。",
             )
         )
-    if _contains_any(text_blob, VAGUE_STEM_PATTERNS):
+    vague_references = _find_vague_references(normalized_plan)
+    if vague_references:
         issues.append(
             QualityIssue(
                 severity="medium",
                 category="question_quality",
-                description="输出中存在“某题/这个题/原题中”等无法独立作答的模糊指代。",
+                description="输出中存在无法独立作答的模糊指代：" + "；".join(vague_references[:3]),
                 suggested_fix="补足题干条件，或改写成同知识点同错因的自洽同类题。",
             )
         )

@@ -520,6 +520,39 @@ test('small class save payload uses existing student names and validates require
   );
 });
 
+test('short-term drill class save payload does not require class number or selected students', () => {
+  const payload = buildClassSavePayload({
+    classId: 'new',
+    form: {
+      ...baseForm,
+      class_type: 'short_term_drill',
+      subject: '物理',
+      stage: '初中',
+      current_grade: '九年级',
+      class_number: '',
+      cohort_year: '2024',
+      selected_student_ids: [],
+    },
+    selectedTeacher: { id: 24, name: '李一', org: '星润', role: 'member' },
+    selectedTeacherUserId: 24,
+    existingStudents: [],
+  });
+
+  assert.equal(payload.name, '物理·初2024级·九年级·短期刷题班');
+  assert.equal(payload.class_type, 'short_term_drill');
+  assert.equal(payload.class_number, '');
+  assert.deepEqual(payload.student_ids, []);
+  assert.equal(
+    validateClassSaveDraft({
+      classId: 'new',
+      selectedTeacherUserId: 24,
+      payload,
+      gradeOptions: ['九年级'],
+    }),
+    null,
+  );
+});
+
 test('existing class save form uses the currently loaded student list for small class validation', () => {
   const syncedForm = resolveClassSaveFormWithCurrentStudents({
     classId: 9,
@@ -564,6 +597,8 @@ test('findDuplicateClass ignores the class being edited and matches normalized g
       current_grade: '4年级',
       class_number: '1',
       cohort_year: 2025,
+      teacher_name: '曹老师',
+      teacher_user_id: 12,
     },
     {
       id: 2,
@@ -585,4 +620,43 @@ test('findDuplicateClass ignores the class being edited and matches normalized g
 
   assert.equal(findDuplicateClass(classes, 1, payload), undefined);
   assert.equal(findDuplicateClass(classes, 'new', payload)?.id, 1);
+});
+
+test('findDuplicateClass allows the same class key for different teachers', () => {
+  const classes: ClassItem[] = [
+    {
+      id: 1,
+      name: '数学·初2026级·七年级·3班',
+      subject: '数学',
+      grade: '七年级',
+      stage: '初中',
+      current_grade: '七年级',
+      class_number: '3',
+      cohort_year: 2026,
+      teacher_name: '曹老师',
+      teacher_user_id: 23,
+    },
+  ];
+  const payload = buildClassSavePayload({
+    classId: 'new',
+    form: {
+      ...baseForm,
+      stage: '初中',
+      current_grade: '七年级',
+      class_number: '3',
+      cohort_year: '2026',
+    },
+    selectedTeacher: { id: 13, name: '李森', org: '星润', role: 'member' },
+    selectedTeacherUserId: 13,
+  });
+
+  assert.equal(findDuplicateClass(classes, 'new', payload), undefined);
+  assert.equal(
+    findDuplicateClass(
+      classes,
+      'new',
+      { ...payload, teacher_name: '曹老师', teacher_user_id: 23 },
+    )?.id,
+    1,
+  );
 });

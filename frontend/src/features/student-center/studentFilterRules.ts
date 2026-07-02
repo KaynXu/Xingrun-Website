@@ -28,6 +28,10 @@ export type StudentFilterState = {
 export type StudentRow = {
   id: number;
   name: string;
+  classItems: Array<{
+    classItem: ClassItem;
+    teacherUserId: number | null;
+  }>;
   classItem: ClassItem | null;
   teacherUserId: number | null;
   scheduled: boolean;
@@ -55,22 +59,56 @@ export function buildStudentRows(args: {
   allStudents?: Array<{ id: number; name: string }>;
   teacherBindingByClassId: Record<number, number | null>;
 }): StudentRow[] {
-  const scheduledRows = args.classes.flatMap((classItem) => (args.studentsByClassId[classItem.id] || []).map((student) => ({
-    ...student,
-    classItem,
-    teacherUserId: getClassTeacherUserId(classItem, args.teacherBindingByClassId),
-    scheduled: true,
-  })));
-  const scheduledStudentIds = new Set(scheduledRows.map((student) => student.id));
-  const unscheduledRows = (args.allStudents || [])
-    .filter((student) => !scheduledStudentIds.has(student.id))
-    .map((student) => ({
-      ...student,
+  const rowsByStudentId = new Map<number, StudentRow>();
+  const ensureRow = (student: { id: number; name: string }): StudentRow => {
+    const existing = rowsByStudentId.get(student.id);
+    if (existing) {
+      if (!existing.name && student.name) {
+        existing.name = student.name;
+      }
+      return existing;
+    }
+    const row: StudentRow = {
+      id: student.id,
+      name: student.name,
+      classItems: [],
       classItem: null,
       teacherUserId: null,
       scheduled: false,
-    }));
-  return [...scheduledRows, ...unscheduledRows];
+    };
+    rowsByStudentId.set(student.id, row);
+    return row;
+  };
+
+  (args.allStudents || []).forEach(ensureRow);
+  args.classes.forEach((classItem) => {
+    (args.studentsByClassId[classItem.id] || []).forEach((student) => {
+      const row = ensureRow(student);
+      const teacherUserId = getClassTeacherUserId(classItem, args.teacherBindingByClassId);
+      if (!row.classItems.some((item) => item.classItem.id === classItem.id)) {
+        row.classItems.push({ classItem, teacherUserId });
+      }
+      row.classItem = row.classItems[0]?.classItem || null;
+      row.teacherUserId = row.classItems[0]?.teacherUserId ?? null;
+      row.scheduled = row.classItems.length > 0;
+    });
+  });
+
+  return Array.from(rowsByStudentId.values());
+}
+
+function getStudentCourseItems(item: StudentRow): Array<{ classItem: ClassItem; teacherUserId: number | null }> {
+  if (item.classItems.length) {
+    return item.classItems;
+  }
+  return item.classItem ? [{ classItem: item.classItem, teacherUserId: item.teacherUserId }] : [];
+}
+
+function studentHasMatchingCourse(
+  item: StudentRow,
+  predicate: (course: { classItem: ClassItem; teacherUserId: number | null }) => boolean,
+): boolean {
+  return getStudentCourseItems(item).some(predicate);
 }
 
 export function studentMatchesFilters({
@@ -97,28 +135,24 @@ export function studentMatchesFilters({
   if (
     except !== 'subject'
     && filters.subjectFilter !== '全部学科'
-    && item.classItem
-    && getClassEffectiveSubject(item.classItem, classes, teacherBindingByClassId, subjectOptions) !== filters.subjectFilter
+    && !studentHasMatchingCourse(item, (course) => getClassEffectiveSubject(course.classItem, classes, teacherBindingByClassId, subjectOptions) === filters.subjectFilter)
   ) {
     return false;
   }
-  if (except !== 'subject' && filters.subjectFilter !== '全部学科' && !item.classItem) {
+  if (except !== 'teacher' && filters.teacherFilter !== 'all' && !studentHasMatchingCourse(item, (course) => course.teacherUserId === filters.teacherFilter)) {
     return false;
   }
-  if (except !== 'teacher' && filters.teacherFilter !== 'all' && item.teacherUserId !== filters.teacherFilter) {
+  if (except !== 'stage' && filters.stageFilter !== '全部学段' && !studentHasMatchingCourse(item, (course) => (
+    (course.classItem.stage || getAcademicStageFromGrade(course.classItem.current_grade || course.classItem.grade || '')) === filters.stageFilter
+  ))) {
     return false;
   }
-  const itemStage = item.classItem
-    ? item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')
-    : '';
-  if (except !== 'stage' && filters.stageFilter !== '全部学段' && itemStage !== filters.stageFilter) {
+  if (except !== 'grade' && filters.gradeFilter !== '全部' && !studentHasMatchingCourse(item, (course) => (
+    normalizeAcademicGradeLabel(course.classItem.current_grade || course.classItem.grade || '') === filters.gradeFilter
+  ))) {
     return false;
   }
-  const itemGrade = item.classItem ? normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') : '';
-  if (except !== 'grade' && filters.gradeFilter !== '全部' && itemGrade !== filters.gradeFilter) {
-    return false;
-  }
-  if (except !== 'class' && filters.classFilter !== 'all' && item.classItem?.id !== filters.classFilter) {
+  if (except !== 'class' && filters.classFilter !== 'all' && !studentHasMatchingCourse(item, (course) => course.classItem.id === filters.classFilter)) {
     return false;
   }
   const keyword = filters.nameFilter.trim();
@@ -141,19 +175,23 @@ export function resolveStudentFilterOptions(args: StudentOptionArgs): {
 } {
   return {
     subjectOptions: args.subjectOptions,
-    teacherOptions: args.users.filter((user) => getStudentFilterOptionBase(args, 'teacher').some((item) => item.teacherUserId === user.id)),
+    teacherOptions: args.users.filter((user) => getStudentFilterOptionBase(args, 'teacher').some((item) => (
+      studentHasMatchingCourse(item, (course) => course.teacherUserId === user.id)
+    ))),
     stageOptions: args.stageOptions.filter((stage) => getStudentFilterOptionBase(args, 'stage').some((item) => (
-      item.classItem && (item.classItem.stage || getAcademicStageFromGrade(item.classItem.current_grade || item.classItem.grade || '')) === stage
+      studentHasMatchingCourse(item, (course) => (course.classItem.stage || getAcademicStageFromGrade(course.classItem.current_grade || course.classItem.grade || '')) === stage)
     ))),
     gradeOptions: args.gradeOptions.filter((grade) => {
       if (args.filters.stageFilter !== '全部学段' && !args.gradeGroups[args.filters.stageFilter]?.includes(grade)) {
         return false;
       }
       return getStudentFilterOptionBase(args, 'grade').some((item) => (
-        item.classItem && normalizeAcademicGradeLabel(item.classItem.current_grade || item.classItem.grade || '') === grade
+        studentHasMatchingCourse(item, (course) => normalizeAcademicGradeLabel(course.classItem.current_grade || course.classItem.grade || '') === grade)
       ));
     }),
-    classOptions: args.scopedClasses.filter((classItem) => getStudentFilterOptionBase(args, 'class').some((item) => item.classItem?.id === classItem.id)),
+    classOptions: args.scopedClasses.filter((classItem) => getStudentFilterOptionBase(args, 'class').some((item) => (
+      studentHasMatchingCourse(item, (course) => course.classItem.id === classItem.id)
+    ))),
   };
 }
 

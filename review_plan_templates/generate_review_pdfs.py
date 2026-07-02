@@ -1452,7 +1452,7 @@ def build_labels(chinese_only):
             "version": "版本",
             "quote_ratio": "原话比例",
             "layout": "页面风格",
-            "day_zero": "第0天",
+            "day_zero": "第1天",
             "audience": "使用对象",
             "duration": "单次时长",
             "usage_title": "使用说明",
@@ -1489,7 +1489,7 @@ def build_labels(chinese_only):
         "version": "版本 / Version",
         "quote_ratio": "原话比例 / Quote Ratio",
         "layout": "页面风格 / Layout",
-        "day_zero": "第0天 / Day 0",
+        "day_zero": "第1天 / Day 1",
         "audience": "使用对象 / Audience",
         "duration": "单次时长 / Duration",
         "usage_title": "使用说明 / Usage",
@@ -1626,12 +1626,40 @@ def format_iso_date(value):
     return value.strftime("%Y-%m-%d")
 
 
+def review_date_for_day(base_date, day):
+    day_number = max(1, int(day.get("offset", 1)))
+    return base_date + timedelta(days=day_number - 1)
+
+
 def build_day_heading(day, base_date, chinese_only=False):
-    review_date = base_date + timedelta(days=day["offset"])
+    review_date = review_date_for_day(base_date, day)
     day_label = localize_text(day["day"], chinese_only)
     if chinese_only:
         return f"{day_label}  |  日期：{format_iso_date(review_date)}"
     return f"{day_label}  |  Date: {format_iso_date(review_date)}"
+
+
+def max_review_day(days):
+    day_numbers = []
+    for day in days or []:
+        try:
+            day_numbers.append(max(1, int(day.get("offset", 1))))
+        except Exception:
+            continue
+    return max(day_numbers or [30])
+
+
+def adapt_labels_for_review_schedule(labels, days, chinese_only):
+    if not chinese_only:
+        return labels
+    review_day = max_review_day(days)
+    labels = dict(labels)
+    if review_day <= 1:
+        labels["usage_text"] = "当天完成本节课复习：先回忆课堂主线，再完成题目和自查。"
+        labels["final_reminder_box"] = "当天复习后应留下的内容"
+    elif review_day < 30:
+        labels["final_reminder_box"] = f"{review_day}天复习后应留下的内容"
+    return labels
 
 
 def load_unified_review_plan_style_config() -> dict[str, Any]:
@@ -2081,9 +2109,9 @@ def on_page(styles, variant_key, style_config=None, lesson_title=None):
 def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_lines=None, knowledge_sections=None, base_date=None, style_config=None):
     base_date = _coerce_base_date(base_date)
     chinese_only = is_chinese_only(variant_key)
-    labels = build_labels(chinese_only)
     lesson = lesson or LESSON
     days = days or DAYS
+    labels = adapt_labels_for_review_schedule(build_labels(chinese_only), days, chinese_only)
     final_reminder_lines = final_reminder_lines or FINAL_REMINDER_LINES
     knowledge_sections = knowledge_sections if knowledge_sections is not None else KNOWLEDGE_SECTIONS
     style_config = style_config or {}

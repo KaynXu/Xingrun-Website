@@ -186,9 +186,10 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const hasTranscriptText = Boolean(trimmedConfirmedTranscript);
   const transcriptDirty = Boolean(task) && trimmedConfirmedTranscript !== persistedTranscript;
   const canUseTranscript = canUseTranscriptState(task);
+  const canCreateManualTextTask = !task || task.status === 'uploaded' || task.status === 'transcribing';
   const canCreateTask = !loadingInitial && !busy && Boolean(selectedClassId && audioFile);
   const canSaveTranscript = !busy && canUseTranscript && hasTranscriptText;
-  const canGenerate = !busy && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (!task || canUseTranscript);
+  const canGenerate = !busy && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask);
 
   async function handleCreateTask() {
     if (!selectedClassId || !audioFile) {
@@ -245,7 +246,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     setBusy(true);
     setErrorMessage('');
     try {
-      const savedTask = task
+      const savedTask = task && canUseTranscript
         ? (transcriptDirty ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript) : task)
         : await createClassCommentaryTextTask(Number(selectedClassId), trimmedConfirmedTranscript);
       setTask(savedTask);

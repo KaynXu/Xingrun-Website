@@ -34,6 +34,7 @@ from review_plan_workflow.generation_options import (
     generation_options_summary,
     normalize_generation_options,
 )
+from review_plan_workflow.source_pack import build_lesson_source_pack_from_artifact
 
 # ─── 路径配置 ──────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -3437,6 +3438,19 @@ def init_db():
             actor_user_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE TABLE IF NOT EXISTS academic_year_promotion_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            academic_year_start INTEGER NOT NULL,
+            job_type TEXT NOT NULL,
+            effective_date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(organization_id, academic_year_start, job_type)
+        );
         """)
         import master_data
 
@@ -3451,6 +3465,10 @@ def init_db():
         _ensure_column(conn, "classes", "bridge_target", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "content_track", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "last_promoted_at", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "lifecycle_status", "TEXT NOT NULL DEFAULT 'active'")
+        _ensure_column(conn, "classes", "lifecycle_status_updated_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "classes", "graduated_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "classes", "graduation_academic_year_start", "INTEGER NOT NULL DEFAULT 0")
         # Safe migration: add class_id if not already present
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
         if "class_id" not in cols:
@@ -4572,6 +4590,25 @@ def _review_plan_version_from_row(row) -> Optional[dict]:
     version["cleaned_source_text"] = str(version.get("cleaned_source_text") or "")
     version["source_text_hash"] = str(version.get("source_text_hash") or "")
     version["source_brief"] = _load_review_plan_source_brief(version.get("source_brief_json"))
+    version["source_pack"] = _load_review_plan_source_pack(version.get("source_pack_json"))
+    return version
+
+
+def _load_review_plan_generation_options(value: object | None) -> dict:
+    try:
+        raw_options = json.loads(str(value or "{}"))
+        options_source = str((raw_options if isinstance(raw_options, dict) else {}).get("source") or "create")
+        return normalize_generation_options(raw_options, source=options_source)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return normalize_generation_options(None)
+
+
+def _review_plan_version_summary_from_row(row) -> Optional[dict]:
+    if not row:
+        return None
+    version = dict(row)
+    version["generation_options"] = _load_review_plan_generation_options(version.get("generation_options_json"))
+    version["generation_summary"] = generation_options_summary(version["generation_options"])
     return version
 
 
@@ -4619,6 +4656,15 @@ def _load_review_plan_source_brief(value: object | None) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _dump_review_plan_source_pack(value: object | None) -> str:
+    return _dump_review_plan_run_json(value, {})
+
+
+def _load_review_plan_source_pack(value: object | None) -> dict:
+    payload = _load_review_plan_run_json(value, {})
+    return payload if isinstance(payload, dict) else {}
+
+
 def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -4640,6 +4686,7 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
             cleaned_source_text TEXT NOT NULL DEFAULT '',
             source_text_hash TEXT NOT NULL DEFAULT '',
             source_brief_json TEXT NOT NULL DEFAULT '{}',
+            source_pack_json TEXT NOT NULL DEFAULT '{}',
             same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
             generation_options_json TEXT NOT NULL DEFAULT '{}',
             created_by_user_id INTEGER NOT NULL DEFAULT 0,
@@ -4667,6 +4714,7 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "review_plan_versions", "cleaned_source_text", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "source_text_hash", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "source_brief_json", "TEXT NOT NULL DEFAULT '{}'")
+    _ensure_column(conn, "review_plan_versions", "source_pack_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "review_plan_versions", "same_lesson_materials_json", "TEXT NOT NULL DEFAULT '[]'")
     _ensure_column(conn, "review_plan_versions", "generation_options_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "review_plan_versions", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
@@ -4686,6 +4734,12 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_review_plan_versions_lesson_created
         ON review_plan_versions(lesson_id, created_at, id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_review_plan_versions_lesson_status_updated
+        ON review_plan_versions(lesson_id, status, updated_at, id)
         """
     )
     conn.execute(
@@ -4747,6 +4801,7 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
                 cleaned_source_text TEXT NOT NULL DEFAULT '',
                 source_text_hash TEXT NOT NULL DEFAULT '',
                 source_brief_json TEXT NOT NULL DEFAULT '{}',
+                source_pack_json TEXT NOT NULL DEFAULT '{}',
                 same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
                 generation_options_json TEXT NOT NULL DEFAULT '{}',
                 created_by_user_id INTEGER NOT NULL DEFAULT 0,
@@ -4775,6 +4830,7 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
             "cleaned_source_text",
             "source_text_hash",
             "source_brief_json",
+            "source_pack_json",
             "same_lesson_materials_json",
             "generation_options_json",
             "created_by_user_id",
@@ -4792,6 +4848,7 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
             "cleaned_source_text": "''",
             "source_text_hash": "''",
             "source_brief_json": "'{}'",
+            "source_pack_json": "'{}'",
             "same_lesson_materials_json": "'[]'",
             "generation_options_json": "'{}'",
             "created_by_user_id": "0",
@@ -5117,7 +5174,18 @@ def update_review_plan_version_source_artifact(
     cleaned_source_text: str,
     source_text_hash: str,
     source_brief: object,
+    source_pack: object | None = None,
+    source_type: str = "text",
 ) -> None:
+    source_pack_payload = source_pack
+    if source_pack_payload is None:
+        source_pack_payload = build_lesson_source_pack_from_artifact(
+            source_text=source_text,
+            cleaned_source_text=cleaned_source_text,
+            source_text_hash_value=source_text_hash,
+            source_brief=source_brief,
+            source_type=source_type,
+        ).model_dump()
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -5126,6 +5194,7 @@ def update_review_plan_version_source_artifact(
                 cleaned_source_text=?,
                 source_text_hash=?,
                 source_brief_json=?,
+                source_pack_json=?,
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
@@ -5134,6 +5203,7 @@ def update_review_plan_version_source_artifact(
                 str(cleaned_source_text or ""),
                 str(source_text_hash or ""),
                 _dump_review_plan_source_brief(source_brief),
+                _dump_review_plan_source_pack(source_pack_payload),
                 int(version_id),
             ),
         )
@@ -5191,6 +5261,23 @@ def complete_review_plan_version(version_id: int, *, plan: dict, pdf_path: str) 
             WHERE id=?
             """,
             (int(version_id), int(row["lesson_id"])),
+        )
+
+
+def update_review_plan_version_pdf_path(version_id: int, *, pdf_path: str) -> None:
+    with get_conn() as conn:
+        row = _get_review_plan_version_for_update(conn, version_id)
+        if not row:
+            raise LookupError("review plan version not found")
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET pdf_path=?,
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (str(pdf_path or ""), int(version_id)),
         )
 
 
@@ -5759,6 +5846,34 @@ def get_latest_review_plan_run_for_version(version_id: int) -> Optional[dict]:
         return run
 
 
+def get_latest_completed_review_plan_quality_run_for_version(version_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM review_plan_runs
+            WHERE version_id=?
+              AND status='succeeded'
+              AND quality_review_json IS NOT NULL
+              AND quality_review_json<>''
+              AND quality_review_json<>'{}'
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (int(version_id),),
+        ).fetchall()
+        for row in rows:
+            run = dict(row)
+            quality_review = _load_review_plan_run_json(run.get("quality_review_json"), {})
+            if not isinstance(quality_review, dict) or not quality_review:
+                continue
+            run["warnings"] = _load_review_plan_run_json(run.get("warnings_json"), [])
+            run["quality_review"] = quality_review
+            run["node_outputs"] = _load_review_plan_run_json(run.get("node_outputs_json"), {})
+            run["logs"] = _load_review_plan_run_json(run.get("logs_json"), [])
+            return run
+        return None
+
+
 def _attach_review_plan_version_summary(conn: sqlite3.Connection, lesson: dict) -> dict:
     lesson_id = int(lesson.get("id") or 0)
     current_version = None
@@ -5837,6 +5952,192 @@ def _attach_review_plan_version_summary(conn: sqlite3.Connection, lesson: dict) 
     return lesson
 
 
+_REVIEW_PLAN_VERSION_LIST_COLUMNS = """
+    id,
+    lesson_id,
+    version_no,
+    status,
+    pdf_path,
+    generation_error,
+    audio_path,
+    audio_request_key,
+    request_key,
+    request_id,
+    chat_provider,
+    chat_model,
+    same_lesson_materials_json,
+    generation_options_json,
+    created_by_user_id,
+    completed_at,
+    created_at,
+    updated_at
+"""
+
+
+def _review_plan_version_summaries_by_id(conn: sqlite3.Connection, version_ids: list[int]) -> dict[int, dict]:
+    unique_ids = sorted({int(version_id) for version_id in version_ids if int(version_id or 0) > 0})
+    if not unique_ids:
+        return {}
+    placeholders = ",".join("?" for _ in unique_ids)
+    rows = conn.execute(
+        f"""
+        SELECT {_REVIEW_PLAN_VERSION_LIST_COLUMNS}
+        FROM review_plan_versions
+        WHERE id IN ({placeholders})
+        """,
+        unique_ids,
+    ).fetchall()
+    summaries: dict[int, dict] = {}
+    for row in rows:
+        summary = _review_plan_version_summary_from_row(row)
+        if summary:
+            summaries[int(summary["id"])] = summary
+    return summaries
+
+
+def _review_plan_version_summaries_by_lesson(
+    conn: sqlite3.Connection,
+    lesson_ids: list[int],
+    *,
+    where_sql: str = "",
+    order_sql: str = "created_at DESC, id DESC",
+) -> dict[int, dict]:
+    unique_ids = sorted({int(lesson_id) for lesson_id in lesson_ids if int(lesson_id or 0) > 0})
+    if not unique_ids:
+        return {}
+    placeholders = ",".join("?" for _ in unique_ids)
+    extra_where = f" AND {where_sql}" if where_sql else ""
+    rows = conn.execute(
+        f"""
+        SELECT {_REVIEW_PLAN_VERSION_LIST_COLUMNS}
+        FROM review_plan_versions v
+        WHERE v.lesson_id IN ({placeholders})
+          {extra_where}
+          AND v.id = (
+              SELECT x.id
+              FROM review_plan_versions x
+              WHERE x.lesson_id = v.lesson_id
+                {extra_where.replace('v.', 'x.')}
+              ORDER BY {order_sql.replace('v.', 'x.')}
+              LIMIT 1
+          )
+        """,
+        unique_ids,
+    ).fetchall()
+    summaries: dict[int, dict] = {}
+    for row in rows:
+        summary = _review_plan_version_summary_from_row(row)
+        if summary:
+            summaries[int(summary["lesson_id"])] = summary
+    return summaries
+
+
+def _fetch_user_display_summaries(conn: sqlite3.Connection, user_ids: list[int]) -> dict[int, dict]:
+    unique_ids = sorted({int(user_id) for user_id in user_ids if int(user_id or 0) > 0})
+    if not unique_ids:
+        return {}
+    placeholders = ",".join("?" for _ in unique_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, username, display_name
+        FROM users
+        WHERE id IN ({placeholders})
+        """,
+        unique_ids,
+    ).fetchall()
+    return {int(row["id"]): dict(row) for row in rows}
+
+
+def _attach_review_plan_version_summaries_bulk(conn: sqlite3.Connection, lessons: list[dict]) -> list[dict]:
+    if not lessons:
+        return lessons
+
+    lesson_ids = [int(lesson.get("id") or 0) for lesson in lessons]
+    current_version_ids = [int(lesson.get("current_review_plan_version_id") or 0) for lesson in lessons]
+    current_by_id = _review_plan_version_summaries_by_id(conn, current_version_ids)
+    active_by_lesson_id = _review_plan_version_summaries_by_lesson(
+        conn,
+        lesson_ids,
+        where_sql="v.status IN ('pending', 'queued', 'processing', 'transcribing', 'generating')",
+        order_sql="v.created_at DESC, v.id DESC",
+    )
+    failed_by_lesson_id = _review_plan_version_summaries_by_lesson(
+        conn,
+        lesson_ids,
+        where_sql="v.status='failed'",
+        order_sql="v.updated_at DESC, v.id DESC",
+    )
+    latest_by_lesson_id = _review_plan_version_summaries_by_lesson(
+        conn,
+        lesson_ids,
+        order_sql="v.created_at DESC, v.id DESC",
+    )
+    users_by_id = _fetch_user_display_summaries(
+        conn,
+        [int(lesson.get("created_by_user_id") or 0) for lesson in lessons],
+    )
+
+    for lesson in lessons:
+        lesson_id = int(lesson.get("id") or 0)
+        current_version = current_by_id.get(int(lesson.get("current_review_plan_version_id") or 0))
+        active_version = active_by_lesson_id.get(lesson_id)
+        latest_failed = failed_by_lesson_id.get(lesson_id)
+        latest_version = active_version or current_version or latest_by_lesson_id.get(lesson_id)
+        runtime_projection = active_version or current_version or latest_version
+
+        lesson["current_version"] = current_version
+        lesson["active_version"] = active_version
+        lesson["current_review_plan_version_id"] = current_version["id"] if current_version else None
+        lesson["current_version_id"] = current_version["id"] if current_version else None
+        lesson["current_version_no"] = current_version["version_no"] if current_version else None
+        lesson["current_generated_at"] = current_version["completed_at"] if current_version else ""
+        lesson["current_status"] = current_version["status"] if current_version else ""
+        lesson["has_version_generating"] = active_version is not None
+        lesson["active_version_status"] = active_version["status"] if active_version else ""
+        lesson["active_version_created_at"] = active_version["created_at"] if active_version else ""
+        lesson["latest_generation_error"] = (
+            (latest_failed or {}).get("generation_error")
+            or (active_version or {}).get("generation_error")
+            or ""
+        )
+        lesson["plan_json"] = ""
+        lesson["plan"] = {}
+        lesson["pdf_path"] = (current_version or {}).get("pdf_path", "")
+        if active_version:
+            lesson["record_status"] = active_version.get("status") or "pending"
+        elif current_version:
+            lesson["record_status"] = current_version.get("status") or REVIEW_PLAN_READY_STATUS
+        elif latest_version:
+            lesson["record_status"] = latest_version.get("status") or REVIEW_PLAN_FAILED_STATUS
+        else:
+            lesson["record_status"] = "pending"
+        lesson["generation_error"] = (
+            (active_version or {}).get("generation_error")
+            or (latest_failed or {}).get("generation_error")
+            or (current_version or {}).get("generation_error")
+            or ""
+        )
+        lesson["review_audio_path"] = (runtime_projection or {}).get("audio_path", "")
+        lesson["review_audio_request_key"] = (runtime_projection or {}).get("audio_request_key", "")
+        lesson["review_request_key"] = (runtime_projection or {}).get("request_key", "")
+        lesson["review_request_id"] = (runtime_projection or {}).get("request_id", "")
+        lesson["review_chat_provider"] = (runtime_projection or {}).get("chat_provider", "")
+        lesson["review_chat_model"] = (runtime_projection or {}).get("chat_model", "")
+        lesson["review_same_lesson_materials_json"] = (runtime_projection or {}).get("same_lesson_materials_json", "[]")
+        lesson["review_same_lesson_materials"] = []
+        lesson["review_generation_options"] = (runtime_projection or {}).get("generation_options", normalize_generation_options(None))
+        lesson["review_generation_summary"] = (runtime_projection or {}).get(
+            "generation_summary",
+            generation_options_summary(normalize_generation_options(None)),
+        )
+
+        creator = users_by_id.get(int(lesson.get("created_by_user_id") or 0), {})
+        lesson["creator_display_name"] = str(creator.get("display_name") or creator.get("username") or "").strip()
+        lesson["creator_username"] = str(creator.get("username") or "").strip()
+
+    return lessons
+
+
 def get_lesson(lesson_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM lessons WHERE id=?", (lesson_id,)).fetchone()
@@ -5846,28 +6147,106 @@ def get_lesson(lesson_id: int):
         return _attach_review_plan_version_summary(conn, d)
 
 
-def list_lessons(month_str: str = "", class_id: int = 0) -> list:
+def _normalize_pagination(page: int = 1, page_size: int = 50, max_page_size: int = 100) -> tuple[int, int, int]:
+    safe_page = max(1, int(page or 1))
+    safe_page_size = max(1, min(max_page_size, int(page_size or 50)))
+    return safe_page, safe_page_size, (safe_page - 1) * safe_page_size
+
+
+def _list_lessons_page(
+    *,
+    month_str: str = "",
+    class_id: int = 0,
+    class_scope: str = "all",
+    organization_id: int | None = None,
+    member_class_ids: list[int] | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    max_page_size: int = 100,
+) -> dict:
+    safe_page, safe_page_size, offset = _normalize_pagination(page, page_size, max_page_size=max_page_size)
+    where_clauses: list[str] = []
+    params: list[object] = []
+    if organization_id is not None:
+        where_clauses.append("l.organization_id=?")
+        params.append(int(organization_id))
+    if class_id:
+        where_clauses.append("l.class_id=?")
+        params.append(class_id)
+    if member_class_ids is not None:
+        class_ids = sorted({int(item) for item in member_class_ids if int(item or 0) > 0})
+        if not class_ids:
+            return {"items": [], "total": 0, "page": safe_page, "page_size": safe_page_size}
+        placeholders = ",".join("?" for _ in class_ids)
+        where_clauses.append(f"l.class_id IN ({placeholders})")
+        params.extend(class_ids)
+    if month_str:
+        where_clauses.append("l.date LIKE ?")
+        params.append(f"{month_str}%")
+    lifecycle_clause = _lesson_class_lifecycle_where_clause(class_scope, "c", "l")
+    if lifecycle_clause:
+        where_clauses.append(lifecycle_clause)
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     with get_conn() as conn:
-        if class_id and month_str:
-            rows = conn.execute(
-                "SELECT * FROM lessons WHERE class_id=? AND date LIKE ? ORDER BY created_at DESC, id DESC",
-                (class_id, f"{month_str}%")
-            ).fetchall()
-        elif class_id:
-            rows = conn.execute(
-                "SELECT * FROM lessons WHERE class_id=? ORDER BY created_at DESC, id DESC",
-                (class_id,)
-            ).fetchall()
-        elif month_str:
-            rows = conn.execute(
-                "SELECT * FROM lessons WHERE date LIKE ? ORDER BY created_at DESC, id DESC",
-                (f"{month_str}%",)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM lessons ORDER BY created_at DESC, id DESC"
-            ).fetchall()
-        return [_attach_review_plan_version_summary(conn, dict(r)) for r in rows]
+        total_row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM lessons l
+            LEFT JOIN classes c ON c.id = l.class_id
+            {where_sql}
+            """,
+            params,
+        ).fetchone()
+        rows = conn.execute(
+            f"""
+            SELECT l.*
+            FROM lessons l
+            LEFT JOIN classes c ON c.id = l.class_id
+            LEFT JOIN review_plan_versions cv ON cv.id = l.current_review_plan_version_id
+            {where_sql}
+            ORDER BY COALESCE(NULLIF(cv.completed_at, ''), NULLIF(l.updated_at, ''), NULLIF(l.created_at, ''), NULLIF(l.date, '')) DESC,
+                     l.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*params, safe_page_size, offset],
+        ).fetchall()
+        items = _attach_review_plan_version_summaries_bulk(conn, [dict(r) for r in rows])
+        return {
+            "items": items,
+            "total": int(total_row["total"] if total_row else 0),
+            "page": safe_page,
+            "page_size": safe_page_size,
+        }
+
+
+def list_lessons_page(
+    month_str: str = "",
+    class_id: int = 0,
+    class_scope: str = "all",
+    page: int = 1,
+    page_size: int = 50,
+    max_page_size: int = 100,
+) -> dict:
+    return _list_lessons_page(
+        month_str=month_str,
+        class_id=class_id,
+        class_scope=class_scope,
+        page=page,
+        page_size=page_size,
+        max_page_size=max_page_size,
+    )
+
+
+def list_lessons(month_str: str = "", class_id: int = 0, class_scope: str = "all") -> list:
+    page = list_lessons_page(
+        month_str=month_str,
+        class_id=class_id,
+        class_scope=class_scope,
+        page=1,
+        page_size=100000,
+        max_page_size=100000,
+    )
+    return list(page["items"])
 
 
 def delete_lesson(lesson_id: int):
@@ -5974,6 +6353,16 @@ PROMOTION_NEXT_GRADE = {
     "高二": "高三",
 }
 GRADUATION_GRADES = {"六年级", "九年级", "高三"}
+CLASS_LIFECYCLE_ACTIVE = "active"
+CLASS_LIFECYCLE_PENDING_GRADUATION = "pending_graduation"
+CLASS_LIFECYCLE_GRADUATED = "graduated"
+CLASS_LIFECYCLE_ARCHIVED = "archived"
+CLASS_LIFECYCLE_HISTORY_STATUSES = {
+    CLASS_LIFECYCLE_PENDING_GRADUATION,
+    CLASS_LIFECYCLE_GRADUATED,
+    CLASS_LIFECYCLE_ARCHIVED,
+}
+ANNUAL_GRADE_PROMOTION_JOB_TYPE = "annual_grade_promotion"
 
 
 def normalize_class_grade(value: str) -> str:
@@ -6113,6 +6502,15 @@ def build_structured_class_name(subject: str, cohort_year: int, current_grade: s
     return build_group_class_name(subject, cohort_year, current_grade, class_number, is_bridge, show_cohort_year, bridge_target, stage)
 
 
+def build_short_term_drill_class_name(subject: str, cohort_year: int, current_grade: str, is_bridge: bool, bridge_target: str = "", stage: str = "", show_cohort_year: bool = True) -> str:
+    if not current_grade:
+        return ""
+    suffix = f"·{bridge_short_label(bridge_target, stage)}" if is_bridge else ""
+    subject_prefix = f"{subject.strip()}·" if subject and subject.strip() else ""
+    cohort_part = f"{cohort_stage_short_label(display_cohort_stage(stage, is_bridge, bridge_target))}{cohort_year}级·" if show_cohort_year and cohort_year else ""
+    return f"{subject_prefix}{cohort_part}{current_grade}·短期刷题班{suffix}"
+
+
 def build_small_class_name(class_type: str, current_grade: str, student_names: list[str], is_bridge: bool, bridge_target: str = "", stage: str = "", subject: str = "", cohort_year: int = 0, show_cohort_year: bool = True) -> str:
     normalized_names = [str(name or "").strip() for name in student_names if str(name or "").strip()]
     if not current_grade or not normalized_names:
@@ -6139,6 +6537,10 @@ def _class_row_to_dict(row) -> dict:
     item["bridge_target"] = item.get("bridge_target") or ""
     item["content_track"] = item.get("content_track") or ""
     item["last_promoted_at"] = item.get("last_promoted_at") or ""
+    item["lifecycle_status"] = item.get("lifecycle_status") or CLASS_LIFECYCLE_ACTIVE
+    item["lifecycle_status_updated_at"] = item.get("lifecycle_status_updated_at") or ""
+    item["graduated_at"] = item.get("graduated_at") or ""
+    item["graduation_academic_year_start"] = int(item.get("graduation_academic_year_start") or 0)
     if item["class_type"] == "group" and item["cohort_year"] and item["current_grade"] and item["class_number"]:
         item["name"] = build_group_class_name(
             item.get("subject") or "",
@@ -6151,6 +6553,32 @@ def _class_row_to_dict(row) -> dict:
             item["stage"],
         )
     return item
+
+
+def _class_lifecycle_where_clause(scope: str, table_alias: str = "c") -> str:
+    normalized_scope = (scope or "current").strip().lower()
+    column = f"{table_alias}.lifecycle_status"
+    if normalized_scope in {"all", "any"}:
+        return ""
+    if normalized_scope in {"history", "archived", "graduated"}:
+        return f"COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') != '{CLASS_LIFECYCLE_ACTIVE}'"
+    return f"COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') = '{CLASS_LIFECYCLE_ACTIVE}'"
+
+
+def _lesson_class_lifecycle_where_clause(scope: str, class_alias: str = "c", lesson_alias: str = "l") -> str:
+    normalized_scope = (scope or "current").strip().lower()
+    column = f"{class_alias}.lifecycle_status"
+    if normalized_scope in {"all", "any"}:
+        return ""
+    if normalized_scope in {"history", "archived", "graduated"}:
+        return (
+            f"COALESCE({lesson_alias}.class_id, 0) > 0 "
+            f"AND COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') != '{CLASS_LIFECYCLE_ACTIVE}'"
+        )
+    return (
+        f"(COALESCE({lesson_alias}.class_id, 0) = 0 "
+        f"OR COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') = '{CLASS_LIFECYCLE_ACTIVE}')"
+    )
 
 
 def _build_class_payload(
@@ -6182,6 +6610,8 @@ def _build_class_payload(
     display_name = (name or "").strip()
     if normalized_class_type == "group" and normalized_grade and normalized_class_number and normalized_cohort_year:
         display_name = build_group_class_name(subject, normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge, show_cohort_year, normalized_bridge_target, normalized_stage)
+    elif normalized_class_type == "short_term_drill":
+        display_name = build_short_term_drill_class_name(subject, normalized_cohort_year, normalized_grade, is_bridge, normalized_bridge_target, normalized_stage, show_cohort_year) or display_name
     elif normalized_class_type != "group":
         display_name = build_small_class_name(normalized_class_type, normalized_grade, student_names or [], is_bridge, normalized_bridge_target, normalized_stage, subject, normalized_cohort_year, show_cohort_year) or display_name
     return {
@@ -6307,10 +6737,12 @@ def get_class(class_id: int):
         return _class_row_to_dict(row) if row else None
 
 
-def list_classes():
+def list_classes(scope: str = "current"):
+    lifecycle_clause = _class_lifecycle_where_clause(scope, "c")
+    where_sql = f"WHERE {lifecycle_clause}" if lifecycle_clause else ""
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT c.*, COUNT(DISTINCT l.id) as lesson_count,
                    COUNT(DISTINCT s_count.id) as student_count,
                    (
@@ -6324,6 +6756,7 @@ def list_classes():
             LEFT JOIN lessons l ON l.class_id = c.id
             LEFT JOIN class_students cs ON cs.class_id = c.id
             LEFT JOIN students s_count ON s_count.id = cs.student_id AND s_count.status='active'
+            {where_sql}
             GROUP BY c.id
             ORDER BY c.created_at DESC
             """
@@ -6485,52 +6918,203 @@ def bridge_crosses_target_stage(current_grade: str, next_grade: str, bridge_targ
 
 def promote_classes_for_academic_year(today: str | None = None) -> dict:
     today_value = today or date.today().isoformat()
+    academic_year_start = current_school_year_start(today_value)
     promoted_ids: list[int] = []
     pending_ids: list[int] = []
+    skipped_ids: list[int] = []
+    already_executed_org_ids: list[int] = []
+    summary_by_org: dict[int, dict[str, int]] = {}
     history_events: list[tuple[int, str, dict | None, dict | None]] = []
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM classes ORDER BY id").fetchall()
+        org_rows = conn.execute(
+            """
+            SELECT DISTINCT organization_id
+            FROM classes
+            WHERE organization_id IS NOT NULL
+            ORDER BY organization_id
+            """
+        ).fetchall()
+        for org_row in org_rows:
+            existing = conn.execute(
+                """
+                SELECT id
+                FROM academic_year_promotion_runs
+                WHERE organization_id=? AND academic_year_start=? AND job_type=?
+                """,
+                (org_row["organization_id"], academic_year_start, ANNUAL_GRADE_PROMOTION_JOB_TYPE),
+            ).fetchone()
+            if existing:
+                already_executed_org_ids.append(org_row["organization_id"])
+        executable_org_ids = [
+            row["organization_id"]
+            for row in org_rows
+            if row["organization_id"] not in already_executed_org_ids
+        ]
+        if not executable_org_ids:
+            return {
+                "promoted_ids": [],
+                "pending_ids": [],
+                "skipped_ids": [],
+                "already_executed_org_ids": already_executed_org_ids,
+            }
+        summary_by_org = {
+            org_id: {"promoted": 0, "pending_graduation": 0, "skipped_unknown_grade": 0}
+            for org_id in executable_org_ids
+        }
+
+        placeholders = ", ".join("?" for _ in executable_org_ids)
+        student_rows = conn.execute(
+            f"""
+            SELECT cs.class_id, s.name
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            JOIN classes c ON c.id = cs.class_id
+            WHERE c.organization_id IN ({placeholders}) AND s.status='active'
+            ORDER BY cs.class_id, s.name
+            """,
+            executable_org_ids,
+        ).fetchall()
+        student_names_by_class: dict[int, list[str]] = {}
+        for student_row in student_rows:
+            student_names_by_class.setdefault(student_row["class_id"], []).append(student_row["name"])
+
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM classes
+            WHERE organization_id IN ({placeholders})
+              AND COALESCE(NULLIF(lifecycle_status, ''), ?) = ?
+            ORDER BY id
+            """,
+            (*executable_org_ids, CLASS_LIFECYCLE_ACTIVE, CLASS_LIFECYCLE_ACTIVE),
+        ).fetchall()
         for row in rows:
             item = _class_row_to_dict(row)
-            if item.get("last_promoted_at", "").startswith(today_value):
-                continue
             current_grade = normalize_class_grade(item.get("current_grade") or item.get("grade") or "")
             next_grade = PROMOTION_NEXT_GRADE.get(current_grade)
-            if not next_grade:
-                pending_ids.append(item["id"])
-                history_events.append((item["id"], "promotion_pending", item, {"reason": "unknown_grade", "grade": current_grade}))
-                continue
             is_bridge = bool(item.get("is_bridge"))
-            if current_grade in GRADUATION_GRADES and not is_bridge:
+            crosses_bridge = bool(next_grade) and is_bridge and bridge_crosses_target_stage(current_grade, next_grade, item.get("bridge_target") or "")
+            if current_grade in GRADUATION_GRADES and not crosses_bridge:
                 pending_ids.append(item["id"])
-                history_events.append((item["id"], "promotion_pending", item, {"reason": "graduation_grade", "grade": current_grade}))
+                summary_by_org[item["organization_id"]]["pending_graduation"] += 1
+                after = {
+                    **item,
+                    "lifecycle_status": CLASS_LIFECYCLE_PENDING_GRADUATION,
+                    "lifecycle_status_updated_at": today_value,
+                    "graduation_academic_year_start": academic_year_start,
+                    "last_promoted_at": today_value,
+                }
+                conn.execute(
+                    """
+                    UPDATE classes
+                    SET lifecycle_status=?, lifecycle_status_updated_at=?,
+                        graduation_academic_year_start=?, last_promoted_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        CLASS_LIFECYCLE_PENDING_GRADUATION,
+                        today_value,
+                        academic_year_start,
+                        today_value,
+                        item["id"],
+                    ),
+                )
+                history_events.append((item["id"], "pending_graduation", item, after))
                 continue
-            next_is_bridge = is_bridge and not bridge_crosses_target_stage(current_grade, next_grade, item.get("bridge_target") or "")
+            if not next_grade:
+                skipped_ids.append(item["id"])
+                summary_by_org[item["organization_id"]]["skipped_unknown_grade"] += 1
+                history_events.append((item["id"], "annual_promotion_skipped", item, {"reason": "unknown_grade", "grade": current_grade}))
+                continue
+            next_is_bridge = is_bridge and not crosses_bridge
             next_stage = infer_class_stage(next_grade)
             class_number = item.get("class_number") or ""
-            next_name = build_group_class_name(
-                item.get("subject") or "",
-                item["cohort_year"],
-                next_grade,
-                class_number,
-                next_is_bridge,
-                True,
-                item.get("bridge_target") or "",
-                item.get("stage") or "",
-            ) if item.get("cohort_year") and class_number else item["name"]
+            next_bridge_target = item.get("bridge_target") or "" if next_is_bridge else ""
+            next_content_track = item.get("content_track") or "" if next_is_bridge else ""
+            next_cohort_year = (
+                infer_cohort_year_for_stage(next_grade, next_stage, today_value)
+                if crosses_bridge
+                else item["cohort_year"] or infer_cohort_year_for_stage(next_grade, next_stage, today_value)
+            )
+            if item.get("class_type") == "group":
+                next_name = build_group_class_name(
+                    item.get("subject") or "",
+                    next_cohort_year,
+                    next_grade,
+                    class_number,
+                    next_is_bridge,
+                    item.get("show_cohort_year", True),
+                    next_bridge_target,
+                    next_stage,
+                ) if class_number else item["name"]
+            else:
+                next_name = build_small_class_name(
+                    item.get("class_type") or "1v1",
+                    next_grade,
+                    student_names_by_class.get(item["id"], []),
+                    next_is_bridge,
+                    next_bridge_target,
+                    next_stage,
+                    item.get("subject") or "",
+                    next_cohort_year,
+                    item.get("show_cohort_year", True),
+                ) or item["name"]
             conn.execute(
                 """
                 UPDATE classes
-                SET grade=?, current_grade=?, stage=?, name=?, is_bridge=?, last_promoted_at=?
+                SET grade=?, current_grade=?, stage=?, name=?, cohort_year=?, is_bridge=?,
+                    bridge_target=?, content_track=?, last_promoted_at=?,
+                    lifecycle_status=?, lifecycle_status_updated_at=?, graduation_academic_year_start=0
                 WHERE id=?
                 """,
-                (next_grade, next_grade, next_stage, next_name, 1 if next_is_bridge else 0, today_value, item["id"]),
+                (
+                    next_grade,
+                    next_grade,
+                    next_stage,
+                    next_name,
+                    next_cohort_year,
+                    1 if next_is_bridge else 0,
+                    next_bridge_target,
+                    next_content_track,
+                    today_value,
+                    CLASS_LIFECYCLE_ACTIVE,
+                    today_value,
+                    item["id"],
+                ),
             )
             promoted_ids.append(item["id"])
-            history_events.append((item["id"], "promoted", item, {"current_grade": next_grade, "name": next_name, "is_bridge": next_is_bridge}))
+            summary_by_org[item["organization_id"]]["promoted"] += 1
+            history_events.append((item["id"], "annual_promoted", item, {"current_grade": next_grade, "name": next_name, "is_bridge": next_is_bridge}))
+
+        for org_id in executable_org_ids:
+            summary = {
+                **summary_by_org[org_id],
+                "effective_date": today_value,
+            }
+            conn.execute(
+                """
+                INSERT INTO academic_year_promotion_runs
+                    (organization_id, academic_year_start, job_type, effective_date, status, summary_json, note)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    org_id,
+                    academic_year_start,
+                    ANNUAL_GRADE_PROMOTION_JOB_TYPE,
+                    today_value,
+                    "completed_with_skips" if summary["skipped_unknown_grade"] else "completed",
+                    json.dumps(summary, ensure_ascii=False),
+                    f"{today_value} annual grade promotion",
+                ),
+            )
     for class_id, action, before, after in history_events:
         record_class_history(class_id, action, before=before, after=after)
-    return {"promoted_ids": promoted_ids, "pending_ids": pending_ids}
+    return {
+        "promoted_ids": promoted_ids,
+        "pending_ids": pending_ids,
+        "skipped_ids": skipped_ids,
+        "already_executed_org_ids": already_executed_org_ids,
+    }
 
 
 def delete_class(class_id: int):
@@ -6649,6 +7233,8 @@ def list_course_calendar_schedules_for_actor(actor_user: dict, start_date: str =
         where_clauses.append("s.organization_id=?")
         params.append(actor_user["organization_id"])
 
+    where_clauses.append(f"COALESCE(NULLIF(c.lifecycle_status, ''), '{CLASS_LIFECYCLE_ACTIVE}') = '{CLASS_LIFECYCLE_ACTIVE}'")
+
     if (actor_user or {}).get("role") == MEMBER_ROLE:
         class_ids = get_user_class_ids(actor_user["id"])
         if not class_ids:
@@ -6679,11 +7265,13 @@ def create_course_calendar_schedule(*, class_id: int, date_str: str, time_block:
     normalized_start_offset_minutes = _normalize_course_calendar_start_offset_minutes(start_offset_minutes)
     with get_conn() as conn:
         class_row = conn.execute(
-            "SELECT id, organization_id FROM classes WHERE id=?",
+            "SELECT id, organization_id, lifecycle_status FROM classes WHERE id=?",
             (class_id,),
         ).fetchone()
         if not class_row:
             raise LookupError("class not found")
+        if (class_row["lifecycle_status"] or CLASS_LIFECYCLE_ACTIVE) != CLASS_LIFECYCLE_ACTIVE:
+            raise ValueError("class is not active")
 
         conn.execute(
             """
@@ -8015,12 +8603,17 @@ def actor_can_manage_user_visible_pages(actor_user: dict, target_user: dict) -> 
     return False
 
 
-def list_classes_for_actor(actor_user: dict) -> list[dict]:
+def list_classes_for_actor(actor_user: dict, scope: str = "current") -> list[dict]:
     if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
-        return list_classes()
+        return list_classes(scope=scope)
+    lifecycle_clause = _class_lifecycle_where_clause(scope, "c")
+    where_clauses = ["c.organization_id=?"]
+    if lifecycle_clause:
+        where_clauses.append(lifecycle_clause)
+    where_sql = " AND ".join(where_clauses)
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT c.*, COUNT(l.id) as lesson_count,
                    (
                        SELECT uc.user_id
@@ -8031,7 +8624,7 @@ def list_classes_for_actor(actor_user: dict) -> list[dict]:
                    ) AS teacher_user_id
             FROM classes c
             LEFT JOIN lessons l ON l.class_id = c.id
-            WHERE c.organization_id=?
+            WHERE {where_sql}
             GROUP BY c.id
             ORDER BY c.created_at DESC
             """,
@@ -8040,21 +8633,65 @@ def list_classes_for_actor(actor_user: dict) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int = 0) -> list[dict]:
+def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int = 0, class_scope: str = "current") -> list[dict]:
     if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
-        return list_lessons(month_str=month_str, class_id=class_id)
+        return list_lessons(month_str=month_str, class_id=class_id, class_scope=class_scope)
+    lifecycle_clause = _lesson_class_lifecycle_where_clause(class_scope, "c", "l")
     with get_conn() as conn:
-        query_sql = "SELECT * FROM lessons WHERE organization_id=?"
+        query_sql = """
+            SELECT l.*
+            FROM lessons l
+            LEFT JOIN classes c ON c.id = l.class_id
+            WHERE l.organization_id=?
+        """
         params: list[object] = [actor_user["organization_id"]]
         if class_id:
-            query_sql += " AND class_id=?"
+            query_sql += " AND l.class_id=?"
             params.append(class_id)
         if month_str:
-            query_sql += " AND date LIKE ?"
+            query_sql += " AND l.date LIKE ?"
             params.append(f"{month_str}%")
-        query_sql += " ORDER BY created_at DESC, id DESC"
+        if lifecycle_clause:
+            query_sql += f" AND {lifecycle_clause}"
+        query_sql += " ORDER BY l.created_at DESC, l.id DESC"
         rows = conn.execute(query_sql, params).fetchall()
         return [_attach_review_plan_version_summary(conn, dict(row)) for row in rows]
+
+
+def list_lessons_page_for_actor(
+    actor_user: dict,
+    month_str: str = "",
+    class_id: int = 0,
+    class_scope: str = "current",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
+        return list_lessons_page(
+            month_str=month_str,
+            class_id=class_id,
+            class_scope=class_scope,
+            page=page,
+            page_size=page_size,
+        )
+    if (actor_user or {}).get("role") in {OWNER_ROLE, ADMIN_ROLE}:
+        return _list_lessons_page(
+            month_str=month_str,
+            class_id=class_id,
+            class_scope=class_scope,
+            organization_id=int(actor_user["organization_id"]),
+            page=page,
+            page_size=page_size,
+        )
+    return _list_lessons_page(
+        month_str=month_str,
+        class_id=class_id,
+        class_scope=class_scope,
+        organization_id=int(actor_user["organization_id"]),
+        member_class_ids=get_user_class_ids(int(actor_user["id"])),
+        page=page,
+        page_size=page_size,
+    )
 
 
 def list_consultations_for_actor(

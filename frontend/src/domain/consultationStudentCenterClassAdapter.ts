@@ -17,8 +17,9 @@ import {
 
 export type ConsultationClassTypeFilter = 'all' | 'small' | 'group';
 
-export type ConsultationClassFilterState = ClassFilterState & {
+export type ConsultationClassFilterState = Omit<ClassFilterState, 'classTypeFilter' | 'searchText'> & {
   classTypeFilter: ConsultationClassTypeFilter;
+  searchText?: string;
 };
 
 type AdapterClassItem = ClassItem;
@@ -43,6 +44,7 @@ export function buildConsultationClassFilterDefaults({
     stageFilter: stage || '全部学段',
     gradeFilter: normalizedGrade || '全部',
     classTypeFilter: 'all',
+    searchText: '',
   };
 }
 
@@ -72,7 +74,11 @@ export function filterConsultationStudentCenterClasses<TClass extends AdapterCla
     subjectLookupClasses: classes,
     teacherBindingByClassId,
     subjectOptions,
-    filters,
+    filters: {
+      ...filters,
+      classTypeFilter: '全部班型',
+      searchText: filters.searchText || '',
+    },
   }) as TClass[];
 }
 

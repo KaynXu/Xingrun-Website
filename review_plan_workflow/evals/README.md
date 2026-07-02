@@ -30,4 +30,6 @@ Supported check operators:
 - `minQualityScore`: deterministic quality gate score must meet the threshold.
 - `schemaValid`: final review-plan schema validity must match the expected boolean.
 
+Supported deterministic assertions include schedule/topic checks, printable question density checks, multiple-choice completeness checks, renderer dry-run checks, and source-pack extraction checks. The source-pack assertions rebuild the pack from fixture input and only inspect counts, hashes, topics, math-block counts, and trace-safe metadata; they do not store raw classroom text in reports.
+
 Math and physics fixtures default to China school-course context. IELTS fixtures remain independent IELTS exam cases.

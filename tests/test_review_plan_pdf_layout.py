@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -130,6 +131,39 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
 
         self.assertEqual(box_titles.count(labels["coverage_title"]), 1)
         self.assertEqual(box_titles.count(labels["tasks_title"]), len(_sample_days()))
+
+    def test_day_heading_uses_day_one_as_base_date(self):
+        base_date = date(2026, 7, 2)
+
+        day_one_heading = generate_review_pdfs.build_day_heading(
+            {"offset": 1, "day": "第1天"},
+            base_date,
+            chinese_only=True,
+        )
+        day_two_heading = generate_review_pdfs.build_day_heading(
+            {"offset": 2, "day": "第2天"},
+            base_date,
+            chinese_only=True,
+        )
+        day_seven_heading = generate_review_pdfs.build_day_heading(
+            {"offset": 7, "day": "第7天"},
+            base_date,
+            chinese_only=True,
+        )
+
+        self.assertIn("日期：2026-07-02", day_one_heading)
+        self.assertIn("日期：2026-07-03", day_two_heading)
+        self.assertIn("日期：2026-07-08", day_seven_heading)
+
+    def test_one_day_plan_uses_compressed_final_reminder_label(self):
+        labels = generate_review_pdfs.adapt_labels_for_review_schedule(
+            generate_review_pdfs.build_labels(chinese_only=True),
+            [{"offset": 1, "day": "当天课后复习"}],
+            chinese_only=True,
+        )
+
+        self.assertEqual(labels["usage_text"], "当天完成本节课复习：先回忆课堂主线，再完成题目和自查。")
+        self.assertEqual(labels["final_reminder_box"], "当天复习后应留下的内容")
 
     def test_answer_key_uses_compact_summary_instead_of_per_day_heading_blocks(self):
         generate_review_pdfs.register_fonts()

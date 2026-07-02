@@ -17,7 +17,7 @@ export async function executeStudentCenterLoadRequest(
   teacherBindingData: { teacher_bindings: Record<number, number | null> };
 }> {
   const [classItems, userItems, teacherBindingData, studentData] = await Promise.all([
-    apiFetch<ClassItem[]>('/api/classes'),
+    apiFetch<ClassItem[]>('/api/classes?scope=all'),
     permissions.canLoadStaffMembers
       ? apiFetch<UserItem[]>('/api/admin/users')
       : Promise.resolve([] as UserItem[]),
