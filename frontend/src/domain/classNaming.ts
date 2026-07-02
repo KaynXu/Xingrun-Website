@@ -278,8 +278,26 @@ export function buildSmallClassDisplayName(form: ClassDisplayNameInput): string 
   return `${subjectPrefix}${classType}${cohortPart}·${grade}·${namePart}${bridgeSuffix}`;
 }
 
+export function buildShortTermDrillClassDisplayName(form: ClassDisplayNameInput): string {
+  const grade = normalizeAcademicGradeLabel(form.current_grade || form.grade);
+  const subject = (form.subject || '').trim();
+  if (!grade) {
+    return '';
+  }
+  const cohortStage = getCohortStageForDisplay({ ...form, current_grade: grade });
+  const cohortStageLabel = getBridgeStageShortLabel(cohortStage);
+  const bridgeSuffix = form.is_bridge ? `·${getBridgeShortLabel(form.bridge_target, form.stage || grade)}` : '';
+  const cohortYear = Number(form.cohort_year) || inferAcademicCohortYearForStage(grade, cohortStage);
+  const cohortPrefix = form.show_cohort_year && cohortYear ? `${cohortStageLabel}${cohortYear}级·` : '';
+  const subjectPrefix = subject ? `${subject}·` : '';
+  return `${subjectPrefix}${cohortPrefix}${grade}·短期刷题班${bridgeSuffix}`;
+}
+
 export function buildClassDisplayName(form: ClassDisplayNameInput): string {
   const classType = (form.class_type || 'group').trim() || 'group';
+  if (classType === 'short_term_drill') {
+    return buildShortTermDrillClassDisplayName(form);
+  }
   if (classType !== 'group') {
     return buildSmallClassDisplayName(form);
   }

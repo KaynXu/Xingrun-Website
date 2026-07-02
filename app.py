@@ -6916,7 +6916,7 @@ def api_class_create():
         return jsonify({"error": "student_ids must be a list"}), 400
     if class_type == "group" and not name and not class_number:
         return jsonify({"error": "班级名称不能为空"}), 400
-    if class_type != "group" and not student_ids:
+    if class_type in {"1v1", "1v2", "1v3"} and not student_ids:
         return jsonify({"error": "请选择学员"}), 400
     if not subject:
         return jsonify({"error": "学科不能为空"}), 400

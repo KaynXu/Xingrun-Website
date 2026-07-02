@@ -520,6 +520,39 @@ test('small class save payload uses existing student names and validates require
   );
 });
 
+test('short-term drill class save payload does not require class number or selected students', () => {
+  const payload = buildClassSavePayload({
+    classId: 'new',
+    form: {
+      ...baseForm,
+      class_type: 'short_term_drill',
+      subject: '物理',
+      stage: '初中',
+      current_grade: '九年级',
+      class_number: '',
+      cohort_year: '2024',
+      selected_student_ids: [],
+    },
+    selectedTeacher: { id: 24, name: '李一', org: '星润', role: 'member' },
+    selectedTeacherUserId: 24,
+    existingStudents: [],
+  });
+
+  assert.equal(payload.name, '物理·初2024级·九年级·短期刷题班');
+  assert.equal(payload.class_type, 'short_term_drill');
+  assert.equal(payload.class_number, '');
+  assert.deepEqual(payload.student_ids, []);
+  assert.equal(
+    validateClassSaveDraft({
+      classId: 'new',
+      selectedTeacherUserId: 24,
+      payload,
+      gradeOptions: ['九年级'],
+    }),
+    null,
+  );
+});
+
 test('existing class save form uses the currently loaded student list for small class validation', () => {
   const syncedForm = resolveClassSaveFormWithCurrentStudents({
     classId: 9,

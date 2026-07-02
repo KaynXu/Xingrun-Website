@@ -6143,6 +6143,15 @@ def build_structured_class_name(subject: str, cohort_year: int, current_grade: s
     return build_group_class_name(subject, cohort_year, current_grade, class_number, is_bridge, show_cohort_year, bridge_target, stage)
 
 
+def build_short_term_drill_class_name(subject: str, cohort_year: int, current_grade: str, is_bridge: bool, bridge_target: str = "", stage: str = "", show_cohort_year: bool = True) -> str:
+    if not current_grade:
+        return ""
+    suffix = f"·{bridge_short_label(bridge_target, stage)}" if is_bridge else ""
+    subject_prefix = f"{subject.strip()}·" if subject and subject.strip() else ""
+    cohort_part = f"{cohort_stage_short_label(display_cohort_stage(stage, is_bridge, bridge_target))}{cohort_year}级·" if show_cohort_year and cohort_year else ""
+    return f"{subject_prefix}{cohort_part}{current_grade}·短期刷题班{suffix}"
+
+
 def build_small_class_name(class_type: str, current_grade: str, student_names: list[str], is_bridge: bool, bridge_target: str = "", stage: str = "", subject: str = "", cohort_year: int = 0, show_cohort_year: bool = True) -> str:
     normalized_names = [str(name or "").strip() for name in student_names if str(name or "").strip()]
     if not current_grade or not normalized_names:
@@ -6242,6 +6251,8 @@ def _build_class_payload(
     display_name = (name or "").strip()
     if normalized_class_type == "group" and normalized_grade and normalized_class_number and normalized_cohort_year:
         display_name = build_group_class_name(subject, normalized_cohort_year, normalized_grade, normalized_class_number, is_bridge, show_cohort_year, normalized_bridge_target, normalized_stage)
+    elif normalized_class_type == "short_term_drill":
+        display_name = build_short_term_drill_class_name(subject, normalized_cohort_year, normalized_grade, is_bridge, normalized_bridge_target, normalized_stage, show_cohort_year) or display_name
     elif normalized_class_type != "group":
         display_name = build_small_class_name(normalized_class_type, normalized_grade, student_names or [], is_bridge, normalized_bridge_target, normalized_stage, subject, normalized_cohort_year, show_cohort_year) or display_name
     return {

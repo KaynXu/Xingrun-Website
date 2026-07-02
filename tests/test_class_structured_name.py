@@ -120,6 +120,10 @@ class ClassStructuredNameTestCase(unittest.TestCase):
             lesson_manager.build_small_class_name("1v2", "七年级", ["张三", "李四"], False, "", "初中", "数学", 2025, True),
             "数学·1v2·初2025级·七年级·张李",
         )
+        self.assertEqual(
+            lesson_manager.build_short_term_drill_class_name("物理", 2024, "九年级", False, "", "初中", True),
+            "物理·初2024级·九年级·短期刷题班",
+        )
 
 
 if __name__ == "__main__":

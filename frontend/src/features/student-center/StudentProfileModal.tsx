@@ -42,6 +42,9 @@ function formatDate(value: string | null | undefined): string {
 }
 
 function formatClassType(value: string | undefined): string {
+  if (value === 'short_term_drill') {
+    return '短期刷题班';
+  }
   if (value === '1v1' || value === '1v2' || value === '1v3') {
     return value;
   }
