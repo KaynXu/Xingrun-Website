@@ -68,7 +68,12 @@ BAD_BLANK_ANSWERS = {
     "动作",
     "提醒",
 }
-VAGUE_STEM_PATTERNS = ("某题", "这个题", "原题中", "题号")
+VAGUE_STEM_PATTERNS = ("某题", "这个题", "原题中")
+VAGUE_REFERENCE_REGEXES = (
+    re.compile(r"第\s*[0-9一二三四五六七八九十、,，和及]+\s*题"),
+    re.compile(r"上述\s*(?:填空题|选择题|题目|问题)"),
+    re.compile(r"以上\s*(?:填空题|选择题|题目|问题)"),
+)
 SKELETAL_OPTION_LABELS = {
     "A",
     "B",
@@ -142,6 +147,37 @@ def _iter_strings(value: Any) -> list[str]:
             strings.extend(_iter_strings(item))
         return strings
     return []
+
+
+def _iter_vague_reference_texts(value: Any, *, parent_key: str = "") -> list[str]:
+    skipped_keys = {"options", "answer", "answers", "reference_answer", "answer_hint"}
+    if isinstance(value, str):
+        if parent_key in skipped_keys:
+            return []
+        return [value]
+    if isinstance(value, dict):
+        strings: list[str] = []
+        for key, item in value.items():
+            strings.extend(_iter_vague_reference_texts(item, parent_key=str(key)))
+        return strings
+    if isinstance(value, list):
+        if parent_key in skipped_keys:
+            return []
+        strings = []
+        for item in value:
+            strings.extend(_iter_vague_reference_texts(item, parent_key=parent_key))
+        return strings
+    return []
+
+
+def _find_vague_references(plan: dict[str, Any]) -> list[str]:
+    hits: list[str] = []
+    for text in _iter_vague_reference_texts(plan):
+        if _contains_any(text, VAGUE_STEM_PATTERNS) or any(pattern.search(text) for pattern in VAGUE_REFERENCE_REGEXES):
+            normalized = " ".join(text.split())
+            if normalized and normalized not in hits:
+                hits.append(normalized)
+    return hits
 
 
 def _collect_quotes(plan: dict[str, Any]) -> list[str]:
@@ -471,12 +507,13 @@ def review_single_lesson_plan(
                 suggested_fix="重写相关题目，确保题干、选项、答案和解析一致。",
             )
         )
-    if _contains_any(text_blob, VAGUE_STEM_PATTERNS):
+    vague_references = _find_vague_references(normalized_plan)
+    if vague_references:
         issues.append(
             QualityIssue(
                 severity="medium",
                 category="question_quality",
-                description="输出中存在“某题/这个题/原题中”等无法独立作答的模糊指代。",
+                description="输出中存在无法独立作答的模糊指代：" + "；".join(vague_references[:3]),
                 suggested_fix="补足题干条件，或改写成同知识点同错因的自洽同类题。",
             )
         )

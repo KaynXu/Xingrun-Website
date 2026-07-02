@@ -272,6 +272,7 @@ def _review_with_llm_quality_gate(
     *,
     plan: dict[str, Any],
     local_quality: QualityReview,
+    review_input: ReviewPlanInput,
     prompt_bundle: Any,
     agent_blueprint: AgenticPlanBlueprint,
     source_brief: ReviewPlanSourceBrief | None = None,
@@ -304,6 +305,7 @@ def _review_with_llm_quality_gate(
             {
                 "plan": plan,
                 "local_quality": local_quality,
+                "review_input": review_input,
                 "prompt_bundle": prompt_bundle,
                 "agent_blueprint": agent_blueprint,
                 "source_brief": source_brief,
@@ -326,10 +328,42 @@ def _review_with_llm_quality_gate(
     return merged, usage
 
 
-def _normalize_output_plan(plan: dict[str, Any], review_input: ReviewPlanInput) -> dict[str, Any]:
+def _assumption_mentions_trusted_metadata(value: object) -> bool:
+    text = str(value or "")
+    if not text:
+        return False
+    return any(marker in text for marker in ("年级", "科目", "上课日期", "复习日", "review_days")) and any(
+        marker in text for marker in ("用户输入", "学生用户输入", "课堂材料", "转录", "可核验")
+    )
+
+
+def _normalize_output_plan(
+    plan: dict[str, Any],
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None = None,
+) -> dict[str, Any]:
     normalized = normalize_final_review_plan(plan)
+    lesson_info = normalized.setdefault("lesson_info", {})
+    if not isinstance(lesson_info, dict):
+        lesson_info = {}
+        normalized["lesson_info"] = lesson_info
+    if review_input.subject:
+        lesson_info["subject"] = review_input.subject
+    if review_input.grade:
+        lesson_info["grade"] = review_input.grade
     if review_input.lesson_date:
-        normalized.setdefault("lesson_info", {})["date"] = review_input.lesson_date
+        lesson_info["date"] = review_input.lesson_date
+    if isinstance(lesson_info.get("assumptions"), list):
+        lesson_info["assumptions"] = [
+            item for item in lesson_info["assumptions"] if not _assumption_mentions_trusted_metadata(item)
+        ]
+    if source_brief is not None and not source_brief.teacher_emphasis:
+        normalized["quotes"] = []
+        if isinstance(lesson_info.get("quotes"), list):
+            lesson_info["quotes"] = []
+        for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
+            if isinstance(day, dict) and isinstance(day.get("quotes"), list):
+                day["quotes"] = []
     return normalized
 
 
@@ -401,7 +435,7 @@ def _maybe_revise_plan(
             break
 
         total_usage = merge_usage(total_usage, revision_usage)
-        current_plan = revised_plan
+        current_plan = _normalize_output_plan(revised_plan, review_input, source_brief)
         local_quality = _score_quality(
             current_plan,
             subject=subject,
@@ -412,6 +446,7 @@ def _maybe_revise_plan(
         current_quality, reviewer_usage = _review_with_llm_quality_gate(
             plan=current_plan,
             local_quality=local_quality,
+            review_input=review_input,
             prompt_bundle=prompt_bundle,
             agent_blueprint=agent_blueprint,
             source_brief=source_brief,
@@ -560,7 +595,7 @@ def generate_single_lesson_review_plan(
                 },
                 context,
             )
-            plan = _normalize_output_plan(plan, review_input)
+            plan = _normalize_output_plan(plan, review_input, source_brief)
             local_quality = _score_quality(
                 plan,
                 subject=route.selected_subject,
@@ -571,6 +606,7 @@ def generate_single_lesson_review_plan(
             quality, reviewer_usage = _review_with_llm_quality_gate(
                 plan=plan,
                 local_quality=local_quality,
+                review_input=review_input,
                 prompt_bundle=prompt_bundle,
                 agent_blueprint=agent_blueprint,
                 source_brief=source_brief,
@@ -589,7 +625,7 @@ def generate_single_lesson_review_plan(
                 subject=route.selected_subject,
                 context=context,
             )
-            plan = _normalize_output_plan(plan, review_input)
+            plan = _normalize_output_plan(plan, review_input, source_brief)
             record_quality_score(context=context, quality=quality)
             record_workflow_result(context=context, plan=plan, quality=quality, usage=usage, status="succeeded")
 

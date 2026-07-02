@@ -19,6 +19,7 @@ from review_plan_workflow.schemas import (
     QualityIssue,
     QualityReview,
     ReviewPlanInput,
+    ReviewPlanSourceBrief,
     SourceSummary,
     TaskBlueprint,
     normalize_final_review_plan,
@@ -224,6 +225,72 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             schedule_mode="compressed",
         )
         self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_quality_gate_does_not_treat_option_word_tihao_as_vague_reference(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
+        plan["days"] = [
+            {
+                "day": 1,
+                "goal": "复盘二次函数图像与参数。",
+                "blanks": [
+                    {"text": "二次函数图像开口由______决定。", "answer": "a 的符号"},
+                    {"text": "顶点式中顶点坐标是______。", "answer": "(h, k)"},
+                    {"text": "对称轴公式是______。", "answer": "$x=-b/(2a)$"},
+                ],
+                "choices": [
+                    {
+                        "question": "判断二次函数图像最值前，应先看哪一项？",
+                        "options": ["A. 开口方向", "B. 字体大小", "C. 题号颜色", "D. 页码位置"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": "顶点式最适合先读出什么信息？",
+                        "options": ["A. 顶点坐标", "B. 题号", "C. 字体", "D. 页码"],
+                        "answer": "A",
+                    },
+                ],
+                "self_test_phrase": "能说清参数与图像的对应关系。",
+            }
+        ]
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_quality_gate_flags_actual_vague_question_reference(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
+        plan["days"] = [
+            {
+                "day": 1,
+                "goal": "复盘二次函数图像与参数。",
+                "blanks": [
+                    {"text": "二次函数图像开口由______决定。", "answer": "a 的符号"},
+                    {"text": "顶点式中顶点坐标是______。", "answer": "(h, k)"},
+                    {"text": "对称轴公式是______。", "answer": "$x=-b/(2a)$"},
+                ],
+                "choices": [
+                    {
+                        "question": "原题中这个题的正确入口是什么？",
+                        "options": ["A. 先看开口", "B. 先看题号", "C. 先看字体", "D. 先看页码"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": "顶点式最适合先读出什么信息？",
+                        "options": ["A. 顶点坐标", "B. 字体大小", "C. 页码", "D. 颜色"],
+                        "answer": "A",
+                    },
+                ],
+            }
+        ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertTrue(any("模糊指代" in issue.description for issue in review.issues))
 
     def test_compressed_fallback_blueprint_requires_complete_one_day_density(self):
         blueprint = _fallback_agent_blueprint(
@@ -1065,6 +1132,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(reviewer_kwargs["stage"], "quality_reviewer_llm")
         self.assertEqual(reviewer_kwargs["timeout_seconds"], 90.0)
         self.assertEqual(reviewer_kwargs["max_retries"], 0)
+        self.assertIn("trusted_workflow_metadata", reviewer_kwargs["user_message"])
+        self.assertIn('"grade": "高一"', reviewer_kwargs["user_message"])
+        self.assertIn("不要因为课堂材料里没重复出现这些字段", reviewer_kwargs["user_message"])
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIn("parent_planner", run["node_outputs"])
         self.assertIn("quality_reviewer_llm", run["node_outputs"])
@@ -1499,6 +1569,37 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(run["node_outputs"]["plan_generator_model_config"]["model"], "deepseek-v4-pro")
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_output_normalization_trusts_lesson_metadata_and_removes_unsupported_quotes(self, mock_generate_plan):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["lesson_info"]["subject"] = ""
+        plan["lesson_info"]["grade"] = ""
+        plan["lesson_info"]["assumptions"] = ["年级'九年级'为学生用户输入，课堂材料中不可核验。", "主题来自课堂材料。"]
+        plan["quotes"] = ["老师说一定要这样做。"]
+        plan["days"][0]["quotes"] = ["老师原话：先看题号。"]
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="九年级",
+            topic="一次函数",
+            lesson_date="2026-07-02",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["subject"], "数学")
+        self.assertEqual(generated["lesson_info"]["grade"], "九年级")
+        self.assertEqual(generated["lesson_info"]["date"], "2026-07-02")
+        self.assertEqual(generated["lesson_info"]["assumptions"], ["主题来自课堂材料。"])
+        self.assertEqual(generated["quotes"], [])
+        self.assertEqual(generated["days"][0].get("quotes"), [])
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_repairs_invalid_schema_once(self, mock_generate_plan):
         valid_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
         mock_generate_plan.side_effect = [
@@ -1524,6 +1625,45 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(usage["input_tokens"], 8)
         self.assertEqual(usage["output_tokens"], 10)
         self.assertEqual(mock_generate_plan.call_count, 2)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_plan_generator_retries_transient_connection_error_once(self, mock_generate_plan):
+        valid_plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.side_effect = [
+            RuntimeError("Connection error."),
+            (valid_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 5, "output_tokens": 6}),
+        ]
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-06-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-06-01",
+            provider="deepseek",
+            model="deepseek-v4-pro",
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "一次函数")
+        self.assertEqual(validate_final_review_plan(generated)[1], [])
+        self.assertEqual(usage["input_tokens"], 5)
+        self.assertEqual(mock_generate_plan.call_count, 2)
+        self.assertEqual(mock_generate_plan.call_args_list[0].kwargs["stage"], "plan_generator")
+        self.assertEqual(mock_generate_plan.call_args_list[1].kwargs["stage"], "plan_generator_retry")
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(any(warning["code"] == "plan_generator_transient_retry" for warning in run["warnings"]))
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_repairs_json_parse_failure_once(self, mock_generate_plan):
@@ -1620,7 +1760,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         self.assertEqual(generated["lesson_info"]["topic"], "二次函数最值与将军饮马综合复习")
-        self.assertEqual(generated["lesson_info"]["grade"], "9")
+        self.assertEqual(generated["lesson_info"]["grade"], "九年级")
         self.assertEqual([day["day"] for day in generated["days"]], [1, 2, 7, 14, 30])
         self.assertEqual(
             generated["full_review_topics"],

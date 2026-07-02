@@ -896,7 +896,12 @@ def _review_plan_quality_failure_message(version_id: int) -> str:
     first_issue = ""
     issues = quality.get("issues")
     if isinstance(issues, list):
-        for issue in issues:
+        severity_rank = {"high": 0, "medium": 1, "low": 2}
+        ordered_issues = sorted(
+            [issue for issue in issues if isinstance(issue, dict)],
+            key=lambda item: severity_rank.get(str(item.get("severity") or "").strip().lower(), 3),
+        )
+        for issue in ordered_issues:
             if not isinstance(issue, dict):
                 continue
             category = str(issue.get("category") or "").strip().lower()
@@ -924,6 +929,12 @@ def _review_plan_readable_quality_issue(category: str, description: str) -> str:
         return "生成结果缺少明确的课程主题"
     if "全课覆盖清单" in text:
         return "生成结果缺少清晰的复习范围"
+    if "模糊指代" in text:
+        return "部分题目没有写完整题干"
+    if "lesson_info" in lowered and "grade" in lowered:
+        return "生成结果对课程信息的来源判断不清"
+    if "teacher_emphasis" in lowered or "quotes" in lowered or "课堂原话" in text:
+        return "生成结果包含没有课堂证据的老师原话"
     if "唯一可打印题目不足" in text:
         return text.replace("唯一可打印题目", "可直接给学生练习的题目").replace("PDF", "文档")
     if not text:

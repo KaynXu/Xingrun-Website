@@ -58,6 +58,8 @@ def _revision_message(
         f"Targeted revision attempt: {attempt}",
         "只修复 quality review 指出的问题；保留原计划中已经正确的结构和内容。",
         "不得虚构教材页码、考试日期、学生成绩、老师原话或未提供的题目来源。",
+        "subject、grade、lesson_date、review_days 是页面/班级/工作流元数据，可以写入 lesson_info；不要把它们写成“课堂转录中可核验”或“学生用户输入”的假设。",
+        "topic、knowledge_points、example_stems 和老师原话必须来自课堂材料、source_brief 或老师本次要求；没有 teacher_emphasis 证据时 quotes 留空。",
         f"必须返回完整 JSON object，且 days 只包含 {review_input.review_days} 的复习节点。",
         "选择题硬修复：逐日检查 choices；任何 options 只写 A/B/C/D、少于 4 个完整选项或 answer 为空时，必须重写为完整 question + A-D 四个具体选项 + 单字母答案。",
     ]

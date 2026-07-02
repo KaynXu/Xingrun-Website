@@ -1825,6 +1825,73 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertNotIn("得分 0", saved["generation_error"])
         mock_generate_pdf.assert_not_called()
 
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_prefers_high_severity_quality_reason_for_user_message(
+        self,
+        mock_run_with_charge,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="九年级",
+            topic="数学 课程",
+            summary="课堂总结文本",
+            weak_points="",
+            class_id=0,
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="数学 课程")
+
+        def run_with_mixed_quality_trace(**_kwargs):
+            version_id = lesson_manager.list_review_plan_versions(lesson_id)[0]["id"]
+            lesson_manager.save_review_plan_run(
+                lesson_id=lesson_id,
+                version_id=version_id,
+                organization_id=1,
+                trace_id="mixed-quality-blocked-trace",
+                status="succeeded",
+                subject="math",
+                provider="openai",
+                model="gpt-5.4",
+                quality_review={
+                    "score": 74,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [
+                        {
+                            "severity": "medium",
+                            "category": "question_quality",
+                            "description": "输出中存在无法独立作答的模糊指代：上述填空题。",
+                            "suggested_fix": "补足题干。",
+                        },
+                        {
+                            "severity": "high",
+                            "category": "factuality",
+                            "description": "lesson_info 中写明 grade 为“九年级”，但来源判断不清。",
+                            "suggested_fix": "按课程元数据处理年级。",
+                        },
+                    ],
+                },
+            )
+            return plan
+
+        mock_run_with_charge.side_effect = run_with_mixed_quality_trace
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-5.4",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved["record_status"], "failed")
+        self.assertIn("生成结果对课程信息的来源判断不清", saved["generation_error"])
+        self.assertNotIn("模糊指代", saved["generation_error"])
+        mock_generate_pdf.assert_not_called()
+
     @patch("app._run_ai_feature_with_charge", side_effect=app_module.CreditBalanceError("积分不足，请先充值"))
     def test_worker_writes_credit_balance_error_message(
         self,

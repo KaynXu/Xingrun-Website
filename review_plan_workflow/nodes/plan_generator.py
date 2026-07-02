@@ -116,6 +116,22 @@ def _apply_lesson_metadata(plan: dict[str, Any], review_input: ReviewPlanInput) 
     return plan
 
 
+def _is_transient_generation_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "connection error",
+            "connection aborted",
+            "connection reset",
+            "temporarily unavailable",
+            "remote protocol error",
+            "timeout",
+            "timed out",
+        )
+    )
+
+
 def _schema_errors(plan: dict[str, Any]) -> list[str]:
     _, errors = validate_final_review_plan(plan)
     return errors
@@ -207,6 +223,56 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
                 "error": parse_error,
             }
         )
+    except Exception as exc:
+        if not _is_transient_generation_error(exc):
+            raise
+        attempts.append(
+            {
+                "attempt": 1,
+                "stage": "generate",
+                "provider": writer_provider,
+                "model": writer_model,
+                "error": str(exc),
+            }
+        )
+        context.add_warning(
+            "plan_generator_transient_retry",
+            "生成服务连接短暂失败，已自动重试一次。",
+            "medium",
+        )
+        try:
+            plan, usage = generate_review_plan_json(
+                system_prompt=prompt_bundle.prompt,
+                user_message=user_message,
+                provider=writer_provider,
+                model=writer_model,
+                temperature=writer_temperature,
+                stage="plan_generator_retry",
+                timeout_seconds=180.0,
+                max_retries=0,
+            )
+            plan = _normalize_plan(plan, review_input)
+            errors = _schema_errors(plan)
+            attempts.append(
+                {
+                    "attempt": 2,
+                    "stage": "generate_retry",
+                    "provider": writer_provider,
+                    "model": writer_model,
+                    "schema_errors": errors,
+                }
+            )
+        except ValueError as retry_exc:
+            parse_error = str(retry_exc)
+            attempts.append(
+                {
+                    "attempt": 2,
+                    "stage": "generate_retry",
+                    "provider": writer_provider,
+                    "model": writer_model,
+                    "error": parse_error,
+                }
+            )
 
     if parse_error or errors:
         try:
