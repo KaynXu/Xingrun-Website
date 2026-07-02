@@ -69,9 +69,38 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertIsNotNone(payload)
-        lesson = next(item for item in payload if item["id"] == lesson_id)
+        self.assertIn("items", payload)
+        lesson = next(item for item in payload["items"] if item["id"] == lesson_id)
         self.assertEqual(lesson["creator_display_name"], lesson_manager.get_user_by_id(1)["display_name"])
         self.assertEqual(lesson["creator_username"], lesson_manager.get_user_by_id(1)["username"])
+
+    @patch("app.get_latest_review_plan_run_for_lesson", side_effect=AssertionError("list must not load workflow runs"))
+    def test_get_review_plans_uses_paginated_lightweight_list(self, _mock_latest_run):
+        for index in range(15):
+            lesson_manager.create_pending_lesson(
+                date_str=f"2026-04-{index + 1:02d}",
+                subject="数学",
+                grade="初二",
+                topic=f"分页测试 {index + 1}",
+                summary="课堂总结文本",
+                weak_points="",
+                created_by_user_id=1,
+            )
+
+        response = self.client.get(
+            "/api/review-plans?page=2&page_size=5",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["total"], 15)
+        self.assertEqual(payload["page"], 2)
+        self.assertEqual(payload["page_size"], 5)
+        self.assertEqual(len(payload["items"]), 5)
+        self.assertTrue(all("current_plan_preview" not in item or item["current_plan_preview"] == {} for item in payload["items"]))
+        self.assertTrue(all("versions" not in item for item in payload["items"]))
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
@@ -608,7 +637,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        by_id = {item["id"]: item for item in payload}
+        by_id = {item["id"]: item for item in payload["items"]}
         self.assertIn(second_id, by_id)
         self.assertEqual(by_id[first_id]["current_version_id"], first_version["id"])
         self.assertEqual(by_id[first_id]["current_version_no"], 1)

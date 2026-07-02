@@ -5,6 +5,12 @@ from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
 
 ALWAYS_SOFT_CATEGORIES_AFTER_REVISION = {"workload_sanity"}
 SOFT_EVIDENCE_CATEGORIES_AFTER_REVISION = {"subject_fit", "factuality", "style_consistency"}
+SOFT_REVIEW_LOOP_MARKERS = (
+    "spiral_review",
+    "交叉回收",
+    "隔题复现",
+    "回炉机制",
+)
 SOFT_EVIDENCE_MARKERS = (
     "source_brief",
     "缺失 topic",
@@ -71,9 +77,11 @@ def is_soft_issue_after_revision(issue: object) -> bool:
     category = str(getattr(issue, "category", "") or "")
     if category in ALWAYS_SOFT_CATEGORIES_AFTER_REVISION:
         return True
+    text = _issue_text(issue)
+    if category == "review_loop":
+        return any(marker.lower() in text for marker in SOFT_REVIEW_LOOP_MARKERS)
     if category not in SOFT_EVIDENCE_CATEGORIES_AFTER_REVISION:
         return False
-    text = _issue_text(issue)
     if any(marker.lower() in text for marker in HARD_EVIDENCE_MARKERS):
         return False
     return any(marker.lower() in text for marker in SOFT_EVIDENCE_MARKERS)
@@ -114,6 +122,11 @@ def soft_pass_warning_for_quality(quality: QualityReview) -> tuple[str, str]:
         return (
             "quality_workload_soft_pass",
             "复习计划任务量偏重，已完成一次自动修订；剩余 workload 提醒不再阻断文档生成。",
+        )
+    if categories and categories <= {"review_loop"}:
+        return (
+            "quality_review_loop_soft_pass",
+            "当天课后复习已完成一次自动修订；剩余交叉回收提醒降级为可交付提示，不再阻断文档生成。",
         )
     return (
         "quality_evidence_soft_pass",

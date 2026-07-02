@@ -8,6 +8,7 @@ import {
   hasReviewLessonOutput,
   isReviewLessonPending,
   normalizeReviewLessonsResponse,
+  normalizeReviewLessonsPageResponse,
 } from './reviewGenerationAsync';
 
 test('normalizeReviewLessonsResponse keeps current version and active generation fields', () => {
@@ -51,6 +52,30 @@ test('normalizeReviewLessonsResponse keeps current version and active generation
   assert.equal(lessons[0]?.active_version_status, 'generating');
   assert.equal(lessons[0]?.active_version_created_at, '2026-05-02T12:35:00');
   assert.equal(lessons[0]?.latest_generation_error, '');
+});
+
+test('normalizeReviewLessonsPageResponse accepts paginated review plan lists', () => {
+  const page = normalizeReviewLessonsPageResponse({
+    items: [
+      {
+        id: 33,
+        date: '2026-07-02',
+        subject: '数学',
+        grade: '六年级',
+        topic: '勾股数',
+      },
+    ],
+    total: 28,
+    page: 2,
+    page_size: 12,
+  });
+
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0]?.id, 33);
+  assert.equal(page.total, 28);
+  assert.equal(page.page, 2);
+  assert.equal(page.page_size, 12);
+  assert.deepEqual(normalizeReviewLessonsResponse({ items: [{ id: 33 }] }).map((item) => item.id), [33]);
 });
 
 test('review lesson state keeps current output available while a new version generates', () => {

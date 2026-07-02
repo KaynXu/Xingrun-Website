@@ -4594,6 +4594,24 @@ def _review_plan_version_from_row(row) -> Optional[dict]:
     return version
 
 
+def _load_review_plan_generation_options(value: object | None) -> dict:
+    try:
+        raw_options = json.loads(str(value or "{}"))
+        options_source = str((raw_options if isinstance(raw_options, dict) else {}).get("source") or "create")
+        return normalize_generation_options(raw_options, source=options_source)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return normalize_generation_options(None)
+
+
+def _review_plan_version_summary_from_row(row) -> Optional[dict]:
+    if not row:
+        return None
+    version = dict(row)
+    version["generation_options"] = _load_review_plan_generation_options(version.get("generation_options_json"))
+    version["generation_summary"] = generation_options_summary(version["generation_options"])
+    return version
+
+
 def _lesson_columns(conn: sqlite3.Connection) -> set[str]:
     return {row["name"] for row in conn.execute("PRAGMA table_info(lessons)").fetchall()}
 
@@ -4716,6 +4734,12 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_review_plan_versions_lesson_created
         ON review_plan_versions(lesson_id, created_at, id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_review_plan_versions_lesson_status_updated
+        ON review_plan_versions(lesson_id, status, updated_at, id)
         """
     )
     conn.execute(
@@ -5928,6 +5952,192 @@ def _attach_review_plan_version_summary(conn: sqlite3.Connection, lesson: dict) 
     return lesson
 
 
+_REVIEW_PLAN_VERSION_LIST_COLUMNS = """
+    id,
+    lesson_id,
+    version_no,
+    status,
+    pdf_path,
+    generation_error,
+    audio_path,
+    audio_request_key,
+    request_key,
+    request_id,
+    chat_provider,
+    chat_model,
+    same_lesson_materials_json,
+    generation_options_json,
+    created_by_user_id,
+    completed_at,
+    created_at,
+    updated_at
+"""
+
+
+def _review_plan_version_summaries_by_id(conn: sqlite3.Connection, version_ids: list[int]) -> dict[int, dict]:
+    unique_ids = sorted({int(version_id) for version_id in version_ids if int(version_id or 0) > 0})
+    if not unique_ids:
+        return {}
+    placeholders = ",".join("?" for _ in unique_ids)
+    rows = conn.execute(
+        f"""
+        SELECT {_REVIEW_PLAN_VERSION_LIST_COLUMNS}
+        FROM review_plan_versions
+        WHERE id IN ({placeholders})
+        """,
+        unique_ids,
+    ).fetchall()
+    summaries: dict[int, dict] = {}
+    for row in rows:
+        summary = _review_plan_version_summary_from_row(row)
+        if summary:
+            summaries[int(summary["id"])] = summary
+    return summaries
+
+
+def _review_plan_version_summaries_by_lesson(
+    conn: sqlite3.Connection,
+    lesson_ids: list[int],
+    *,
+    where_sql: str = "",
+    order_sql: str = "created_at DESC, id DESC",
+) -> dict[int, dict]:
+    unique_ids = sorted({int(lesson_id) for lesson_id in lesson_ids if int(lesson_id or 0) > 0})
+    if not unique_ids:
+        return {}
+    placeholders = ",".join("?" for _ in unique_ids)
+    extra_where = f" AND {where_sql}" if where_sql else ""
+    rows = conn.execute(
+        f"""
+        SELECT {_REVIEW_PLAN_VERSION_LIST_COLUMNS}
+        FROM review_plan_versions v
+        WHERE v.lesson_id IN ({placeholders})
+          {extra_where}
+          AND v.id = (
+              SELECT x.id
+              FROM review_plan_versions x
+              WHERE x.lesson_id = v.lesson_id
+                {extra_where.replace('v.', 'x.')}
+              ORDER BY {order_sql.replace('v.', 'x.')}
+              LIMIT 1
+          )
+        """,
+        unique_ids,
+    ).fetchall()
+    summaries: dict[int, dict] = {}
+    for row in rows:
+        summary = _review_plan_version_summary_from_row(row)
+        if summary:
+            summaries[int(summary["lesson_id"])] = summary
+    return summaries
+
+
+def _fetch_user_display_summaries(conn: sqlite3.Connection, user_ids: list[int]) -> dict[int, dict]:
+    unique_ids = sorted({int(user_id) for user_id in user_ids if int(user_id or 0) > 0})
+    if not unique_ids:
+        return {}
+    placeholders = ",".join("?" for _ in unique_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, username, display_name
+        FROM users
+        WHERE id IN ({placeholders})
+        """,
+        unique_ids,
+    ).fetchall()
+    return {int(row["id"]): dict(row) for row in rows}
+
+
+def _attach_review_plan_version_summaries_bulk(conn: sqlite3.Connection, lessons: list[dict]) -> list[dict]:
+    if not lessons:
+        return lessons
+
+    lesson_ids = [int(lesson.get("id") or 0) for lesson in lessons]
+    current_version_ids = [int(lesson.get("current_review_plan_version_id") or 0) for lesson in lessons]
+    current_by_id = _review_plan_version_summaries_by_id(conn, current_version_ids)
+    active_by_lesson_id = _review_plan_version_summaries_by_lesson(
+        conn,
+        lesson_ids,
+        where_sql="v.status IN ('pending', 'queued', 'processing', 'transcribing', 'generating')",
+        order_sql="v.created_at DESC, v.id DESC",
+    )
+    failed_by_lesson_id = _review_plan_version_summaries_by_lesson(
+        conn,
+        lesson_ids,
+        where_sql="v.status='failed'",
+        order_sql="v.updated_at DESC, v.id DESC",
+    )
+    latest_by_lesson_id = _review_plan_version_summaries_by_lesson(
+        conn,
+        lesson_ids,
+        order_sql="v.created_at DESC, v.id DESC",
+    )
+    users_by_id = _fetch_user_display_summaries(
+        conn,
+        [int(lesson.get("created_by_user_id") or 0) for lesson in lessons],
+    )
+
+    for lesson in lessons:
+        lesson_id = int(lesson.get("id") or 0)
+        current_version = current_by_id.get(int(lesson.get("current_review_plan_version_id") or 0))
+        active_version = active_by_lesson_id.get(lesson_id)
+        latest_failed = failed_by_lesson_id.get(lesson_id)
+        latest_version = active_version or current_version or latest_by_lesson_id.get(lesson_id)
+        runtime_projection = active_version or current_version or latest_version
+
+        lesson["current_version"] = current_version
+        lesson["active_version"] = active_version
+        lesson["current_review_plan_version_id"] = current_version["id"] if current_version else None
+        lesson["current_version_id"] = current_version["id"] if current_version else None
+        lesson["current_version_no"] = current_version["version_no"] if current_version else None
+        lesson["current_generated_at"] = current_version["completed_at"] if current_version else ""
+        lesson["current_status"] = current_version["status"] if current_version else ""
+        lesson["has_version_generating"] = active_version is not None
+        lesson["active_version_status"] = active_version["status"] if active_version else ""
+        lesson["active_version_created_at"] = active_version["created_at"] if active_version else ""
+        lesson["latest_generation_error"] = (
+            (latest_failed or {}).get("generation_error")
+            or (active_version or {}).get("generation_error")
+            or ""
+        )
+        lesson["plan_json"] = ""
+        lesson["plan"] = {}
+        lesson["pdf_path"] = (current_version or {}).get("pdf_path", "")
+        if active_version:
+            lesson["record_status"] = active_version.get("status") or "pending"
+        elif current_version:
+            lesson["record_status"] = current_version.get("status") or REVIEW_PLAN_READY_STATUS
+        elif latest_version:
+            lesson["record_status"] = latest_version.get("status") or REVIEW_PLAN_FAILED_STATUS
+        else:
+            lesson["record_status"] = "pending"
+        lesson["generation_error"] = (
+            (active_version or {}).get("generation_error")
+            or (latest_failed or {}).get("generation_error")
+            or (current_version or {}).get("generation_error")
+            or ""
+        )
+        lesson["review_audio_path"] = (runtime_projection or {}).get("audio_path", "")
+        lesson["review_audio_request_key"] = (runtime_projection or {}).get("audio_request_key", "")
+        lesson["review_request_key"] = (runtime_projection or {}).get("request_key", "")
+        lesson["review_request_id"] = (runtime_projection or {}).get("request_id", "")
+        lesson["review_chat_provider"] = (runtime_projection or {}).get("chat_provider", "")
+        lesson["review_chat_model"] = (runtime_projection or {}).get("chat_model", "")
+        lesson["review_same_lesson_materials_json"] = (runtime_projection or {}).get("same_lesson_materials_json", "[]")
+        lesson["review_same_lesson_materials"] = []
+        lesson["review_generation_options"] = (runtime_projection or {}).get("generation_options", normalize_generation_options(None))
+        lesson["review_generation_summary"] = (runtime_projection or {}).get(
+            "generation_summary",
+            generation_options_summary(normalize_generation_options(None)),
+        )
+
+        creator = users_by_id.get(int(lesson.get("created_by_user_id") or 0), {})
+        lesson["creator_display_name"] = str(creator.get("display_name") or creator.get("username") or "").strip()
+        lesson["creator_username"] = str(creator.get("username") or "").strip()
+
+    return lessons
+
+
 def get_lesson(lesson_id: int):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM lessons WHERE id=?", (lesson_id,)).fetchone()
@@ -5937,12 +6147,39 @@ def get_lesson(lesson_id: int):
         return _attach_review_plan_version_summary(conn, d)
 
 
-def list_lessons(month_str: str = "", class_id: int = 0, class_scope: str = "all") -> list:
+def _normalize_pagination(page: int = 1, page_size: int = 50, max_page_size: int = 100) -> tuple[int, int, int]:
+    safe_page = max(1, int(page or 1))
+    safe_page_size = max(1, min(max_page_size, int(page_size or 50)))
+    return safe_page, safe_page_size, (safe_page - 1) * safe_page_size
+
+
+def _list_lessons_page(
+    *,
+    month_str: str = "",
+    class_id: int = 0,
+    class_scope: str = "all",
+    organization_id: int | None = None,
+    member_class_ids: list[int] | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    max_page_size: int = 100,
+) -> dict:
+    safe_page, safe_page_size, offset = _normalize_pagination(page, page_size, max_page_size=max_page_size)
     where_clauses: list[str] = []
     params: list[object] = []
+    if organization_id is not None:
+        where_clauses.append("l.organization_id=?")
+        params.append(int(organization_id))
     if class_id:
         where_clauses.append("l.class_id=?")
         params.append(class_id)
+    if member_class_ids is not None:
+        class_ids = sorted({int(item) for item in member_class_ids if int(item or 0) > 0})
+        if not class_ids:
+            return {"items": [], "total": 0, "page": safe_page, "page_size": safe_page_size}
+        placeholders = ",".join("?" for _ in class_ids)
+        where_clauses.append(f"l.class_id IN ({placeholders})")
+        params.extend(class_ids)
     if month_str:
         where_clauses.append("l.date LIKE ?")
         params.append(f"{month_str}%")
@@ -5951,17 +6188,65 @@ def list_lessons(month_str: str = "", class_id: int = 0, class_scope: str = "all
         where_clauses.append(lifecycle_clause)
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     with get_conn() as conn:
+        total_row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM lessons l
+            LEFT JOIN classes c ON c.id = l.class_id
+            {where_sql}
+            """,
+            params,
+        ).fetchone()
         rows = conn.execute(
             f"""
             SELECT l.*
             FROM lessons l
             LEFT JOIN classes c ON c.id = l.class_id
+            LEFT JOIN review_plan_versions cv ON cv.id = l.current_review_plan_version_id
             {where_sql}
-            ORDER BY l.created_at DESC, l.id DESC
+            ORDER BY COALESCE(NULLIF(cv.completed_at, ''), NULLIF(l.updated_at, ''), NULLIF(l.created_at, ''), NULLIF(l.date, '')) DESC,
+                     l.id DESC
+            LIMIT ? OFFSET ?
             """,
-            params,
+            [*params, safe_page_size, offset],
         ).fetchall()
-        return [_attach_review_plan_version_summary(conn, dict(r)) for r in rows]
+        items = _attach_review_plan_version_summaries_bulk(conn, [dict(r) for r in rows])
+        return {
+            "items": items,
+            "total": int(total_row["total"] if total_row else 0),
+            "page": safe_page,
+            "page_size": safe_page_size,
+        }
+
+
+def list_lessons_page(
+    month_str: str = "",
+    class_id: int = 0,
+    class_scope: str = "all",
+    page: int = 1,
+    page_size: int = 50,
+    max_page_size: int = 100,
+) -> dict:
+    return _list_lessons_page(
+        month_str=month_str,
+        class_id=class_id,
+        class_scope=class_scope,
+        page=page,
+        page_size=page_size,
+        max_page_size=max_page_size,
+    )
+
+
+def list_lessons(month_str: str = "", class_id: int = 0, class_scope: str = "all") -> list:
+    page = list_lessons_page(
+        month_str=month_str,
+        class_id=class_id,
+        class_scope=class_scope,
+        page=1,
+        page_size=100000,
+        max_page_size=100000,
+    )
+    return list(page["items"])
 
 
 def delete_lesson(lesson_id: int):
@@ -8371,6 +8656,42 @@ def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int 
         query_sql += " ORDER BY l.created_at DESC, l.id DESC"
         rows = conn.execute(query_sql, params).fetchall()
         return [_attach_review_plan_version_summary(conn, dict(row)) for row in rows]
+
+
+def list_lessons_page_for_actor(
+    actor_user: dict,
+    month_str: str = "",
+    class_id: int = 0,
+    class_scope: str = "current",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
+        return list_lessons_page(
+            month_str=month_str,
+            class_id=class_id,
+            class_scope=class_scope,
+            page=page,
+            page_size=page_size,
+        )
+    if (actor_user or {}).get("role") in {OWNER_ROLE, ADMIN_ROLE}:
+        return _list_lessons_page(
+            month_str=month_str,
+            class_id=class_id,
+            class_scope=class_scope,
+            organization_id=int(actor_user["organization_id"]),
+            page=page,
+            page_size=page_size,
+        )
+    return _list_lessons_page(
+        month_str=month_str,
+        class_id=class_id,
+        class_scope=class_scope,
+        organization_id=int(actor_user["organization_id"]),
+        member_class_ids=get_user_class_ids(int(actor_user["id"])),
+        page=page,
+        page_size=page_size,
+    )
 
 
 def list_consultations_for_actor(

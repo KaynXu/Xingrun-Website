@@ -173,6 +173,7 @@ from lesson_manager import (
     list_course_calendar_schedules_for_actor,
     list_lessons,
     list_lessons_for_actor,
+    list_lessons_page_for_actor,
     list_review_plan_versions,
     list_wrong_question_practice_sheets_for_student,
     list_wrong_question_practice_pack_jobs_for_class,
@@ -2914,7 +2915,12 @@ def _serialize_review_plan_version_for_response(lesson_id: int, version: object)
     return serialized
 
 
-def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = False) -> Optional[dict]:
+def _serialize_lesson_for_response(
+    lesson: object,
+    *,
+    include_versions: bool = False,
+    include_runtime: bool = False,
+) -> Optional[dict]:
     if not isinstance(lesson, dict):
         return None
     serialized = dict(lesson)
@@ -2949,25 +2955,30 @@ def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = F
         else {}
     )
     serialized["pdf_path"] = current_pdf_path if current_pdf_exists else ""
-    try:
-        latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
-    except Exception:
-        latest_run = None
-    if latest_run:
-        serialized["trace_id"] = latest_run.get("trace_id", "")
-        serialized["workflow_warnings"] = latest_run.get("warnings", [])
-        serialized["quality_review"] = latest_run.get("quality_review", {})
-        serialized["prompt_version"] = latest_run.get("prompt_version", "")
-        serialized["style_version"] = latest_run.get("style_version", "")
+    if include_runtime:
+        try:
+            latest_run = get_latest_review_plan_run_for_lesson(lesson_id)
+        except Exception:
+            latest_run = None
+        if latest_run:
+            serialized["trace_id"] = latest_run.get("trace_id", "")
+            serialized["workflow_warnings"] = latest_run.get("warnings", [])
+            serialized["quality_review"] = latest_run.get("quality_review", {})
+            serialized["prompt_version"] = latest_run.get("prompt_version", "")
+            serialized["style_version"] = latest_run.get("style_version", "")
     creator_user_id = int(serialized.get("created_by_user_id") or 0)
-    creator = get_user_by_id(creator_user_id) if creator_user_id else None
+    creator = None
+    if creator_user_id and not (serialized.get("creator_display_name") or serialized.get("creator_username")):
+        creator = get_user_by_id(creator_user_id)
     serialized["creator_display_name"] = str(
-        (creator or {}).get("display_name")
+        serialized.get("creator_display_name")
+        or (creator or {}).get("display_name")
         or (creator or {}).get("username")
         or ""
     ).strip()
     serialized["creator_username"] = str(
-        (creator or {}).get("username")
+        serialized.get("creator_username")
+        or (creator or {}).get("username")
         or ""
     ).strip()
     if include_versions:
@@ -7889,13 +7900,26 @@ def api_lessons_list():
     scope = (request.args.get("scope") or "current").strip().lower()
     if scope not in {"current", "history", "all"}:
         return jsonify({"error": "scope must be current, history, or all"}), 400
-    lessons = list_lessons_for_actor(
+    page = request.args.get("page", 1, type=int) or 1
+    page_size = request.args.get("page_size", 12, type=int) or 12
+    if page < 1:
+        return jsonify({"error": "page must be greater than 0"}), 400
+    if page_size < 1 or page_size > 100:
+        return jsonify({"error": "page_size must be between 1 and 100"}), 400
+    result = list_lessons_page_for_actor(
         user,
         month_str=month if month else "",
         class_id=class_id if class_id else 0,
         class_scope=scope,
+        page=page,
+        page_size=page_size,
     )
-    return jsonify(_serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)))
+    return jsonify({
+        "items": _serialize_lessons_for_response(result.get("items", [])),
+        "total": int(result.get("total") or 0),
+        "page": int(result.get("page") or page),
+        "page_size": int(result.get("page_size") or page_size),
+    })
 
 
 @app.route("/api/review-plans/<int:lesson_id>", methods=["GET"])
@@ -7906,7 +7930,7 @@ def api_lesson_get(lesson_id):
     lesson = get_lesson(lesson_id)
     if not lesson or not _can_access_lesson(user, lesson):
         return jsonify({"error": "not found"}), 404
-    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True)
+    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True, include_runtime=True)
     if serialized_lesson is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(serialized_lesson)

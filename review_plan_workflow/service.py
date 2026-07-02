@@ -36,6 +36,7 @@ from .quality_policy import (
     soften_quality_after_revision,
     soft_pass_warning_for_quality,
 )
+from .printable_questions import collect_day_printable_question_counts
 from .nodes.question_repair import can_repair_questions
 from .llm.client import merge_usage
 from .observability import (
@@ -163,7 +164,8 @@ def _fallback_agent_blueprint(
         writer_instructions.extend(
             [
                 "当前是当天课后复习模式：只输出 day=1，把本节课内容压缩成当天可完成的复习。",
-                "当天课后复习必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz 对应内容。",
+                "当天课后复习必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz、spiral_review 对应内容。",
+                "spiral_review 只做本课内部交叉回收：把本节课 2-3 个关键点混在一起隔题复现，不要写成长期第7天/第30天安排。",
                 "当天课后复习至少提供 5 个不重复的可打印题目，其中填空不少于 3 个，选择诊断不少于 2 个。",
             ]
         )
@@ -192,11 +194,56 @@ def _fallback_agent_blueprint(
         success_criteria=[
             "每天有可打印填空、完整选择题、主动回忆和完成标准。",
             "复习任务能对应课堂主题、错因和薄弱点。",
-            *[f"包含组件：{component}" for component in required_components[:5]],
+            *[f"包含组件：{component}" for component in required_components[:7]],
         ],
         assumptions=["parent_planner_failed_or_disabled"],
         confidence=0.45,
     )
+
+
+def _is_compressed_single_day(review_input: ReviewPlanInput) -> bool:
+    return review_input.schedule_mode == "compressed" and list(review_input.review_days or []) == [1]
+
+
+def _has_spiral_review(day: dict[str, Any]) -> bool:
+    value = day.get("spiral_review")
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(str(item or "").strip() for item in value)
+    if isinstance(value, dict):
+        return any(str(item or "").strip() for item in value.values())
+    return False
+
+
+def _ensure_single_day_spiral_review(plan: dict[str, Any], review_input: ReviewPlanInput) -> None:
+    if not _is_compressed_single_day(review_input):
+        return
+    days = plan.get("days") if isinstance(plan.get("days"), list) else []
+    if len(days) != 1 or not isinstance(days[0], dict) or _has_spiral_review(days[0]):
+        return
+    day = days[0]
+    counts = collect_day_printable_question_counts(day)
+    if counts.visible_question_count < 5:
+        return
+
+    lesson_info = plan.get("lesson_info") if isinstance(plan.get("lesson_info"), dict) else {}
+    topic_candidates = []
+    for source in (
+        plan.get("full_review_topics"),
+        lesson_info.get("key_categories") if isinstance(lesson_info, dict) else None,
+    ):
+        if isinstance(source, list):
+            topic_candidates.extend(str(item).strip() for item in source if str(item or "").strip())
+    topic = str(lesson_info.get("topic") or review_input.topic or "本课内容").strip() if isinstance(lesson_info, dict) else "本课内容"
+    if not topic_candidates and topic:
+        topic_candidates.append(topic)
+    focus_text = "、".join(topic_candidates[:3]) or topic or "本课关键点"
+
+    day["spiral_review"] = [
+        f"交叉回收：把{focus_text}混在同一轮练习中检查，做题时标出每题对应的知识点。",
+        "隔题复现：每完成 2 道题，用一句话复述本题用到的公式、条件或错因。",
+    ]
 
 
 def _has_runtime_key_for_provider(provider: str) -> bool:
@@ -417,6 +464,7 @@ def _normalize_output_plan(
         for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
             if isinstance(day, dict) and isinstance(day.get("quotes"), list):
                 day["quotes"] = []
+    _ensure_single_day_spiral_review(normalized, review_input)
     return normalized
 
 

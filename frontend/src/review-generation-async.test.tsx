@@ -22,10 +22,13 @@ test('review history source polls review plans while pending lessons exist', () 
 });
 
 test('review history source normalizes malformed task polling responses', () => {
-  assert.match(reviewGenerationSource, /apiFetch<unknown>\('\/api\/review-plans'\)/);
-  assert.match(reviewGenerationSource, /const nextLessons = normalizeReviewLessonsResponse\(payload\);/);
-  assert.match(reviewGenerationSource, /setLessons\(nextLessons\);/);
-  assert.match(reviewGenerationSource, /onLessonsChange\(nextLessons\);/);
+  assert.match(reviewGenerationSource, /new URLSearchParams\(\{\s*page: String\(historyPage\),\s*page_size: String\(REVIEW_HISTORY_PAGE_SIZE\),\s*\}\)/);
+  assert.match(reviewGenerationSource, /apiFetch<unknown>\(`\/api\/review-plans\?\$\{params\.toString\(\)\}`\)/);
+  assert.match(reviewGenerationSource, /const nextPage = normalizeReviewLessonsPageResponse\(payload\);/);
+  assert.match(reviewGenerationSource, /setLessons\(nextPage\.items\);/);
+  assert.match(reviewGenerationSource, /setTotalLessons\(nextPage\.total\);/);
+  assert.match(reviewGenerationSource, /onLessonsChange\(nextPage\.items\);/);
+  assert.doesNotMatch(reviewGenerationSource, /lessons\.slice\(\(currentHistoryPage - 1\) \* REVIEW_HISTORY_PAGE_SIZE/);
 });
 
 test('review history source exposes regenerate action and immediate progress feedback', () => {

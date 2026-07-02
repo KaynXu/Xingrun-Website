@@ -27,7 +27,7 @@ from review_plan_workflow.schemas import (
     normalize_final_review_plan,
     validate_final_review_plan,
 )
-from review_plan_workflow.service import _fallback_agent_blueprint, generate_single_lesson_review_plan
+from review_plan_workflow.service import _fallback_agent_blueprint, _normalize_output_plan, generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -184,6 +184,27 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             schedule_mode="compressed",
         )
         self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_compressed_single_day_normalization_adds_lightweight_spiral_review(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0].pop("spiral_review", None)
+        review_input = ReviewPlanInput(
+            summary_text="勾股数、特殊角度αβ与和角推导完整课堂逐字稿",
+            subject="数学",
+            grade="高一",
+            topic="勾股数与特殊角推导",
+            schedule_mode="compressed",
+            review_days=[1],
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+        )
+
+        normalized = _normalize_output_plan(plan, review_input)
+
+        self.assertIn("spiral_review", normalized["days"][0])
+        self.assertIn("交叉回收", normalized["days"][0]["spiral_review"][0])
+        self.assertIn("隔题复现", normalized["days"][0]["spiral_review"][1])
 
     def test_normalizes_task_blocks_for_compressed_day_quality_gate(self):
         plan = {
@@ -597,6 +618,35 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         self.assertFalse(can_soft_pass_after_revision(schema_quality))
+
+    def test_quality_policy_softens_spiral_review_only_issue_after_revision(self):
+        from review_plan_workflow.quality_policy import (
+            can_soft_pass_after_revision,
+            soften_quality_after_revision,
+            soft_pass_warning_for_quality,
+        )
+
+        quality = QualityReview(
+            score=82,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="review_loop",
+                    description="计划缺少明确的 spiral_review 组件，需要补充交叉回收或隔题复现。",
+                    suggested_fix="补一个轻量 spiral_review。",
+                )
+            ],
+            revision_instructions=["补充 spiral_review"],
+        )
+
+        self.assertTrue(can_soft_pass_after_revision(quality))
+        softened = soften_quality_after_revision(quality)
+        self.assertTrue(softened.passed)
+        self.assertFalse(softened.must_revise)
+        self.assertEqual(softened.issues[0].severity, "medium")
+        self.assertEqual(soft_pass_warning_for_quality(quality)[0], "quality_review_loop_soft_pass")
 
     def test_question_repair_localizes_cn_choice_issue(self):
         from review_plan_workflow.nodes.question_repair import find_question_repair_targets
@@ -2410,7 +2460,10 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             logs=[{"node_name": "quality_reviewer", "status": "success", "latency_ms": 1}],
         )
 
-        serialized = app_module._serialize_lesson_for_response(lesson_manager.get_lesson(lesson_id))
+        serialized = app_module._serialize_lesson_for_response(
+            lesson_manager.get_lesson(lesson_id),
+            include_runtime=True,
+        )
 
         self.assertEqual(serialized["trace_id"], "trace-serialization")
         self.assertEqual(serialized["workflow_warnings"][0]["code"], "demo")
