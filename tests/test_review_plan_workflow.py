@@ -448,6 +448,21 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertTrue(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
 
+    def test_quality_policy_skips_llm_reviewer_when_validator_blocks_delivery(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(score=50, passed=False, must_revise=True, issues=[], revision_instructions=[])
+        source_brief = ReviewPlanSourceBrief(confidence=0.2, missing_fields=["topic"])
+
+        self.assertFalse(
+            should_run_llm_quality_review(
+                local_quality=local_quality,
+                source_brief=source_brief,
+                validator_passed=False,
+            )
+        )
+
     def test_quality_policy_caps_structural_revision_attempts_to_one(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
         from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
@@ -1437,6 +1452,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(usage["input_tokens"], 4)
         self.assertEqual(usage["output_tokens"], 6)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(run["node_outputs"]["review_plan_validator_initial"]["passed"])
+        self.assertTrue(run["node_outputs"]["review_plan_evaluator"]["passed"])
         self.assertEqual(run["node_outputs"]["quality_reviewer_initial"]["mode"], "skipped")
         self.assertEqual(
             run["node_outputs"]["quality_reviewer_initial"]["reason"],
