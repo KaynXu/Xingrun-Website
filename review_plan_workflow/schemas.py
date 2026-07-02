@@ -42,7 +42,7 @@ class LessonSourcePack(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     schema_version: str = "lesson_source_pack_v1"
-    parser_version: str = "source_pack_parser_v1"
+    parser_version: str = "source_pack_parser_v2"
     source_id: str = ""
     source_type: str = "text"
     title: str = ""

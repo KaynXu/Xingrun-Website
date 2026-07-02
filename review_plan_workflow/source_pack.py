@@ -17,11 +17,19 @@ from review_plan_workflow.source_brief import build_deterministic_source_brief, 
 
 
 SOURCE_PACK_SCHEMA_VERSION = "lesson_source_pack_v1"
-SOURCE_PACK_PARSER_VERSION = "source_pack_parser_v1"
+SOURCE_PACK_PARSER_VERSION = "source_pack_parser_v2"
+MAX_SOURCE_SEGMENTS = 240
+SEGMENT_MAX_CHARS = 900
 _MATH_TOKEN_RE = re.compile(
     r"(\$[^$]{1,120}\$|\\(?:sqrt|frac|angle|triangle|cong|circ)\b[^\s，。；;、]{0,40}|√\d+|[αβ]\+?[αβ]?|[a-zA-Z]\^\d|[0-9]+:[0-9√:]+)"
 )
 _TEACHER_ACTION_RE = re.compile(r"(必须|一定要|不能|要求|课后作业|明天抽查|背熟|重新演算|完整抄写|打五星)")
+_SECTION_HEADING_RE = re.compile(
+    r"^\s*(?:第[一二三四五六七八九十0-9]+部分|[一二三四五六七八九十0-9]+[、.．]|课堂收尾)\s*[:：]?\s*(.{0,90})\s*$"
+)
+_SENTENCE_RE = re.compile(r"[^。！？!?；;\n]+[。！？!?；;]?")
+_LOCAL_TOPIC_MARKERS = ("主题：", "主题:", "知识点：", "知识点:", "重点：", "重点:", "结论：", "结论:", "定理：", "定理:", "公式：", "公式:")
+_EXAMPLE_MARKERS = ("例题：", "例题:", "题目：", "题目:", "已知", "求证", "求解", "证明")
 
 
 def source_pack_cache_key(
@@ -100,18 +108,123 @@ def _dedupe_strings(values: list[str], limit: int) -> list[str]:
     return result
 
 
+def _segment_cache_key(*, chunk_hash: str, section_title: str = "") -> str:
+    payload = {
+        "chunk_hash": str(chunk_hash or ""),
+        "section_title": str(section_title or "")[:120],
+        "schema_version": SOURCE_PACK_SCHEMA_VERSION,
+        "parser_version": SOURCE_PACK_PARSER_VERSION,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _heading_title(line: str, *, line_index: int) -> str:
+    text = str(line or "").strip()
+    if not text:
+        return ""
+    match = _SECTION_HEADING_RE.match(text)
+    if match:
+        return text[:90]
+    if line_index == 1 and len(text) <= 90 and not re.search(r"[。！？!?；;]", text):
+        return text[:90]
+    return ""
+
+
+def _split_long_line(line: str) -> list[str]:
+    text = str(line or "").strip()
+    if not text:
+        return []
+    if len(text) <= SEGMENT_MAX_CHARS:
+        return [text]
+    parts = [part.strip() for part in _SENTENCE_RE.findall(text) if part.strip()]
+    if not parts:
+        parts = [text[index : index + SEGMENT_MAX_CHARS] for index in range(0, len(text), SEGMENT_MAX_CHARS)]
+    chunks: list[str] = []
+    current = ""
+    for part in parts:
+        if len(part) > SEGMENT_MAX_CHARS:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(part[index : index + SEGMENT_MAX_CHARS] for index in range(0, len(part), SEGMENT_MAX_CHARS))
+            continue
+        if current and len(current) + len(part) > SEGMENT_MAX_CHARS:
+            chunks.append(current)
+            current = part
+        else:
+            current = f"{current}{part}" if current else part
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _local_topics(text: str, section_title: str) -> list[str]:
+    topics = [section_title] if section_title else []
+    for marker in _LOCAL_TOPIC_MARKERS:
+        if marker not in text:
+            continue
+        tail = text.split(marker, 1)[1].strip()
+        if tail:
+            topics.append(re.split(r"[。！？!?；;\n]", tail, 1)[0][:60])
+    return _dedupe_strings(topics, 6)
+
+
 def _build_segments(cleaned: str) -> list[SourceSegment]:
     segments: list[SourceSegment] = []
     cursor = 0
-    for index, line in enumerate([line.strip() for line in str(cleaned or "").splitlines() if line.strip()], start=1):
+    section_index = 0
+    current_section_id = ""
+    current_section_title = ""
+    current_chunk_index = 0
+    for line_index, line in enumerate([line.strip() for line in str(cleaned or "").splitlines() if line.strip()], start=1):
         start = cleaned.find(line, cursor)
         if start < 0:
             start = cursor
         end = start + len(line)
         cursor = end
-        kind = "heading" if index == 1 and len(line) <= 80 and not re.search(r"[。！？!?；;]", line) else "text"
-        segments.append(SourceSegment(id=f"seg-{index:03d}", text=line, offset_start=start, offset_end=end, kind=kind))
-        if len(segments) >= 120:
+        heading = _heading_title(line, line_index=line_index)
+        if heading:
+            section_index += 1
+            current_section_id = f"sec-{section_index:03d}"
+            current_section_title = heading
+            current_chunk_index = 0
+        elif not current_section_id:
+            section_index = 1
+            current_section_id = "sec-001"
+            current_section_title = ""
+        chunks = _split_long_line(line)
+        chunk_cursor = start
+        for chunk in chunks:
+            chunk_start = cleaned.find(chunk, chunk_cursor)
+            if chunk_start < 0:
+                chunk_start = chunk_cursor
+            chunk_end = chunk_start + len(chunk)
+            chunk_cursor = chunk_end
+            current_chunk_index += 1
+            chunk_hash = source_text_hash(chunk)
+            kind = "heading" if heading and chunk == chunks[0] else "text"
+            segments.append(
+                SourceSegment(
+                    id=f"seg-{len(segments) + 1:03d}",
+                    text=chunk,
+                    offset_start=chunk_start,
+                    offset_end=chunk_end,
+                    kind=kind,
+                    section_id=current_section_id,
+                    section_title=current_section_title,
+                    chunk_index=current_chunk_index,
+                    chunk_hash=chunk_hash,
+                    extraction_cache_key=_segment_cache_key(chunk_hash=chunk_hash, section_title=current_section_title),
+                    local_topics=_local_topics(chunk, current_section_title),
+                    example_count=sum(1 for marker in _EXAMPLE_MARKERS if marker in chunk),
+                    math_count=len(_MATH_TOKEN_RE.findall(chunk)),
+                    char_count=len(chunk),
+                )
+            )
+            if len(segments) >= MAX_SOURCE_SEGMENTS:
+                return segments
+        if len(segments) >= MAX_SOURCE_SEGMENTS:
             break
     return segments
 
@@ -174,6 +287,19 @@ def source_pack_trace_payload(source_pack: LessonSourcePack | dict | None) -> di
         data = source_pack
     else:
         return {}
+    segments = data.get("segments") or []
+    section_ids = {
+        str(segment.get("section_id") or "")
+        for segment in segments
+        if isinstance(segment, dict) and str(segment.get("section_id") or "")
+    }
+    segment_cache_key_count = len(
+        [
+            segment
+            for segment in segments
+            if isinstance(segment, dict) and str(segment.get("extraction_cache_key") or "")
+        ]
+    )
     return {
         "schema_version": str(data.get("schema_version") or SOURCE_PACK_SCHEMA_VERSION),
         "parser_version": str(data.get("parser_version") or ""),
@@ -181,7 +307,9 @@ def source_pack_trace_payload(source_pack: LessonSourcePack | dict | None) -> di
         "source_type": str(data.get("source_type") or ""),
         "title": str(data.get("title") or "")[:80],
         "language": str(data.get("language") or ""),
-        "segments_count": len(data.get("segments") or []),
+        "segments_count": len(segments),
+        "sections_count": len(section_ids),
+        "segment_cache_key_count": segment_cache_key_count,
         "detected_topics_count": len(data.get("detected_topics") or []),
         "math_blocks_count": len(data.get("math_blocks") or []),
         "teacher_actions_count": len(data.get("teacher_actions") or []),
@@ -223,6 +351,8 @@ def build_lesson_source_pack(
     warnings = [f"missing:{field}" for field in brief.missing_fields]
     if not segments:
         warnings.append("empty_source")
+    if len(cleaned) > SEGMENT_MAX_CHARS or len(segments) > 20:
+        warnings.append("long_source_segmented")
     return LessonSourcePack(
         schema_version=SOURCE_PACK_SCHEMA_VERSION,
         parser_version=SOURCE_PACK_PARSER_VERSION,
@@ -272,6 +402,8 @@ def build_lesson_source_pack_from_artifact(
     warnings = [f"missing:{field}" for field in (brief_data.get("missing_fields") or [])]
     if not segments:
         warnings.append("empty_source")
+    if len(cleaned) > SEGMENT_MAX_CHARS or len(segments) > 20:
+        warnings.append("long_source_segmented")
     return LessonSourcePack(
         schema_version=SOURCE_PACK_SCHEMA_VERSION,
         parser_version=SOURCE_PACK_PARSER_VERSION,
