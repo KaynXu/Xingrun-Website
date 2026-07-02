@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import hashlib
+import json
 from datetime import datetime
 from typing import Any
 
@@ -15,10 +17,61 @@ from review_plan_workflow.source_brief import build_deterministic_source_brief, 
 
 
 SOURCE_PACK_SCHEMA_VERSION = "lesson_source_pack_v1"
+SOURCE_PACK_PARSER_VERSION = "source_pack_parser_v1"
 _MATH_TOKEN_RE = re.compile(
     r"(\$[^$]{1,120}\$|\\(?:sqrt|frac|angle|triangle|cong|circ)\b[^\s，。；;、]{0,40}|√\d+|[αβ]\+?[αβ]?|[a-zA-Z]\^\d|[0-9]+:[0-9√:]+)"
 )
 _TEACHER_ACTION_RE = re.compile(r"(必须|一定要|不能|要求|课后作业|明天抽查|背熟|重新演算|完整抄写|打五星)")
+
+
+def source_pack_cache_key(
+    *,
+    raw_source_hash: str,
+    cleaned_source_hash: str,
+    schema_version: str = SOURCE_PACK_SCHEMA_VERSION,
+    parser_version: str = SOURCE_PACK_PARSER_VERSION,
+) -> str:
+    payload = {
+        "raw_source_hash": str(raw_source_hash or ""),
+        "cleaned_source_hash": str(cleaned_source_hash or ""),
+        "schema_version": str(schema_version or SOURCE_PACK_SCHEMA_VERSION),
+        "parser_version": str(parser_version or SOURCE_PACK_PARSER_VERSION),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def source_pack_cache_key_for_text(*, raw_text: str, cleaned_text: str = "") -> str:
+    raw_hash = source_text_hash(raw_text)
+    cleaned_hash = source_text_hash(cleaned_text if cleaned_text else clean_source_text(raw_text))
+    return source_pack_cache_key(raw_source_hash=raw_hash, cleaned_source_hash=cleaned_hash)
+
+
+def source_pack_needs_rebuild(
+    source_pack: LessonSourcePack | dict | None,
+    *,
+    raw_source_hash: str,
+    cleaned_source_hash: str,
+) -> bool:
+    if source_pack is None:
+        return True
+    if hasattr(source_pack, "model_dump"):
+        data = source_pack.model_dump()
+    elif isinstance(source_pack, dict):
+        data = source_pack
+    else:
+        return True
+    expected_key = source_pack_cache_key(
+        raw_source_hash=raw_source_hash,
+        cleaned_source_hash=cleaned_source_hash,
+    )
+    return not (
+        str(data.get("schema_version") or "") == SOURCE_PACK_SCHEMA_VERSION
+        and str(data.get("parser_version") or "") == SOURCE_PACK_PARSER_VERSION
+        and str(data.get("raw_source_hash") or data.get("source_hash") or "") == str(raw_source_hash or "")
+        and str(data.get("cleaned_source_hash") or "") == str(cleaned_source_hash or "")
+        and str(data.get("cache_key") or "") == expected_key
+    )
 
 
 def _stable_source_id(source_type: str, source_hash: str) -> str:
@@ -123,6 +176,7 @@ def source_pack_trace_payload(source_pack: LessonSourcePack | dict | None) -> di
         return {}
     return {
         "schema_version": str(data.get("schema_version") or SOURCE_PACK_SCHEMA_VERSION),
+        "parser_version": str(data.get("parser_version") or ""),
         "source_id": str(data.get("source_id") or ""),
         "source_type": str(data.get("source_type") or ""),
         "title": str(data.get("title") or "")[:80],
@@ -133,6 +187,9 @@ def source_pack_trace_payload(source_pack: LessonSourcePack | dict | None) -> di
         "teacher_actions_count": len(data.get("teacher_actions") or []),
         "warnings": list(data.get("warnings") or [])[:10],
         "source_hash": str(data.get("source_hash") or ""),
+        "raw_source_hash": str(data.get("raw_source_hash") or ""),
+        "cleaned_source_hash": str(data.get("cleaned_source_hash") or ""),
+        "cache_key": str(data.get("cache_key") or ""),
     }
 
 
@@ -157,6 +214,7 @@ def build_lesson_source_pack(
     )
     cleaned = clean_source_text(raw_text)
     source_hash = source_text_hash(raw_text)
+    cleaned_hash = source_text_hash(cleaned)
     segments = _build_segments(cleaned)
     topics = _dedupe_strings(
         [*brief.lesson_title_candidates, *(point.name for point in brief.knowledge_points)],
@@ -167,6 +225,7 @@ def build_lesson_source_pack(
         warnings.append("empty_source")
     return LessonSourcePack(
         schema_version=SOURCE_PACK_SCHEMA_VERSION,
+        parser_version=SOURCE_PACK_PARSER_VERSION,
         source_id=_stable_source_id(source_type, source_hash),
         source_type=str(source_type or "text"),
         title=_pack_title(brief, title or topic),
@@ -177,6 +236,9 @@ def build_lesson_source_pack(
         teacher_actions=_extract_teacher_actions(cleaned, segments),
         warnings=warnings,
         source_hash=source_hash,
+        raw_source_hash=source_hash,
+        cleaned_source_hash=cleaned_hash,
+        cache_key=source_pack_cache_key(raw_source_hash=source_hash, cleaned_source_hash=cleaned_hash),
         created_at=created_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
 
@@ -198,6 +260,7 @@ def build_lesson_source_pack_from_artifact(
     raw_text = str(source_text or cleaned_source_text or "")
     cleaned = clean_source_text(cleaned_source_text or source_text)
     source_hash = str(source_text_hash_value or brief_data.get("source_text_hash") or source_text_hash(raw_text))
+    cleaned_hash = source_text_hash(cleaned)
     segments = _build_segments(cleaned)
     topics = _dedupe_strings(
         [
@@ -211,6 +274,7 @@ def build_lesson_source_pack_from_artifact(
         warnings.append("empty_source")
     return LessonSourcePack(
         schema_version=SOURCE_PACK_SCHEMA_VERSION,
+        parser_version=SOURCE_PACK_PARSER_VERSION,
         source_id=_stable_source_id(source_type, source_hash),
         source_type=str(source_type or "text"),
         title=_pack_title(ReviewPlanSourceBrief.model_validate(brief_data or {}), ""),
@@ -221,5 +285,8 @@ def build_lesson_source_pack_from_artifact(
         teacher_actions=_extract_teacher_actions(cleaned, segments),
         warnings=warnings,
         source_hash=source_hash,
+        raw_source_hash=source_hash,
+        cleaned_source_hash=cleaned_hash,
+        cache_key=source_pack_cache_key(raw_source_hash=source_hash, cleaned_source_hash=cleaned_hash),
         created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )

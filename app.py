@@ -273,7 +273,8 @@ from class_commentary import list_colleague_skills, load_colleague_skill, payloa
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
-from review_plan_workflow.source_brief import build_deterministic_source_brief
+from review_plan_workflow.source_brief import build_deterministic_source_brief, clean_source_text, source_text_hash
+from review_plan_workflow.source_pack import source_pack_needs_rebuild
 from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
@@ -1143,10 +1144,16 @@ def _run_review_plan_generation_job(
         version_source_text = str((version or {}).get("source_text") or "").strip()
         source_text_for_generation = version_cleaned_source_text or version_source_text or raw_text
         source_snapshot_text = version_source_text or source_text_for_generation
+        expected_source_hash = str((version or {}).get("source_text_hash") or "").strip() or source_text_hash(source_snapshot_text)
+        expected_cleaned_hash = source_text_hash(version_cleaned_source_text or clean_source_text(source_text_for_generation))
 
         if version_id and (
             not str((version or {}).get("source_text_hash") or "").strip()
-            or not ((version or {}).get("source_pack") or {})
+            or source_pack_needs_rebuild(
+                (version or {}).get("source_pack"),
+                raw_source_hash=expected_source_hash,
+                cleaned_source_hash=expected_cleaned_hash,
+            )
         ):
             source_brief = build_deterministic_source_brief(
                 raw_text=source_text_for_generation,

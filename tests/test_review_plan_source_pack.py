@@ -1,6 +1,11 @@
 import unittest
 
-from review_plan_workflow.source_pack import build_lesson_source_pack, source_pack_trace_payload
+from review_plan_workflow.source_pack import (
+    build_lesson_source_pack,
+    source_pack_cache_key_for_text,
+    source_pack_needs_rebuild,
+    source_pack_trace_payload,
+)
 
 
 class ReviewPlanSourcePackTestCase(unittest.TestCase):
@@ -27,6 +32,10 @@ class ReviewPlanSourcePackTestCase(unittest.TestCase):
 
         self.assertEqual(pack.source_hash, pack_again.source_hash)
         self.assertEqual(pack.source_id, pack_again.source_id)
+        self.assertEqual(pack.cache_key, pack_again.cache_key)
+        self.assertEqual(pack.raw_source_hash, pack.source_hash)
+        self.assertTrue(pack.cleaned_source_hash.startswith("sha256:"))
+        self.assertEqual(pack.parser_version, "source_pack_parser_v1")
         self.assertEqual([segment.id for segment in pack.segments], [segment.id for segment in pack_again.segments])
         self.assertEqual(pack.title, "勾股数、特殊角度αβ与和角推导")
         self.assertGreaterEqual(len(pack.segments), 4)
@@ -34,6 +43,20 @@ class ReviewPlanSourcePackTestCase(unittest.TestCase):
         self.assertTrue(any(block.raw in {"3:4:5", "1:√2"} or "√2" in block.raw for block in pack.math_blocks))
         self.assertTrue(any(action.action_type == "homework" for action in pack.teacher_actions))
         self.assertTrue(any("抽查" in action.text for action in pack.teacher_actions))
+        self.assertFalse(
+            source_pack_needs_rebuild(
+                pack,
+                raw_source_hash=pack.raw_source_hash,
+                cleaned_source_hash=pack.cleaned_source_hash,
+            )
+        )
+        self.assertTrue(
+            source_pack_needs_rebuild(
+                {"schema_version": pack.schema_version, "source_hash": pack.source_hash},
+                raw_source_hash=pack.raw_source_hash,
+                cleaned_source_hash=pack.cleaned_source_hash,
+            )
+        )
 
     def test_source_pack_trace_payload_does_not_include_source_text(self):
         pack = build_lesson_source_pack(raw_text="主题：一次函数\n必须整理错题。", source_type="text")
@@ -41,8 +64,18 @@ class ReviewPlanSourcePackTestCase(unittest.TestCase):
         payload = source_pack_trace_payload(pack)
 
         self.assertEqual(payload["segments_count"], 2)
+        self.assertEqual(payload["parser_version"], "source_pack_parser_v1")
+        self.assertEqual(payload["cache_key"], pack.cache_key)
         self.assertIn("source_hash", payload)
         self.assertNotIn("一次函数", str(payload.get("segments", "")))
+
+    def test_source_pack_cache_key_depends_on_raw_and_cleaned_text(self):
+        key_a = source_pack_cache_key_for_text(raw_text=" 主题：一次函数\n\n必须整理错题。 ")
+        key_b = source_pack_cache_key_for_text(raw_text="主题：一次函数\n必须整理错题。")
+        key_c = source_pack_cache_key_for_text(raw_text="主题：二次函数\n必须整理错题。")
+
+        self.assertNotEqual(key_a, key_b)
+        self.assertNotEqual(key_b, key_c)
 
 
 if __name__ == "__main__":

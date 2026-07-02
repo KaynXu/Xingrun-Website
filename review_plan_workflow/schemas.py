@@ -42,6 +42,7 @@ class LessonSourcePack(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     schema_version: str = "lesson_source_pack_v1"
+    parser_version: str = "source_pack_parser_v1"
     source_id: str = ""
     source_type: str = "text"
     title: str = ""
@@ -52,6 +53,9 @@ class LessonSourcePack(BaseModel):
     teacher_actions: list[SourceTeacherAction] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     source_hash: str = ""
+    raw_source_hash: str = ""
+    cleaned_source_hash: str = ""
+    cache_key: str = ""
     created_at: str = ""
 
 
