@@ -101,6 +101,7 @@ def _score_quality(
     *,
     subject: str,
     review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
     node_key: str,
 ) -> QualityReview:
@@ -110,6 +111,7 @@ def _score_quality(
         required_review_days=review_input.review_days,
         schedule_mode=review_input.schedule_mode,
         constraints=review_input.constraints,
+        source_brief=source_brief,
     )
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
@@ -647,6 +649,7 @@ def _maybe_revise_plan(
             current_plan,
             subject=subject,
             review_input=review_input,
+            source_brief=source_brief,
             context=context,
             node_key=f"quality_reviewer_rules_after_revision_{attempt}",
         )
@@ -700,6 +703,7 @@ def _maybe_revise_plan(
                 repaired_plan,
                 subject=subject,
                 review_input=review_input,
+                source_brief=source_brief,
                 context=context,
                 node_key=f"quality_reviewer_rules_after_question_repair_{attempt}",
             )
@@ -885,6 +889,7 @@ def generate_single_lesson_review_plan(
                 plan,
                 subject=route.selected_subject,
                 review_input=review_input,
+                source_brief=source_brief,
                 context=context,
                 node_key="quality_reviewer_rules_initial",
             )

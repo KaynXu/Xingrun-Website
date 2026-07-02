@@ -9,6 +9,7 @@ from review_plan_workflow.printable_questions import count_printable_questions
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.renderer_contract import dry_run_review_plan_renderer
 from review_plan_workflow.schemas import normalize_final_review_plan, validate_final_review_plan
+from review_plan_workflow.source_brief import build_deterministic_source_brief
 from review_plan_workflow.source_pack import build_lesson_source_pack, source_pack_trace_payload
 
 
@@ -339,6 +340,22 @@ def _source_pack_for_fixture(fixture: dict[str, Any]):
     )
 
 
+def _source_brief_for_fixture(fixture: dict[str, Any]):
+    input_payload = fixture.get("input") if isinstance(fixture.get("input"), dict) else {}
+    generation_options = input_payload.get("generation_options")
+    if not isinstance(generation_options, dict):
+        generation_options = input_payload.get("generationOptions")
+    if not isinstance(generation_options, dict):
+        generation_options = {}
+    return build_deterministic_source_brief(
+        raw_text=_fixture_source_text(fixture),
+        subject=str(input_payload.get("subject") or ""),
+        topic=str(input_payload.get("topic") or input_payload.get("target") or ""),
+        weak_points="；".join(str(item) for item in _list_value(input_payload.get("knownWeaknesses"))),
+        user_requirements=str(generation_options.get("user_requirements") or generation_options.get("userRequirements") or ""),
+    )
+
+
 def _assert_source_pack_min_segments(plan: dict[str, Any], assertion: dict[str, Any], fixture: dict[str, Any]) -> None:
     pack = _source_pack_for_fixture(fixture)
     minimum = int(assertion.get("minimum") or 1)
@@ -500,6 +517,8 @@ def evaluate_plan_against_fixture(plan: dict[str, Any], fixture: dict[str, Any],
         subject=subject,
         required_review_days=_required_review_days_from_fixture(fixture),
         schedule_mode=str(generation_options.get("schedule_mode") or generation_options.get("scheduleMode") or "standard"),
+        constraints=generation_options.get("constraints") if isinstance(generation_options.get("constraints"), dict) else {},
+        source_brief=_source_brief_for_fixture(fixture),
     )
     plan_text = _stringify(evaluation_plan)
 

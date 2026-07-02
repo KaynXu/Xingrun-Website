@@ -1481,7 +1481,7 @@ def build_labels(chinese_only):
             "knowledge_answer_mixed": "课堂方法参考答案",
             "knowledge_answer_oral": "口述参考要点",
             "oral_prompt_prefix": "提问",
-            "footer_right": "课堂原话回放 | 第{page}页",
+            "footer_right": "课后复习计划 | 第{page}页",
         }
 
     return {
@@ -1518,7 +1518,7 @@ def build_labels(chinese_only):
         "knowledge_answer_mixed": "课堂方法参考答案 / Method Review Answers",
         "knowledge_answer_oral": "口述参考要点 / Oral Reference Points",
         "oral_prompt_prefix": "Prompt",
-        "footer_right": "Quote Replay Layout | Page {page}",
+        "footer_right": "Review Plan | Page {page}",
     }
 
 

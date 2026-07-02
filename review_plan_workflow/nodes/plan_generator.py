@@ -87,6 +87,7 @@ def _user_message(
             "硬性选择题契约：所有 choices 必须有完整 question、4 个完整 options 和 answer；options 不能只写 A/B/C/D，必须写成 A. 具体选项内容；answer 只能是 A/B/C/D。",
             f"硬性复习日契约：days 必须且只能覆盖 {review_input.review_days}；不得额外生成 1/2/7/14/30 中未被指定的日期。",
             "硬性题量契约：如果已解析老师硬约束里有 requested_question_count，最终可打印填空题和选择题总数必须精确匹配该数量。",
+            "当天10题质量契约：如果 schedule_mode=compressed 且 requested_question_count 约为 10，题目要覆盖基础记忆/公式比例、计算应用、推导链路和综合诊断；主动回忆卡片至少承接 3 条课堂方法链，不要只写薄的定义记忆题。",
             "弱素材兜底契约：如果 source_brief 缺 topic/knowledge_points 或课堂总结过短，仍要生成可交付计划；使用 subject/grade/user_requirements 做通用复习，topic 写成可读课程标题但不要出现“待确认/需确认”，需要确认的信息只写进 assumptions。",
             "覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；素材充足时优先来自课堂材料，素材不足时生成该年级该科目的通用复习范围，不能只写“本节课内容/综合复习”。",
             "硬性课堂金句契约：quotes 只保留课堂文本中老师真实强调过的方法句；没有证据就返回空数组，禁止把使用说明、完成标准、正确率要求或“每一个复习日都要完整复习整节课内容”写成金句。",

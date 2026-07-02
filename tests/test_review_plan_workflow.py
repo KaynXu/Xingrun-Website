@@ -29,6 +29,7 @@ from review_plan_workflow.schemas import (
     validate_final_review_plan,
 )
 from review_plan_workflow.service import _fallback_agent_blueprint, _normalize_output_plan, generate_single_lesson_review_plan
+from review_plan_workflow.source_brief import build_deterministic_source_brief
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -1154,6 +1155,55 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertFalse(review.passed)
         self.assertTrue(any("老师要求题目控制在 10 道" in issue.description for issue in review.issues))
+
+    def test_quality_gate_rejects_thin_one_day_plan_missing_source_key_chains(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "第一部分：整数勾股数（奇数型、偶数型）、根式勾股数讲解\n"
+            "第二部分：α、β定义，互余角勾股比规律\n"
+            "第三部分：和角推导——α+β=45°\n"
+            "说话人1：β 三角形斜边和上面线段等长，先算一份长度，再按份数还原两条直角边。\n"
+            "第四部分：二倍角构造与3:4:5勾股数推导\n"
+            "说话人1：作垂直平分线构造二倍角，得到 2α 对应 4:3:5，2β 对应 3:4:5。\n"
+            "说话人1：课后继续用相同辅助线方法推导 4β 的勾股比。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数与特殊角推导",
+            user_requirements="当天课后复习，题目控制在10道题。",
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = ["勾股定理", "整数勾股数", "根式勾股数", "特殊角", "αβ 定义"]
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：勾股定理等式为______。", "answer": "$a^2+b^2=c^2$"}
+            for i in range(1, 7)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 5)
+        ]
+        plan["days"][0]["active_recall"] = {"instructions": "口述勾股定理公式。"}
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=source_brief,
+        )
+
+        self.assertFalse(review.passed)
+        descriptions = "\n".join(issue.description for issue in review.issues)
+        self.assertIn("关键知识链路", descriptions)
+        self.assertIn("source_coverage", {issue.category for issue in review.issues})
 
     def test_quality_gate_rejects_pdf_fallback_content(self):
         broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")

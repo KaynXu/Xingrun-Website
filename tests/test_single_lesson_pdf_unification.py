@@ -605,6 +605,42 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(lesson["quotes"], [])
         self.assertEqual(days[0]["quotes"], [])
 
+    def test_collect_plan_quotes_filters_generated_completion_standards(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template, collect_plan_quotes
+
+        plan = {
+            "lesson_info": {"topic": "勾股数与特殊角推导", "key_categories": ["勾股数", "αβ 定义", "二倍角构造"]},
+            "quotes": ["独立完成全部填空题（答案正确且可推导）和选择题；能口头复述 α+β 推导。"],
+            "days": [
+                {
+                    "day": 1,
+                    "label": "当天课后复习",
+                    "goal": "复盘勾股数与特殊角。",
+                    "focus": "αβ 定义与二倍角构造。",
+                    "blanks": [{"text": "α+β=______。", "answer": "45°"}],
+                    "choices": [
+                        {
+                            "question": "2α 与 2β 的关系是？",
+                            "options": ["A. 互余", "B. 相等", "C. 都是 30°", "D. 都不是锐角"],
+                            "answer": "A",
+                        }
+                    ],
+                    "quotes": ["完成全部题目后自查答案并记录错因。"],
+                }
+            ],
+        }
+
+        self.assertEqual(collect_plan_quotes(plan), [])
+        lesson, days, _reminders = adapt_plan_to_review_template(plan)
+        self.assertEqual(lesson["quotes"], [])
+        self.assertEqual(days[0]["quotes"], [])
+
+    def test_renderer_footer_uses_review_plan_label(self):
+        from review_plan_templates.generate_review_pdfs import build_labels
+
+        self.assertEqual(build_labels(True)["footer_right"], "课后复习计划 | 第{page}页")
+        self.assertEqual(build_labels(False)["footer_right"], "Review Plan | Page {page}")
+
     def test_quote_summary_text_uses_numbered_lines_without_bullets(self):
         from review_plan_templates.generate_review_pdfs import build_quote_summary_text
 
