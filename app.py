@@ -7748,10 +7748,14 @@ def api_lessons_list():
         return error
     month = request.args.get("month", "")
     class_id = request.args.get("class_id", 0, type=int)
+    scope = (request.args.get("scope") or "current").strip().lower()
+    if scope not in {"current", "history", "all"}:
+        return jsonify({"error": "scope must be current, history, or all"}), 400
     lessons = list_lessons_for_actor(
         user,
         month_str=month if month else "",
         class_id=class_id if class_id else 0,
+        class_scope=scope,
     )
     return jsonify(_serialize_lessons_for_response(_filter_lessons_for_user(user, lessons)))
 

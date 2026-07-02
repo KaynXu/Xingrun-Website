@@ -5863,27 +5863,30 @@ def get_lesson(lesson_id: int):
         return _attach_review_plan_version_summary(conn, d)
 
 
-def list_lessons(month_str: str = "", class_id: int = 0) -> list:
+def list_lessons(month_str: str = "", class_id: int = 0, class_scope: str = "all") -> list:
+    where_clauses: list[str] = []
+    params: list[object] = []
+    if class_id:
+        where_clauses.append("l.class_id=?")
+        params.append(class_id)
+    if month_str:
+        where_clauses.append("l.date LIKE ?")
+        params.append(f"{month_str}%")
+    lifecycle_clause = _lesson_class_lifecycle_where_clause(class_scope, "c", "l")
+    if lifecycle_clause:
+        where_clauses.append(lifecycle_clause)
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     with get_conn() as conn:
-        if class_id and month_str:
-            rows = conn.execute(
-                "SELECT * FROM lessons WHERE class_id=? AND date LIKE ? ORDER BY created_at DESC, id DESC",
-                (class_id, f"{month_str}%")
-            ).fetchall()
-        elif class_id:
-            rows = conn.execute(
-                "SELECT * FROM lessons WHERE class_id=? ORDER BY created_at DESC, id DESC",
-                (class_id,)
-            ).fetchall()
-        elif month_str:
-            rows = conn.execute(
-                "SELECT * FROM lessons WHERE date LIKE ? ORDER BY created_at DESC, id DESC",
-                (f"{month_str}%",)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM lessons ORDER BY created_at DESC, id DESC"
-            ).fetchall()
+        rows = conn.execute(
+            f"""
+            SELECT l.*
+            FROM lessons l
+            LEFT JOIN classes c ON c.id = l.class_id
+            {where_sql}
+            ORDER BY l.created_at DESC, l.id DESC
+            """,
+            params,
+        ).fetchall()
         return [_attach_review_plan_version_summary(conn, dict(r)) for r in rows]
 
 
@@ -6192,6 +6195,22 @@ def _class_lifecycle_where_clause(scope: str, table_alias: str = "c") -> str:
     if normalized_scope in {"history", "archived", "graduated"}:
         return f"COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') != '{CLASS_LIFECYCLE_ACTIVE}'"
     return f"COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') = '{CLASS_LIFECYCLE_ACTIVE}'"
+
+
+def _lesson_class_lifecycle_where_clause(scope: str, class_alias: str = "c", lesson_alias: str = "l") -> str:
+    normalized_scope = (scope or "current").strip().lower()
+    column = f"{class_alias}.lifecycle_status"
+    if normalized_scope in {"all", "any"}:
+        return ""
+    if normalized_scope in {"history", "archived", "graduated"}:
+        return (
+            f"COALESCE({lesson_alias}.class_id, 0) > 0 "
+            f"AND COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') != '{CLASS_LIFECYCLE_ACTIVE}'"
+        )
+    return (
+        f"(COALESCE({lesson_alias}.class_id, 0) = 0 "
+        f"OR COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') = '{CLASS_LIFECYCLE_ACTIVE}')"
+    )
 
 
 def _build_class_payload(
@@ -8244,19 +8263,27 @@ def list_classes_for_actor(actor_user: dict, scope: str = "current") -> list[dic
     return [dict(row) for row in rows]
 
 
-def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int = 0) -> list[dict]:
+def list_lessons_for_actor(actor_user: dict, month_str: str = "", class_id: int = 0, class_scope: str = "current") -> list[dict]:
     if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
-        return list_lessons(month_str=month_str, class_id=class_id)
+        return list_lessons(month_str=month_str, class_id=class_id, class_scope=class_scope)
+    lifecycle_clause = _lesson_class_lifecycle_where_clause(class_scope, "c", "l")
     with get_conn() as conn:
-        query_sql = "SELECT * FROM lessons WHERE organization_id=?"
+        query_sql = """
+            SELECT l.*
+            FROM lessons l
+            LEFT JOIN classes c ON c.id = l.class_id
+            WHERE l.organization_id=?
+        """
         params: list[object] = [actor_user["organization_id"]]
         if class_id:
-            query_sql += " AND class_id=?"
+            query_sql += " AND l.class_id=?"
             params.append(class_id)
         if month_str:
-            query_sql += " AND date LIKE ?"
+            query_sql += " AND l.date LIKE ?"
             params.append(f"{month_str}%")
-        query_sql += " ORDER BY created_at DESC, id DESC"
+        if lifecycle_clause:
+            query_sql += f" AND {lifecycle_clause}"
+        query_sql += " ORDER BY l.created_at DESC, l.id DESC"
         rows = conn.execute(query_sql, params).fetchall()
         return [_attach_review_plan_version_summary(conn, dict(row)) for row in rows]
 

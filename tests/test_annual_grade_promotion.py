@@ -208,6 +208,59 @@ class AnnualGradePromotionTestCase(unittest.TestCase):
         self.assertEqual(create_after.status_code, 400)
         self.assertEqual(create_after.get_json()["error"], "class is not active")
 
+    def test_review_plan_list_hides_pending_graduation_class_lessons_by_default(self):
+        active_id = lesson_manager.save_class(
+            "",
+            subject="数学",
+            grade="五年级",
+            stage="小奥",
+            current_grade="五年级",
+            class_number="1",
+        )
+        pending_id = lesson_manager.save_class(
+            "",
+            subject="数学",
+            grade="九年级",
+            stage="初中",
+            current_grade="九年级",
+            class_number="2",
+        )
+        active_lesson_id = lesson_manager.save_lesson(
+            "2026-07-02",
+            "数学",
+            "五年级",
+            "当前班级课程",
+            "",
+            "",
+            {},
+            "",
+            class_id=active_id,
+        )
+        pending_lesson_id = lesson_manager.save_lesson(
+            "2026-07-02",
+            "数学",
+            "九年级",
+            "待结业班级课程",
+            "",
+            "",
+            {},
+            "",
+            class_id=pending_id,
+        )
+        lesson_manager.promote_classes_for_academic_year(today="2026-06-30")
+
+        current_response = self.client.get("/api/review-plans", headers=self.auth_headers(self.owner_token))
+        self.assertEqual(current_response.status_code, 200)
+        current_ids = [item["id"] for item in current_response.get_json()]
+        self.assertIn(active_lesson_id, current_ids)
+        self.assertNotIn(pending_lesson_id, current_ids)
+
+        all_response = self.client.get("/api/review-plans?scope=all", headers=self.auth_headers(self.owner_token))
+        self.assertEqual(all_response.status_code, 200)
+        all_ids = [item["id"] for item in all_response.get_json()]
+        self.assertIn(active_lesson_id, all_ids)
+        self.assertIn(pending_lesson_id, all_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
