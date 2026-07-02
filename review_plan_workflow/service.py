@@ -437,6 +437,53 @@ def _assumption_mentions_trusted_metadata(value: object) -> bool:
     )
 
 
+def _sanitize_unsupported_teacher_claim_text(value: str) -> str:
+    replacements = (
+        ("老师在课堂上强调的", "本课需要掌握的"),
+        ("课堂上老师强调的", "本课需要掌握的"),
+        ("课堂中老师强调的", "本课需要掌握的"),
+        ("老师特别强调的", "本课需要掌握的"),
+        ("老师强调的", "本课需要掌握的"),
+        ("老师在课堂上强调", "本课需要掌握"),
+        ("课堂上老师强调", "本课需要掌握"),
+        ("课堂中老师强调", "本课需要掌握"),
+        ("老师特别强调", "本课需要掌握"),
+        ("老师强调", "本课需要掌握"),
+        ("老师说的", "本课提到的"),
+        ("老师说", "本课提到"),
+        ("老师要求的", "本次需要完成的"),
+        ("老师要求", "本次需要完成"),
+        ("老师提醒的", "本课需要注意的"),
+        ("老师提醒", "本课需要注意"),
+        ("课堂原话回放：", "复习要点："),
+        ("课堂原话回放:", "复习要点："),
+        ("课堂原话：", "复习要点："),
+        ("课堂原话:", "复习要点："),
+        ("老师原话：", "复习要点："),
+        ("老师原话:", "复习要点："),
+    )
+    text = value
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text
+
+
+def _remove_unsupported_teacher_claims(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "quotes" and isinstance(item, list):
+                cleaned[key] = []
+            else:
+                cleaned[key] = _remove_unsupported_teacher_claims(item)
+        return cleaned
+    if isinstance(value, list):
+        return [_remove_unsupported_teacher_claims(item) for item in value]
+    if isinstance(value, str):
+        return _sanitize_unsupported_teacher_claim_text(value)
+    return value
+
+
 def _normalize_output_plan(
     plan: dict[str, Any],
     review_input: ReviewPlanInput,
@@ -458,12 +505,11 @@ def _normalize_output_plan(
             item for item in lesson_info["assumptions"] if not _assumption_mentions_trusted_metadata(item)
         ]
     if source_brief is not None and not source_brief.teacher_emphasis:
-        normalized["quotes"] = []
-        if isinstance(lesson_info.get("quotes"), list):
-            lesson_info["quotes"] = []
-        for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
-            if isinstance(day, dict) and isinstance(day.get("quotes"), list):
-                day["quotes"] = []
+        normalized = _remove_unsupported_teacher_claims(normalized)
+        lesson_info = normalized.setdefault("lesson_info", {})
+        if not isinstance(lesson_info, dict):
+            lesson_info = {}
+            normalized["lesson_info"] = lesson_info
     _ensure_single_day_spiral_review(normalized, review_input)
     return normalized
 
@@ -491,6 +537,7 @@ def _maybe_revise_plan(
     max_attempts = max_revision_attempts_for_quality(quality=quality, source_brief=source_brief)
     if max_attempts <= 0:
         return plan, quality, usage
+    question_repair_attempts_before = len(context.node_outputs.get("question_repair_attempts") or [])
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -567,6 +614,66 @@ def _maybe_revise_plan(
             best_quality = current_quality
         if not current_quality.must_revise:
             return current_plan, current_quality, total_usage
+
+    question_repair_attempts_after = len(context.node_outputs.get("question_repair_attempts") or [])
+    if (
+        best_quality.must_revise
+        and question_repair_attempts_after == question_repair_attempts_before
+        and can_repair_questions(best_plan, best_quality)
+    ):
+        attempt = max_attempts + 1
+        try:
+            repaired_plan, repair_usage = run_workflow_node(
+                question_repair_node,
+                {
+                    "input": review_input,
+                    "prompt_bundle": prompt_bundle,
+                    "plan": best_plan,
+                    "quality": best_quality,
+                    "attempt": attempt,
+                    "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
+                },
+                context,
+            )
+            total_usage = merge_usage(total_usage, repair_usage)
+            repaired_plan = _normalize_output_plan(repaired_plan, review_input, source_brief)
+            repaired_validation = _validate_delivery(
+                repaired_plan,
+                review_input=review_input,
+                context=context,
+                node_key=f"review_plan_validator_after_question_repair_{attempt}",
+            )
+            repaired_local_quality = _score_quality(
+                repaired_plan,
+                subject=subject,
+                review_input=review_input,
+                context=context,
+                node_key=f"quality_reviewer_rules_after_question_repair_{attempt}",
+            )
+            repaired_quality, reviewer_usage = _review_with_llm_quality_gate(
+                plan=repaired_plan,
+                local_quality=repaired_local_quality,
+                review_input=review_input,
+                prompt_bundle=prompt_bundle,
+                agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
+                validation=repaired_validation,
+                context=context,
+                node_key=f"quality_reviewer_after_question_repair_{attempt}",
+            )
+            total_usage = merge_usage(total_usage, reviewer_usage)
+            if repaired_quality.score >= best_quality.score:
+                best_plan = repaired_plan
+                best_quality = repaired_quality
+            if not repaired_quality.must_revise:
+                return repaired_plan, repaired_quality, total_usage
+        except Exception as exc:
+            context.add_warning(
+                "question_repair_after_revision_failed",
+                f"完整修订后剩余题目级问题，但定点修复失败：{exc}",
+                "high",
+            )
 
     if best_quality.must_revise and can_soft_pass_after_revision(best_quality):
         softened_quality = soften_quality_after_revision(best_quality)

@@ -1904,6 +1904,143 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertNotIn("当前计划 JSON", mock_question_repair.call_args_list[0].kwargs["user_message"])
         self.assertEqual(usage["provider"], "openai")
 
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.question_repair.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_question_issue_after_full_revision_gets_targeted_repair_before_failure(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_question_repair,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "先修正无证据话术，再校验题目答案。",
+                "student_diagnosis": ["容易把三角形分类算错"],
+                "knowledge_map": [{"name": "勾股逆定理", "role": "分类判断", "evidence": "课堂"}],
+                "day_strategies": [{"day": 1, "objective": "当天课后复习"}],
+                "writer_instructions": ["不要写无证据老师原话。"],
+                "quality_risks": ["选择题答案可能算错。"],
+                "success_criteria": ["题目答案必须验算一致。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = writer_style_single_lesson_plan()
+        initial_plan["lesson_info"]["topic"] = "勾股定理及勾股数应用"
+        initial_plan["days"] = [initial_plan["days"][0]]
+        initial_plan["days"][0]["day"] = 1
+        initial_plan["days"][0]["active_recall"] = {"instructions": "请默写老师在课堂上强调的两组勾股比。"}
+        revised_plan = normalize_final_review_plan(initial_plan)
+        revised_plan["days"][0]["active_recall"] = {"instructions": "请默写本课需要掌握的两组勾股比。"}
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 9, "output_tokens": 4},
+        )
+        teacher_claim_issue = {
+            "severity": "high",
+            "category": "factuality",
+            "description": "生成结果包含没有课堂证据的老师原话。",
+            "suggested_fix": "删除“老师在课堂上强调”等无证据表述。",
+        }
+        question_issue = {
+            "severity": "high",
+            "category": "question_quality",
+            "description": "第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+            "suggested_fix": "重写该题并重新验算答案。",
+            "target_path": "days[0].choices[1]",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {
+                    "score": 70,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [teacher_claim_issue, question_issue],
+                    "revision_instructions": ["删除无证据老师话术并修正错题"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {
+                    "score": 78,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [question_issue],
+                    "revision_instructions": ["修正第1天选择题第2题"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 95, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_question_repair.return_value = (
+            (
+                {
+                    "repairs": [
+                        {
+                            "target_id": "day1_choice2",
+                            "kind": "choice",
+                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
+                            "options": ["A. 直角三角形", "B. 锐角三角形", "C. 钝角三角形", "D. 不存在"],
+                            "answer": "B",
+                            "analysis": "最大边平方为 5，另外两边平方和为 7，5<7，所以是锐角三角形。",
+                        }
+                    ]
+                },
+                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4},
+            )
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="高一",
+            topic="勾股定理及勾股数应用",
+            summary="勾股定理、根式勾股数和三角形分类。",
+            weak_points="三角形分类判断",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="勾股定理、根式勾股数和三角形分类。",
+            subject="数学",
+            grade="高一",
+            topic="勾股定理及勾股数应用",
+            lesson_date="2026-07-02",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["days"][0]["choices"][1]["answer"], "B")
+        self.assertEqual(mock_revise_plan.call_count, 1)
+        self.assertEqual(mock_question_repair.call_count, 1)
+        self.assertEqual(mock_llm_review.call_count, 3)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertIsNotNone(run)
+        self.assertEqual(run["quality_review"]["passed"], True)
+        self.assertIn("quality_reviewer_after_question_repair_2", run["node_outputs"])
+        self.assertEqual(run["node_outputs"]["question_repair_attempts"][0]["target_ids"], ["day1_choice2"])
+
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
         plan = valid_single_lesson_plan(subject="物理", topic="电路")
@@ -2065,6 +2202,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         plan["lesson_info"]["assumptions"] = ["年级'九年级'为学生用户输入，课堂材料中不可核验。", "主题来自课堂材料。"]
         plan["quotes"] = ["老师说一定要这样做。"]
         plan["days"][0]["quotes"] = ["老师原话：先看题号。"]
+        plan["days"][0]["active_recall"] = {
+            "instructions": "请默写老师在课堂上强调的两组必须脱口而出的勾股比。",
+            "items": [{"text": "老师提醒：先平方再比较最长边。"}],
+        }
+        plan["days"][0]["steps"] = [{"description": "课堂原话：列式前先确认哪条边最大。"}]
         mock_generate_plan.return_value = (
             plan,
             {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
@@ -2087,6 +2229,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(generated["lesson_info"]["assumptions"], ["主题来自课堂材料。"])
         self.assertEqual(generated["quotes"], [])
         self.assertEqual(generated["days"][0].get("quotes"), [])
+        generated_blob = json.dumps(generated, ensure_ascii=False)
+        self.assertNotIn("老师在课堂上强调", generated_blob)
+        self.assertNotIn("老师提醒", generated_blob)
+        self.assertNotIn("课堂原话", generated_blob)
+        self.assertIn("本课需要掌握的两组必须脱口而出的勾股比", generated_blob)
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_repairs_invalid_schema_once(self, mock_generate_plan):
