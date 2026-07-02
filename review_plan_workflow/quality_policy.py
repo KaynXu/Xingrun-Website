@@ -7,6 +7,14 @@ def _has_high_issue(quality: QualityReview) -> bool:
     return any(issue.severity == "high" for issue in quality.issues)
 
 
+def _has_repairable_question_issue(quality: QualityReview) -> bool:
+    return any(
+        issue.severity == "high"
+        and issue.category in {"question_quality", "factuality", "pdf_safety"}
+        for issue in quality.issues
+    )
+
+
 def should_run_llm_quality_review(
     *,
     local_quality: QualityReview,
@@ -34,4 +42,6 @@ def max_revision_attempts_for_quality(
         return 0
     if not quality.revision_instructions and not quality.issues:
         return 0
+    if _has_repairable_question_issue(quality):
+        return 2
     return 1

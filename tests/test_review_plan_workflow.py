@@ -272,7 +272,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertTrue(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
 
-    def test_quality_policy_caps_revision_attempts_to_one(self):
+    def test_quality_policy_caps_structural_revision_attempts_to_one(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
         from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
 
@@ -286,6 +286,28 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         source_brief = ReviewPlanSourceBrief(confidence=0.82)
 
         self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
+
+    def test_quality_policy_allows_second_revision_for_question_factual_errors(self):
+        from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
+        from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
+
+        quality = QualityReview(
+            score=62,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="第1天选择题答案错误，应为锐角三角形。",
+                    suggested_fix="重写该选择题并校验答案。",
+                )
+            ],
+            revision_instructions=["重写选择题并校验答案"],
+        )
+        source_brief = ReviewPlanSourceBrief(confidence=0.82)
+
+        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 2)
 
     def test_source_brief_builder_records_structured_source_before_writer(self):
         from review_plan_workflow.executor import run_workflow_node
@@ -922,7 +944,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(parent_kwargs["reasoning_effort"], "high")
         self.assertEqual(parent_kwargs["temperature"], 0.21)
         self.assertEqual(parent_kwargs["stage"], "parent_planner")
-        self.assertEqual(parent_kwargs["timeout_seconds"], 120.0)
+        self.assertEqual(parent_kwargs["timeout_seconds"], 35.0)
         self.assertEqual(parent_kwargs["max_retries"], 0)
         writer_kwargs = mock_generate_plan.call_args.kwargs
         self.assertEqual(writer_kwargs["provider"], "deepseek")
@@ -1113,6 +1135,89 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("定义域遗漏", revise_kwargs["user_message"])
         self.assertEqual(usage["input_tokens"], 75)
         self.assertEqual(usage["output_tokens"], 34)
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_question_answer_error_gets_second_targeted_revision(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "校验勾股定理逆定理和三角形分类。",
+                "student_diagnosis": ["容易把锐角三角形误判为直角三角形"],
+                "knowledge_map": [{"name": "勾股逆定理", "role": "判断三角形类型", "evidence": "课堂"}],
+                "day_strategies": [{"day": day, "objective": "勾股数判断"} for day in [1, 2, 7, 14, 30]],
+                "writer_instructions": ["每道选择题必须验算答案。"],
+                "quality_risks": ["选择题答案可能算错。"],
+                "success_criteria": ["选择题答案必须与验算一致。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
+        first_revision = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
+        fixed_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
+        fixed_plan["weak_points_summary"] = "已修正三边根式判断题，答案与验算一致。"
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        factual_issue = {
+            "severity": "high",
+            "category": "question_quality",
+            "description": "第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+            "suggested_fix": "重写第1天选择题第2题，并重新验算答案。",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {"score": 62, "passed": False, "must_revise": True, "issues": [factual_issue], "revision_instructions": ["重写错题"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 70, "passed": False, "must_revise": True, "issues": [factual_issue], "revision_instructions": ["继续重写错题"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 95, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_revise_plan.side_effect = [
+            (first_revision, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4}),
+            (fixed_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4}),
+        ]
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="九年级",
+            topic="勾股定理及勾股数应用",
+            weak_points="勾股逆定理分类判断",
+            lesson_date="2026-07-02",
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], "已修正三边根式判断题，答案与验算一致。")
+        self.assertEqual(mock_revise_plan.call_count, 2)
+        self.assertEqual(mock_llm_review.call_count, 3)
+        self.assertEqual(mock_revise_plan.call_args_list[0].kwargs["stage"], "targeted_revision")
+        self.assertEqual(mock_revise_plan.call_args_list[1].kwargs["stage"], "targeted_revision")
+        self.assertEqual(usage["provider"], "openai")
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
