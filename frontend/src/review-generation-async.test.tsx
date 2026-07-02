@@ -60,6 +60,10 @@ test('review plan detail source fetches versions and can make a ready version cu
   assert.match(detailSource, /apiFetch<unknown>\(`\/api\/review-plans\/\$\{lessonId\}`\)/);
   assert.match(detailSource, /\/api\/review-plans\/\$\{lessonId\}\/versions\/\$\{version\.id\}\/make-current/);
   assert.match(detailSource, /current_pdf_url/);
+  assert.match(detailSource, /current_plan_preview/);
+  assert.match(detailSource, /buildWrongQuestionLatexPreviewModel/);
+  assert.match(detailSource, /resolveReviewPlanMathText/);
+  assert.match(detailSource, /结构预览/);
   assert.match(detailSource, /版本历史/);
   assert.match(detailSource, /iframe/);
   assert.match(detailSource, /detail\?\.has_version_generating/);
@@ -88,6 +92,7 @@ test('review plan version helper requires a ready version with an available PDF 
     latest_generation_error: '',
     review_generation_options: null,
     review_generation_summary: '',
+    current_plan_preview: { title: '', summary: '', math_blocks: [], days: [] },
     versions: [],
   };
   const baseVersion: ReviewPlanVersionRecord = {

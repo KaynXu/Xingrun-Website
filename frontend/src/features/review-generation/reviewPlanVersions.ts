@@ -28,6 +28,34 @@ export type ReviewPlanVersionRecord = {
   completed_at: string;
 };
 
+export type ReviewPlanPreviewMathBlock = {
+  id: string;
+  latex: string;
+  display: boolean;
+};
+
+export type ReviewPlanPreviewQuestion = {
+  type: string;
+  question: string;
+  options: string[];
+  answer: string;
+};
+
+export type ReviewPlanPreviewDay = {
+  day: string;
+  label: string;
+  goal: string;
+  focus: string;
+  questions: ReviewPlanPreviewQuestion[];
+};
+
+export type ReviewPlanPreviewRecord = {
+  title: string;
+  summary: string;
+  math_blocks: ReviewPlanPreviewMathBlock[];
+  days: ReviewPlanPreviewDay[];
+};
+
 export type ReviewPlanDetailRecord = {
   id: number;
   date: string;
@@ -48,6 +76,7 @@ export type ReviewPlanDetailRecord = {
   latest_generation_error: string;
   review_generation_options: StoredReviewPlanGenerationOptions | null;
   review_generation_summary: string;
+  current_plan_preview: ReviewPlanPreviewRecord;
   versions: ReviewPlanVersionRecord[];
 };
 
@@ -82,6 +111,64 @@ function pickStatus(value: unknown): ReviewPlanVersionStatus {
 
 function pickRecord(value: unknown): StoredReviewPlanGenerationOptions | null {
   return isRecord(value) ? value : null;
+}
+
+function normalizePlanPreview(payload: unknown): ReviewPlanPreviewRecord {
+  if (!isRecord(payload)) {
+    return { title: '', summary: '', math_blocks: [], days: [] };
+  }
+
+  const mathBlocks = Array.isArray(payload.math_blocks)
+    ? payload.math_blocks.flatMap((item) => {
+      if (!isRecord(item)) {
+        return [];
+      }
+      const latex = pickString(item.latex);
+      if (!latex.trim()) {
+        return [];
+      }
+      return [{
+        id: pickString(item.id),
+        latex,
+        display: item.display === true,
+      }];
+    })
+    : [];
+
+  const days = Array.isArray(payload.days)
+    ? payload.days.flatMap((item) => {
+      if (!isRecord(item)) {
+        return [];
+      }
+      const questions = Array.isArray(item.questions)
+        ? item.questions.flatMap((question) => {
+          if (!isRecord(question)) {
+            return [];
+          }
+          return [{
+            type: pickString(question.type),
+            question: pickString(question.question),
+            options: Array.isArray(question.options) ? question.options.map(pickString).filter(Boolean) : [],
+            answer: pickString(question.answer),
+          }];
+        })
+        : [];
+      return [{
+        day: pickString(item.day),
+        label: pickString(item.label),
+        goal: pickString(item.goal),
+        focus: pickString(item.focus),
+        questions,
+      }];
+    })
+    : [];
+
+  return {
+    title: pickString(payload.title),
+    summary: pickString(payload.summary),
+    math_blocks: mathBlocks,
+    days,
+  };
 }
 
 function normalizeReviewPlanVersion(item: unknown): ReviewPlanVersionRecord | null {
@@ -138,6 +225,7 @@ export function normalizeReviewPlanDetail(payload: unknown): ReviewPlanDetailRec
     latest_generation_error: pickString(payload.latest_generation_error),
     review_generation_options: pickRecord(payload.review_generation_options),
     review_generation_summary: pickString(payload.review_generation_summary),
+    current_plan_preview: normalizePlanPreview(payload.current_plan_preview),
     versions,
   };
 }

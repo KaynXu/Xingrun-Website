@@ -15,6 +15,7 @@ import config_runtime
 import credit_manager
 import lesson_manager
 from app import app
+from tests.test_review_plan_plan_v1 import valid_plan_v1
 from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
@@ -652,6 +653,36 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIn("generation_options", payload["versions"][1])
         self.assertIn("generation_summary", payload["versions"][1])
         self.assertNotIn("generation_options_json", payload["versions"][1])
+
+    def test_review_plan_detail_includes_current_plan_math_preview(self):
+        pdf_path = self.base / "current.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\ncurrent\n%%EOF\n")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="勾股数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        plan = valid_plan_v1()
+        plan["practice_tasks"][0]["question"] = "勾股定理公式是 {{math:pythagorean}}，请填写______。"
+        lesson_manager.complete_review_plan_version(version["id"], plan=plan, pdf_path=str(pdf_path))
+
+        response = self.client.get(
+            f"/api/review-plans/{lesson_id}",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        preview = payload["current_plan_preview"]
+        self.assertEqual(preview["title"], "勾股数与特殊角")
+        self.assertEqual(preview["math_blocks"][0]["id"], "pythagorean")
+        self.assertIn("{{math:pythagorean}}", preview["days"][0]["questions"][0]["question"])
+        self.assertNotIn("plan_json", payload["current_version"])
 
     def test_make_current_switches_to_ready_old_version(self):
         first_pdf_path = self.base / "v1.pdf"

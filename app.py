@@ -273,6 +273,7 @@ from class_commentary import list_colleague_skills, load_colleague_skill, payloa
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
+from review_plan_workflow.schemas import normalize_final_review_plan
 from review_plan_workflow.source_brief import build_deterministic_source_brief, clean_source_text, source_text_hash
 from review_plan_workflow.source_pack import source_pack_needs_rebuild
 from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
@@ -2797,6 +2798,90 @@ def _weekly_activity_student_item_payload(item: dict) -> dict:
     }
 
 
+def _review_plan_preview_text(value: object, limit: int = 240) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _serialize_review_plan_math_blocks(plan: dict) -> list[dict]:
+    blocks: list[dict] = []
+    knowledge_sections = plan.get("knowledge_sections") if isinstance(plan.get("knowledge_sections"), dict) else {}
+    raw_blocks = plan.get("math_blocks") if isinstance(plan.get("math_blocks"), list) else knowledge_sections.get("math_blocks")
+    if not isinstance(raw_blocks, list):
+        return []
+    for index, block in enumerate(raw_blocks[:40]):
+        if not isinstance(block, dict):
+            continue
+        latex = _review_plan_preview_text(block.get("latex") or block.get("formula") or block.get("text"), 500)
+        if not latex:
+            continue
+        block_id = _review_plan_preview_text(block.get("id") or block.get("key") or f"math_{index + 1}", 80)
+        blocks.append(
+            {
+                "id": block_id,
+                "latex": latex,
+                "display": block.get("display") is True,
+            }
+        )
+    return blocks
+
+
+def _serialize_review_plan_preview_question(item: object, question_type: str) -> Optional[dict]:
+    if not isinstance(item, dict):
+        return None
+    question = _review_plan_preview_text(item.get("question") or item.get("stem") or item.get("text"), 300)
+    answer = _review_plan_preview_text(item.get("answer"), 160)
+    if not question and not answer:
+        return None
+    options = item.get("options") if isinstance(item.get("options"), list) else []
+    return {
+        "type": question_type,
+        "question": question,
+        "options": [_review_plan_preview_text(option, 160) for option in options[:6] if str(option or "").strip()],
+        "answer": answer,
+    }
+
+
+def _serialize_review_plan_current_preview(plan: object) -> dict:
+    if not isinstance(plan, dict) or not plan:
+        return {}
+    try:
+        normalized = normalize_final_review_plan(plan)
+    except Exception:
+        normalized = plan
+    lesson_info = normalized.get("lesson_info") if isinstance(normalized.get("lesson_info"), dict) else {}
+    days_payload: list[dict] = []
+    for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
+        if not isinstance(day, dict):
+            continue
+        questions: list[dict] = []
+        for blank in day.get("blanks", []) if isinstance(day.get("blanks"), list) else []:
+            question = _serialize_review_plan_preview_question(blank, "blank")
+            if question:
+                questions.append(question)
+        for choice in day.get("choices", []) if isinstance(day.get("choices"), list) else []:
+            question = _serialize_review_plan_preview_question(choice, "choice")
+            if question:
+                questions.append(question)
+        days_payload.append(
+            {
+                "day": day.get("day") or day.get("offset") or "",
+                "label": _review_plan_preview_text(day.get("label") or day.get("day_label") or day.get("title"), 80),
+                "goal": _review_plan_preview_text(day.get("goal"), 180),
+                "focus": _review_plan_preview_text(day.get("focus"), 180),
+                "questions": questions[:12],
+            }
+        )
+    return {
+        "title": _review_plan_preview_text(lesson_info.get("topic") or normalized.get("title") or normalized.get("plan_title"), 120),
+        "summary": _review_plan_preview_text(normalized.get("weak_points_summary") or normalized.get("lesson_summary"), 300),
+        "math_blocks": _serialize_review_plan_math_blocks(normalized),
+        "days": days_payload[:7],
+    }
+
+
 def _serialize_review_plan_version_for_response(lesson_id: int, version: object) -> Optional[dict]:
     if not isinstance(version, dict):
         return None
@@ -2850,6 +2935,11 @@ def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = F
         f"/api/review-plans/{lesson_id}/versions/{current_version['id']}/download"
         if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_exists
         else ""
+    )
+    serialized["current_plan_preview"] = (
+        _serialize_review_plan_current_preview(current_version.get("plan"))
+        if include_versions and current_version
+        else {}
     )
     serialized["pdf_path"] = current_pdf_path if current_pdf_exists else ""
     try:
