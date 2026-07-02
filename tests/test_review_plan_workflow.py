@@ -478,7 +478,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
 
-    def test_quality_policy_allows_second_revision_for_question_factual_errors(self):
+    def test_quality_policy_limits_question_factual_errors_to_one_targeted_repair(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
         from review_plan_workflow.schemas import ReviewPlanSourceBrief
 
@@ -498,7 +498,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
         source_brief = ReviewPlanSourceBrief(confidence=0.82)
 
-        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 2)
+        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
 
     def test_quality_policy_softens_workload_after_revision_only_when_no_other_high_issue(self):
         from review_plan_workflow.quality_policy import can_soft_pass_after_revision, soften_quality_after_revision
@@ -1761,7 +1761,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
     @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
-    def test_question_answer_error_gets_second_targeted_revision(
+    def test_question_answer_error_gets_single_targeted_repair(
         self,
         mock_parent_plan,
         mock_generate_plan,
@@ -1809,30 +1809,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                 {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
             ),
             (
-                {"score": 70, "passed": False, "must_revise": True, "issues": [factual_issue], "revision_instructions": ["继续重写错题"]},
-                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
-            ),
-            (
                 {"score": 95, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
                 {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
             ),
         ]
-        mock_question_repair.side_effect = [
-            (
-                {
-                    "repairs": [
-                        {
-                            "target_id": "day1_choice2",
-                            "kind": "choice",
-                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
-                            "options": ["A. 直角三角形", "B. 钝角三角形", "C. 等边三角形", "D. 不存在"],
-                            "answer": "A",
-                            "analysis": "第一次修复仍错误，审稿会继续拦截。",
-                        }
-                    ]
-                },
-                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4},
-            ),
+        mock_question_repair.return_value = (
             (
                 {
                     "repairs": [
@@ -1847,8 +1828,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                     ]
                 },
                 {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4},
-            ),
-        ]
+            )
+        )
 
         generated, usage = generate_single_lesson_review_plan(
             summary_text="课堂总结文本",
@@ -1862,9 +1843,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertEqual(generated["days"][0]["choices"][1]["answer"], "B")
         self.assertIn("锐角三角形", generated["days"][0]["choices"][1]["analysis"])
-        self.assertEqual(mock_question_repair.call_count, 2)
+        self.assertEqual(mock_question_repair.call_count, 1)
         mock_revise_plan.assert_not_called()
-        self.assertEqual(mock_llm_review.call_count, 3)
+        self.assertEqual(mock_llm_review.call_count, 2)
         self.assertEqual(mock_question_repair.call_args_list[0].kwargs["stage"], "question_repair")
         self.assertEqual(mock_question_repair.call_args_list[0].kwargs["provider"], "deepseek")
         self.assertEqual(mock_question_repair.call_args_list[0].kwargs["model"], "deepseek-v4-pro")

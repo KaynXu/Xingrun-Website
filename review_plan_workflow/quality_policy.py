@@ -154,5 +154,5 @@ def max_revision_attempts_for_quality(
     if can_soft_pass_after_revision(quality):
         return 1
     if _has_repairable_question_issue(quality):
-        return 2
+        return 1
     return 1
