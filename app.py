@@ -265,6 +265,7 @@ from lesson_manager import (
     change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_review_plan_version_pdf_path,
     update_review_plan_version_source_artifact,
     update_user_avatar_preferences,
 )
@@ -1235,12 +1236,8 @@ def _run_review_plan_generation_job(
                 logger.exception("Failed to mark lesson %s as failed after quality gate error", lesson_id)
             return
 
-        from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
-            version_suffix = version.get("version_no") or version_id
-            pdf_name = build_single_lesson_pdf_filename(plan, suffix=f"{lesson_id}-v{version_suffix}")
-            pdf_path = str(PDF_DIR / pdf_name)
-            generate_single_lesson_pdf(plan, pdf_path)
+            pdf_path = _render_review_plan_version_pdf(lesson_id=lesson_id, version=version, plan=plan)
         except Exception:
             logger.exception("Review plan PDF generation failed for lesson %s", lesson_id)
             try:
@@ -1268,6 +1265,16 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
         kwargs=job_kwargs,
         daemon=True,
     ).start()
+
+
+def _render_review_plan_version_pdf(*, lesson_id: int, version: dict, plan: dict) -> str:
+    from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
+
+    version_suffix = version.get("version_no") or version.get("id") or "latest"
+    pdf_name = build_single_lesson_pdf_filename(plan, suffix=f"{lesson_id}-v{version_suffix}")
+    pdf_path = str(PDF_DIR / pdf_name)
+    generate_single_lesson_pdf(plan, pdf_path)
+    return pdf_path
 
 
 def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dict, request_key: str) -> None:
@@ -7947,6 +7954,35 @@ def api_review_plan_version_download(lesson_id, version_id):
     if not pdf_path:
         abort(404)
     return send_file(pdf_path, as_attachment=True, download_name=Path(pdf_path).name)
+
+
+@app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/rerender-pdf", methods=["POST"])
+def api_review_plan_version_rerender_pdf(lesson_id, version_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not _can_access_lesson(user, lesson):
+        return jsonify({"error": "not found"}), 404
+    version = get_review_plan_version_for_lesson(lesson_id, version_id)
+    if not version:
+        return jsonify({"error": "not found"}), 404
+    if str(version.get("status") or "") != "ready":
+        return jsonify({"error": "只有已生成的版本可以重新渲染 PDF"}), 400
+    plan = version.get("plan") if isinstance(version.get("plan"), dict) else {}
+    if not plan:
+        return jsonify({"error": "当前版本缺少复习计划内容，无法重新渲染 PDF"}), 400
+    try:
+        pdf_path = _render_review_plan_version_pdf(lesson_id=lesson_id, version=version, plan=plan)
+        update_review_plan_version_pdf_path(version_id, pdf_path=pdf_path)
+    except Exception:
+        logger.exception("Review plan PDF rerender failed for lesson %s version %s", lesson_id, version_id)
+        return jsonify({"error": "PDF 重新渲染失败，请稍后重试"}), 500
+    lesson = get_lesson(lesson_id)
+    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True)
+    if serialized_lesson is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(serialized_lesson)
 
 
 @app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/make-current", methods=["POST"])

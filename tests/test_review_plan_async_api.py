@@ -807,6 +807,88 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         download.close()
 
     @patch("app._start_review_plan_generation_thread")
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    def test_rerender_version_pdf_rebuilds_pdf_without_new_generation(
+        self,
+        mock_generate_pdf,
+        mock_start_thread,
+    ):
+        def fake_generate_pdf(_plan, output_path):
+            Path(output_path).write_bytes(b"%PDF-1.4\nrerendered version pdf\n%%EOF\n")
+            return output_path
+
+        mock_generate_pdf.side_effect = fake_generate_pdf
+        current_pdf_path = self.base / "current-version.pdf"
+        current_pdf_path.write_bytes(b"%PDF-1.4\ncurrent version pdf\n%%EOF\n")
+        missing_pdf_path = self.base / "missing-version.pdf"
+        old_plan = {
+            "lesson_info": {"subject": "数学", "topic": "第一版"},
+            "full_review_topics": ["一次函数"],
+            "weak_points_summary": "斜率判断",
+            "days": [
+                {
+                    "day": 1,
+                    "label": "当天课后复习",
+                    "goal": "复习一次函数。",
+                    "blanks": [{"text": "一次函数解析式是______。", "answer": "y=kx+b"}],
+                    "choices": [
+                        {
+                            "question": "k>0 时图像趋势是？",
+                            "options": ["A. 上升", "B. 下降", "C. 水平", "D. 不确定"],
+                            "answer": "A",
+                        }
+                    ],
+                }
+            ],
+        }
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        old_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            old_version["id"],
+            plan=old_plan,
+            pdf_path=str(missing_pdf_path),
+        )
+        current_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            current_version["id"],
+            plan={"lesson_info": {"topic": "当前版"}, "days": []},
+            pdf_path=str(current_pdf_path),
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/versions/{old_version['id']}/rerender-pdf",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["current_version_id"], current_version["id"])
+        versions = lesson_manager.list_review_plan_versions(lesson_id)
+        self.assertEqual(len(versions), 2)
+        saved_old = lesson_manager.get_review_plan_version(old_version["id"])
+        self.assertEqual(saved_old["plan"], old_plan)
+        self.assertTrue(Path(saved_old["pdf_path"]).exists())
+        self.assertNotEqual(saved_old["pdf_path"], str(current_pdf_path))
+        mock_generate_pdf.assert_called_once()
+        mock_start_thread.assert_not_called()
+
+        preview = self.client.get(
+            f"/api/review-plans/{lesson_id}/versions/{old_version['id']}/pdf",
+            headers=self._auth_headers(self.owner_token),
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.data, b"%PDF-1.4\nrerendered version pdf\n%%EOF\n")
+        preview.close()
+
+    @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app.has_review_plan_api_key", return_value=True)
     def test_regenerate_review_plan_rejects_in_progress_lesson(

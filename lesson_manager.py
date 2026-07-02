@@ -5240,6 +5240,23 @@ def complete_review_plan_version(version_id: int, *, plan: dict, pdf_path: str) 
         )
 
 
+def update_review_plan_version_pdf_path(version_id: int, *, pdf_path: str) -> None:
+    with get_conn() as conn:
+        row = _get_review_plan_version_for_update(conn, version_id)
+        if not row:
+            raise LookupError("review plan version not found")
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET pdf_path=?,
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (str(pdf_path or ""), int(version_id)),
+        )
+
+
 def fail_review_plan_version(version_id: int, error_message: str) -> None:
     with get_conn() as conn:
         row = _get_review_plan_version_for_update(conn, version_id)

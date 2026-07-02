@@ -109,6 +109,7 @@ export function ReviewPlanDetailView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [makingCurrentVersionId, setMakingCurrentVersionId] = useState<number | null>(null);
+  const [rerenderingVersionId, setRerenderingVersionId] = useState<number | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const [regenerateOptions, setRegenerateOptions] = useState<ReviewPlanGenerationOptionsFormValue>({
@@ -168,6 +169,26 @@ export function ReviewPlanDetailView({
       setError(caught instanceof Error ? caught.message : '设为当前失败');
     } finally {
       setMakingCurrentVersionId(null);
+    }
+  };
+
+  const handleRerenderPdf = async (version: ReviewPlanVersionRecord) => {
+    if (!detail || version.status !== 'ready' || rerenderingVersionId !== null) {
+      return;
+    }
+
+    setRerenderingVersionId(version.id);
+    setError('');
+    try {
+      await apiFetch<unknown>(`/api/review-plans/${lessonId}/versions/${version.id}/rerender-pdf`, {
+        method: 'POST',
+      });
+      await loadDetail(true);
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '重新渲染 PDF 失败');
+    } finally {
+      setRerenderingVersionId(null);
     }
   };
 
@@ -430,6 +451,17 @@ export function ReviewPlanDetailView({
                             <Download size={14} />
                             下载
                           </a>
+                        )}
+                        {version.status === 'ready' && (
+                          <button
+                            type="button"
+                            onClick={() => void handleRerenderPdf(version)}
+                            disabled={rerenderingVersionId !== null}
+                            className={cn(workspaceSecondaryButtonClass, 'h-9 px-3 py-2 text-xs')}
+                          >
+                            <RefreshCw size={14} className={cn(rerenderingVersionId === version.id && 'animate-spin')} />
+                            重渲染PDF
+                          </button>
                         )}
                         {canMakeCurrent && (
                           <button

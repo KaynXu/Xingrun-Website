@@ -301,6 +301,37 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
                 pdf_path="/tmp/placeholder.pdf",
             )
 
+    def test_update_review_plan_version_pdf_path_does_not_change_current_version(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            class_id=self.class_id,
+        )
+        first = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            first["id"],
+            plan={"lesson_info": {"topic": "第一版"}, "days": []},
+            pdf_path="/tmp/old.pdf",
+        )
+        second = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            second["id"],
+            plan={"lesson_info": {"topic": "第二版"}, "days": []},
+            pdf_path="/tmp/current.pdf",
+        )
+
+        lesson_manager.update_review_plan_version_pdf_path(first["id"], pdf_path="/tmp/rerendered.pdf")
+
+        saved_first = lesson_manager.get_review_plan_version(first["id"])
+        saved_lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved_first["pdf_path"], "/tmp/rerendered.pdf")
+        self.assertEqual(saved_first["plan"]["lesson_info"]["topic"], "第一版")
+        self.assertEqual(saved_lesson["current_review_plan_version_id"], second["id"])
+
     def test_fail_review_plan_version_missing_raises(self):
         with self.assertRaisesRegex(LookupError, "review plan version not found"):
             lesson_manager.fail_review_plan_version(

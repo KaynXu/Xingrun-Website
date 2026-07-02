@@ -59,6 +59,9 @@ test('review plan detail source fetches versions and can make a ready version cu
   const detailSource = readFileSync(new URL('./features/review-generation/ReviewPlanDetailView.tsx', import.meta.url), 'utf8');
   assert.match(detailSource, /apiFetch<unknown>\(`\/api\/review-plans\/\$\{lessonId\}`\)/);
   assert.match(detailSource, /\/api\/review-plans\/\$\{lessonId\}\/versions\/\$\{version\.id\}\/make-current/);
+  assert.match(detailSource, /\/api\/review-plans\/\$\{lessonId\}\/versions\/\$\{version\.id\}\/rerender-pdf/);
+  assert.match(detailSource, /handleRerenderPdf\(version\)/);
+  assert.match(detailSource, /重渲染PDF/);
   assert.match(detailSource, /current_pdf_url/);
   assert.match(detailSource, /current_plan_preview/);
   assert.match(detailSource, /buildWrongQuestionLatexPreviewModel/);
