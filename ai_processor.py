@@ -514,6 +514,10 @@ def _should_fallback_to_local_asr_after_tencent_error(exc: Exception) -> bool:
             "解码",
             "返回空转写文本",
             "音频转码失败",
+            "timed out",
+            "timeout",
+            "write operation timed out",
+            "urlopen error",
             "不能超过 100mb",
             "超过 100mb",
         )

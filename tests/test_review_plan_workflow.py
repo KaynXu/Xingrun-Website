@@ -15,8 +15,8 @@ import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
-from review_plan_workflow.schemas import ReviewPlanInput, normalize_final_review_plan, validate_final_review_plan
-from review_plan_workflow.service import generate_single_lesson_review_plan
+from review_plan_workflow.schemas import ReviewPlanInput, SourceSummary, TaskBlueprint, normalize_final_review_plan, validate_final_review_plan
+from review_plan_workflow.service import _fallback_agent_blueprint, generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -173,6 +173,70 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             schedule_mode="compressed",
         )
         self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_normalization_keeps_blank_answer_aliases_without_duplicate_fill_items(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
+        plan["days"] = [
+            {
+                "day": 1,
+                "goal": "复盘二次函数图像与参数。",
+                "items": [{"type": "body", "text": "先口述开口、对称轴、顶点三步。"}],
+                "blanks": [
+                    {"text": "二次函数图像开口由______决定。", "reference_answer": "a 的符号"},
+                    {"text": "顶点式中顶点坐标是______。", "answers": ["(h, k)"]},
+                    {"text": "对称轴公式是______。", "answer_hint": "$x=-b/(2a)$"},
+                ],
+                "choices": [
+                    {
+                        "question": "二次函数 y=ax²+bx+c 中，a>0 时图像开口方向是？",
+                        "options": ["A. 向上", "B. 向下", "C. 向左", "D. 向右"],
+                        "answer": "A",
+                    },
+                    {
+                        "question": "判断最值前应先看什么？",
+                        "options": ["A. 开口方向", "B. 字体", "C. 题号", "D. 页码"],
+                        "answer": "A",
+                    },
+                ],
+                "self_test_phrase": "能说清参数与图像的对应关系。",
+            }
+        ]
+
+        normalized = normalize_final_review_plan(plan)
+
+        self.assertEqual(
+            [blank["answer"] for blank in normalized["days"][0]["blanks"]],
+            ["a 的符号", "(h, k)", "$x=-b/(2a)$"],
+        )
+        self.assertFalse(any(item.get("type") == "fill" for item in normalized["days"][0]["items"]))
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
+
+    def test_compressed_fallback_blueprint_requires_complete_one_day_density(self):
+        blueprint = _fallback_agent_blueprint(
+            review_input=ReviewPlanInput(
+                summary_text="课堂讲了勾股定理和勾股数应用。",
+                subject="数学",
+                topic="勾股定理及勾股数应用",
+                schedule_mode="compressed",
+                review_days=[1],
+            ),
+            subject="math",
+            source=SourceSummary(confirmed_topics=["勾股定理", "勾股数"]),
+            task_blueprint=TaskBlueprint(subject="math", required_components=[]),
+        )
+
+        instructions = "\n".join(blueprint.writer_instructions)
+        criteria = "\n".join(blueprint.success_criteria)
+        self.assertIn("只输出 day=1", instructions)
+        self.assertIn("至少提供 5 个不重复的可打印题目", instructions)
+        self.assertIn("worked_example", instructions)
+        self.assertIn("error_log", criteria)
 
     def test_review_plan_input_accepts_custom_review_days(self):
         review_input = ReviewPlanInput(
@@ -1040,8 +1104,10 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(mock_revise_plan.call_count, 1)
         revise_kwargs = mock_revise_plan.call_args.kwargs
         self.assertEqual(revise_kwargs["stage"], "targeted_revision")
-        self.assertEqual(revise_kwargs["temperature"], 0.22)
-        self.assertEqual(revise_kwargs["timeout_seconds"], 90.0)
+        self.assertEqual(revise_kwargs["provider"], "deepseek")
+        self.assertEqual(revise_kwargs["model"], "deepseek-v4-pro")
+        self.assertEqual(revise_kwargs["temperature"], 0.1)
+        self.assertEqual(revise_kwargs["timeout_seconds"], 120.0)
         self.assertEqual(revise_kwargs["max_retries"], 0)
         self.assertIn("父模型教学蓝图", revise_kwargs["user_message"])
         self.assertIn("定义域遗漏", revise_kwargs["user_message"])

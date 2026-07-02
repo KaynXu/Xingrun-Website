@@ -4,7 +4,11 @@ import json
 from datetime import date
 from typing import Any
 
-from config_runtime import resolve_review_plan_temperature
+from config_runtime import (
+    resolve_review_plan_repair_temperature,
+    resolve_review_plan_writer_model,
+    resolve_review_plan_writer_provider,
+)
 from review_plan_workflow.executor import WorkflowNode
 from review_plan_workflow.llm.client import generate_review_plan_json
 from review_plan_workflow.llm.prompt_renderer import render_prompt
@@ -99,7 +103,9 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
     attempt = int(input_data.get("attempt") or 1)
     agent_blueprint: AgenticPlanBlueprint | None = input_data.get("agent_blueprint")
     source_brief: ReviewPlanSourceBrief | None = input_data.get("source_brief")
-    temperature = resolve_review_plan_temperature()
+    writer_provider = resolve_review_plan_writer_provider()
+    writer_model = resolve_review_plan_writer_model(provider=writer_provider)
+    temperature = resolve_review_plan_repair_temperature()
 
     rendered = render_prompt(
         system_prompt_path=prompt_bundle.system_prompt_path,
@@ -120,21 +126,29 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> tuple[dict[str
             prompt_bundle=prompt_bundle,
             source_brief=source_brief,
         ),
-        provider=context.provider,
-        model=context.model,
-        reasoning_effort=context.reasoning_effort,
+        provider=writer_provider,
+        model=writer_model,
         temperature=temperature,
         stage="targeted_revision",
-        timeout_seconds=90.0,
+        timeout_seconds=120.0,
         max_retries=0,
     )
     revised = _apply_lesson_date(normalize_final_review_plan(revised), review_input)
+    context.node_outputs["revision_model_config"] = {
+        "provider": writer_provider,
+        "model": writer_model,
+        "temperature": temperature,
+        "prompt_version": rendered["prompt_version"],
+        "usage": usage,
+    }
     context.node_outputs.setdefault("revision_attempts", []).append(
         {
             "attempt": attempt,
             "prompt_version": rendered["prompt_version"],
             "quality_score_before": quality.score,
             "issue_count": len(quality.issues),
+            "provider": writer_provider,
+            "model": writer_model,
             "temperature": temperature,
             "usage": usage,
         }

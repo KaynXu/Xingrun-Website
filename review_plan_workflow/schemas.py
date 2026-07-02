@@ -345,11 +345,19 @@ def _normalize_choice(choice: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _first_answer_value(data: dict[str, Any]) -> object:
+    for key in ("answer", "answers", "reference_answer", "answer_hint", "expected_answer"):
+        value = data.get(key)
+        if _clean_answer_text(value):
+            return value
+    return ""
+
+
 def _normalize_blank(blank: Any) -> dict[str, Any]:
     if isinstance(blank, dict):
         return {
             "text": _clean_text(blank.get("text") or blank.get("stem") or blank.get("question")),
-            "answer": _clean_answer_text(blank.get("answer")),
+            "answer": _clean_answer_text(_first_answer_value(blank)),
         }
     if isinstance(blank, (list, tuple)) and blank:
         text = _clean_text(blank[0])
@@ -376,6 +384,8 @@ def _append_unique_blank(blanks: list[dict[str, Any]], blank: dict[str, Any]) ->
     answer = _clean_answer_text(blank.get("answer"))
     for existing in blanks:
         if _clean_text(existing.get("text")) == text:
+            if not _clean_answer_text(existing.get("answer")) and answer:
+                existing["answer"] = answer
             return
     blanks.append({"text": text, "answer": answer})
 
@@ -457,8 +467,10 @@ def _normalize_task_payload(value: Any) -> tuple[list[dict[str, Any]], list[dict
             else:
                 text = _item_text(item)
                 if text:
-                    if "______" in text and any(field in item for field in ("answer", "reference_answer", "answer_hint")):
-                        _append_unique_blank(blanks, {"text": text, "answer": item.get("answer") or item.get("reference_answer") or item.get("answer_hint")})
+                    if "______" in text and any(
+                        field in item for field in ("answer", "answers", "reference_answer", "answer_hint", "expected_answer")
+                    ):
+                        _append_unique_blank(blanks, {"text": text, "answer": _first_answer_value(item)})
                     else:
                         _append_unique_body_from_task(text)
 
@@ -627,14 +639,15 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         _append_unique_blank(normalized_blanks, blank)
     for blank in active_recall_blanks:
         _append_unique_blank(normalized_blanks, blank)
-    for normalized_blank in normalized_blanks:
-        items.append(
-            {
-                "type": "fill",
-                "text": normalized_blank["text"],
-                "answer": normalized_blank.get("answer", ""),
-            }
-        )
+    if not items:
+        for normalized_blank in normalized_blanks:
+            items.append(
+                {
+                    "type": "fill",
+                    "text": normalized_blank["text"],
+                    "answer": normalized_blank.get("answer", ""),
+                }
+            )
     normalized["blanks"] = normalized_blanks
     normalized["items"] = items
 
