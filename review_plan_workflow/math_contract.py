@@ -21,6 +21,11 @@ BARE_TRIG_FRACTION_PATTERN = re.compile(
     r"\((?P<num>[0-9]+)\)\s*/\s*\((?P<den>[0-9]+)\)(?![A-Za-z])",
     re.IGNORECASE,
 )
+BARE_TRIG_ALPHA_BETA_SUM_PATTERN = re.compile(
+    r"(?<![A-Za-z\\])(?P<func>sin|cos|tan)\s*[(（]\s*alpha\s*\+\s*beta\s*[)）]\s*=\s*"
+    r"(?P<rhs>[0-9]+(?:\.[0-9]+)?)(?![A-Za-z])",
+    re.IGNORECASE,
+)
 BARE_ALPHA_BETA_SUM_PATTERN = re.compile(
     r"(?<![A-Za-z\\])alpha\s*\+\s*beta\s*=\s*(?P<deg>[0-9]+)\s*(?:°|度|\\?circ)?(?![A-Za-z])",
     re.IGNORECASE,
@@ -32,6 +37,7 @@ BARE_ALPHA_BETA_PAIR_PATTERN = re.compile(
 BARE_ALPHA_BETA_PATTERN = re.compile(r"(?<![A-Za-z\\])alpha\s*\+\s*beta(?![A-Za-z])", re.IGNORECASE)
 BARE_MATH_CONTRACT_PATTERNS = (
     BARE_TRIG_FRACTION_PATTERN,
+    BARE_TRIG_ALPHA_BETA_SUM_PATTERN,
     BARE_ALPHA_BETA_SUM_PATTERN,
     BARE_ALPHA_BETA_PAIR_PATTERN,
     BARE_ALPHA_BETA_PATTERN,
@@ -47,10 +53,15 @@ def _replace_bare_math_segment(text: str) -> str:
     def replace_sum(match: re.Match[str]) -> str:
         return f"$\\alpha+\\beta={match.group('deg')}^\\circ$"
 
+    def replace_trig_sum(match: re.Match[str]) -> str:
+        func = match.group("func").lower()
+        return f"$\\{func}(\\alpha+\\beta)={match.group('rhs')}$"
+
     def replace_pair(match: re.Match[str]) -> str:
         return f"$\\alpha${match.group('join')}$\\beta$"
 
     normalized = BARE_TRIG_FRACTION_PATTERN.sub(replace_trig, text)
+    normalized = BARE_TRIG_ALPHA_BETA_SUM_PATTERN.sub(replace_trig_sum, normalized)
     normalized = BARE_ALPHA_BETA_SUM_PATTERN.sub(replace_sum, normalized)
     normalized = BARE_ALPHA_BETA_PAIR_PATTERN.sub(replace_pair, normalized)
     return BARE_ALPHA_BETA_PATTERN.sub(r"$\\alpha+\\beta$", normalized)

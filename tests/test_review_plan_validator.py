@@ -66,7 +66,7 @@ class ReviewPlanValidatorTestCase(unittest.TestCase):
 
     def test_validator_blocks_bare_math_contract_violations(self):
         plan = valid_plan_v1()
-        plan["practice_tasks"][0]["question"] = "已知tanalpha=(1)/(2)，tanbeta=(1)/(3)，则alpha+beta等于？"
+        plan["practice_tasks"][0]["question"] = "已知tanalpha=(1)/(2)，tanbeta=(1)/(3)，tan(alpha+beta)=1，则alpha+beta等于？"
 
         result = validate_review_plan_delivery(
             plan,

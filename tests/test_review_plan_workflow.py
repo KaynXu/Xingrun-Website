@@ -220,7 +220,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         plan.setdefault("full_review_topics", []).append("alpha+beta=45°")
         plan["days"][0]["blanks"] = [
             {
-                "text": "已知alpha和beta为锐角，且tanalpha=(1)/(2)，tanbeta=(1)/(3)，则alpha+beta等于______。",
+                "text": "已知alpha和beta为锐角，且tanalpha=(1)/(2)，tanbeta=(1)/(3)，tan(alpha+beta)=1，则alpha+beta等于______。",
                 "answer": "alpha+beta=45°",
             }
         ]
@@ -240,11 +240,14 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("已知$\\alpha$和$\\beta$为锐角", blank["text"])
         self.assertIn("$\\tan\\alpha=\\frac{1}{2}$", blank["text"])
         self.assertIn("$\\tan\\beta=\\frac{1}{3}$", blank["text"])
+        self.assertIn("$\\tan(\\alpha+\\beta)=1$", blank["text"])
         self.assertIn("$\\alpha+\\beta$", blank["text"])
         self.assertEqual(blank["answer"], "$\\alpha+\\beta=45^\\circ$")
         self.assertEqual(topic, "$\\alpha+\\beta=45^\\circ$")
         self.assertNotIn("tanalpha=(1)/(2)", json.dumps(normalized, ensure_ascii=False))
         self.assertNotIn("tanbeta=(1)/(3)", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("tan(alpha+beta)=1", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("tan($", json.dumps(normalized, ensure_ascii=False))
         self.assertNotIn("alpha和beta", json.dumps(normalized, ensure_ascii=False))
         self.assertNotIn("alpha+beta", json.dumps(normalized, ensure_ascii=False))
 
