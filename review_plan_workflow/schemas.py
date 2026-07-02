@@ -835,6 +835,10 @@ def _find_wrapped_final_plan(value: dict[str, Any], depth: int = 0) -> dict[str,
 
 def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(plan or {})
+    if normalized.get("schema_version") == "lesson_review_plan_v1":
+        from review_plan_workflow.plan_v1 import adapt_lesson_review_plan_v1_to_final_review_plan
+
+        normalized = adapt_lesson_review_plan_v1_to_final_review_plan(normalized)
     wrapped_plan = _find_wrapped_final_plan(normalized)
     if isinstance(wrapped_plan, dict):
         for source_key, target_key in (
