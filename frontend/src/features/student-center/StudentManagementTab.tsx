@@ -14,6 +14,10 @@ export type StudentManagementFilterLayer = 'subject' | 'teacher' | 'stage' | 'gr
 export type StudentManagementRow = {
   id: number;
   name: string;
+  classItems: Array<{
+    classItem: ClassItem;
+    teacherUserId: number | null;
+  }>;
   classItem: ClassItem | null;
   teacherUserId: number | null;
   scheduled: boolean;
@@ -139,20 +143,24 @@ export function StudentManagementTab({
         <div className="hidden grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_minmax(9rem,1fr)_auto] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-500 md:grid">
           <span>学员</span>
           <span>课程状态</span>
-          <span>负责教师</span>
+          <span className="text-center">负责教师</span>
           <span className="text-right">操作</span>
         </div>
         <div className="divide-y divide-slate-200 dark:divide-white/10">
         {filteredStudentRows.length ? filteredStudentRows.map((item) => {
-          const teacher = item.teacherUserId == null ? undefined : users.find((user) => user.id === item.teacherUserId);
-          const classLabel = item.classItem ? getClassDisplayName(item.classItem) : '未排课';
-          const detailLine = item.classItem
-            ? [item.classItem.stage, item.classItem.current_grade || item.classItem.grade].filter(Boolean).join(' · ')
-            : '暂无课程安排';
-          const teacherLabel = item.classItem ? teacher?.name || item.classItem.teacher_name || '未分配老师' : '-';
+          const courseItems = item.classItems.length
+            ? item.classItems
+            : item.classItem
+              ? [{ classItem: item.classItem, teacherUserId: item.teacherUserId }]
+              : [];
+          const teacherLabels = Array.from(new Set(courseItems.map((course) => {
+            const teacher = course.teacherUserId == null ? undefined : users.find((user) => user.id === course.teacherUserId);
+            return teacher?.name || course.classItem.teacher_name || '未分配老师';
+          })));
+          const teacherLabel = courseItems.length ? teacherLabels.join('、') : '-';
           return (
             <div
-              key={`${item.classItem?.id || 'unscheduled'}-${item.id}`}
+              key={`student-${item.id}`}
               className="grid gap-3 px-4 py-3 transition hover:bg-slate-50 md:grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_minmax(9rem,1fr)_auto] md:items-center dark:hover:bg-white/[0.04]"
             >
               <div>
@@ -160,10 +168,21 @@ export function StudentManagementTab({
                 <p className="mt-1 text-xs text-slate-400 md:hidden dark:text-slate-500">{teacherLabel}</p>
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{classLabel}</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{detailLine}</p>
+                {courseItems.length ? courseItems.map((course) => (
+                  <div key={course.classItem.id} className="py-1 first:pt-0 last:pb-0">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{getClassDisplayName(course.classItem)}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {[course.classItem.stage, course.classItem.current_grade || course.classItem.grade].filter(Boolean).join(' · ') || '暂无课程安排'}
+                    </p>
+                  </div>
+                )) : (
+                  <>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">未排课</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">暂无课程安排</p>
+                  </>
+                )}
               </div>
-              <p className="hidden text-sm text-slate-500 md:block dark:text-slate-400">{teacherLabel}</p>
+              <p className="hidden text-center text-sm text-slate-500 md:block dark:text-slate-400">{teacherLabel}</p>
               <button
                 type="button"
                 onClick={() => onOpenStudentProfile(item.id)}
