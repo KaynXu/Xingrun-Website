@@ -1906,6 +1906,12 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("formula_sheet", run["node_outputs"]["task_blueprint"]["required_components"])
         self.assertEqual(run["node_outputs"]["time_allocator"]["review_schedule"][0]["day"], 1)
         self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
+        runtime = run["node_outputs"]["workflow_runtime"]
+        self.assertEqual(runtime["path"], "fast_path")
+        self.assertEqual(runtime["model_call_count"], 1)
+        self.assertEqual(runtime["writer_model_call_count"], 1)
+        self.assertEqual(runtime["llm_reviewer_model_call_count"], 0)
+        self.assertIn("plan_generator", runtime["latency_by_stage"])
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_passes_generation_options_through_workflow(self, mock_generate_plan):

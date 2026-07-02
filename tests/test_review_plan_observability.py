@@ -17,6 +17,7 @@ from review_plan_workflow import observability
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.service import generate_single_lesson_review_plan
 from review_plan_workflow.source_brief import source_text_hash
+from review_plan_workflow.state import WorkflowContext, WorkflowLog
 from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
@@ -122,6 +123,37 @@ class ReviewPlanObservabilityTestCase(unittest.TestCase):
         self.assertNotIn("这段完整课堂材料不要进入 Langfuse", blob)
         self.assertNotIn("先看固定量，再判断轨迹", blob)
 
+    def test_workflow_runtime_summary_counts_model_calls_and_latency(self):
+        context = WorkflowContext(provider="openai", model="gpt-5.4")
+        context.node_outputs["plan_generator_attempts"] = [
+            {"attempt": 1, "stage": "generate"},
+            {"attempt": 2, "stage": "schema_repair"},
+        ]
+        context.node_outputs["question_repair_attempts"] = [{"attempt": 1}]
+        context.logs.extend(
+            [
+                WorkflowLog(node_name="parent_planner", status="success", latency_ms=11),
+                WorkflowLog(node_name="plan_generator", status="success", latency_ms=22),
+                WorkflowLog(node_name="quality_reviewer_llm", status="success", latency_ms=33),
+                WorkflowLog(node_name="quality_reviewer_llm", status="success", latency_ms=44),
+                WorkflowLog(node_name="question_repair", status="success", latency_ms=55),
+            ]
+        )
+
+        runtime = observability.build_workflow_runtime_summary(
+            context,
+            usage={"provider": "openai", "model": "gpt-5.4", "input_tokens": 10, "output_tokens": 5},
+        )
+
+        self.assertEqual(runtime["path"], "high_quality_path")
+        self.assertEqual(runtime["model_call_count"], 6)
+        self.assertEqual(runtime["parent_planner_model_call_count"], 1)
+        self.assertEqual(runtime["writer_model_call_count"], 2)
+        self.assertEqual(runtime["llm_reviewer_model_call_count"], 2)
+        self.assertEqual(runtime["question_repair_count"], 1)
+        self.assertEqual(runtime["latency_by_stage"]["quality_reviewer_llm"], 77)
+        self.assertEqual(runtime["total_node_latency_ms"], 165)
+
     def test_langfuse_env_sets_host_alias_for_sdk_compatibility(self):
         fake_client = FakeLangfuseClient()
         with patch.dict(
@@ -186,6 +218,11 @@ class ReviewPlanObservabilityTestCase(unittest.TestCase):
         self.assertTrue(fake_client.scores)
         self.assertEqual(fake_client.scores[0]["name"], "review_plan_quality")
         self.assertEqual(fake_client.flush_count, 1)
+        result_update = next(update for update in fake_client.current_updates if "output" in update)
+        self.assertEqual(result_update["output"]["runtime"]["path"], "fast_path")
+        self.assertEqual(result_update["output"]["runtime"]["model_call_count"], 1)
+        self.assertEqual(result_update["metadata"]["workflow_path"], "fast_path")
+        self.assertEqual(result_update["metadata"]["model_call_count"], 1)
 
         telemetry_blob = json.dumps(
             {

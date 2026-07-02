@@ -244,6 +244,86 @@ def summarize_usage(usage: object) -> dict[str, Any]:
     }
 
 
+def _count_model_config_call(node_outputs: dict[str, Any], key: str) -> int:
+    value = node_outputs.get(key)
+    if not isinstance(value, dict):
+        return 0
+    return 1 if isinstance(value.get("usage"), dict) else 0
+
+
+def _count_attempts(node_outputs: dict[str, Any], key: str) -> int:
+    value = node_outputs.get(key)
+    if not isinstance(value, list):
+        return 0
+    return len([item for item in value if isinstance(item, dict)])
+
+
+def _count_success_logs(logs: list[object], node_name: str) -> int:
+    return len(
+        [
+            log
+            for log in logs
+            if str(getattr(log, "node_name", "") or "") == node_name
+            and str(getattr(log, "status", "") or "") == "success"
+        ]
+    )
+
+
+def build_workflow_runtime_summary(context: object, *, usage: object | None = None) -> dict[str, Any]:
+    node_outputs = getattr(context, "node_outputs", {}) or {}
+    if not isinstance(node_outputs, dict):
+        node_outputs = {}
+    logs = getattr(context, "logs", []) or []
+    latency_by_stage: dict[str, int] = {}
+    failed_stages: list[str] = []
+    for log in logs:
+        node_name = str(getattr(log, "node_name", "") or "")
+        if not node_name:
+            continue
+        latency_by_stage[node_name] = latency_by_stage.get(node_name, 0) + max(0, int(getattr(log, "latency_ms", 0) or 0))
+        if str(getattr(log, "status", "") or "") == "failed":
+            failed_stages.append(node_name)
+
+    question_repair_count = _count_attempts(node_outputs, "question_repair_attempts")
+    if question_repair_count == 0:
+        question_repair_count = _count_success_logs(logs, "question_repair")
+    revision_count = _count_attempts(node_outputs, "revision_attempts")
+    if revision_count == 0:
+        revision_count = _count_success_logs(logs, "revision")
+    plan_generator_calls = _count_attempts(node_outputs, "plan_generator_attempts")
+    if plan_generator_calls == 0 and _count_model_config_call(node_outputs, "plan_generator_model_config"):
+        plan_generator_calls = 1
+    llm_reviewer_calls = _count_success_logs(logs, "quality_reviewer_llm")
+    if llm_reviewer_calls == 0:
+        llm_reviewer_calls = _count_model_config_call(node_outputs, "quality_reviewer_llm_model_config")
+    parent_planner_calls = _count_success_logs(logs, "parent_planner")
+    if parent_planner_calls == 0:
+        parent_planner_calls = _count_model_config_call(node_outputs, "parent_planner_model_config")
+    model_call_count = (
+        parent_planner_calls
+        + plan_generator_calls
+        + llm_reviewer_calls
+        + question_repair_count
+        + revision_count
+    )
+    repair_count = question_repair_count + revision_count
+    path = "high_quality_path" if llm_reviewer_calls or repair_count else "fast_path"
+    return {
+        "path": path,
+        "model_call_count": model_call_count,
+        "parent_planner_model_call_count": parent_planner_calls,
+        "writer_model_call_count": plan_generator_calls,
+        "llm_reviewer_model_call_count": llm_reviewer_calls,
+        "repair_model_call_count": repair_count,
+        "question_repair_count": question_repair_count,
+        "revision_count": revision_count,
+        "latency_by_stage": latency_by_stage,
+        "total_node_latency_ms": sum(latency_by_stage.values()),
+        "failed_stages": failed_stages,
+        "usage": summarize_usage(usage or {}),
+    }
+
+
 def review_plan_langfuse_enabled() -> bool:
     cfg = get_runtime_config()
     if not bool(cfg.get("review_plan_langfuse_enabled")):
@@ -502,17 +582,21 @@ def record_workflow_result(
     if client is None:
         return
     quality_payload = quality.model_dump() if hasattr(quality, "model_dump") else quality
+    runtime = build_workflow_runtime_summary(context, usage=usage)
     _safe_current_update(
         client,
         output={
             "plan": summarize_review_plan(plan),
             "quality": summarize_for_observability(quality_payload),
             "usage": summarize_usage(usage),
+            "runtime": runtime,
         },
         metadata={
             "status": status,
             "warning_count": len(getattr(context, "warnings", []) or []),
             "node_log_count": len(getattr(context, "logs", []) or []),
+            "model_call_count": runtime["model_call_count"],
+            "workflow_path": runtime["path"],
         },
     )
 

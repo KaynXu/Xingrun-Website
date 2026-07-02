@@ -39,6 +39,7 @@ from .quality_policy import (
 from .nodes.question_repair import can_repair_questions
 from .llm.client import merge_usage
 from .observability import (
+    build_workflow_runtime_summary,
     flush,
     record_quality_score,
     record_workflow_failure,
@@ -705,6 +706,7 @@ def generate_single_lesson_review_plan(
                 context=context,
             )
             plan = _normalize_output_plan(plan, review_input, source_brief)
+            context.node_outputs["workflow_runtime"] = build_workflow_runtime_summary(context, usage=usage)
             record_quality_score(context=context, quality=quality)
             record_workflow_result(context=context, plan=plan, quality=quality, usage=usage, status="succeeded")
 
