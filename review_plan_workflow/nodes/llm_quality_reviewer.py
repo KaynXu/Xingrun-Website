@@ -27,6 +27,10 @@ def _review_message(
                 "category": "schema|subject_fit|task_actionability|question_quality|factuality|review_loop|workload_sanity|style_consistency|pdf_safety",
                 "description": "具体问题，必须能定位到计划内容。",
                 "suggested_fix": "给 revision 节点的具体修复动作。",
+                "target_path": "如 days[0].choices[1]；只有能定位到具体题目时填写。",
+                "day": "如 1；只有能定位到具体复习日时填写。",
+                "question_type": "choice|blank；只有能定位到具体题型时填写。",
+                "question_index": "从 1 开始的题号；只有能定位到具体题目时填写。",
             }
         ],
         "revision_instructions": ["按优先级列出定向修订动作。"],

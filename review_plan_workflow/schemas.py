@@ -219,10 +219,17 @@ class PromptBundle(BaseModel):
 
 
 class QualityIssue(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     severity: Literal["low", "medium", "high"] = "medium"
     category: str = "completeness"
     description: str
     suggested_fix: str = ""
+    target_path: str = ""
+    day: Optional[int] = None
+    day_index: Optional[int] = None
+    question_index: Optional[int] = None
+    question_type: str = ""
 
 
 class QualityReview(BaseModel):

@@ -15,7 +15,15 @@ import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
-from review_plan_workflow.schemas import ReviewPlanInput, SourceSummary, TaskBlueprint, normalize_final_review_plan, validate_final_review_plan
+from review_plan_workflow.schemas import (
+    QualityIssue,
+    QualityReview,
+    ReviewPlanInput,
+    SourceSummary,
+    TaskBlueprint,
+    normalize_final_review_plan,
+    validate_final_review_plan,
+)
 from review_plan_workflow.service import _fallback_agent_blueprint, generate_single_lesson_review_plan
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
@@ -289,7 +297,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
     def test_quality_policy_allows_second_revision_for_question_factual_errors(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
-        from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
+        from review_plan_workflow.schemas import ReviewPlanSourceBrief
 
         quality = QualityReview(
             score=62,
@@ -308,6 +316,102 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         source_brief = ReviewPlanSourceBrief(confidence=0.82)
 
         self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 2)
+
+    def test_question_repair_localizes_cn_choice_issue(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        quality = QualityReview(
+            score=62,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+                    suggested_fix="重写第1天选择题第2题，并重新验算答案。",
+                )
+            ],
+            revision_instructions=["重写错题"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0].target_id, "day1_choice2")
+        self.assertEqual(targets[0].kind, "choice")
+        self.assertEqual(targets[0].question["question"], "解分式方程后为什么要代回原分母检验？")
+
+    def test_question_repair_rejects_unlocalized_structural_issue(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        quality = QualityReview(
+            score=40,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="schema",
+                    description="review plan must include review days",
+                    suggested_fix="补齐 days",
+                )
+            ],
+            revision_instructions=["补齐结构"],
+        )
+
+        self.assertEqual(find_question_repair_targets(writer_style_single_lesson_plan(), quality), [])
+
+    def test_question_repair_uses_structured_target_path(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        quality = QualityReview(
+            score=60,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="factuality",
+                    description="答案验算错误。",
+                    suggested_fix="重写该选择题答案。",
+                    target_path="days[0].choices[1]",
+                )
+            ],
+            revision_instructions=["按 target_path 修复"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0].target_id, "day1_choice2")
+
+    def test_question_repair_target_path_uses_day_array_position(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        quality = QualityReview(
+            score=60,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="factuality",
+                    description="第 7 天第二道选择题答案验算错误。",
+                    suggested_fix="重写该选择题答案。",
+                    target_path="days[2].choices[1]",
+                )
+            ],
+            revision_instructions=["按 target_path 修复"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0].target_id, "day7_choice2")
 
     def test_source_brief_builder_records_structured_source_before_writer(self):
         from review_plan_workflow.executor import run_workflow_node
@@ -1137,6 +1241,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(usage["output_tokens"], 34)
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.question_repair.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
@@ -1145,6 +1250,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         mock_parent_plan,
         mock_generate_plan,
         mock_llm_review,
+        mock_question_repair,
         mock_revise_plan,
     ):
         config_runtime.write_file_config({
@@ -1169,10 +1275,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             },
             {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
         )
-        initial_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
-        first_revision = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
-        fixed_plan = valid_single_lesson_plan(subject="数学", topic="勾股定理及勾股数应用")
-        fixed_plan["weak_points_summary"] = "已修正三边根式判断题，答案与验算一致。"
+        initial_plan = writer_style_single_lesson_plan()
+        initial_plan["lesson_info"]["topic"] = "勾股定理及勾股数应用"
         mock_generate_plan.return_value = (
             initial_plan,
             {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
@@ -1197,9 +1301,37 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                 {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
             ),
         ]
-        mock_revise_plan.side_effect = [
-            (first_revision, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4}),
-            (fixed_plan, {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4}),
+        mock_question_repair.side_effect = [
+            (
+                {
+                    "repairs": [
+                        {
+                            "target_id": "day1_choice2",
+                            "kind": "choice",
+                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
+                            "options": ["A. 直角三角形", "B. 钝角三角形", "C. 等边三角形", "D. 不存在"],
+                            "answer": "A",
+                            "analysis": "第一次修复仍错误，审稿会继续拦截。",
+                        }
+                    ]
+                },
+                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4},
+            ),
+            (
+                {
+                    "repairs": [
+                        {
+                            "target_id": "day1_choice2",
+                            "kind": "choice",
+                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
+                            "options": ["A. 直角三角形", "B. 锐角三角形", "C. 钝角三角形", "D. 不存在"],
+                            "answer": "B",
+                            "analysis": "最大边平方为 5，另外两边平方和为 7，5<7，所以是锐角三角形。",
+                        }
+                    ]
+                },
+                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4},
+            ),
         ]
 
         generated, usage = generate_single_lesson_review_plan(
@@ -1212,11 +1344,17 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             include_usage=True,
         )
 
-        self.assertEqual(generated["weak_points_summary"], "已修正三边根式判断题，答案与验算一致。")
-        self.assertEqual(mock_revise_plan.call_count, 2)
+        self.assertEqual(generated["days"][0]["choices"][1]["answer"], "B")
+        self.assertIn("锐角三角形", generated["days"][0]["choices"][1]["analysis"])
+        self.assertEqual(mock_question_repair.call_count, 2)
+        mock_revise_plan.assert_not_called()
         self.assertEqual(mock_llm_review.call_count, 3)
-        self.assertEqual(mock_revise_plan.call_args_list[0].kwargs["stage"], "targeted_revision")
-        self.assertEqual(mock_revise_plan.call_args_list[1].kwargs["stage"], "targeted_revision")
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["stage"], "question_repair")
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["provider"], "deepseek")
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["model"], "deepseek-v4-pro")
+        self.assertEqual(mock_question_repair.call_args_list[0].kwargs["timeout_seconds"], 45.0)
+        self.assertIn("day1_choice2", mock_question_repair.call_args_list[0].kwargs["user_message"])
+        self.assertNotIn("当前计划 JSON", mock_question_repair.call_args_list[0].kwargs["user_message"])
         self.assertEqual(usage["provider"], "openai")
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")

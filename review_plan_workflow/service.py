@@ -17,6 +17,7 @@ from .nodes import (
     parent_planner_node,
     plan_generator_node,
     prompt_bundle_builder_node,
+    question_repair_node,
     quality_reviewer_llm_node,
     revision_node,
     scope_planner_node,
@@ -28,6 +29,7 @@ from .nodes import (
 )
 from .quality_gate import review_single_lesson_plan
 from .quality_policy import max_revision_attempts_for_quality, should_run_llm_quality_review
+from .nodes.question_repair import can_repair_questions
 from .llm.client import merge_usage
 from .observability import (
     flush,
@@ -357,19 +359,39 @@ def _maybe_revise_plan(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            revised_plan, revision_usage = run_workflow_node(
-                revision_node,
-                {
-                    "input": review_input,
-                    "prompt_bundle": prompt_bundle,
-                    "plan": current_plan,
-                    "quality": current_quality,
-                    "attempt": attempt,
-                    "agent_blueprint": agent_blueprint,
-                    "source_brief": source_brief,
-                },
-                context,
-            )
+            revision_input = {
+                "input": review_input,
+                "prompt_bundle": prompt_bundle,
+                "plan": current_plan,
+                "quality": current_quality,
+                "attempt": attempt,
+                "agent_blueprint": agent_blueprint,
+                "source_brief": source_brief,
+            }
+            if can_repair_questions(current_plan, current_quality):
+                try:
+                    revised_plan, revision_usage = run_workflow_node(
+                        question_repair_node,
+                        revision_input,
+                        context,
+                    )
+                except Exception as exc:
+                    context.add_warning(
+                        "question_repair_fallback",
+                        f"第 {attempt} 次题目级修复失败，已改用完整修订：{exc}",
+                        "medium",
+                    )
+                    revised_plan, revision_usage = run_workflow_node(
+                        revision_node,
+                        revision_input,
+                        context,
+                    )
+            else:
+                revised_plan, revision_usage = run_workflow_node(
+                    revision_node,
+                    revision_input,
+                    context,
+                )
         except Exception as exc:
             context.add_warning(
                 "quality_revision_failed",
