@@ -37,3 +37,6 @@ data/pdfs/*.zip
 data/pdfs/wrong_question_practice_sheets/
 data/pdfs/wrong_question_practice_packs/
 xunlian   md/
+
+# Local CodeGraph index
+.codegraph/
