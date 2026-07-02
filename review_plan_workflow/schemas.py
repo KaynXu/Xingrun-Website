@@ -518,6 +518,35 @@ def _normalize_task_payload(value: Any) -> tuple[list[dict[str, Any]], list[dict
     return blanks, choices, body_items
 
 
+def _normalize_task_blocks_payload(value: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    blanks: list[dict[str, Any]] = []
+    choices: list[dict[str, Any]] = []
+    body_items: list[str] = []
+    if not isinstance(value, list):
+        return blanks, choices, body_items
+    for block in value:
+        if not isinstance(block, dict):
+            continue
+        block_type = _clean_text(block.get("type")).replace("-", "_").lower()
+        block_items = block.get("items")
+        if block_type in {"blank", "blanks", "fill", "fills", "fill_in_blanks", "fillinblanks", "blanks_card"}:
+            block_blanks, _, block_body = _normalize_task_payload({"blanks": block_items if isinstance(block_items, list) else []})
+            block_choices = []
+        elif block_type in {"choice", "choices", "multiple_choice", "multiplechoice", "choices_card"}:
+            _, block_choices, block_body = _normalize_task_payload({"choices": block_items if isinstance(block_items, list) else []})
+            block_blanks = []
+        else:
+            block_blanks, block_choices, block_body = _normalize_task_payload(block_items if isinstance(block_items, list) else block)
+        for blank in block_blanks:
+            _append_unique_blank(blanks, blank)
+        for choice in block_choices:
+            _append_unique_choice(choices, choice)
+        for text in block_body:
+            if text not in body_items:
+                body_items.append(text)
+    return blanks, choices, body_items
+
+
 def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(day)
     try:
@@ -569,6 +598,7 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
 
     component_blanks, component_choices, component_body_items, component_quotes = _normalize_component_payload(normalized)
     task_blanks, task_choices, task_body_items = _normalize_task_payload(normalized.get("tasks"))
+    task_block_blanks, task_block_choices, task_block_body_items = _normalize_task_blocks_payload(normalized.get("task_blocks"))
     section_blanks, section_choices, section_body_items = _normalize_task_payload(normalized.get("sections"))
     question_blanks, question_choices, question_body_items = _normalize_task_payload(normalized.get("questions"))
     items = [copy.deepcopy(item) for item in normalized.get("items", []) if isinstance(item, dict)]
@@ -577,6 +607,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     for text in component_body_items:
         _append_unique_body(items, text)
     for text in task_body_items:
+        _append_unique_body(items, text)
+    for text in task_block_body_items:
         _append_unique_body(items, text)
     for text in section_body_items:
         _append_unique_body(items, text)
@@ -640,6 +672,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
         _append_unique_blank(normalized_blanks, blank)
     for blank in task_blanks:
         _append_unique_blank(normalized_blanks, blank)
+    for blank in task_block_blanks:
+        _append_unique_blank(normalized_blanks, blank)
     for blank in section_blanks:
         _append_unique_blank(normalized_blanks, blank)
     for blank in question_blanks:
@@ -673,6 +707,8 @@ def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     for choice in component_choices:
         _append_unique_choice(normalized_choices, choice)
     for choice in task_choices:
+        _append_unique_choice(normalized_choices, choice)
+    for choice in task_block_choices:
         _append_unique_choice(normalized_choices, choice)
     for choice in section_choices:
         _append_unique_choice(normalized_choices, choice)
