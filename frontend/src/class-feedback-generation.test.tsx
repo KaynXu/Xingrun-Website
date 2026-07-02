@@ -57,7 +57,7 @@ test('class feedback generation page exposes generated task history', () => {
 
 test('class feedback generation page saves transcript before generation', () => {
   assert.match(source, /if \(!trimmedConfirmedTranscript\) \{\s*setErrorMessage\('请先确认转写文本'\);/);
-  assert.match(source, /const savedTask = task\s*\?\s*\(transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task\)\s*:\s*await createClassCommentaryTextTask\(Number\(selectedClassId\), trimmedConfirmedTranscript\);/);
+  assert.match(source, /const savedTask = task && canUseTranscript\s*\?\s*\(transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task\)\s*:\s*await createClassCommentaryTextTask\(Number\(selectedClassId\), trimmedConfirmedTranscript\);/);
   assert.match(source, /await generateClassCommentaryFeedback\(savedTask\.id, selectedSkillId\)/);
 });
 
@@ -66,7 +66,12 @@ test('class feedback generation page does not trim undefined persisted transcrip
 });
 
 test('class feedback generation page allows manual transcript generation without audio task', () => {
-  assert.match(source, /const canGenerate = !busy && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(!task \|\| canUseTranscript\);/);
+  assert.match(source, /const canCreateManualTextTask = !task \|\| task\.status === 'uploaded' \|\| task\.status === 'transcribing';/);
+  assert.match(source, /const canGenerate = !busy && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\);/);
   assert.match(source, /disabled=\{loadingInitial\}/);
   assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
+});
+
+test('class feedback generation creates a new text task when the selected task is still transcribing', () => {
+  assert.match(source, /const savedTask = task && canUseTranscript\s*\?\s*\(transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task\)\s*:\s*await createClassCommentaryTextTask\(Number\(selectedClassId\), trimmedConfirmedTranscript\);/);
 });
