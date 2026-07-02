@@ -8,7 +8,7 @@ from review_plan_workflow.state import WorkflowContext
 
 
 DAY_LABELS = {
-    1: "当天复现",
+    1: "第1天复习",
     2: "隔天回看",
     7: "一周巩固",
     14: "两周混合",
@@ -27,10 +27,11 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> TimeAllocation
 
     review_schedule: list[dict[str, Any]] = []
     for day in scope.review_days:
+        label = "第1天集中复习" if scope.review_days == [1] and day == 1 else DAY_LABELS.get(day, f"第 {day} 天复习")
         review_schedule.append(
             {
                 "day": day,
-                "label": DAY_LABELS.get(day, f"第 {day} 天复习"),
+                "label": label,
                 "target_minutes": workload_minutes,
                 "focus": " + ".join(scope.review_loop[:2]) if day in {1, 2} else " + ".join(scope.review_loop[-2:]),
             }

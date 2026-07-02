@@ -16,10 +16,12 @@ from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import (
+    NormalizedBrief,
     QualityIssue,
     QualityReview,
     ReviewPlanInput,
     ReviewPlanSourceBrief,
+    ScopePlan,
     SourceSummary,
     TaskBlueprint,
     normalize_final_review_plan,
@@ -312,6 +314,22 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("至少提供 5 个不重复的可打印题目", instructions)
         self.assertIn("worked_example", instructions)
         self.assertIn("error_log", criteria)
+
+    def test_time_allocator_uses_readable_label_for_compressed_one_day_plan(self):
+        from review_plan_workflow.nodes.time_allocator import time_allocator_node
+        from review_plan_workflow.executor import run_workflow_node
+        from review_plan_workflow.state import WorkflowContext
+
+        allocation = run_workflow_node(
+            time_allocator_node,
+            {
+                "normalized": NormalizedBrief(subject="math", confidence=0.8),
+                "scope": ScopePlan(review_days=[1], review_loop=["定义回看", "错因复盘"]),
+            },
+            WorkflowContext(),
+        )
+
+        self.assertEqual(allocation.review_schedule[0]["label"], "第1天集中复习")
 
     def test_review_plan_input_accepts_custom_review_days(self):
         review_input = ReviewPlanInput(

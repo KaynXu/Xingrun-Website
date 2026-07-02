@@ -98,7 +98,7 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
 
         lesson, days, reminders = adapt_plan_to_review_template(plan_data)
 
-        self.assertEqual(reminders[0], "每一个复习日都要完整复习整节课内容。")
+        self.assertEqual(reminders[0], "本次集中复习要完整扫过课堂主线。")
         self.assertEqual(lesson["full_review_topics"], ["1. 折射率与全反射", "[ ] 干涉", "机械波->图像判断"])
         self.assertEqual(days[0]["focus"], "[已完成] 第1天复盘")
         self.assertEqual(days[0]["tasks"][0], "题型 [填空题·折射率]")
@@ -106,6 +106,23 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(days[0]["tasks"][2], "提示：先抓频率不变")
         self.assertEqual(days[0]["blanks"][0], ("[ ] 折射率公式->____", "n=c/v"))
         self.assertEqual(days[0]["quotes"], ["注意：易错点：别把质点振动当成随波迁移"])
+
+    def test_adapt_plan_to_review_template_hides_pending_confirmation_copy_for_one_day_plan(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template, build_single_lesson_pdf_filename
+
+        plan = valid_single_lesson_plan(subject="数学", topic="代数基础巩固（高一衔接基础补漏，待确认）")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["label"] = "当天复现"
+
+        lesson, days, reminders = adapt_plan_to_review_template(plan)
+        filename = build_single_lesson_pdf_filename(plan, suffix="96-v1")
+
+        self.assertEqual(lesson["title"], "代数基础巩固复习计划")
+        self.assertNotIn("待确认", lesson["title"])
+        self.assertEqual(days[0]["day"], "第1天集中复习")
+        self.assertEqual(reminders[0], "本次集中复习要完整扫过课堂主线。")
+        self.assertEqual(filename, "代数基础巩固-96-v1.pdf")
 
     def test_adapt_plan_to_review_template_preserves_method_map_density(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template, extract_knowledge_sections

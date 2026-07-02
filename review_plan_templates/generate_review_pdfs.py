@@ -1639,6 +1639,29 @@ def build_day_heading(day, base_date, chinese_only=False):
     return f"{day_label}  |  Date: {format_iso_date(review_date)}"
 
 
+def max_review_day(days):
+    day_numbers = []
+    for day in days or []:
+        try:
+            day_numbers.append(max(1, int(day.get("offset", 1))))
+        except Exception:
+            continue
+    return max(day_numbers or [30])
+
+
+def adapt_labels_for_review_schedule(labels, days, chinese_only):
+    if not chinese_only:
+        return labels
+    review_day = max_review_day(days)
+    labels = dict(labels)
+    if review_day <= 1:
+        labels["usage_text"] = "集中完成本次复习：先回忆课堂主线，再完成题目和自查。"
+        labels["final_reminder_box"] = "本次集中复习后应留下的内容"
+    elif review_day < 30:
+        labels["final_reminder_box"] = f"{review_day}天复习后应留下的内容"
+    return labels
+
+
 def load_unified_review_plan_style_config() -> dict[str, Any]:
     style_path = ROOT.parent / "review_plan_workflow" / "prompts" / "styles" / "review_plan_style.yaml"
     if not style_path.exists():
@@ -2086,9 +2109,9 @@ def on_page(styles, variant_key, style_config=None, lesson_title=None):
 def build_story(styles, variant_key, *, lesson=None, days=None, final_reminder_lines=None, knowledge_sections=None, base_date=None, style_config=None):
     base_date = _coerce_base_date(base_date)
     chinese_only = is_chinese_only(variant_key)
-    labels = build_labels(chinese_only)
     lesson = lesson or LESSON
     days = days or DAYS
+    labels = adapt_labels_for_review_schedule(build_labels(chinese_only), days, chinese_only)
     final_reminder_lines = final_reminder_lines or FINAL_REMINDER_LINES
     knowledge_sections = knowledge_sections if knowledge_sections is not None else KNOWLEDGE_SECTIONS
     style_config = style_config or {}

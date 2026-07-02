@@ -12,6 +12,11 @@ DEFAULT_FINAL_REMINDERS = [
     "先回忆课堂原话，再完成当天填空与选择。",
     "遇到不会的题先回看课堂总结，再补做口头复述。",
 ]
+ONE_DAY_FINAL_REMINDERS = [
+    "本次集中复习要完整扫过课堂主线。",
+    "先回忆核心方法，再完成填空、选择和自查。",
+    "把错题原因记录下来，方便老师下次讲评。",
+]
 BAD_QUOTE_PATTERNS = (
     "每一个复习日",
     "完整复习整节课内容",
@@ -221,7 +226,7 @@ def _active_recall_cards(active_recall: object) -> list[str]:
 
 
 def _lesson_title_from_topic(topic: str) -> str:
-    clean_topic = re.sub(r"(课后)?复习计划$", "", _clean_text(topic, "课后")).strip()
+    clean_topic = _clean_visible_topic(re.sub(r"(课后)?复习计划$", "", _clean_text(topic, "课后")).strip())
     if clean_topic.endswith("复习"):
         return f"{clean_topic}计划"
     return f"{clean_topic}复习计划"
@@ -229,6 +234,14 @@ def _lesson_title_from_topic(topic: str) -> str:
 
 def _strip_review_plan_suffix(value: object) -> str:
     return re.sub(r"(课后)?复习计划$", "", _clean_text(value)).strip()
+
+
+def _clean_visible_topic(value: object) -> str:
+    text = _strip_review_plan_suffix(value)
+    text = re.sub(r"[（(][^（）()]*?(?:待确认|需确认|需要确认)[^（）()]*?[）)]", "", text)
+    text = re.sub(r"[，,、；;]?\s*(?:待确认|需确认|需要确认)\s*$", "", text)
+    text = re.sub(r"\s{2,}", " ", text).strip(" -—，,、；;")
+    return text
 
 
 def _is_generic_topic(value: object) -> bool:
@@ -250,7 +263,7 @@ def _resolve_lesson_topic(plan_data: dict, lesson_info: dict) -> str:
         plan_data.get("plan_title"),
         plan_data.get("title"),
     ):
-        topic = _strip_review_plan_suffix(value)
+        topic = _clean_visible_topic(value)
         if topic and not _is_generic_topic(topic):
             return topic
     topic = _first_non_generic_line(lesson_info.get("key_categories")) or _first_non_generic_line(plan_data.get("full_review_topics"))
@@ -460,7 +473,12 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
     days = [adapt_day(day_data, question_pool, topic) for day_data in plan_data.get("days", [])]
     if not days:
         days = [adapt_day({"day": 1, "label": "第1天", "items": []}, question_pool, topic)]
-    reminders = _dedupe_clean_lines(plan_data.get("final_reminder_lines")) or list(DEFAULT_FINAL_REMINDERS)
+    one_day_plan = len(days) == 1 and int(days[0].get("offset") or 1) == 1
+    if one_day_plan and days[0].get("day") == "当天复现":
+        days[0]["day"] = "第1天集中复习"
+    reminders = _dedupe_clean_lines(plan_data.get("final_reminder_lines")) or list(
+        ONE_DAY_FINAL_REMINDERS if one_day_plan else DEFAULT_FINAL_REMINDERS
+    )
     return lesson, days, reminders
 
 
@@ -481,7 +499,7 @@ def generate_single_lesson_pdf(plan_data: dict, output_path: str) -> str:
 
 def build_single_lesson_pdf_filename(plan_data: dict, *, suffix: str = "") -> str:
     lesson, _, _ = adapt_plan_to_review_template(plan_data)
-    title = _strip_review_plan_suffix(lesson.get("title"))
+    title = _clean_visible_topic(lesson.get("title"))
     if _is_generic_topic(title):
         title = f"{_clean_text(lesson.get('subject'), '课程')}复习计划"
     stem = make_safe_filename_part(title, "课程复习计划", 36)

@@ -77,7 +77,7 @@ def _planner_message(
         "student_diagnosis": ["学生最需要修复的认知断点或错因。"],
         "knowledge_map": [
             {
-                "name": "知识点或待确认复习范围",
+                "name": "知识点或通用复习范围",
                 "role": "为什么重要",
                 "evidence": "课堂材料证据、老师要求、页面元数据，或 low_source_fallback",
             }
@@ -103,7 +103,7 @@ def _planner_message(
             "你是父模型，只做任务分析、拆解和写作蓝图，不生成最终 PDF JSON。",
             "目标是让后续 writer 像 Codex 一样先理解再执行，而不是一次性套模板。",
             "如果 source_brief 缺 topic/knowledge_points 或课堂材料过短，不要中止；基于 subject、grade、user_requirements 规划通用可交付复习，并在 assumptions 标明课堂主题需老师确认。",
-            "不要把低证据推测写成已确认课堂事实；可以把它写成待确认复习范围或 low_source_fallback。",
+            "不要把低证据推测写成已确认课堂事实；标题和 topic 不要出现“待确认/需确认”，可以把内部依据写成 assumptions 或 low_source_fallback。",
             "请返回严格 JSON object，字段按 output_contract。",
             "output_contract:\n" + json.dumps(output_contract, ensure_ascii=False, indent=2),
             "workflow_input:\n" + json.dumps(payload, ensure_ascii=False, indent=2),
