@@ -33,6 +33,7 @@ from .quality_policy import (
     max_revision_attempts_for_quality,
     should_run_llm_quality_review,
     soften_quality_after_revision,
+    soft_pass_warning_for_quality,
 )
 from .nodes.question_repair import can_repair_questions
 from .llm.client import merge_usage
@@ -467,9 +468,10 @@ def _maybe_revise_plan(
 
     if best_quality.must_revise and can_soft_pass_after_revision(best_quality):
         softened_quality = soften_quality_after_revision(best_quality)
+        warning_code, warning_message = soft_pass_warning_for_quality(best_quality)
         context.add_warning(
-            "quality_workload_soft_pass",
-            "复习计划任务量偏重，已完成一次自动修订；剩余 workload 提醒不再阻断文档生成。",
+            warning_code,
+            warning_message,
             "medium",
         )
         return best_plan, softened_quality, total_usage
