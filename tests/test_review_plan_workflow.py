@@ -384,6 +384,43 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 2)
 
+    def test_quality_policy_softens_workload_after_revision_only_when_no_other_high_issue(self):
+        from review_plan_workflow.quality_policy import can_soft_pass_after_revision, soften_quality_after_revision
+
+        workload_quality = QualityReview(
+            score=70,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="workload_sanity",
+                    description="第1天任务量超过30分钟。",
+                    suggested_fix="减少任务或调整时间。",
+                )
+            ],
+            revision_instructions=["减少任务或调整时间"],
+        )
+
+        self.assertTrue(can_soft_pass_after_revision(workload_quality))
+        softened = soften_quality_after_revision(workload_quality)
+        self.assertTrue(softened.passed)
+        self.assertFalse(softened.must_revise)
+        self.assertEqual(softened.score, 85)
+        self.assertEqual(softened.issues[0].severity, "medium")
+
+        mixed_quality = QualityReview(
+            score=50,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(severity="high", category="workload_sanity", description="任务太多。"),
+                QualityIssue(severity="high", category="question_quality", description="选择题答案错误。"),
+            ],
+            revision_instructions=["修复问题"],
+        )
+        self.assertFalse(can_soft_pass_after_revision(mixed_quality))
+
     def test_question_repair_localizes_cn_choice_issue(self):
         from review_plan_workflow.nodes.question_repair import find_question_repair_targets
 
@@ -1309,6 +1346,104 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("定义域遗漏", revise_kwargs["user_message"])
         self.assertEqual(usage["input_tokens"], 75)
         self.assertEqual(usage["output_tokens"], 34)
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_workload_sanity_issue_revises_once_then_soft_passes(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "压缩复习，但保持任务可执行。",
+                "student_diagnosis": ["需要集中复习"],
+                "knowledge_map": [{"name": "小数运算", "role": "核心", "evidence": "课堂"}],
+                "day_strategies": [{"day": 1, "objective": "小数运算集中复习"}],
+                "writer_instructions": ["优先减少任务量，不要阻断生成。"],
+                "quality_risks": ["任务量可能偏重。"],
+                "success_criteria": ["能完成核心题目。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = valid_single_lesson_plan(subject="数学", topic="小数运算")
+        initial_plan["days"] = initial_plan["days"][:1]
+        initial_plan["days"][0]["day"] = 1
+        revised_plan = valid_single_lesson_plan(subject="数学", topic="小数运算")
+        revised_plan["days"] = revised_plan["days"][:1]
+        revised_plan["days"][0]["day"] = 1
+        revised_plan["days"][0]["completion_standard"] = "完成核心题后记录一个错因即可。"
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        workload_issue = {
+            "severity": "high",
+            "category": "workload_sanity",
+            "description": "第1天标注30分钟，但实际包含20多项产出，五年级学生无法稳定完成。",
+            "suggested_fix": "减少任务量或调整完成标准。",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {"score": 70, "passed": False, "must_revise": True, "issues": [workload_issue], "revision_instructions": ["压缩任务量"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 76, "passed": False, "must_revise": True, "issues": [workload_issue], "revision_instructions": ["仍偏重，但不影响内容可用"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4},
+        )
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="五年级",
+            topic="小数运算",
+            summary="课堂总结文本",
+            weak_points="任务量偏重",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="五年级",
+            topic="小数运算",
+            lesson_date="2026-07-02",
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            lesson_id=lesson_id,
+            organization_id=1,
+            include_usage=True,
+        )
+
+        self.assertEqual([day["day"] for day in generated["days"]], [1])
+        self.assertEqual(mock_revise_plan.call_count, 1)
+        self.assertEqual(mock_llm_review.call_count, 2)
+        self.assertEqual(usage["input_tokens"], 28)
+        self.assertEqual(usage["output_tokens"], 13)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(run["quality_review"]["passed"], True)
+        self.assertEqual(run["quality_review"]["must_revise"], False)
+        self.assertEqual(run["quality_review"]["score"], 85)
+        self.assertEqual(run["quality_review"]["issues"][0]["severity"], "medium")
+        self.assertTrue(any(warning["code"] == "quality_workload_soft_pass" for warning in run["warnings"]))
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.question_repair.generate_review_plan_json")

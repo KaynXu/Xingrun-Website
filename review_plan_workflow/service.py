@@ -28,7 +28,12 @@ from .nodes import (
     time_allocator_node,
 )
 from .quality_gate import review_single_lesson_plan
-from .quality_policy import max_revision_attempts_for_quality, should_run_llm_quality_review
+from .quality_policy import (
+    can_soft_pass_after_revision,
+    max_revision_attempts_for_quality,
+    should_run_llm_quality_review,
+    soften_quality_after_revision,
+)
 from .nodes.question_repair import can_repair_questions
 from .llm.client import merge_usage
 from .observability import (
@@ -459,6 +464,15 @@ def _maybe_revise_plan(
             best_quality = current_quality
         if not current_quality.must_revise:
             return current_plan, current_quality, total_usage
+
+    if best_quality.must_revise and can_soft_pass_after_revision(best_quality):
+        softened_quality = soften_quality_after_revision(best_quality)
+        context.add_warning(
+            "quality_workload_soft_pass",
+            "复习计划任务量偏重，已完成一次自动修订；剩余 workload 提醒不再阻断文档生成。",
+            "medium",
+        )
+        return best_plan, softened_quality, total_usage
 
     if best_quality.must_revise:
         context.add_warning(

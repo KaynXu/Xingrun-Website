@@ -3,6 +3,9 @@ from __future__ import annotations
 from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
 
 
+SOFT_BLOCKING_CATEGORIES_AFTER_REVISION = {"workload_sanity"}
+
+
 def _has_high_issue(quality: QualityReview) -> bool:
     return any(issue.severity == "high" for issue in quality.issues)
 
@@ -12,6 +15,39 @@ def _has_repairable_question_issue(quality: QualityReview) -> bool:
         issue.severity == "high"
         and issue.category in {"question_quality", "factuality", "pdf_safety"}
         for issue in quality.issues
+    )
+
+
+def can_soft_pass_after_revision(quality: QualityReview) -> bool:
+    issues = quality.issues or []
+    if not issues:
+        return False
+    soft_issues = [issue for issue in issues if issue.category in SOFT_BLOCKING_CATEGORIES_AFTER_REVISION]
+    if not soft_issues:
+        return False
+    hard_high_issues = [
+        issue
+        for issue in issues
+        if issue.severity == "high" and issue.category not in SOFT_BLOCKING_CATEGORIES_AFTER_REVISION
+    ]
+    return not hard_high_issues
+
+
+def soften_quality_after_revision(quality: QualityReview) -> QualityReview:
+    if not can_soft_pass_after_revision(quality):
+        return quality
+    issues = [
+        issue.model_copy(update={"severity": "medium"})
+        if issue.severity == "high" and issue.category in SOFT_BLOCKING_CATEGORIES_AFTER_REVISION
+        else issue
+        for issue in quality.issues
+    ]
+    return QualityReview(
+        score=max(85, min(100, int(quality.score or 0))),
+        passed=True,
+        issues=issues,
+        must_revise=False,
+        revision_instructions=quality.revision_instructions,
     )
 
 
