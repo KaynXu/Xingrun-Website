@@ -3437,6 +3437,19 @@ def init_db():
             actor_user_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
+
+        CREATE TABLE IF NOT EXISTS academic_year_promotion_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            academic_year_start INTEGER NOT NULL,
+            job_type TEXT NOT NULL,
+            effective_date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(organization_id, academic_year_start, job_type)
+        );
         """)
         import master_data
 
@@ -3451,6 +3464,10 @@ def init_db():
         _ensure_column(conn, "classes", "bridge_target", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "content_track", "TEXT DEFAULT ''")
         _ensure_column(conn, "classes", "last_promoted_at", "TEXT DEFAULT ''")
+        _ensure_column(conn, "classes", "lifecycle_status", "TEXT NOT NULL DEFAULT 'active'")
+        _ensure_column(conn, "classes", "lifecycle_status_updated_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "classes", "graduated_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "classes", "graduation_academic_year_start", "INTEGER NOT NULL DEFAULT 0")
         # Safe migration: add class_id if not already present
         cols = [r[1] for r in conn.execute("PRAGMA table_info(lessons)").fetchall()]
         if "class_id" not in cols:
@@ -5974,6 +5991,16 @@ PROMOTION_NEXT_GRADE = {
     "高二": "高三",
 }
 GRADUATION_GRADES = {"六年级", "九年级", "高三"}
+CLASS_LIFECYCLE_ACTIVE = "active"
+CLASS_LIFECYCLE_PENDING_GRADUATION = "pending_graduation"
+CLASS_LIFECYCLE_GRADUATED = "graduated"
+CLASS_LIFECYCLE_ARCHIVED = "archived"
+CLASS_LIFECYCLE_HISTORY_STATUSES = {
+    CLASS_LIFECYCLE_PENDING_GRADUATION,
+    CLASS_LIFECYCLE_GRADUATED,
+    CLASS_LIFECYCLE_ARCHIVED,
+}
+ANNUAL_GRADE_PROMOTION_JOB_TYPE = "annual_grade_promotion"
 
 
 def normalize_class_grade(value: str) -> str:
@@ -6139,6 +6166,10 @@ def _class_row_to_dict(row) -> dict:
     item["bridge_target"] = item.get("bridge_target") or ""
     item["content_track"] = item.get("content_track") or ""
     item["last_promoted_at"] = item.get("last_promoted_at") or ""
+    item["lifecycle_status"] = item.get("lifecycle_status") or CLASS_LIFECYCLE_ACTIVE
+    item["lifecycle_status_updated_at"] = item.get("lifecycle_status_updated_at") or ""
+    item["graduated_at"] = item.get("graduated_at") or ""
+    item["graduation_academic_year_start"] = int(item.get("graduation_academic_year_start") or 0)
     if item["class_type"] == "group" and item["cohort_year"] and item["current_grade"] and item["class_number"]:
         item["name"] = build_group_class_name(
             item.get("subject") or "",
@@ -6151,6 +6182,16 @@ def _class_row_to_dict(row) -> dict:
             item["stage"],
         )
     return item
+
+
+def _class_lifecycle_where_clause(scope: str, table_alias: str = "c") -> str:
+    normalized_scope = (scope or "current").strip().lower()
+    column = f"{table_alias}.lifecycle_status"
+    if normalized_scope in {"all", "any"}:
+        return ""
+    if normalized_scope in {"history", "archived", "graduated"}:
+        return f"COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') != '{CLASS_LIFECYCLE_ACTIVE}'"
+    return f"COALESCE(NULLIF({column}, ''), '{CLASS_LIFECYCLE_ACTIVE}') = '{CLASS_LIFECYCLE_ACTIVE}'"
 
 
 def _build_class_payload(
@@ -6307,10 +6348,12 @@ def get_class(class_id: int):
         return _class_row_to_dict(row) if row else None
 
 
-def list_classes():
+def list_classes(scope: str = "current"):
+    lifecycle_clause = _class_lifecycle_where_clause(scope, "c")
+    where_sql = f"WHERE {lifecycle_clause}" if lifecycle_clause else ""
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT c.*, COUNT(DISTINCT l.id) as lesson_count,
                    COUNT(DISTINCT s_count.id) as student_count,
                    (
@@ -6324,6 +6367,7 @@ def list_classes():
             LEFT JOIN lessons l ON l.class_id = c.id
             LEFT JOIN class_students cs ON cs.class_id = c.id
             LEFT JOIN students s_count ON s_count.id = cs.student_id AND s_count.status='active'
+            {where_sql}
             GROUP BY c.id
             ORDER BY c.created_at DESC
             """
@@ -6485,52 +6529,203 @@ def bridge_crosses_target_stage(current_grade: str, next_grade: str, bridge_targ
 
 def promote_classes_for_academic_year(today: str | None = None) -> dict:
     today_value = today or date.today().isoformat()
+    academic_year_start = current_school_year_start(today_value)
     promoted_ids: list[int] = []
     pending_ids: list[int] = []
+    skipped_ids: list[int] = []
+    already_executed_org_ids: list[int] = []
+    summary_by_org: dict[int, dict[str, int]] = {}
     history_events: list[tuple[int, str, dict | None, dict | None]] = []
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM classes ORDER BY id").fetchall()
+        org_rows = conn.execute(
+            """
+            SELECT DISTINCT organization_id
+            FROM classes
+            WHERE organization_id IS NOT NULL
+            ORDER BY organization_id
+            """
+        ).fetchall()
+        for org_row in org_rows:
+            existing = conn.execute(
+                """
+                SELECT id
+                FROM academic_year_promotion_runs
+                WHERE organization_id=? AND academic_year_start=? AND job_type=?
+                """,
+                (org_row["organization_id"], academic_year_start, ANNUAL_GRADE_PROMOTION_JOB_TYPE),
+            ).fetchone()
+            if existing:
+                already_executed_org_ids.append(org_row["organization_id"])
+        executable_org_ids = [
+            row["organization_id"]
+            for row in org_rows
+            if row["organization_id"] not in already_executed_org_ids
+        ]
+        if not executable_org_ids:
+            return {
+                "promoted_ids": [],
+                "pending_ids": [],
+                "skipped_ids": [],
+                "already_executed_org_ids": already_executed_org_ids,
+            }
+        summary_by_org = {
+            org_id: {"promoted": 0, "pending_graduation": 0, "skipped_unknown_grade": 0}
+            for org_id in executable_org_ids
+        }
+
+        placeholders = ", ".join("?" for _ in executable_org_ids)
+        student_rows = conn.execute(
+            f"""
+            SELECT cs.class_id, s.name
+            FROM class_students cs
+            JOIN students s ON s.id = cs.student_id
+            JOIN classes c ON c.id = cs.class_id
+            WHERE c.organization_id IN ({placeholders}) AND s.status='active'
+            ORDER BY cs.class_id, s.name
+            """,
+            executable_org_ids,
+        ).fetchall()
+        student_names_by_class: dict[int, list[str]] = {}
+        for student_row in student_rows:
+            student_names_by_class.setdefault(student_row["class_id"], []).append(student_row["name"])
+
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM classes
+            WHERE organization_id IN ({placeholders})
+              AND COALESCE(NULLIF(lifecycle_status, ''), ?) = ?
+            ORDER BY id
+            """,
+            (*executable_org_ids, CLASS_LIFECYCLE_ACTIVE, CLASS_LIFECYCLE_ACTIVE),
+        ).fetchall()
         for row in rows:
             item = _class_row_to_dict(row)
-            if item.get("last_promoted_at", "").startswith(today_value):
-                continue
             current_grade = normalize_class_grade(item.get("current_grade") or item.get("grade") or "")
             next_grade = PROMOTION_NEXT_GRADE.get(current_grade)
-            if not next_grade:
-                pending_ids.append(item["id"])
-                history_events.append((item["id"], "promotion_pending", item, {"reason": "unknown_grade", "grade": current_grade}))
-                continue
             is_bridge = bool(item.get("is_bridge"))
-            if current_grade in GRADUATION_GRADES and not is_bridge:
+            crosses_bridge = bool(next_grade) and is_bridge and bridge_crosses_target_stage(current_grade, next_grade, item.get("bridge_target") or "")
+            if current_grade in GRADUATION_GRADES and not crosses_bridge:
                 pending_ids.append(item["id"])
-                history_events.append((item["id"], "promotion_pending", item, {"reason": "graduation_grade", "grade": current_grade}))
+                summary_by_org[item["organization_id"]]["pending_graduation"] += 1
+                after = {
+                    **item,
+                    "lifecycle_status": CLASS_LIFECYCLE_PENDING_GRADUATION,
+                    "lifecycle_status_updated_at": today_value,
+                    "graduation_academic_year_start": academic_year_start,
+                    "last_promoted_at": today_value,
+                }
+                conn.execute(
+                    """
+                    UPDATE classes
+                    SET lifecycle_status=?, lifecycle_status_updated_at=?,
+                        graduation_academic_year_start=?, last_promoted_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        CLASS_LIFECYCLE_PENDING_GRADUATION,
+                        today_value,
+                        academic_year_start,
+                        today_value,
+                        item["id"],
+                    ),
+                )
+                history_events.append((item["id"], "pending_graduation", item, after))
                 continue
-            next_is_bridge = is_bridge and not bridge_crosses_target_stage(current_grade, next_grade, item.get("bridge_target") or "")
+            if not next_grade:
+                skipped_ids.append(item["id"])
+                summary_by_org[item["organization_id"]]["skipped_unknown_grade"] += 1
+                history_events.append((item["id"], "annual_promotion_skipped", item, {"reason": "unknown_grade", "grade": current_grade}))
+                continue
+            next_is_bridge = is_bridge and not crosses_bridge
             next_stage = infer_class_stage(next_grade)
             class_number = item.get("class_number") or ""
-            next_name = build_group_class_name(
-                item.get("subject") or "",
-                item["cohort_year"],
-                next_grade,
-                class_number,
-                next_is_bridge,
-                True,
-                item.get("bridge_target") or "",
-                item.get("stage") or "",
-            ) if item.get("cohort_year") and class_number else item["name"]
+            next_bridge_target = item.get("bridge_target") or "" if next_is_bridge else ""
+            next_content_track = item.get("content_track") or "" if next_is_bridge else ""
+            next_cohort_year = (
+                infer_cohort_year_for_stage(next_grade, next_stage, today_value)
+                if crosses_bridge
+                else item["cohort_year"] or infer_cohort_year_for_stage(next_grade, next_stage, today_value)
+            )
+            if item.get("class_type") == "group":
+                next_name = build_group_class_name(
+                    item.get("subject") or "",
+                    next_cohort_year,
+                    next_grade,
+                    class_number,
+                    next_is_bridge,
+                    item.get("show_cohort_year", True),
+                    next_bridge_target,
+                    next_stage,
+                ) if class_number else item["name"]
+            else:
+                next_name = build_small_class_name(
+                    item.get("class_type") or "1v1",
+                    next_grade,
+                    student_names_by_class.get(item["id"], []),
+                    next_is_bridge,
+                    next_bridge_target,
+                    next_stage,
+                    item.get("subject") or "",
+                    next_cohort_year,
+                    item.get("show_cohort_year", True),
+                ) or item["name"]
             conn.execute(
                 """
                 UPDATE classes
-                SET grade=?, current_grade=?, stage=?, name=?, is_bridge=?, last_promoted_at=?
+                SET grade=?, current_grade=?, stage=?, name=?, cohort_year=?, is_bridge=?,
+                    bridge_target=?, content_track=?, last_promoted_at=?,
+                    lifecycle_status=?, lifecycle_status_updated_at=?, graduation_academic_year_start=0
                 WHERE id=?
                 """,
-                (next_grade, next_grade, next_stage, next_name, 1 if next_is_bridge else 0, today_value, item["id"]),
+                (
+                    next_grade,
+                    next_grade,
+                    next_stage,
+                    next_name,
+                    next_cohort_year,
+                    1 if next_is_bridge else 0,
+                    next_bridge_target,
+                    next_content_track,
+                    today_value,
+                    CLASS_LIFECYCLE_ACTIVE,
+                    today_value,
+                    item["id"],
+                ),
             )
             promoted_ids.append(item["id"])
-            history_events.append((item["id"], "promoted", item, {"current_grade": next_grade, "name": next_name, "is_bridge": next_is_bridge}))
+            summary_by_org[item["organization_id"]]["promoted"] += 1
+            history_events.append((item["id"], "annual_promoted", item, {"current_grade": next_grade, "name": next_name, "is_bridge": next_is_bridge}))
+
+        for org_id in executable_org_ids:
+            summary = {
+                **summary_by_org[org_id],
+                "effective_date": today_value,
+            }
+            conn.execute(
+                """
+                INSERT INTO academic_year_promotion_runs
+                    (organization_id, academic_year_start, job_type, effective_date, status, summary_json, note)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    org_id,
+                    academic_year_start,
+                    ANNUAL_GRADE_PROMOTION_JOB_TYPE,
+                    today_value,
+                    "completed_with_skips" if summary["skipped_unknown_grade"] else "completed",
+                    json.dumps(summary, ensure_ascii=False),
+                    f"{today_value} annual grade promotion",
+                ),
+            )
     for class_id, action, before, after in history_events:
         record_class_history(class_id, action, before=before, after=after)
-    return {"promoted_ids": promoted_ids, "pending_ids": pending_ids}
+    return {
+        "promoted_ids": promoted_ids,
+        "pending_ids": pending_ids,
+        "skipped_ids": skipped_ids,
+        "already_executed_org_ids": already_executed_org_ids,
+    }
 
 
 def delete_class(class_id: int):
@@ -6649,6 +6844,8 @@ def list_course_calendar_schedules_for_actor(actor_user: dict, start_date: str =
         where_clauses.append("s.organization_id=?")
         params.append(actor_user["organization_id"])
 
+    where_clauses.append(f"COALESCE(NULLIF(c.lifecycle_status, ''), '{CLASS_LIFECYCLE_ACTIVE}') = '{CLASS_LIFECYCLE_ACTIVE}'")
+
     if (actor_user or {}).get("role") == MEMBER_ROLE:
         class_ids = get_user_class_ids(actor_user["id"])
         if not class_ids:
@@ -6679,11 +6876,13 @@ def create_course_calendar_schedule(*, class_id: int, date_str: str, time_block:
     normalized_start_offset_minutes = _normalize_course_calendar_start_offset_minutes(start_offset_minutes)
     with get_conn() as conn:
         class_row = conn.execute(
-            "SELECT id, organization_id FROM classes WHERE id=?",
+            "SELECT id, organization_id, lifecycle_status FROM classes WHERE id=?",
             (class_id,),
         ).fetchone()
         if not class_row:
             raise LookupError("class not found")
+        if (class_row["lifecycle_status"] or CLASS_LIFECYCLE_ACTIVE) != CLASS_LIFECYCLE_ACTIVE:
+            raise ValueError("class is not active")
 
         conn.execute(
             """
@@ -8015,12 +8214,17 @@ def actor_can_manage_user_visible_pages(actor_user: dict, target_user: dict) -> 
     return False
 
 
-def list_classes_for_actor(actor_user: dict) -> list[dict]:
+def list_classes_for_actor(actor_user: dict, scope: str = "current") -> list[dict]:
     if (actor_user or {}).get("role") == SUPER_OWNER_ROLE:
-        return list_classes()
+        return list_classes(scope=scope)
+    lifecycle_clause = _class_lifecycle_where_clause(scope, "c")
+    where_clauses = ["c.organization_id=?"]
+    if lifecycle_clause:
+        where_clauses.append(lifecycle_clause)
+    where_sql = " AND ".join(where_clauses)
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT c.*, COUNT(l.id) as lesson_count,
                    (
                        SELECT uc.user_id
@@ -8031,7 +8235,7 @@ def list_classes_for_actor(actor_user: dict) -> list[dict]:
                    ) AS teacher_user_id
             FROM classes c
             LEFT JOIN lessons l ON l.class_id = c.id
-            WHERE c.organization_id=?
+            WHERE {where_sql}
             GROUP BY c.id
             ORDER BY c.created_at DESC
             """,

@@ -27,7 +27,7 @@ import {
 } from './model';
 import { CampusOverview } from './CampusOverview';
 import { ClassEditorModal } from './ClassEditorModal';
-import { ClassManagementTab } from './ClassManagementTab';
+import { ClassManagementTab, type ClassLifecycleFilter } from './ClassManagementTab';
 import { StudentManagementTab } from './StudentManagementTab';
 import { StudentProfileModal, type StudentProfileModalMode } from './StudentProfileModal';
 import { getStudentCenterPermissions } from './permissions';
@@ -207,6 +207,7 @@ export function StudentCenterPage({
   const [selectedClassStageFilter, setSelectedClassStageFilter] = useState<string>('全部学段');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('全部学科');
   const [selectedClassTeacherFilter, setSelectedClassTeacherFilter] = useState<number | 'all'>('all');
+  const [classLifecycleFilter, setClassLifecycleFilter] = useState<ClassLifecycleFilter>('current');
   const [activeClassFilterLayer, setActiveClassFilterLayer] = useState<'subject' | 'teacher' | 'stage' | 'grade' | null>(null);
   const [overviewSubjectFilter, setOverviewSubjectFilter] = useState<string>('全部学科');
   const [overviewTeacherFilter, setOverviewTeacherFilter] = useState<number | 'all'>('all');
@@ -472,7 +473,7 @@ export function StudentCenterPage({
     if (studentCenterTab !== 'students') {
       return;
     }
-    classes.forEach((item) => {
+    classes.filter((item) => !item.lifecycle_status || item.lifecycle_status === 'active').forEach((item) => {
       if (!Object.prototype.hasOwnProperty.call(studentsByClassId, item.id)) {
         void loadStudentsForClass(item.id);
       }
@@ -937,6 +938,7 @@ export function StudentCenterPage({
 
   const getClassTeacherUserId = (item: ClassItem) => resolveClassTeacherUserId(item, teacherBindingByClassId);
   const getClassEffectiveSubject = (item: ClassItem) => resolveClassEffectiveSubject(item, classes, teacherBindingByClassId, academicSubjectOptions);
+  const isCurrentClass = (item: ClassItem) => !item.lifecycle_status || item.lifecycle_status === 'active';
   const scopedClassItems = classes.filter((item) => {
     if (!studentCenterPermissions.isTeacherScoped) {
       return true;
@@ -944,6 +946,18 @@ export function StudentCenterPage({
     const itemTeacherUserId = getClassTeacherUserId(item);
     return itemTeacherUserId === currentUser.id || item.teacher_name === currentUser.display_name;
   });
+  const currentScopedClassItems = scopedClassItems.filter(isCurrentClass);
+  const pendingGraduationScopedClassItems = scopedClassItems.filter((item) => item.lifecycle_status === 'pending_graduation');
+  const lifecycleScopedClassItems = classLifecycleFilter === 'current'
+    ? currentScopedClassItems
+    : classLifecycleFilter === 'pending_graduation'
+      ? pendingGraduationScopedClassItems
+      : scopedClassItems;
+  const classLifecycleCounts = {
+    current: currentScopedClassItems.length,
+    pending_graduation: pendingGraduationScopedClassItems.length,
+    all: scopedClassItems.length,
+  };
   const classFilters = {
     subjectFilter: selectedSubjectFilter,
     teacherFilter: selectedClassTeacherFilter,
@@ -951,7 +965,7 @@ export function StudentCenterPage({
     gradeFilter: selectedGradeFilter,
   };
   const classFilterOptions = resolveClassFilterOptions({
-    classes: scopedClassItems,
+    classes: lifecycleScopedClassItems,
     subjectLookupClasses: classes,
     users,
     teacherBindingByClassId,
@@ -973,7 +987,7 @@ export function StudentCenterPage({
     gradeFilter: overviewGradeFilter,
   };
   const overviewFilterOptions = resolveOverviewFilterOptions({
-    classes: scopedClassItems,
+    classes: currentScopedClassItems,
     subjectLookupClasses: classes,
     users,
     teacherBindingByClassId,
@@ -1120,14 +1134,14 @@ export function StudentCenterPage({
           : overviewGradeFilterOptions.map((grade) => ({ id: grade, label: grade, selected: overviewGradeFilter === grade }));
   const getClassInfoIssues = (item: ClassItem) => resolveClassInfoIssues(item, teacherBindingByClassId, academicSubjectOptions);
   const filteredClasses = resolveFilteredClasses({
-    classes: scopedClassItems,
+    classes: lifecycleScopedClassItems,
     subjectLookupClasses: classes,
     teacherBindingByClassId,
     subjectOptions: academicSubjectOptions,
     filters: classFilters,
   });
   const overviewFilteredClasses = resolveOverviewFilteredClasses({
-    classes: scopedClassItems,
+    classes: currentScopedClassItems,
     subjectLookupClasses: classes,
     teacherBindingByClassId,
     subjectOptions: academicSubjectOptions,
@@ -1232,7 +1246,7 @@ export function StudentCenterPage({
     setExpandedClassId(null);
   };
   const studentRows = buildStudentRows({
-    classes: scopedClassItems,
+    classes: currentScopedClassItems,
     studentsByClassId,
     allStudents,
     teacherBindingByClassId,
@@ -1249,7 +1263,7 @@ export function StudentCenterPage({
   const studentFilterOptions = resolveStudentFilterOptions({
     rows: studentRows,
     classes,
-    scopedClasses: scopedClassItems,
+    scopedClasses: currentScopedClassItems,
     users,
     teacherBindingByClassId,
     subjectOptions: academicSubjectOptions,
@@ -1270,8 +1284,8 @@ export function StudentCenterPage({
     subjectOptions: academicSubjectOptions,
     filters: studentFilters,
   });
-  const activeStudentFilterSummary = buildStudentFilterSummary(studentFilters, users, scopedClassItems);
-  const studentFilterItems = buildStudentFilterItems(studentFilters, users, scopedClassItems);
+  const activeStudentFilterSummary = buildStudentFilterSummary(studentFilters, users, currentScopedClassItems);
+  const studentFilterItems = buildStudentFilterItems(studentFilters, users, currentScopedClassItems);
   const handleClearStudentFilter = (layer: typeof activeStudentFilterLayer) => {
     if (layer === 'subject') {
       setStudentSubjectFilter('全部学科');
@@ -1336,10 +1350,10 @@ export function StudentCenterPage({
     if (studentGradeFilter !== '全部' && !studentGradeFilterOptions.includes(studentGradeFilter)) {
       setStudentGradeFilter('全部');
     }
-    if (studentClassFilter !== 'all' && !scopedClassItems.some((item) => item.id === studentClassFilter)) {
+    if (studentClassFilter !== 'all' && !currentScopedClassItems.some((item) => item.id === studentClassFilter)) {
       setStudentClassFilter('all');
     }
-  }, [studentSubjectFilterOptions, studentTeacherFilterOptions, studentStageFilterOptions, studentGradeFilterOptions, scopedClassItems, studentSubjectFilter, studentTeacherFilter, studentStageFilter, studentGradeFilter, studentClassFilter]);
+  }, [studentSubjectFilterOptions, studentTeacherFilterOptions, studentStageFilterOptions, studentGradeFilterOptions, currentScopedClassItems, studentSubjectFilter, studentTeacherFilter, studentStageFilter, studentGradeFilter, studentClassFilter]);
   const activeStudentFilterOptions = resolveActiveStudentFilterOptions(activeStudentFilterLayer, studentFilters, studentFilterOptions);
   const handleClassCardClick = (event: React.MouseEvent, classId: number) => {
     if ((event.target as HTMLElement).closest('button, a, input, select, textarea')) {
@@ -1507,6 +1521,8 @@ export function StudentCenterPage({
           activeClassFilterLayer={activeClassFilterLayer}
           activeClassFilterOptions={activeClassFilterOptions}
           activeClassFilterSummary={activeClassFilterSummary}
+          classLifecycleFilter={classLifecycleFilter}
+          classLifecycleCounts={classLifecycleCounts}
           showClassCohortYear={showClassCohortYear}
           subjectOptions={academicSubjectOptions}
           onRefresh={() => loadPage(expandedClassId, { preserveStateOnError: true }).catch(() => undefined)}
@@ -1516,6 +1532,7 @@ export function StudentCenterPage({
           onActivateClassFilter={setActiveClassFilterLayer}
           onClearClassFilter={handleClearClassFilter}
           onSelectClassFilterOption={handleSelectClassFilterOption}
+          onClassLifecycleFilterChange={setClassLifecycleFilter}
           onShowClassCohortYearChange={setShowClassCohortYear}
           onClassCardClick={handleClassCardClick}
           onToggleExpandedClass={handleClassCardAction}

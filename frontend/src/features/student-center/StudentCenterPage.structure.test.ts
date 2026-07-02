@@ -65,7 +65,7 @@ test('student center passes member overview labels and read-only class copy into
   assert.match(studentCenterSource, /setStudentScheduleStatusFilter\('scheduled'\)/);
   assert.match(studentCenterSource, /setStudentClassFilter\(classId\)/);
   assert.match(studentCenterSource, /if \(!studentCenterPermissions\.canCreateClass\) \{[\s\S]*openReadOnlyClassStudents\(classId\);[\s\S]*return;/);
-  assert.match(studentCenterSource, /scopedClassItems\.some\(\(item\) => item\.id === studentClassFilter\)/);
+  assert.match(studentCenterSource, /currentScopedClassItems\.some\(\(item\) => item\.id === studentClassFilter\)/);
   assert.doesNotMatch(studentCenterSource, /studentClassFilterOptions\.some\(\(item\) => item\.id === studentClassFilter\)/);
 
   assert.match(campusOverviewSource, /overviewTitle/);
@@ -89,13 +89,19 @@ test('class management tab display is extracted from the student center page', (
   const studentCenterSource = readFileSync(studentCenterPageUrl, 'utf8');
   const classManagementTabSource = readFileSync(classManagementTabUrl, 'utf8');
 
-  assert.match(studentCenterSource, /import \{ ClassManagementTab \} from '\.\/ClassManagementTab';/);
+  assert.match(studentCenterSource, /import \{ ClassManagementTab, type ClassLifecycleFilter \} from '\.\/ClassManagementTab';/);
   assert.match(studentCenterSource, /<ClassManagementTab[\s\S]*filteredClasses=\{filteredClasses\}/);
   assert.doesNotMatch(studentCenterSource, /<h4 className="text-xl font-semibold text-slate-900 dark:text-white">班级卡片<\/h4>/);
 
   assert.match(classManagementTabSource, /export function ClassManagementTab/);
   assert.match(classManagementTabSource, /<FloatingFilterBar/);
   assert.match(classManagementTabSource, /班级列表/);
+  assert.match(classManagementTabSource, /当前班级/);
+  assert.match(classManagementTabSource, /待结业/);
+  assert.match(classManagementTabSource, /classLifecycleFilter/);
+  assert.match(studentCenterSource, /const \[classLifecycleFilter, setClassLifecycleFilter\] = useState<ClassLifecycleFilter>\('current'\)/);
+  assert.match(studentCenterSource, /<ClassManagementTab[\s\S]*classLifecycleCounts=\{classLifecycleCounts\}/);
+  assert.match(studentCenterSource, /<ClassManagementTab[\s\S]*onClassLifecycleFilterChange=\{setClassLifecycleFilter\}/);
 });
 
 test('student management tab display is extracted from the student center page', () => {

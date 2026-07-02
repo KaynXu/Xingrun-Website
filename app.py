@@ -6710,7 +6710,12 @@ def api_classes_list():
     user, error = _require_auth()
     if error:
         return error
-    return jsonify(list_classes_for_actor(user) if user.get("role") in {"super_owner", "owner", "admin"} else _filter_classes_for_user(user, list_classes()))
+    scope = (request.args.get("scope") or "current").strip().lower()
+    if scope not in {"current", "history", "all"}:
+        return jsonify({"error": "scope must be current, history, or all"}), 400
+    if user.get("role") in {"super_owner", "owner", "admin"}:
+        return jsonify(list_classes_for_actor(user, scope=scope))
+    return jsonify(_filter_classes_for_user(user, list_classes(scope=scope)))
 
 
 @app.route("/api/course-calendar/schedules", methods=["GET"])

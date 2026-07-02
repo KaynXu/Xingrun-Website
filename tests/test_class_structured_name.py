@@ -90,6 +90,7 @@ class ClassStructuredNameTestCase(unittest.TestCase):
             stage="初中",
             current_grade="七年级",
             class_type="1v2",
+            cohort_year=2025,
             show_cohort_year=True,
         )
         self.assertEqual(lesson_manager.get_class(class_id)["name"], "数学·1v2·初2025级·七年级·张李")
