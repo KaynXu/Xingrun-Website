@@ -365,6 +365,38 @@ class CreditSystemServiceTestCase(unittest.TestCase):
             app_module._release_ai_request_identity(request_id)
             app_module._AI_REQUEST_IN_FLIGHT.clear()
 
+    def test_claim_ai_organization_execution_allows_ten_parallel_tasks(self):
+        organization_id = self.owner["organization_id"]
+        limit = app_module._AI_ORGANIZATION_CONCURRENCY_LIMIT
+
+        try:
+            for _ in range(limit):
+                app_module._claim_ai_organization_execution(organization_id)
+
+            self.assertEqual(len(app_module._AI_ORGANIZATION_IN_FLIGHT[organization_id]), limit)
+            with self.assertRaises(app_module.DuplicateAiRequestError):
+                app_module._claim_ai_organization_execution(organization_id)
+
+            with self.assertRaises(app_module.DuplicateAiRequestError):
+                app_module._run_ai_feature_with_charge(
+                    user=self.owner,
+                    feature_key="lesson_plan_generate",
+                    source_record_type="lesson",
+                    source_record_id=999,
+                    producer=lambda: {"ok": True},
+                    provider="openai",
+                    model="gpt-5.5",
+                    request_key="org-full",
+                )
+            self.assertEqual(len(app_module._AI_ORGANIZATION_IN_FLIGHT[organization_id]), limit)
+
+            app_module._release_ai_organization_execution(organization_id)
+            self.assertEqual(len(app_module._AI_ORGANIZATION_IN_FLIGHT[organization_id]), limit - 1)
+            app_module._claim_ai_organization_execution(organization_id)
+            self.assertEqual(len(app_module._AI_ORGANIZATION_IN_FLIGHT[organization_id]), limit)
+        finally:
+            app_module._AI_ORGANIZATION_IN_FLIGHT.clear()
+
 
 class CreditSystemApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -1031,7 +1063,7 @@ class CreditSystemApiTestCase(unittest.TestCase):
         self.assertEqual(success_usage_count["total"], 1)
 
     @patch("app.parse_consultation_batch_text")
-    def test_same_org_concurrent_ai_request_is_rejected_while_first_is_in_flight(self, mock_parse):
+    def test_same_org_concurrent_ai_requests_can_run_in_parallel(self, mock_parse):
         credit_manager.apply_manual_adjustment(
             organization_id=self.owner_user["organization_id"],
             actor_user_id=self.owner_user["id"],
@@ -1087,9 +1119,8 @@ class CreditSystemApiTestCase(unittest.TestCase):
 
         self.assertIn("response", first_response)
         self.assertEqual(first_response["response"].status_code, 200)
-        self.assertEqual(second.status_code, 409)
-        self.assertIn("机构", second.get_json()["error"])
-        self.assertEqual(mock_parse.call_count, 1)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(mock_parse.call_count, 2)
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("app.has_api_key", return_value=True)

@@ -300,7 +300,8 @@ _AI_REQUEST_IDENTITY_TTL_SECONDS = 7200.0
 _AI_REQUEST_IN_FLIGHT_TTL_SECONDS = 300.0
 _AI_REQUEST_IN_FLIGHT: dict[str, float] = {}
 _AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
-_AI_ORGANIZATION_IN_FLIGHT: dict[int, float] = {}
+_AI_ORGANIZATION_CONCURRENCY_LIMIT = 10
+_AI_ORGANIZATION_IN_FLIGHT: dict[int, list[float]] = {}
 _AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
 WRONG_QUESTION_CHAT_ARCHIVE_SCHEMA_VERSION = "wrong_question_archive_schema.v1"
 WRONG_QUESTION_CHAT_ARCHIVE_PROMPT_VERSION = "wrong_question_chat_prompt.2026-06-03"
@@ -763,21 +764,33 @@ def _release_ai_request_identity(request_id: str) -> None:
 def _claim_ai_organization_execution(organization_id: int) -> None:
     now = monotonic()
     with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
-        expired = [
-            org_id
-            for org_id, started_at in _AI_ORGANIZATION_IN_FLIGHT.items()
-            if (now - started_at) > _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
-        ]
-        for org_id in expired:
-            _AI_ORGANIZATION_IN_FLIGHT.pop(org_id, None)
-        if organization_id in _AI_ORGANIZATION_IN_FLIGHT:
-            raise DuplicateAiRequestError("当前机构已有 AI 请求正在处理中，请稍后再试")
-        _AI_ORGANIZATION_IN_FLIGHT[organization_id] = now
+        for org_id, started_slots in list(_AI_ORGANIZATION_IN_FLIGHT.items()):
+            active_slots = [
+                started_at
+                for started_at in started_slots
+                if (now - started_at) <= _AI_REQUEST_IN_FLIGHT_TTL_SECONDS
+            ]
+            if active_slots:
+                _AI_ORGANIZATION_IN_FLIGHT[org_id] = active_slots
+            else:
+                _AI_ORGANIZATION_IN_FLIGHT.pop(org_id, None)
+        active_slots = list(_AI_ORGANIZATION_IN_FLIGHT.get(organization_id) or [])
+        if len(active_slots) >= _AI_ORGANIZATION_CONCURRENCY_LIMIT:
+            raise DuplicateAiRequestError(f"当前机构已有 {_AI_ORGANIZATION_CONCURRENCY_LIMIT} 个 AI 请求正在处理中，请稍后再试")
+        active_slots.append(now)
+        _AI_ORGANIZATION_IN_FLIGHT[organization_id] = active_slots
 
 
 def _release_ai_organization_execution(organization_id: int) -> None:
     with _AI_ORGANIZATION_IN_FLIGHT_LOCK:
-        _AI_ORGANIZATION_IN_FLIGHT.pop(organization_id, None)
+        active_slots = _AI_ORGANIZATION_IN_FLIGHT.get(organization_id)
+        if not active_slots:
+            return
+        active_slots.pop()
+        if active_slots:
+            _AI_ORGANIZATION_IN_FLIGHT[organization_id] = active_slots
+        else:
+            _AI_ORGANIZATION_IN_FLIGHT.pop(organization_id, None)
 
 
 def _call_ai_helper_with_usage(helper, /, *args, **kwargs):
@@ -816,8 +829,10 @@ def _run_ai_feature_with_charge(
             organization_id=organization_id,
             request_id=request_id,
         )
+    organization_execution_claimed = False
     try:
         _claim_ai_organization_execution(organization_id)
+        organization_execution_claimed = True
         ensure_feature_credits_available(
             organization_id=organization_id,
             feature_key=feature_key,
@@ -837,7 +852,8 @@ def _run_ai_feature_with_charge(
         )
         return business_value
     finally:
-        _release_ai_organization_execution(organization_id)
+        if organization_execution_claimed:
+            _release_ai_organization_execution(organization_id)
         if claim_request_identity:
             _release_ai_request_identity(request_id)
 
