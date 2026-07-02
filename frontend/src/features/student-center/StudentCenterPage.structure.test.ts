@@ -99,6 +99,8 @@ test('class management tab display is extracted from the student center page', (
   assert.match(classManagementTabSource, /当前班级/);
   assert.match(classManagementTabSource, /待结业/);
   assert.match(classManagementTabSource, /classLifecycleFilter/);
+  assert.match(classManagementTabSource, /placeholder="搜索班级、老师、班型"/);
+  assert.doesNotMatch(classManagementTabSource, /lg:mt-\[2\.25rem\]/);
   assert.match(studentCenterSource, /const \[classLifecycleFilter, setClassLifecycleFilter\] = useState<ClassLifecycleFilter>\('current'\)/);
   assert.match(studentCenterSource, /<ClassManagementTab[\s\S]*classLifecycleCounts=\{classLifecycleCounts\}/);
   assert.match(studentCenterSource, /<ClassManagementTab[\s\S]*onClassLifecycleFilterChange=\{setClassLifecycleFilter\}/);

@@ -156,21 +156,21 @@ export function ClassManagementTab({
         ))}
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] lg:items-start">
-        <FloatingFilterBar
-          items={classFilterItems}
-          activeKey={activeClassFilterLayer}
-          options={activeClassFilterOptions}
-          scopeLabel={classScopeLabel}
-          summary={activeClassFilterSummary}
-          summaryText="未筛选时默认按年级从低到高排列。"
-          tone="slate"
-          onAreaEnter={onClassFilterAreaEnter}
-          onAreaLeave={onClassFilterAreaLeave}
-          onActivate={onActivateClassFilter}
-          onClear={onClearClassFilter}
-          onSelect={onSelectClassFilterOption}
-          extraControls={(
+      <FloatingFilterBar
+        items={classFilterItems}
+        activeKey={activeClassFilterLayer}
+        options={activeClassFilterOptions}
+        scopeLabel={classScopeLabel}
+        summary={activeClassFilterSummary}
+        summaryText="未筛选时默认按年级从低到高排列。"
+        tone="slate"
+        onAreaEnter={onClassFilterAreaEnter}
+        onAreaLeave={onClassFilterAreaLeave}
+        onActivate={onActivateClassFilter}
+        onClear={onClearClassFilter}
+        onSelect={onSelectClassFilterOption}
+        extraControls={(
+          <>
             <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
               <input
                 type="checkbox"
@@ -180,19 +180,19 @@ export function ClassManagementTab({
               />
               入学年份
             </label>
-          )}
-        />
-        <label className="relative mt-4 block lg:mt-[2.25rem]">
-          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="search"
-            value={classSearchText}
-            onChange={(event) => onClassSearchTextChange(event.target.value)}
-            placeholder="搜索班级、老师、班型"
-            className="h-10 w-full rounded-full border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-white/30 dark:focus:ring-white/10"
-          />
-        </label>
-      </div>
+            <label className="relative block w-full sm:w-72 xl:w-80">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={classSearchText}
+                onChange={(event) => onClassSearchTextChange(event.target.value)}
+                placeholder="搜索班级、老师、班型"
+                className="h-10 w-full rounded-full border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-white/30 dark:focus:ring-white/10"
+              />
+            </label>
+          </>
+        )}
+      />
 
       {loading ? (
         <div className="rounded-2xl border border-dashed border-slate-200 p-10 text-center text-slate-500 dark:border-white/10 dark:text-slate-400">
