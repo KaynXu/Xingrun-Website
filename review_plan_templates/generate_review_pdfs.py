@@ -1224,6 +1224,8 @@ def render_latex_formula_flowable(
 
 def _normalize_bare_latex_text(text: str) -> str:
     normalized = str(text or "").replace(r"\$", "$")
+    normalized = re.sub(r"\\\\(?=[A-Za-z])", r"\\", normalized)
+    normalized = re.sub(r"\\+_", "XRUNDERSCORETOKEN", normalized)
     normalized = _normalize_latex_structures(normalized)
     normalized = _normalize_bare_math_words(normalized)
 
@@ -1278,6 +1280,7 @@ def _normalize_bare_latex_text(text: str) -> str:
         normalized = normalized.replace(source, target)
 
     normalized = _normalize_bare_math_words(normalized)
+    normalized = normalized.replace("XRUNDERSCORETOKEN", "_")
     return normalized
 
 
@@ -1416,6 +1419,7 @@ def normalize_portable_text(value):
         normalized = normalized.replace(source, target)
 
     normalized = re.sub(r"([：:])\s+", r"\1", normalized)
+    normalized = re.sub(r"[ \t\r\f\v]*\n[ \t\r\f\v]*", " ", normalized)
     normalized = re.sub(r"\s{2,}", " ", normalized)
     normalized = re.sub(r"(^|\s)-\s*", r"\1- ", normalized)
     normalized = normalized.replace("XRRIGHTARROWTOKEN", "→")

@@ -216,6 +216,19 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertIn("______", normalized)
         self.assertIn("(x+y)", normalized)
 
+    def test_normalize_portable_text_cleans_escaped_blank_underscores(self):
+        normalized = normalize_portable_text(r"写出比例 5: \_\_\_\_:\_\_\_\_。")
+
+        self.assertEqual(normalized, "写出比例 5:____:____。")
+        self.assertNotIn("\\_", normalized)
+
+    def test_normalize_portable_text_collapses_option_formula_newline(self):
+        normalized = normalize_portable_text("A.\n\\\\sqrt{3}")
+
+        self.assertEqual(normalized, "A. √(3)")
+        self.assertNotIn("\n", normalized)
+        self.assertNotIn("\\√", normalized)
+
     def test_normalize_portable_text_renders_cases_as_printable_conditions(self):
         text = r"$\begin{cases} 2x+1 > x+3 \\ 2x+1 > -5 \\ x+3 > -5 \end{cases}$"
 
