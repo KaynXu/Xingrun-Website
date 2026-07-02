@@ -111,6 +111,31 @@ def _fallback_agent_blueprint(
 ) -> AgenticPlanBlueprint:
     confirmed_topics = getattr(source, "confirmed_topics", []) or []
     required_components = getattr(task_blueprint, "required_components", []) or []
+    if not required_components and str(subject or "").lower() == "math":
+        required_components = [
+            "worked_example",
+            "targeted_practice",
+            "error_log",
+            "timed_practice",
+            "spiral_review",
+            "checkpoint_quiz",
+        ]
+    compressed_single_day = review_input.schedule_mode == "compressed" and review_input.review_days == [1]
+    writer_instructions = [
+        "每一天必须绑定本节课主题和学生薄弱点，不能输出模板化任务。",
+        "题目必须自洽可作答；课堂原题信息不足时改成同知识点同错因的同类题。",
+        "严格保留本次输入指定的 review_days 结构。",
+        "每个复习日直接输出可打印 blanks 与 choices；不要只输出执行说明或 checklist。",
+        "填空题答案必须是具体数值、符号、条件、公式对象或方法名，不能留空。",
+    ]
+    if compressed_single_day:
+        writer_instructions.extend(
+            [
+                "当前是 1 天集中复习：只输出 day=1，但这一天要压缩承载整节课内容。",
+                "第1天必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz 对应内容。",
+                "第1天至少提供 5 个不重复的可打印题目，其中填空不少于 3 个，选择诊断不少于 2 个。",
+            ]
+        )
     return AgenticPlanBlueprint(
         strategy_summary=(
             "父模型蓝图不可用，退回本地规则：围绕课堂主题、薄弱点和固定间隔复习日生成。"
@@ -128,11 +153,7 @@ def _fallback_agent_blueprint(
             for topic in confirmed_topics[:6]
             if str(topic or "").strip()
         ],
-        writer_instructions=[
-            "每一天必须绑定本节课主题和学生薄弱点，不能输出模板化任务。",
-            "题目必须自洽可作答；课堂原题信息不足时改成同知识点同错因的同类题。",
-            "严格保留本次输入指定的 review_days 结构。",
-        ],
+        writer_instructions=writer_instructions,
         quality_risks=[
             "父模型蓝图缺失时，writer 更容易泛化或机械重复。",
             "必须特别检查题目是否只是结构完整但没有学科诊断价值。",

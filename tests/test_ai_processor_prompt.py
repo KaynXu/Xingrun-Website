@@ -833,6 +833,53 @@ class AiProcessorPromptTestCase(unittest.TestCase):
         self.assertTrue(_FakeWhisperModel.transcribe_calls[-1]["audio_path"].endswith("long-lesson.m4a"))
         self.assertFalse(converted_exists_after_request)
 
+    def test_transcribe_audio_falls_back_to_local_when_tencent_upload_times_out(self):
+        fake_module = type("FakeFasterWhisperModule", (), {"WhisperModel": _FakeWhisperModel})
+
+        def fake_urlopen(request, timeout):
+            raise ai_processor.urllib.error.URLError(TimeoutError("The write operation timed out"))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "lesson.m4a"
+            audio_path.write_bytes(b"browser-m4a-audio")
+            converted_path = Path(temp_dir) / "lesson.tencent.wav"
+            converted_path.write_bytes(b"converted-browser-wav")
+            with patch.object(
+                ai_processor,
+                "_load_config",
+                return_value={
+                    "audio_transcription_provider": "tencent",
+                    "tencentcloud_app_id": "123456",
+                    "tencentcloud_secret_id": "secret-id",
+                    "tencentcloud_secret_key": "secret-key",
+                    "tencent_asr_engine_type": "16k_zh",
+                },
+            ), patch.dict(sys.modules, {"faster_whisper": fake_module}), patch.object(
+                ai_processor.time,
+                "time",
+                return_value=1_000,
+            ), patch.object(
+                ai_processor.random,
+                "randint",
+                return_value=123,
+            ), patch.object(
+                ai_processor,
+                "_transcode_audio_to_tencent_wav",
+                return_value=converted_path,
+            ), patch.object(
+                ai_processor.urllib.request,
+                "urlopen",
+                side_effect=fake_urlopen,
+            ):
+                transcription, usage = ai_processor.transcribe_audio(str(audio_path), include_usage=True)
+            converted_exists_after_request = converted_path.exists()
+
+        self.assertEqual(transcription, "我把单位换算漏掉了")
+        self.assertEqual(usage["provider"], "local")
+        self.assertEqual(usage["model"], "faster-whisper-base")
+        self.assertTrue(_FakeWhisperModel.transcribe_calls[-1]["audio_path"].endswith("lesson.m4a"))
+        self.assertFalse(converted_exists_after_request)
+
     def test_transcribe_audio_requires_tencent_credentials_when_enabled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             audio_path = Path(temp_dir) / "lesson.m4a"
