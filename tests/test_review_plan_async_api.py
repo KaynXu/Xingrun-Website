@@ -1189,8 +1189,11 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         generate_kwargs = mock_generate_plan.call_args.kwargs
         self.assertEqual(generate_kwargs["summary_text"], "清洗后课堂源材料")
         self.assertNotEqual(generate_kwargs["summary_text"], "后来被编辑过的 lesson summary")
+        self.assertEqual(generate_kwargs["source_pack"]["source_hash"], "sha256:" + "b" * 64)
+        self.assertEqual(generate_kwargs["source_pack"]["title"], "动点与立体几何综合")
         saved_version = lesson_manager.get_review_plan_version(version["id"])
         self.assertEqual(saved_version["source_text_hash"], "sha256:" + "b" * 64)
+        self.assertEqual(saved_version["source_pack"]["source_hash"], "sha256:" + "b" * 64)
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
@@ -1239,7 +1242,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertTrue(saved_version["source_text_hash"].startswith("sha256:"))
         self.assertIn("先看固定量", saved_version["cleaned_source_text"])
         self.assertEqual(saved_version["source_brief"]["lesson_title_candidates"], ["动点与立体几何综合"])
+        self.assertEqual(saved_version["source_pack"]["title"], "动点与立体几何综合")
+        self.assertTrue(saved_version["source_pack"]["segments"])
         self.assertEqual(mock_generate_plan.call_args.kwargs["summary_text"], saved_version["cleaned_source_text"])
+        self.assertEqual(mock_generate_plan.call_args.kwargs["source_pack"]["source_hash"], saved_version["source_text_hash"])
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
@@ -1347,7 +1353,9 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(event_order[:2], ["source_artifact:原始转写：动点倒顶点距离不变。", "polish"])
         self.assertEqual(source_artifact_calls[0]["source_text"], "原始转写：动点倒顶点距离不变。")
         self.assertEqual(source_artifact_calls[0]["cleaned_source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertEqual(source_artifact_calls[0]["source_type"], "transcript")
         self.assertEqual(source_artifact_calls[-1]["source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertEqual(source_artifact_calls[-1]["source_type"], "transcript")
         generate_kwargs = mock_generate_plan.call_args.kwargs
         self.assertIn("润色转写：动点到定点距离不变，轨迹是球面。", generate_kwargs["summary_text"])
         self.assertNotIn("原始转写：动点倒顶点距离不变。", generate_kwargs["summary_text"])

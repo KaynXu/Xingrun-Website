@@ -442,3 +442,6 @@ class ReviewPlanVersionLifecycleTestCase(unittest.TestCase):
         self.assertEqual(hydrated["source_text_hash"], "sha256:" + "a" * 64)
         self.assertEqual(hydrated["source_brief"]["lesson_title_candidates"], ["动点与立体几何综合"])
         self.assertEqual(hydrated["source_brief"]["knowledge_points"][0]["name"], "空间轨迹")
+        self.assertEqual(hydrated["source_pack"]["source_hash"], "sha256:" + "a" * 64)
+        self.assertEqual(hydrated["source_pack"]["title"], "动点与立体几何综合")
+        self.assertTrue(hydrated["source_pack"]["segments"])

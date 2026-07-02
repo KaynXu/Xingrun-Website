@@ -46,6 +46,7 @@ from .observability import (
 )
 from .schemas import (
     AgenticPlanBlueprint,
+    LessonSourcePack,
     QualityIssue,
     QualityReview,
     ReviewPlanInput,
@@ -500,6 +501,7 @@ def generate_single_lesson_review_plan(
     version_id: int = 0,
     organization_id: int = 0,
     generation_options: object | None = None,
+    source_pack: object | None = None,
     include_usage: bool = False,
 ) -> Union[dict[str, Any], Tuple[dict[str, Any], dict[str, Any]]]:
     resolved_provider = provider or resolve_review_plan_provider()
@@ -522,6 +524,7 @@ def generate_single_lesson_review_plan(
         daily_count=options.get("daily_count") if isinstance(options.get("daily_count"), int) else None,
         user_requirements=str(options.get("user_requirements") or ""),
         constraints=options.get("constraints") if isinstance(options.get("constraints"), dict) else {},
+        source_pack=LessonSourcePack.model_validate(source_pack) if source_pack else None,
     )
     _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="running")
 

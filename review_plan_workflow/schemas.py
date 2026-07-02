@@ -9,6 +9,52 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 SubjectKey = Literal["math", "physics", "ielts", "unknown"]
 
 
+class SourceSegment(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    text: str
+    offset_start: int = 0
+    offset_end: int = 0
+    kind: str = "text"
+
+
+class SourceMathBlock(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    raw: str
+    latex: str = ""
+    display: bool = False
+    segment_id: str = ""
+
+
+class SourceTeacherAction(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    text: str
+    action_type: str = "instruction"
+    segment_id: str = ""
+
+
+class LessonSourcePack(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: str = "lesson_source_pack_v1"
+    source_id: str = ""
+    source_type: str = "text"
+    title: str = ""
+    language: str = "zh-CN"
+    segments: list[SourceSegment] = Field(default_factory=list)
+    detected_topics: list[str] = Field(default_factory=list)
+    math_blocks: list[SourceMathBlock] = Field(default_factory=list)
+    teacher_actions: list[SourceTeacherAction] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    source_hash: str = ""
+    created_at: str = ""
+
+
 class ReviewPlanInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -23,6 +69,7 @@ class ReviewPlanInput(BaseModel):
     daily_count: Optional[int] = None
     user_requirements: str = ""
     constraints: dict[str, Any] = Field(default_factory=dict)
+    source_pack: Optional[LessonSourcePack] = None
     output_language: str = "zh-CN"
 
     @field_validator("review_days")

@@ -18,6 +18,7 @@ from review_plan_workflow.schemas import (
     TimeAllocation,
 )
 from review_plan_workflow.source_brief import source_brief_trace_payload, source_evidence_list_trace_payload
+from review_plan_workflow.source_pack import source_pack_trace_payload
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -54,6 +55,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> PromptBundle:
         "trace_id": context.trace_id,
         "selected_subject": route.selected_subject,
         "source": _source_payload(source),
+        "source_pack": source_pack_trace_payload(review_input.source_pack),
         "source_brief": source_brief_trace_payload(source_brief),
         "scope": scope.model_dump(),
         "time_allocation": time_allocation.model_dump(),

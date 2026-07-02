@@ -1044,6 +1044,7 @@ def _run_review_plan_generation_job(
                     cleaned_source_text=raw_transcription,
                     source_text_hash=raw_source_text_hash,
                     source_brief=source_brief_snapshot,
+                    source_type="transcript",
                 )
                 transcript_for_generation = raw_transcription
                 try:
@@ -1090,6 +1091,7 @@ def _run_review_plan_generation_job(
                     cleaned_source_text=merged_summary,
                     source_text_hash=raw_source_text_hash,
                     source_brief=source_brief_snapshot,
+                    source_type="transcript",
                 )
                 mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)
@@ -1142,7 +1144,10 @@ def _run_review_plan_generation_job(
         source_text_for_generation = version_cleaned_source_text or version_source_text or raw_text
         source_snapshot_text = version_source_text or source_text_for_generation
 
-        if version_id and not str((version or {}).get("source_text_hash") or "").strip():
+        if version_id and (
+            not str((version or {}).get("source_text_hash") or "").strip()
+            or not ((version or {}).get("source_pack") or {})
+        ):
             source_brief = build_deterministic_source_brief(
                 raw_text=source_text_for_generation,
                 subject=subject,
@@ -1156,6 +1161,7 @@ def _run_review_plan_generation_job(
                 cleaned_source_text=source_brief.cleaned_text,
                 source_text_hash=source_brief.source_text_hash,
                 source_brief=source_brief.model_dump(),
+                source_type=str(((version or {}).get("source_pack") or {}).get("source_type") or "text"),
             )
             version = get_review_plan_version_for_lesson(lesson_id, version_id)
 
@@ -1175,6 +1181,7 @@ def _run_review_plan_generation_job(
                     weak_points=weak_points,
                     lesson_date=lesson_date,
                     generation_options=generation_options,
+                    source_pack=(version or {}).get("source_pack"),
                     provider=chat_provider,
                     model=chat_model,
                     lesson_id=lesson_id,
@@ -7946,6 +7953,7 @@ def api_lesson_regenerate(lesson_id):
                 cleaned_source_text=cleaned_source_text,
                 source_text_hash=source_text_hash_value,
                 source_brief=source_brief,
+                source_type=str(((current_version or {}).get("source_pack") or {}).get("source_type") or "text"),
             )
             version = get_review_plan_version_for_lesson(lesson_id, int(version["id"])) or version
         _start_review_plan_generation_thread(
