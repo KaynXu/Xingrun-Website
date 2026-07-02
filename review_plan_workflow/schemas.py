@@ -22,6 +22,7 @@ class ReviewPlanInput(BaseModel):
     review_days: list[int] = Field(default_factory=lambda: [1, 2, 7, 14, 30])
     daily_count: Optional[int] = None
     user_requirements: str = ""
+    constraints: dict[str, Any] = Field(default_factory=dict)
     output_language: str = "zh-CN"
 
     @field_validator("review_days")
@@ -230,6 +231,13 @@ class QualityIssue(BaseModel):
     day_index: Optional[int] = None
     question_index: Optional[int] = None
     question_type: str = ""
+
+    @field_validator("category", "description", "suggested_fix", "target_path", "question_type", mode="before")
+    @classmethod
+    def coerce_nullable_text_fields(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value)
 
 
 class QualityReview(BaseModel):

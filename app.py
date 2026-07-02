@@ -157,7 +157,7 @@ from lesson_manager import (
     get_registration_request,
     get_user_by_id,
     get_user_class_ids,
-    get_latest_review_plan_run_for_version,
+    get_latest_completed_review_plan_quality_run_for_version,
     init_db,
     list_all_users,
     list_class_history,
@@ -894,11 +894,11 @@ def _get_or_create_compat_review_plan_version_for_job(
 
 def _review_plan_quality_failure_message(version_id: int) -> str:
     try:
-        latest_run = get_latest_review_plan_run_for_version(version_id)
+        latest_run = get_latest_completed_review_plan_quality_run_for_version(version_id)
     except Exception:
         logger.exception("Failed to read review plan quality run for version %s", version_id)
         return ""
-    if not latest_run or str(latest_run.get("status") or "") != "succeeded":
+    if not latest_run:
         return ""
 
     quality = latest_run.get("quality_review")

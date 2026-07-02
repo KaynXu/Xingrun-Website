@@ -104,6 +104,7 @@ def _score_quality(
         subject=subject,
         required_review_days=review_input.review_days,
         schedule_mode=review_input.schedule_mode,
+        constraints=review_input.constraints,
     )
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
@@ -520,6 +521,7 @@ def generate_single_lesson_review_plan(
         review_days=list(options["review_days"]),
         daily_count=options.get("daily_count") if isinstance(options.get("daily_count"), int) else None,
         user_requirements=str(options.get("user_requirements") or ""),
+        constraints=options.get("constraints") if isinstance(options.get("constraints"), dict) else {},
     )
     _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="running")
 

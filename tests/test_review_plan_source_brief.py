@@ -77,6 +77,35 @@ class ReviewPlanSourceBriefTestCase(unittest.TestCase):
         self.assertTrue(brief.evidence_map)
         self.assertGreaterEqual(brief.confidence, 0.7)
 
+    def test_deterministic_brief_extracts_plain_title_and_chinese_section_headings(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "第一部分：整数勾股数（奇数型、偶数型）、根式勾股数讲解\n"
+            "一、奇数开头整数勾股数\n"
+            "二、偶数开头整数勾股数\n"
+            "三、根式类勾股数\n"
+            "四、两类必考特殊直角三角形\n"
+            "第二部分：α、β定义，互余角勾股比规律\n"
+            "第三部分：和角推导——α+β=45°\n"
+            "课堂收尾\n"
+            "今天核心背诵点：3:4:5、5:12:13、1:1:√2、1:√3:2。"
+        )
+
+        brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="",
+            weak_points="",
+            user_requirements="题目控制在10道题",
+        )
+
+        self.assertEqual(brief.lesson_title_candidates[0], "勾股数、特殊角度αβ与和角推导")
+        extracted_names = " ".join(point.name for point in brief.knowledge_points)
+        self.assertIn("整数勾股数", extracted_names)
+        self.assertIn("奇数开头整数勾股数", extracted_names)
+        self.assertGreaterEqual(len(brief.knowledge_points) + len(brief.method_chains), 5)
+        self.assertNotIn("topic", brief.missing_fields)
+
     def test_deterministic_brief_tracks_duplicate_sentence_offsets(self):
         brief = build_deterministic_source_brief(
             raw_text=(

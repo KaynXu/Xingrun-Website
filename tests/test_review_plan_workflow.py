@@ -404,10 +404,26 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             schedule_mode="custom",
             review_days=[1, 5],
             user_requirements="只做考前两次",
+            constraints={"requested_question_count": 10},
         )
 
         self.assertEqual(review_input.review_days, [1, 5])
         self.assertEqual(review_input.user_requirements, "只做考前两次")
+        self.assertEqual(review_input.constraints["requested_question_count"], 10)
+
+    def test_quality_issue_accepts_nullable_locator_fields_from_llm_reviewer(self):
+        issue = QualityIssue(
+            severity="high",
+            category="question_quality",
+            description="第1天选择题第2题答案错误。",
+            question_type=None,
+            target_path=None,
+            suggested_fix=None,
+        )
+
+        self.assertEqual(issue.question_type, "")
+        self.assertEqual(issue.target_path, "")
+        self.assertEqual(issue.suggested_fix, "")
 
     def test_quality_policy_skips_llm_reviewer_for_high_confidence_local_pass(self):
         from review_plan_workflow.quality_policy import should_run_llm_quality_review
@@ -1043,6 +1059,35 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertFalse(review.passed)
         self.assertTrue(any(issue.category == "completeness" for issue in review.issues))
+
+    def test_quality_gate_enforces_requested_question_count_constraint(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = ["勾股定理", "整数勾股数", "根式勾股数", "特殊角", "和角推导"]
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：勾股定理等式为______。", "answer": "$a^2+b^2=c^2$"}
+            for i in range(1, 6)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 3)
+        ]
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+        )
+
+        self.assertFalse(review.passed)
+        self.assertTrue(any("老师要求题目控制在 10 道" in issue.description for issue in review.issues))
 
     def test_quality_gate_rejects_pdf_fallback_content(self):
         broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")

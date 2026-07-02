@@ -60,6 +60,8 @@ def _user_message(
     if review_input.lesson_date:
         meta_parts.append(f"上课日期：{review_input.lesson_date}")
     meta_parts.append(f"生成节奏：{review_input.schedule_mode}；复习日必须且只能覆盖 {review_input.review_days}")
+    if review_input.constraints:
+        meta_parts.append("已解析老师硬约束：" + json.dumps(review_input.constraints, ensure_ascii=False))
     if review_input.user_requirements:
         meta_parts.append(
             "老师本次生成要求（优先于默认偏好，但不得覆盖结构、事实、schema、PDF 和质量门禁硬规则）："
@@ -84,6 +86,7 @@ def _user_message(
         [
             "硬性选择题契约：所有 choices 必须有完整 question、4 个完整 options 和 answer；options 不能只写 A/B/C/D，必须写成 A. 具体选项内容；answer 只能是 A/B/C/D。",
             f"硬性复习日契约：days 必须且只能覆盖 {review_input.review_days}；不得额外生成 1/2/7/14/30 中未被指定的日期。",
+            "硬性题量契约：如果已解析老师硬约束里有 requested_question_count，最终可打印填空题和选择题总数必须精确匹配该数量。",
             "弱素材兜底契约：如果 source_brief 缺 topic/knowledge_points 或课堂总结过短，仍要生成可交付计划；使用 subject/grade/user_requirements 做通用复习，topic 写成可读课程标题但不要出现“待确认/需确认”，需要确认的信息只写进 assumptions。",
             "覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；素材充足时优先来自课堂材料，素材不足时生成该年级该科目的通用复习范围，不能只写“本节课内容/综合复习”。",
             "硬性课堂金句契约：quotes 只保留课堂文本中老师真实强调过的方法句；没有证据就返回空数组，禁止把使用说明、完成标准、正确率要求或“每一个复习日都要完整复习整节课内容”写成金句。",

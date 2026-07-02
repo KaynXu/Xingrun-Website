@@ -1709,6 +1709,80 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
     @patch("app._run_ai_feature_with_charge")
+    def test_worker_uses_latest_completed_quality_run_not_later_empty_run(
+        self,
+        mock_run_with_charge,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="高一",
+            topic="勾股数、特殊角与和角推导",
+            summary="课堂总结文本",
+            weak_points="",
+            class_id=0,
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角与和角推导")
+
+        def run_with_failed_quality_then_empty_trace(**_kwargs):
+            version_id = lesson_manager.list_review_plan_versions(lesson_id)[0]["id"]
+            lesson_manager.save_review_plan_run(
+                lesson_id=lesson_id,
+                version_id=version_id,
+                organization_id=1,
+                trace_id="completed-quality-failed-trace",
+                status="succeeded",
+                subject="math",
+                provider="openai",
+                model="gpt-5.4",
+                quality_review={
+                    "score": 78,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [
+                        {
+                            "severity": "high",
+                            "category": "task_actionability",
+                            "description": "老师要求题目控制在 10 道，但当前可打印题目为 7 道。",
+                            "suggested_fix": "补足到 10 道题。",
+                        }
+                    ],
+                },
+            )
+            lesson_manager.save_review_plan_run(
+                lesson_id=lesson_id,
+                version_id=version_id,
+                organization_id=1,
+                trace_id="later-empty-interrupted-trace",
+                status="interrupted",
+                subject="math",
+                provider="openai",
+                model="gpt-5.4",
+                quality_review={},
+            )
+            return plan
+
+        mock_run_with_charge.side_effect = run_with_failed_quality_then_empty_trace
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            user={"id": 1, "organization_id": 1},
+            chat_provider="openai",
+            chat_model="gpt-5.4",
+            request_key="test-request-key",
+        )
+
+        saved = lesson_manager.get_lesson(lesson_id)
+        versions = lesson_manager.list_review_plan_versions(lesson_id)
+        self.assertEqual(saved["record_status"], "failed")
+        self.assertEqual(versions[0]["status"], "failed")
+        self.assertIn("不够完整", saved["generation_error"])
+        self.assertEqual(saved["current_review_plan_version_id"], None)
+        mock_generate_pdf.assert_not_called()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("app._run_ai_feature_with_charge")
     def test_worker_ignores_stale_quality_failure_from_other_generation(
         self,
         mock_run_with_charge,

@@ -63,6 +63,7 @@ def _planner_message(
             "schedule_mode": review_input.schedule_mode,
             "review_days": review_input.review_days,
             "user_requirements": review_input.user_requirements,
+            "constraints": review_input.constraints,
         },
         "normalized": normalized.model_dump(),
         "route": route.model_dump(),

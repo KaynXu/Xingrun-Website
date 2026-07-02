@@ -418,7 +418,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
             explicit_choices.append({"question": question, "options": options, "answer": answer})
 
     if explicit_choices:
-        choice_values = explicit_choices[:2]
+        choice_values = explicit_choices
     elif question_pool:
         choice_values = [question_pool[(day_number - 1) % len(question_pool)]]
     else:

@@ -334,6 +334,40 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertTrue(any("不能只比较括号大小" in card for card in days[1]["method_cards"]))
         self.assertTrue(any("课堂方法复盘卡片" in task for task in days[0]["tasks"]))
 
+    def test_adapt_plan_to_review_template_keeps_all_explicit_choices(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = {
+            "lesson_info": {
+                "subject": "数学",
+                "topic": "勾股数与特殊角",
+                "key_categories": ["勾股定理", "整数勾股数", "特殊直角三角形"],
+            },
+            "full_review_topics": ["勾股定理", "整数勾股数", "特殊直角三角形"],
+            "days": [
+                {
+                    "day": 1,
+                    "blanks": [
+                        {"text": f"第{i}题：直角三角形满足______。", "answer": "$a^2+b^2=c^2$"}
+                        for i in range(1, 6)
+                    ],
+                    "choices": [
+                        {
+                            "question": f"选择题{i}：下列哪组是勾股数？",
+                            "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                            "answer": "A",
+                        }
+                        for i in range(1, 4)
+                    ],
+                }
+            ],
+        }
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(len(days[0]["choices"]), 3)
+        self.assertEqual(days[0]["choices"][2]["question"], "选择题3：下列哪组是勾股数？")
+
     def test_adapt_plan_to_review_template_formats_structured_active_recall_without_schema_keys(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
 

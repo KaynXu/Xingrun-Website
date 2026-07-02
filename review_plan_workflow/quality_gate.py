@@ -315,6 +315,7 @@ def review_single_lesson_plan(
     subject: str = "",
     required_review_days: list[int] | None = None,
     schedule_mode: str = "standard",
+    constraints: dict[str, Any] | None = None,
 ) -> QualityReview:
     normalized_plan = normalize_final_review_plan(plan)
     issues: list[QualityIssue] = []
@@ -473,6 +474,26 @@ def review_single_lesson_plan(
                     category="task_actionability",
                     description="压缩 1 天计划的可打印题目密度不足，无法承载整节课复习。",
                     suggested_fix="压缩 1 天时至少提供 5 个不重复的可打印填空/选择/口述任务，并覆盖主要错因。",
+                )
+            )
+
+    requested_question_count = None
+    if isinstance(constraints, dict) and isinstance(constraints.get("requested_question_count"), int):
+        requested_question_count = int(constraints["requested_question_count"])
+    if requested_question_count is not None and days:
+        printable_question_count = 0
+        for day in days:
+            if not isinstance(day, dict):
+                continue
+            unique_fills, unique_choices, _raw_fills = _collect_day_unique_question_counts(day)
+            printable_question_count += unique_fills + unique_choices
+        if printable_question_count != requested_question_count:
+            issues.append(
+                QualityIssue(
+                    severity="high",
+                    category="task_actionability",
+                    description=f"老师要求题目控制在 {requested_question_count} 道，但当前可打印题目为 {printable_question_count} 道。",
+                    suggested_fix=f"把可打印填空题和选择题总数调整为 {requested_question_count} 道，并同步答案区。",
                 )
             )
 

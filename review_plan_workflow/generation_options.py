@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -9,6 +10,10 @@ STANDARD_REVIEW_DAYS = [1, 2, 7, 14, 30]
 SUPPORTED_SCHEDULE_MODES = {"standard", "compressed", "daily", "custom"}
 MAX_REVIEW_DAYS = 30
 MAX_USER_REQUIREMENTS_CHARS = 1000
+QUESTION_COUNT_PATTERNS = (
+    re.compile(r"(?:题目|题量|练习|可打印题|打印题)?\s*(?:控制|限制|限定|保持|总共|一共|共|只要|不要超过|不超过|至少)?\s*在?\s*(\d{1,2})\s*(?:道)?\s*题"),
+    re.compile(r"(\d{1,2})\s*(?:道)?\s*(?:题目|题量|练习|可打印题|打印题)"),
+)
 
 
 def _coerce_mapping(value: object | None) -> dict[str, Any]:
@@ -73,6 +78,28 @@ def _clean_user_requirements(value: object) -> str:
     return text
 
 
+def _parse_requested_question_count(requirements: str) -> int | None:
+    text = str(requirements or "").strip()
+    if not text:
+        return None
+    for pattern in QUESTION_COUNT_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        count = int(match.group(1))
+        if 1 <= count <= 30:
+            return count
+    return None
+
+
+def parse_generation_constraints(user_requirements: object) -> dict[str, object]:
+    requirements = _clean_user_requirements(user_requirements)
+    requested_question_count = _parse_requested_question_count(requirements)
+    return {
+        "requested_question_count": requested_question_count,
+    }
+
+
 def normalize_generation_options(value: object | None, *, source: str = "create") -> dict[str, object]:
     raw = _coerce_mapping(value)
     mode = str(raw.get("schedule_mode") or "standard").strip() or "standard"
@@ -91,11 +118,13 @@ def normalize_generation_options(value: object | None, *, source: str = "create"
     else:
         review_days = _parse_review_days(raw.get("review_days"))
 
+    user_requirements = _clean_user_requirements(raw.get("user_requirements"))
     return {
         "schedule_mode": mode,
         "review_days": review_days,
         "daily_count": daily_count,
-        "user_requirements": _clean_user_requirements(raw.get("user_requirements")),
+        "user_requirements": user_requirements,
+        "constraints": parse_generation_constraints(user_requirements),
         "source": str(source or raw.get("source") or "create").strip() or "create",
     }
 
@@ -124,4 +153,9 @@ def generation_options_trace_summary(options: Mapping[str, object]) -> dict[str,
     }
     if requirements:
         summary["user_requirements_preview"] = requirements[:40]
+    constraints = options.get("constraints")
+    if isinstance(constraints, Mapping):
+        requested_question_count = constraints.get("requested_question_count")
+        if isinstance(requested_question_count, int):
+            summary["requested_question_count"] = requested_question_count
     return summary

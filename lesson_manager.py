@@ -5776,6 +5776,34 @@ def get_latest_review_plan_run_for_version(version_id: int) -> Optional[dict]:
         return run
 
 
+def get_latest_completed_review_plan_quality_run_for_version(version_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM review_plan_runs
+            WHERE version_id=?
+              AND status='succeeded'
+              AND quality_review_json IS NOT NULL
+              AND quality_review_json<>''
+              AND quality_review_json<>'{}'
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (int(version_id),),
+        ).fetchall()
+        for row in rows:
+            run = dict(row)
+            quality_review = _load_review_plan_run_json(run.get("quality_review_json"), {})
+            if not isinstance(quality_review, dict) or not quality_review:
+                continue
+            run["warnings"] = _load_review_plan_run_json(run.get("warnings_json"), [])
+            run["quality_review"] = quality_review
+            run["node_outputs"] = _load_review_plan_run_json(run.get("node_outputs_json"), {})
+            run["logs"] = _load_review_plan_run_json(run.get("logs_json"), [])
+            return run
+        return None
+
+
 def _attach_review_plan_version_summary(conn: sqlite3.Connection, lesson: dict) -> dict:
     lesson_id = int(lesson.get("id") or 0)
     current_version = None
