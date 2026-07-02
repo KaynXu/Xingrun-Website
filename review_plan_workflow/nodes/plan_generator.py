@@ -48,7 +48,7 @@ def _user_message(
     agent_blueprint: AgenticPlanBlueprint | None = None,
     source_brief: ReviewPlanSourceBrief | None = None,
 ) -> str:
-    meta_parts = [f"生成日期（第0天）：{date.today().isoformat()}"]
+    meta_parts = [f"生成日期（第1天）：{date.today().isoformat()}"]
     if review_input.subject:
         meta_parts.append(f"科目：{review_input.subject}")
     if review_input.grade:

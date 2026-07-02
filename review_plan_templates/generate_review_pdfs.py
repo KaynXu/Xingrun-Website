@@ -1452,7 +1452,7 @@ def build_labels(chinese_only):
             "version": "版本",
             "quote_ratio": "原话比例",
             "layout": "页面风格",
-            "day_zero": "第0天",
+            "day_zero": "第1天",
             "audience": "使用对象",
             "duration": "单次时长",
             "usage_title": "使用说明",
@@ -1489,7 +1489,7 @@ def build_labels(chinese_only):
         "version": "版本 / Version",
         "quote_ratio": "原话比例 / Quote Ratio",
         "layout": "页面风格 / Layout",
-        "day_zero": "第0天 / Day 0",
+        "day_zero": "第1天 / Day 1",
         "audience": "使用对象 / Audience",
         "duration": "单次时长 / Duration",
         "usage_title": "使用说明 / Usage",
@@ -1626,8 +1626,13 @@ def format_iso_date(value):
     return value.strftime("%Y-%m-%d")
 
 
+def review_date_for_day(base_date, day):
+    day_number = max(1, int(day.get("offset", 1)))
+    return base_date + timedelta(days=day_number - 1)
+
+
 def build_day_heading(day, base_date, chinese_only=False):
-    review_date = base_date + timedelta(days=day["offset"])
+    review_date = review_date_for_day(base_date, day)
     day_label = localize_text(day["day"], chinese_only)
     if chinese_only:
         return f"{day_label}  |  日期：{format_iso_date(review_date)}"
