@@ -160,11 +160,11 @@ test('review generation validates custom review days before creating or regenera
 test('review generation schedule mode labels show concrete day counts', () => {
   const optionsFieldsSource = readFileSync(new URL('./features/review-generation/ReviewPlanGenerationOptionsFields.tsx', import.meta.url), 'utf8');
 
-  for (const label of ['5次间隔', '1天集中', '每日连续', '自定义日期']) {
+  for (const label of ['5次间隔', '当天课后', '每日连续', '自定义日期']) {
     assert.match(lessonInputSource, new RegExp(label));
     assert.match(optionsFieldsSource, new RegExp(label));
   }
-  assert.match(reviewPlanGenerationOptionsSource, /return '1天集中复习';/);
+  assert.match(reviewPlanGenerationOptionsSource, /return '当天课后复习';/);
   assert.match(reviewPlanGenerationOptionsSource, /return `每日连续 \$\{value\.dailyCount\} 天`;/);
   assert.match(reviewPlanGenerationOptionsSource, /return `自定义日期 \$\{value\.customDays\.trim\(\) \|\| '未填写'\}`;/);
   assert.match(reviewPlanGenerationOptionsSource, /return '5次间隔复习';/);

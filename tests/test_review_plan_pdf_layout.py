@@ -158,12 +158,12 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
     def test_one_day_plan_uses_compressed_final_reminder_label(self):
         labels = generate_review_pdfs.adapt_labels_for_review_schedule(
             generate_review_pdfs.build_labels(chinese_only=True),
-            [{"offset": 1, "day": "第1天集中复习"}],
+            [{"offset": 1, "day": "当天课后复习"}],
             chinese_only=True,
         )
 
-        self.assertEqual(labels["usage_text"], "集中完成本次复习：先回忆课堂主线，再完成题目和自查。")
-        self.assertEqual(labels["final_reminder_box"], "本次集中复习后应留下的内容")
+        self.assertEqual(labels["usage_text"], "当天完成本节课复习：先回忆课堂主线，再完成题目和自查。")
+        self.assertEqual(labels["final_reminder_box"], "当天复习后应留下的内容")
 
     def test_answer_key_uses_compact_summary_instead_of_per_day_heading_blocks(self):
         generate_review_pdfs.register_fonts()

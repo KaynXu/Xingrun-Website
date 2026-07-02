@@ -1655,8 +1655,8 @@ def adapt_labels_for_review_schedule(labels, days, chinese_only):
     review_day = max_review_day(days)
     labels = dict(labels)
     if review_day <= 1:
-        labels["usage_text"] = "集中完成本次复习：先回忆课堂主线，再完成题目和自查。"
-        labels["final_reminder_box"] = "本次集中复习后应留下的内容"
+        labels["usage_text"] = "当天完成本节课复习：先回忆课堂主线，再完成题目和自查。"
+        labels["final_reminder_box"] = "当天复习后应留下的内容"
     elif review_day < 30:
         labels["final_reminder_box"] = f"{review_day}天复习后应留下的内容"
     return labels

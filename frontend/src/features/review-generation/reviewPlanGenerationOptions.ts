@@ -112,7 +112,7 @@ export function buildGenerationOptionsPayload(value: ReviewPlanGenerationOptions
 
 export function getGenerationOptionsFormSummary(value: ReviewPlanGenerationOptionsFormValue): string {
   if (value.scheduleMode === 'compressed') {
-    return '1天集中复习';
+    return '当天课后复习';
   }
   if (value.scheduleMode === 'daily') {
     return `每日连续 ${value.dailyCount} 天`;
