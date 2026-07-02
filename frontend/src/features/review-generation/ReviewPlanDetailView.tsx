@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Download, Eye, RefreshCw, RotateCcw } from 'lucide-react';
 
+import { buildWrongQuestionLatexPreviewModel } from '../../wrongQuestionLatex.js';
 import { apiFetch, cn, workspacePrimaryButtonClass, workspaceSecondaryButtonClass } from '../../workspaceShared';
 import { ReviewPlanRegenerateDialog } from './ReviewPlanRegenerateDialog';
 import {
@@ -14,6 +15,7 @@ import {
   getReviewPlanVersionLabel,
   normalizeReviewPlanDetail,
   type ReviewPlanDetailRecord,
+  type ReviewPlanPreviewMathBlock,
   type ReviewPlanVersionRecord,
 } from './reviewPlanVersions';
 
@@ -61,6 +63,42 @@ function getActiveVersionLabel(detail: ReviewPlanDetailRecord): string {
   return detail.active_version_status === 'transcribing' ? '正在转写新版' : '正在生成新版';
 }
 
+function resolveReviewPlanMathText(text: string, mathBlocks: ReviewPlanPreviewMathBlock[]): string {
+  if (!text.trim() || mathBlocks.length === 0) {
+    return text;
+  }
+  const blockById = new Map(mathBlocks.map((block) => [block.id, block]));
+  return text.replace(/\{\{math:([^}]+)\}\}/g, (raw, id: string) => {
+    const block = blockById.get(id.trim());
+    if (!block?.latex.trim()) {
+      return raw;
+    }
+    return block.display ? `$$${block.latex}$$` : `$${block.latex}$`;
+  });
+}
+
+function ReviewPlanLatexText({
+  text,
+  mathBlocks,
+  empty = '-',
+  className,
+}: {
+  text: string;
+  mathBlocks: ReviewPlanPreviewMathBlock[];
+  empty?: string;
+  className?: string;
+}) {
+  const resolvedText = resolveReviewPlanMathText(text, mathBlocks);
+  const preview = buildWrongQuestionLatexPreviewModel(resolvedText);
+
+  return (
+    <span
+      className={cn('xr-latex-preview', className)}
+      dangerouslySetInnerHTML={{ __html: preview.html || `<span class="xr-latex-empty">${empty}</span>` }}
+    />
+  );
+}
+
 export function ReviewPlanDetailView({
   lessonId,
   onBack,
@@ -71,6 +109,7 @@ export function ReviewPlanDetailView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [makingCurrentVersionId, setMakingCurrentVersionId] = useState<number | null>(null);
+  const [rerenderingVersionId, setRerenderingVersionId] = useState<number | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateDialogOpen, setRegenerateDialogOpen] = useState(false);
   const [regenerateOptions, setRegenerateOptions] = useState<ReviewPlanGenerationOptionsFormValue>({
@@ -133,6 +172,26 @@ export function ReviewPlanDetailView({
     }
   };
 
+  const handleRerenderPdf = async (version: ReviewPlanVersionRecord) => {
+    if (!detail || version.status !== 'ready' || rerenderingVersionId !== null) {
+      return;
+    }
+
+    setRerenderingVersionId(version.id);
+    setError('');
+    try {
+      await apiFetch<unknown>(`/api/review-plans/${lessonId}/versions/${version.id}/rerender-pdf`, {
+        method: 'POST',
+      });
+      await loadDetail(true);
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '重新渲染 PDF 失败');
+    } finally {
+      setRerenderingVersionId(null);
+    }
+  };
+
   const openRegenerateDialog = () => {
     if (!detail || regenerating) {
       return;
@@ -161,6 +220,15 @@ export function ReviewPlanDetailView({
 
   const currentPdfUrl = detail?.current_pdf_url.trim() ? authedReviewPlanUrl(detail.current_pdf_url) : '';
   const currentDownloadUrl = detail?.current_download_url.trim() ? authedReviewPlanUrl(detail.current_download_url) : '';
+  const currentPreview = detail?.current_plan_preview;
+  const hasCurrentPreview = Boolean(
+    currentPreview
+    && (
+      currentPreview.summary.trim()
+      || currentPreview.math_blocks.length > 0
+      || currentPreview.days.some((day) => day.questions.length > 0)
+    ),
+  );
 
   return (
     <div className="overflow-hidden rounded-[1.75rem] border border-sky-100/90 bg-white/88 dark:border-white/10 dark:bg-slate-950/78">
@@ -259,6 +327,69 @@ export function ReviewPlanDetailView({
             )}
           </section>
 
+          {hasCurrentPreview && currentPreview && (
+            <section>
+              <div className="flex items-center justify-between border-b border-slate-200/70 pb-3 dark:border-white/10">
+                <h4 className="text-sm font-semibold text-slate-900 dark:text-white">结构预览</h4>
+              </div>
+              <div className="mt-4 space-y-4">
+                {currentPreview.summary.trim() && (
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200">
+                    <ReviewPlanLatexText text={currentPreview.summary} mathBlocks={currentPreview.math_blocks} />
+                  </div>
+                )}
+                {currentPreview.math_blocks.length > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {currentPreview.math_blocks.slice(0, 6).map((block) => (
+                      <div key={block.id || block.latex} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200">
+                        <ReviewPlanLatexText text={block.display ? `$$${block.latex}$$` : `$${block.latex}$`} mathBlocks={[]} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {currentPreview.days.map((day, dayIndex) => (
+                  <div key={`${day.day}-${day.label}-${dayIndex}`} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-950/60">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-900 dark:text-white">{day.label || day.day || `第 ${dayIndex + 1} 天`}</span>
+                      {day.focus && <span className="text-xs text-slate-500 dark:text-slate-400">{day.focus}</span>}
+                    </div>
+                    {day.goal && (
+                      <div className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        <ReviewPlanLatexText text={day.goal} mathBlocks={currentPreview.math_blocks} />
+                      </div>
+                    )}
+                    {day.questions.length > 0 && (
+                      <ol className="mt-3 space-y-3 text-sm text-slate-700 dark:text-slate-200">
+                        {day.questions.map((question, questionIndex) => (
+                          <li key={`${question.type}-${questionIndex}`} className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/5">
+                            <div className="flex gap-2">
+                              <span className="shrink-0 font-semibold text-slate-400">{questionIndex + 1}.</span>
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <ReviewPlanLatexText text={question.question} mathBlocks={currentPreview.math_blocks} />
+                                {question.options.length > 0 && (
+                                  <div className="grid gap-1 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2">
+                                    {question.options.map((option) => (
+                                      <ReviewPlanLatexText key={option} text={option} mathBlocks={currentPreview.math_blocks} />
+                                    ))}
+                                  </div>
+                                )}
+                                {question.answer && (
+                                  <div className="text-xs font-semibold text-sky-700 dark:text-sky-200">
+                                    <ReviewPlanLatexText text={`答案：${question.answer}`} mathBlocks={currentPreview.math_blocks} />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <div className="flex items-center justify-between border-b border-slate-200/70 pb-3 dark:border-white/10">
               <h4 className="text-sm font-semibold text-slate-900 dark:text-white">版本历史</h4>
@@ -320,6 +451,17 @@ export function ReviewPlanDetailView({
                             <Download size={14} />
                             下载
                           </a>
+                        )}
+                        {version.status === 'ready' && (
+                          <button
+                            type="button"
+                            onClick={() => void handleRerenderPdf(version)}
+                            disabled={rerenderingVersionId !== null}
+                            className={cn(workspaceSecondaryButtonClass, 'h-9 px-3 py-2 text-xs')}
+                          >
+                            <RefreshCw size={14} className={cn(rerenderingVersionId === version.id && 'animate-spin')} />
+                            重渲染PDF
+                          </button>
                         )}
                         {canMakeCurrent && (
                           <button

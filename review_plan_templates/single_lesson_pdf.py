@@ -17,6 +17,11 @@ ONE_DAY_FINAL_REMINDERS = [
     "先回忆核心方法，再完成填空、选择和自查。",
     "把错题原因记录下来，方便老师下次讲评。",
 ]
+ONE_DAY_GENERIC_LABELS = {
+    "第1天",
+    "第1天复习",
+    "当天复现",
+}
 BAD_QUOTE_PATTERNS = (
     "每一个复习日",
     "完整复习整节课内容",
@@ -66,6 +71,11 @@ def _clean_text(value: object, default: str = "") -> str:
         return default
     text = normalize_portable_text_preserving_latex(str(value or "").strip())
     return text or default
+
+
+def _is_one_day_generic_label(value: object) -> bool:
+    compact = re.sub(r"\s+", "", _clean_text(value))
+    return compact in ONE_DAY_GENERIC_LABELS or (compact.startswith("第1天") and "集中复习" in compact)
 
 
 def _dedupe_clean_lines(values: object) -> list[str]:
@@ -425,7 +435,7 @@ def adapt_day(day_data: dict, question_pool: list[dict], topic: str) -> dict:
         choice_values = []
 
     task_values = tasks[:5] if tasks else _synthesized_tasks(day_data, topic, method_cards, choice_values)[:5]
-    blank_values = blanks[:7] or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
+    blank_values = blanks or [(f"第{day_number}天请回忆{topic or '本课内容'}中的关键空格。", "见课堂笔记")]
     quote_values = _dedupe_real_quotes(day_data.get("quotes"))
     if phrase and _is_real_class_quote(phrase) and phrase not in quote_values:
         quote_values.append(phrase)
@@ -474,7 +484,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
     if not days:
         days = [adapt_day({"day": 1, "label": "第1天", "items": []}, question_pool, topic)]
     one_day_plan = len(days) == 1 and int(days[0].get("offset") or 1) == 1
-    if one_day_plan and days[0].get("day") == "当天复现":
+    if one_day_plan and _is_one_day_generic_label(days[0].get("day")):
         days[0]["day"] = "当天课后复习"
     reminders = _dedupe_clean_lines(plan_data.get("final_reminder_lines")) or list(
         ONE_DAY_FINAL_REMINDERS if one_day_plan else DEFAULT_FINAL_REMINDERS

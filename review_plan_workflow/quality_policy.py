@@ -125,7 +125,10 @@ def should_run_llm_quality_review(
     *,
     local_quality: QualityReview,
     source_brief: ReviewPlanSourceBrief | None,
+    validator_passed: bool = True,
 ) -> bool:
+    if not validator_passed:
+        return False
     if not local_quality.passed or local_quality.must_revise or _has_high_issue(local_quality):
         return True
     if local_quality.score < 92:
@@ -151,5 +154,5 @@ def max_revision_attempts_for_quality(
     if can_soft_pass_after_revision(quality):
         return 1
     if _has_repairable_question_issue(quality):
-        return 2
+        return 1
     return 1

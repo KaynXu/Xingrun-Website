@@ -17,6 +17,7 @@ from review_plan_workflow import observability
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.service import generate_single_lesson_review_plan
 from review_plan_workflow.source_brief import source_text_hash
+from review_plan_workflow.state import WorkflowContext, WorkflowLog
 from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
@@ -122,6 +123,90 @@ class ReviewPlanObservabilityTestCase(unittest.TestCase):
         self.assertNotIn("这段完整课堂材料不要进入 Langfuse", blob)
         self.assertNotIn("先看固定量，再判断轨迹", blob)
 
+    def test_workflow_runtime_summary_counts_model_calls_and_latency(self):
+        context = WorkflowContext(provider="openai", model="gpt-5.4")
+        context.node_outputs["plan_generator_attempts"] = [
+            {"attempt": 1, "stage": "generate"},
+            {"attempt": 2, "stage": "schema_repair"},
+        ]
+        context.node_outputs["question_repair_attempts"] = [{"attempt": 1}]
+        context.logs.extend(
+            [
+                WorkflowLog(node_name="parent_planner", status="success", latency_ms=11),
+                WorkflowLog(node_name="plan_generator", status="success", latency_ms=22),
+                WorkflowLog(node_name="quality_reviewer_llm", status="success", latency_ms=33),
+                WorkflowLog(node_name="quality_reviewer_llm", status="success", latency_ms=44),
+                WorkflowLog(node_name="question_repair", status="success", latency_ms=55),
+            ]
+        )
+
+        runtime = observability.build_workflow_runtime_summary(
+            context,
+            usage={"provider": "openai", "model": "gpt-5.4", "input_tokens": 10, "output_tokens": 5},
+        )
+
+        self.assertEqual(runtime["path"], "high_quality_path")
+        self.assertEqual(runtime["model_call_count"], 6)
+        self.assertEqual(runtime["parent_planner_model_call_count"], 1)
+        self.assertEqual(runtime["writer_model_call_count"], 2)
+        self.assertEqual(runtime["llm_reviewer_model_call_count"], 2)
+        self.assertEqual(runtime["question_repair_count"], 1)
+        self.assertEqual(runtime["latency_by_stage"]["quality_reviewer_llm"], 77)
+        self.assertEqual(runtime["total_node_latency_ms"], 165)
+        self.assertIn("delivery_contract", runtime)
+
+    def test_delivery_contract_summary_keeps_metrics_without_source_text(self):
+        context = WorkflowContext(provider="openai", model="gpt-5.4")
+        context.node_outputs["source_brief"] = {
+            "source_text_hash": "sha256:source-hash",
+            "confidence": 0.72,
+            "cleaned_text": "这段课堂材料不能进入观测摘要",
+        }
+        context.node_outputs["review_plan_validator"] = {
+            "passed": False,
+            "printable_question_count": 10,
+            "rendered_question_count": 9,
+            "answer_key_count": 8,
+            "issues": [{"severity": "high", "category": "renderer", "description": "丢题"}],
+            "renderer_report": {
+                "visible_question_count": 9,
+                "answer_key_count": 8,
+                "dropped_items": ["renderer_visible_count_mismatch:9!=10"],
+                "formula_failures": ["day[0]:unresolved_placeholder:{{math:x}}"],
+            },
+        }
+        context.node_outputs["review_plan_evaluator"] = {
+            "score": 60,
+            "passed": False,
+            "must_revise": True,
+            "validator_passed": False,
+            "llm_review_used": True,
+            "issues": [{"severity": "high", "category": "delivery_contract", "description": "渲染异常"}],
+        }
+
+        summary = observability.build_delivery_contract_summary(
+            context,
+            review_input={
+                "schedule_mode": "compressed",
+                "review_days": [1],
+                "constraints": {"requested_question_count": 10},
+                "source_pack": {"source_type": "text", "raw_source_hash": "sha256:pack-hash"},
+            },
+        )
+        blob = json.dumps(summary, ensure_ascii=False)
+
+        self.assertEqual(summary["source_hash"], "sha256:pack-hash")
+        self.assertEqual(summary["source_type"], "text")
+        self.assertEqual(summary["generation_mode"], "compressed")
+        self.assertEqual(summary["parsed_teacher_constraints"]["requested_question_count"], 10)
+        self.assertEqual(summary["visible_question_count"], 9)
+        self.assertEqual(summary["answer_key_count"], 8)
+        self.assertEqual(summary["renderer_dropped_count"], 1)
+        self.assertEqual(summary["renderer_formula_failure_count"], 1)
+        self.assertEqual(summary["validator_result"]["issues"]["by_category"]["renderer"], 1)
+        self.assertEqual(summary["evaluator_result"]["issues"]["by_category"]["delivery_contract"], 1)
+        self.assertNotIn("这段课堂材料不能进入观测摘要", blob)
+
     def test_langfuse_env_sets_host_alias_for_sdk_compatibility(self):
         fake_client = FakeLangfuseClient()
         with patch.dict(
@@ -186,6 +271,13 @@ class ReviewPlanObservabilityTestCase(unittest.TestCase):
         self.assertTrue(fake_client.scores)
         self.assertEqual(fake_client.scores[0]["name"], "review_plan_quality")
         self.assertEqual(fake_client.flush_count, 1)
+        result_update = next(update for update in fake_client.current_updates if "output" in update)
+        self.assertEqual(result_update["output"]["runtime"]["path"], "fast_path")
+        self.assertEqual(result_update["output"]["runtime"]["model_call_count"], 1)
+        self.assertGreater(result_update["output"]["runtime"]["delivery_contract"]["visible_question_count"], 0)
+        self.assertGreater(result_update["output"]["runtime"]["delivery_contract"]["answer_key_count"], 0)
+        self.assertEqual(result_update["metadata"]["workflow_path"], "fast_path")
+        self.assertEqual(result_update["metadata"]["model_call_count"], 1)
 
         telemetry_blob = json.dumps(
             {

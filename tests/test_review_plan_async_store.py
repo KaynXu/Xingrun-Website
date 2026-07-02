@@ -144,9 +144,9 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["generation_options"]["daily_count"], 3)
         self.assertEqual(saved["generation_options"]["user_requirements"], "题量少一点")
         self.assertEqual(saved["generation_options"]["source"], "create")
-        self.assertEqual(saved["generation_summary"], "连续 3 天")
+        self.assertEqual(saved["generation_summary"], "每日连续 3 天")
         self.assertEqual(lesson["review_generation_options"], saved["generation_options"])
-        self.assertEqual(lesson["review_generation_summary"], "连续 3 天")
+        self.assertEqual(lesson["review_generation_summary"], "每日连续 3 天")
 
     def test_review_plan_generation_options_default_for_old_rows(self):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -167,7 +167,7 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
 
         self.assertEqual(saved["generation_options"]["schedule_mode"], "standard")
         self.assertEqual(saved["generation_options"]["review_days"], [1, 2, 7, 14, 30])
-        self.assertEqual(saved["generation_summary"], "标准 5 次")
+        self.assertEqual(saved["generation_summary"], "5次间隔复习")
 
     def test_update_review_plan_version_generation_options_preserves_regenerate_source(self):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -193,7 +193,7 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
         self.assertEqual(saved["generation_options"]["schedule_mode"], "custom")
         self.assertEqual(saved["generation_options"]["review_days"], [1, 5])
         self.assertEqual(saved["generation_options"]["source"], "regenerate")
-        self.assertEqual(saved["generation_summary"], "自定义 1,5")
+        self.assertEqual(saved["generation_summary"], "自定义日期 1,5")
 
     def test_fail_review_plan_version_records_error_without_current_pointer(self):
         lesson_id = lesson_manager.create_pending_lesson(
@@ -300,6 +300,37 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
                 plan={"dummy": "data"},
                 pdf_path="/tmp/placeholder.pdf",
             )
+
+    def test_update_review_plan_version_pdf_path_does_not_change_current_version(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            class_id=self.class_id,
+        )
+        first = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            first["id"],
+            plan={"lesson_info": {"topic": "第一版"}, "days": []},
+            pdf_path="/tmp/old.pdf",
+        )
+        second = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            second["id"],
+            plan={"lesson_info": {"topic": "第二版"}, "days": []},
+            pdf_path="/tmp/current.pdf",
+        )
+
+        lesson_manager.update_review_plan_version_pdf_path(first["id"], pdf_path="/tmp/rerendered.pdf")
+
+        saved_first = lesson_manager.get_review_plan_version(first["id"])
+        saved_lesson = lesson_manager.get_lesson(lesson_id)
+        self.assertEqual(saved_first["pdf_path"], "/tmp/rerendered.pdf")
+        self.assertEqual(saved_first["plan"]["lesson_info"]["topic"], "第一版")
+        self.assertEqual(saved_lesson["current_review_plan_version_id"], second["id"])
 
     def test_fail_review_plan_version_missing_raises(self):
         with self.assertRaisesRegex(LookupError, "review plan version not found"):

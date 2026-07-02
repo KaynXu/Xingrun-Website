@@ -265,6 +265,7 @@ from lesson_manager import (
     change_user_password,
     reset_user_password_by_recovery,
     student_account_can_access_lesson,
+    update_review_plan_version_pdf_path,
     update_review_plan_version_source_artifact,
     update_user_avatar_preferences,
 )
@@ -273,7 +274,9 @@ from class_commentary import list_colleague_skills, load_colleague_skill, payloa
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
-from review_plan_workflow.source_brief import build_deterministic_source_brief
+from review_plan_workflow.schemas import normalize_final_review_plan
+from review_plan_workflow.source_brief import build_deterministic_source_brief, clean_source_text, source_text_hash
+from review_plan_workflow.source_pack import source_pack_needs_rebuild
 from review_plan_workflow.transcript_polish import review_plan_transcript_source_text_hash
 from wrong_question_upload_queue import enqueue_wechat_wrong_question_upload_task
 from credit_manager import (
@@ -1044,6 +1047,7 @@ def _run_review_plan_generation_job(
                     cleaned_source_text=raw_transcription,
                     source_text_hash=raw_source_text_hash,
                     source_brief=source_brief_snapshot,
+                    source_type="transcript",
                 )
                 transcript_for_generation = raw_transcription
                 try:
@@ -1090,6 +1094,7 @@ def _run_review_plan_generation_job(
                     cleaned_source_text=merged_summary,
                     source_text_hash=raw_source_text_hash,
                     source_brief=source_brief_snapshot,
+                    source_type="transcript",
                 )
                 mark_review_plan_version_transcription_succeeded(version_id, summary=merged_summary)
                 lesson = get_lesson(lesson_id)
@@ -1141,8 +1146,17 @@ def _run_review_plan_generation_job(
         version_source_text = str((version or {}).get("source_text") or "").strip()
         source_text_for_generation = version_cleaned_source_text or version_source_text or raw_text
         source_snapshot_text = version_source_text or source_text_for_generation
+        expected_source_hash = str((version or {}).get("source_text_hash") or "").strip() or source_text_hash(source_snapshot_text)
+        expected_cleaned_hash = source_text_hash(version_cleaned_source_text or clean_source_text(source_text_for_generation))
 
-        if version_id and not str((version or {}).get("source_text_hash") or "").strip():
+        if version_id and (
+            not str((version or {}).get("source_text_hash") or "").strip()
+            or source_pack_needs_rebuild(
+                (version or {}).get("source_pack"),
+                raw_source_hash=expected_source_hash,
+                cleaned_source_hash=expected_cleaned_hash,
+            )
+        ):
             source_brief = build_deterministic_source_brief(
                 raw_text=source_text_for_generation,
                 subject=subject,
@@ -1156,6 +1170,7 @@ def _run_review_plan_generation_job(
                 cleaned_source_text=source_brief.cleaned_text,
                 source_text_hash=source_brief.source_text_hash,
                 source_brief=source_brief.model_dump(),
+                source_type=str(((version or {}).get("source_pack") or {}).get("source_type") or "text"),
             )
             version = get_review_plan_version_for_lesson(lesson_id, version_id)
 
@@ -1175,6 +1190,7 @@ def _run_review_plan_generation_job(
                     weak_points=weak_points,
                     lesson_date=lesson_date,
                     generation_options=generation_options,
+                    source_pack=(version or {}).get("source_pack"),
                     provider=chat_provider,
                     model=chat_model,
                     lesson_id=lesson_id,
@@ -1220,12 +1236,8 @@ def _run_review_plan_generation_job(
                 logger.exception("Failed to mark lesson %s as failed after quality gate error", lesson_id)
             return
 
-        from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
         try:
-            version_suffix = version.get("version_no") or version_id
-            pdf_name = build_single_lesson_pdf_filename(plan, suffix=f"{lesson_id}-v{version_suffix}")
-            pdf_path = str(PDF_DIR / pdf_name)
-            generate_single_lesson_pdf(plan, pdf_path)
+            pdf_path = _render_review_plan_version_pdf(lesson_id=lesson_id, version=version, plan=plan)
         except Exception:
             logger.exception("Review plan PDF generation failed for lesson %s", lesson_id)
             try:
@@ -1253,6 +1265,16 @@ def _start_review_plan_generation_thread(**job_kwargs) -> None:
         kwargs=job_kwargs,
         daemon=True,
     ).start()
+
+
+def _render_review_plan_version_pdf(*, lesson_id: int, version: dict, plan: dict) -> str:
+    from review_plan_templates.single_lesson_pdf import build_single_lesson_pdf_filename, generate_single_lesson_pdf
+
+    version_suffix = version.get("version_no") or version.get("id") or "latest"
+    pdf_name = build_single_lesson_pdf_filename(plan, suffix=f"{lesson_id}-v{version_suffix}")
+    pdf_path = str(PDF_DIR / pdf_name)
+    generate_single_lesson_pdf(plan, pdf_path)
+    return pdf_path
 
 
 def _run_class_commentary_transcription(task_id: int, audio_path: str, user: dict, request_key: str) -> None:
@@ -2783,6 +2805,90 @@ def _weekly_activity_student_item_payload(item: dict) -> dict:
     }
 
 
+def _review_plan_preview_text(value: object, limit: int = 240) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _serialize_review_plan_math_blocks(plan: dict) -> list[dict]:
+    blocks: list[dict] = []
+    knowledge_sections = plan.get("knowledge_sections") if isinstance(plan.get("knowledge_sections"), dict) else {}
+    raw_blocks = plan.get("math_blocks") if isinstance(plan.get("math_blocks"), list) else knowledge_sections.get("math_blocks")
+    if not isinstance(raw_blocks, list):
+        return []
+    for index, block in enumerate(raw_blocks[:40]):
+        if not isinstance(block, dict):
+            continue
+        latex = _review_plan_preview_text(block.get("latex") or block.get("formula") or block.get("text"), 500)
+        if not latex:
+            continue
+        block_id = _review_plan_preview_text(block.get("id") or block.get("key") or f"math_{index + 1}", 80)
+        blocks.append(
+            {
+                "id": block_id,
+                "latex": latex,
+                "display": block.get("display") is True,
+            }
+        )
+    return blocks
+
+
+def _serialize_review_plan_preview_question(item: object, question_type: str) -> Optional[dict]:
+    if not isinstance(item, dict):
+        return None
+    question = _review_plan_preview_text(item.get("question") or item.get("stem") or item.get("text"), 300)
+    answer = _review_plan_preview_text(item.get("answer"), 160)
+    if not question and not answer:
+        return None
+    options = item.get("options") if isinstance(item.get("options"), list) else []
+    return {
+        "type": question_type,
+        "question": question,
+        "options": [_review_plan_preview_text(option, 160) for option in options[:6] if str(option or "").strip()],
+        "answer": answer,
+    }
+
+
+def _serialize_review_plan_current_preview(plan: object) -> dict:
+    if not isinstance(plan, dict) or not plan:
+        return {}
+    try:
+        normalized = normalize_final_review_plan(plan)
+    except Exception:
+        normalized = plan
+    lesson_info = normalized.get("lesson_info") if isinstance(normalized.get("lesson_info"), dict) else {}
+    days_payload: list[dict] = []
+    for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
+        if not isinstance(day, dict):
+            continue
+        questions: list[dict] = []
+        for blank in day.get("blanks", []) if isinstance(day.get("blanks"), list) else []:
+            question = _serialize_review_plan_preview_question(blank, "blank")
+            if question:
+                questions.append(question)
+        for choice in day.get("choices", []) if isinstance(day.get("choices"), list) else []:
+            question = _serialize_review_plan_preview_question(choice, "choice")
+            if question:
+                questions.append(question)
+        days_payload.append(
+            {
+                "day": day.get("day") or day.get("offset") or "",
+                "label": _review_plan_preview_text(day.get("label") or day.get("day_label") or day.get("title"), 80),
+                "goal": _review_plan_preview_text(day.get("goal"), 180),
+                "focus": _review_plan_preview_text(day.get("focus"), 180),
+                "questions": questions[:12],
+            }
+        )
+    return {
+        "title": _review_plan_preview_text(lesson_info.get("topic") or normalized.get("title") or normalized.get("plan_title"), 120),
+        "summary": _review_plan_preview_text(normalized.get("weak_points_summary") or normalized.get("lesson_summary"), 300),
+        "math_blocks": _serialize_review_plan_math_blocks(normalized),
+        "days": days_payload[:7],
+    }
+
+
 def _serialize_review_plan_version_for_response(lesson_id: int, version: object) -> Optional[dict]:
     if not isinstance(version, dict):
         return None
@@ -2836,6 +2942,11 @@ def _serialize_lesson_for_response(lesson: object, *, include_versions: bool = F
         f"/api/review-plans/{lesson_id}/versions/{current_version['id']}/download"
         if current_version and str(current_version.get("status") or "") == "ready" and current_pdf_exists
         else ""
+    )
+    serialized["current_plan_preview"] = (
+        _serialize_review_plan_current_preview(current_version.get("plan"))
+        if include_versions and current_version
+        else {}
     )
     serialized["pdf_path"] = current_pdf_path if current_pdf_exists else ""
     try:
@@ -7845,6 +7956,35 @@ def api_review_plan_version_download(lesson_id, version_id):
     return send_file(pdf_path, as_attachment=True, download_name=Path(pdf_path).name)
 
 
+@app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/rerender-pdf", methods=["POST"])
+def api_review_plan_version_rerender_pdf(lesson_id, version_id):
+    user, error = _require_auth()
+    if error:
+        return error
+    lesson = get_lesson(lesson_id)
+    if not lesson or not _can_access_lesson(user, lesson):
+        return jsonify({"error": "not found"}), 404
+    version = get_review_plan_version_for_lesson(lesson_id, version_id)
+    if not version:
+        return jsonify({"error": "not found"}), 404
+    if str(version.get("status") or "") != "ready":
+        return jsonify({"error": "只有已生成的版本可以重新渲染 PDF"}), 400
+    plan = version.get("plan") if isinstance(version.get("plan"), dict) else {}
+    if not plan:
+        return jsonify({"error": "当前版本缺少复习计划内容，无法重新渲染 PDF"}), 400
+    try:
+        pdf_path = _render_review_plan_version_pdf(lesson_id=lesson_id, version=version, plan=plan)
+        update_review_plan_version_pdf_path(version_id, pdf_path=pdf_path)
+    except Exception:
+        logger.exception("Review plan PDF rerender failed for lesson %s version %s", lesson_id, version_id)
+        return jsonify({"error": "PDF 重新渲染失败，请稍后重试"}), 500
+    lesson = get_lesson(lesson_id)
+    serialized_lesson = _serialize_lesson_for_response(lesson, include_versions=True)
+    if serialized_lesson is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(serialized_lesson)
+
+
 @app.route("/api/review-plans/<int:lesson_id>/versions/<int:version_id>/make-current", methods=["POST"])
 def api_review_plan_version_make_current(lesson_id, version_id):
     user, error = _require_auth()
@@ -7946,6 +8086,7 @@ def api_lesson_regenerate(lesson_id):
                 cleaned_source_text=cleaned_source_text,
                 source_text_hash=source_text_hash_value,
                 source_brief=source_brief,
+                source_type=str(((current_version or {}).get("source_pack") or {}).get("source_type") or "text"),
             )
             version = get_review_plan_version_for_lesson(lesson_id, int(version["id"])) or version
         _start_review_plan_generation_thread(

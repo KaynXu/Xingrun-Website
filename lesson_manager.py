@@ -34,6 +34,7 @@ from review_plan_workflow.generation_options import (
     generation_options_summary,
     normalize_generation_options,
 )
+from review_plan_workflow.source_pack import build_lesson_source_pack_from_artifact
 
 # ─── 路径配置 ──────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.resolve()
@@ -4589,6 +4590,7 @@ def _review_plan_version_from_row(row) -> Optional[dict]:
     version["cleaned_source_text"] = str(version.get("cleaned_source_text") or "")
     version["source_text_hash"] = str(version.get("source_text_hash") or "")
     version["source_brief"] = _load_review_plan_source_brief(version.get("source_brief_json"))
+    version["source_pack"] = _load_review_plan_source_pack(version.get("source_pack_json"))
     return version
 
 
@@ -4636,6 +4638,15 @@ def _load_review_plan_source_brief(value: object | None) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _dump_review_plan_source_pack(value: object | None) -> str:
+    return _dump_review_plan_run_json(value, {})
+
+
+def _load_review_plan_source_pack(value: object | None) -> dict:
+    payload = _load_review_plan_run_json(value, {})
+    return payload if isinstance(payload, dict) else {}
+
+
 def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -4657,6 +4668,7 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
             cleaned_source_text TEXT NOT NULL DEFAULT '',
             source_text_hash TEXT NOT NULL DEFAULT '',
             source_brief_json TEXT NOT NULL DEFAULT '{}',
+            source_pack_json TEXT NOT NULL DEFAULT '{}',
             same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
             generation_options_json TEXT NOT NULL DEFAULT '{}',
             created_by_user_id INTEGER NOT NULL DEFAULT 0,
@@ -4684,6 +4696,7 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "review_plan_versions", "cleaned_source_text", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "source_text_hash", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "review_plan_versions", "source_brief_json", "TEXT NOT NULL DEFAULT '{}'")
+    _ensure_column(conn, "review_plan_versions", "source_pack_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "review_plan_versions", "same_lesson_materials_json", "TEXT NOT NULL DEFAULT '[]'")
     _ensure_column(conn, "review_plan_versions", "generation_options_json", "TEXT NOT NULL DEFAULT '{}'")
     _ensure_column(conn, "review_plan_versions", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
@@ -4764,6 +4777,7 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
                 cleaned_source_text TEXT NOT NULL DEFAULT '',
                 source_text_hash TEXT NOT NULL DEFAULT '',
                 source_brief_json TEXT NOT NULL DEFAULT '{}',
+                source_pack_json TEXT NOT NULL DEFAULT '{}',
                 same_lesson_materials_json TEXT NOT NULL DEFAULT '[]',
                 generation_options_json TEXT NOT NULL DEFAULT '{}',
                 created_by_user_id INTEGER NOT NULL DEFAULT 0,
@@ -4792,6 +4806,7 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
             "cleaned_source_text",
             "source_text_hash",
             "source_brief_json",
+            "source_pack_json",
             "same_lesson_materials_json",
             "generation_options_json",
             "created_by_user_id",
@@ -4809,6 +4824,7 @@ def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
             "cleaned_source_text": "''",
             "source_text_hash": "''",
             "source_brief_json": "'{}'",
+            "source_pack_json": "'{}'",
             "same_lesson_materials_json": "'[]'",
             "generation_options_json": "'{}'",
             "created_by_user_id": "0",
@@ -5134,7 +5150,18 @@ def update_review_plan_version_source_artifact(
     cleaned_source_text: str,
     source_text_hash: str,
     source_brief: object,
+    source_pack: object | None = None,
+    source_type: str = "text",
 ) -> None:
+    source_pack_payload = source_pack
+    if source_pack_payload is None:
+        source_pack_payload = build_lesson_source_pack_from_artifact(
+            source_text=source_text,
+            cleaned_source_text=cleaned_source_text,
+            source_text_hash_value=source_text_hash,
+            source_brief=source_brief,
+            source_type=source_type,
+        ).model_dump()
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -5143,6 +5170,7 @@ def update_review_plan_version_source_artifact(
                 cleaned_source_text=?,
                 source_text_hash=?,
                 source_brief_json=?,
+                source_pack_json=?,
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
@@ -5151,6 +5179,7 @@ def update_review_plan_version_source_artifact(
                 str(cleaned_source_text or ""),
                 str(source_text_hash or ""),
                 _dump_review_plan_source_brief(source_brief),
+                _dump_review_plan_source_pack(source_pack_payload),
                 int(version_id),
             ),
         )
@@ -5208,6 +5237,23 @@ def complete_review_plan_version(version_id: int, *, plan: dict, pdf_path: str) 
             WHERE id=?
             """,
             (int(version_id), int(row["lesson_id"])),
+        )
+
+
+def update_review_plan_version_pdf_path(version_id: int, *, pdf_path: str) -> None:
+    with get_conn() as conn:
+        row = _get_review_plan_version_for_update(conn, version_id)
+        if not row:
+            raise LookupError("review plan version not found")
+        conn.execute(
+            """
+            UPDATE review_plan_versions
+            SET pdf_path=?,
+                generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+            """,
+            (str(pdf_path or ""), int(version_id)),
         )
 
 

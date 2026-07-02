@@ -37,7 +37,10 @@ def _run(input_data: ReviewPlanInput, context: WorkflowContext) -> NormalizedBri
     if missing_info:
         context.add_warning("missing_input", f"输入缺少字段：{', '.join(missing_info)}", "medium")
 
-    materials = [input_data.summary_text.strip()] if input_data.summary_text.strip() else []
+    if input_data.source_pack is not None and input_data.source_pack.segments:
+        materials = ["\n".join(segment.text for segment in input_data.source_pack.segments).strip()]
+    else:
+        materials = [input_data.summary_text.strip()] if input_data.summary_text.strip() else []
     known_weaknesses = [input_data.weak_points.strip()] if input_data.weak_points.strip() else []
     return NormalizedBrief(
         subject=subject,  # type: ignore[arg-type]

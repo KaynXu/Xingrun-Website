@@ -9,6 +9,56 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 SubjectKey = Literal["math", "physics", "ielts", "unknown"]
 
 
+class SourceSegment(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    text: str
+    offset_start: int = 0
+    offset_end: int = 0
+    kind: str = "text"
+
+
+class SourceMathBlock(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    raw: str
+    latex: str = ""
+    display: bool = False
+    segment_id: str = ""
+
+
+class SourceTeacherAction(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    text: str
+    action_type: str = "instruction"
+    segment_id: str = ""
+
+
+class LessonSourcePack(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: str = "lesson_source_pack_v1"
+    parser_version: str = "source_pack_parser_v2"
+    source_id: str = ""
+    source_type: str = "text"
+    title: str = ""
+    language: str = "zh-CN"
+    segments: list[SourceSegment] = Field(default_factory=list)
+    detected_topics: list[str] = Field(default_factory=list)
+    math_blocks: list[SourceMathBlock] = Field(default_factory=list)
+    teacher_actions: list[SourceTeacherAction] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    source_hash: str = ""
+    raw_source_hash: str = ""
+    cleaned_source_hash: str = ""
+    cache_key: str = ""
+    created_at: str = ""
+
+
 class ReviewPlanInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -23,6 +73,7 @@ class ReviewPlanInput(BaseModel):
     daily_count: Optional[int] = None
     user_requirements: str = ""
     constraints: dict[str, Any] = Field(default_factory=dict)
+    source_pack: Optional[LessonSourcePack] = None
     output_language: str = "zh-CN"
 
     @field_validator("review_days")
@@ -788,6 +839,10 @@ def _find_wrapped_final_plan(value: dict[str, Any], depth: int = 0) -> dict[str,
 
 def normalize_final_review_plan(plan: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(plan or {})
+    if normalized.get("schema_version") == "lesson_review_plan_v1":
+        from review_plan_workflow.plan_v1 import adapt_lesson_review_plan_v1_to_final_review_plan
+
+        normalized = adapt_lesson_review_plan_v1_to_final_review_plan(normalized)
     wrapped_plan = _find_wrapped_final_plan(normalized)
     if isinstance(wrapped_plan, dict):
         for source_key, target_key in (

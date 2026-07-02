@@ -238,9 +238,9 @@ function SegmentedControl({
 }
 
 const scheduleModes = [
-  { value: 'standard', label: '5次间隔', description: '第1、2、7、14、30天复习' },
-  { value: 'compressed', label: '当天课后', description: '当天完成本节课复习' },
-  { value: 'daily', label: '每日连续', description: '连续每天生成,默认7天' },
+  { value: 'standard', label: '5次间隔复习', description: '第1、2、7、14、30天复习' },
+  { value: 'compressed', label: '当天课后复习', description: '当天完成本节课复习' },
+  { value: 'daily', label: '每日连续复习', description: '第1天到第N天连续复习' },
   { value: 'custom', label: '自定义日期', description: '按填写的日期点生成' },
 ];
 

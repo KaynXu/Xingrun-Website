@@ -15,6 +15,7 @@ import config_runtime
 import credit_manager
 import lesson_manager
 from app import app
+from tests.test_review_plan_plan_v1 import valid_plan_v1
 from tests.review_plan_test_utils import valid_single_lesson_plan
 
 
@@ -162,7 +163,7 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(version["generation_options"]["schedule_mode"], "custom")
         self.assertEqual(version["generation_options"]["review_days"], [1, 5])
         self.assertEqual(version["generation_options"]["user_requirements"], "明天考试前压缩题量")
-        self.assertEqual(version["generation_summary"], "自定义 1,5")
+        self.assertEqual(version["generation_summary"], "自定义日期 1,5")
         thread_kwargs = mock_start_thread.call_args.kwargs
         self.assertEqual(thread_kwargs["generation_options"], version["generation_options"])
 
@@ -653,6 +654,36 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertIn("generation_summary", payload["versions"][1])
         self.assertNotIn("generation_options_json", payload["versions"][1])
 
+    def test_review_plan_detail_includes_current_plan_math_preview(self):
+        pdf_path = self.base / "current.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\ncurrent\n%%EOF\n")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="勾股数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        plan = valid_plan_v1()
+        plan["practice_tasks"][0]["question"] = "勾股定理公式是 {{math:pythagorean}}，请填写______。"
+        lesson_manager.complete_review_plan_version(version["id"], plan=plan, pdf_path=str(pdf_path))
+
+        response = self.client.get(
+            f"/api/review-plans/{lesson_id}",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        preview = payload["current_plan_preview"]
+        self.assertEqual(preview["title"], "勾股数与特殊角")
+        self.assertEqual(preview["math_blocks"][0]["id"], "pythagorean")
+        self.assertIn("{{math:pythagorean}}", preview["days"][0]["questions"][0]["question"])
+        self.assertNotIn("plan_json", payload["current_version"])
+
     def test_make_current_switches_to_ready_old_version(self):
         first_pdf_path = self.base / "v1.pdf"
         second_pdf_path = self.base / "v2.pdf"
@@ -774,6 +805,88 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(download.data, requested_bytes)
         preview.close()
         download.close()
+
+    @patch("app._start_review_plan_generation_thread")
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    def test_rerender_version_pdf_rebuilds_pdf_without_new_generation(
+        self,
+        mock_generate_pdf,
+        mock_start_thread,
+    ):
+        def fake_generate_pdf(_plan, output_path):
+            Path(output_path).write_bytes(b"%PDF-1.4\nrerendered version pdf\n%%EOF\n")
+            return output_path
+
+        mock_generate_pdf.side_effect = fake_generate_pdf
+        current_pdf_path = self.base / "current-version.pdf"
+        current_pdf_path.write_bytes(b"%PDF-1.4\ncurrent version pdf\n%%EOF\n")
+        missing_pdf_path = self.base / "missing-version.pdf"
+        old_plan = {
+            "lesson_info": {"subject": "数学", "topic": "第一版"},
+            "full_review_topics": ["一次函数"],
+            "weak_points_summary": "斜率判断",
+            "days": [
+                {
+                    "day": 1,
+                    "label": "当天课后复习",
+                    "goal": "复习一次函数。",
+                    "blanks": [{"text": "一次函数解析式是______。", "answer": "y=kx+b"}],
+                    "choices": [
+                        {
+                            "question": "k>0 时图像趋势是？",
+                            "options": ["A. 上升", "B. 下降", "C. 水平", "D. 不确定"],
+                            "answer": "A",
+                        }
+                    ],
+                }
+            ],
+        }
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-04-09",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            created_by_user_id=1,
+        )
+        old_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            old_version["id"],
+            plan=old_plan,
+            pdf_path=str(missing_pdf_path),
+        )
+        current_version = lesson_manager.create_review_plan_version(lesson_id=lesson_id, status="generating")
+        lesson_manager.complete_review_plan_version(
+            current_version["id"],
+            plan={"lesson_info": {"topic": "当前版"}, "days": []},
+            pdf_path=str(current_pdf_path),
+        )
+
+        response = self.client.post(
+            f"/api/review-plans/{lesson_id}/versions/{old_version['id']}/rerender-pdf",
+            headers=self._auth_headers(self.owner_token),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["current_version_id"], current_version["id"])
+        versions = lesson_manager.list_review_plan_versions(lesson_id)
+        self.assertEqual(len(versions), 2)
+        saved_old = lesson_manager.get_review_plan_version(old_version["id"])
+        self.assertEqual(saved_old["plan"], old_plan)
+        self.assertTrue(Path(saved_old["pdf_path"]).exists())
+        self.assertNotEqual(saved_old["pdf_path"], str(current_pdf_path))
+        mock_generate_pdf.assert_called_once()
+        mock_start_thread.assert_not_called()
+
+        preview = self.client.get(
+            f"/api/review-plans/{lesson_id}/versions/{old_version['id']}/pdf",
+            headers=self._auth_headers(self.owner_token),
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.data, b"%PDF-1.4\nrerendered version pdf\n%%EOF\n")
+        preview.close()
 
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
@@ -1189,8 +1302,79 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         generate_kwargs = mock_generate_plan.call_args.kwargs
         self.assertEqual(generate_kwargs["summary_text"], "清洗后课堂源材料")
         self.assertNotEqual(generate_kwargs["summary_text"], "后来被编辑过的 lesson summary")
+        self.assertEqual(generate_kwargs["source_pack"]["source_hash"], "sha256:" + "b" * 64)
+        self.assertEqual(generate_kwargs["source_pack"]["title"], "动点与立体几何综合")
         saved_version = lesson_manager.get_review_plan_version(version["id"])
         self.assertEqual(saved_version["source_text_hash"], "sha256:" + "b" * 64)
+        self.assertEqual(saved_version["source_pack"]["source_hash"], "sha256:" + "b" * 64)
+        mock_generate_pdf.assert_called_once()
+
+    @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
+    @patch("review_plan_workflow.service.generate_single_lesson_review_plan")
+    @patch("app.update_review_plan_version_source_artifact")
+    @patch("app._run_ai_feature_with_charge")
+    def test_worker_reuses_matching_source_pack_cache(
+        self,
+        mock_run_with_charge,
+        mock_update_source_artifact,
+        mock_generate_plan,
+        mock_generate_pdf,
+    ):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="六年级",
+            topic="动点与立体几何综合",
+            summary="后来被编辑过的 lesson summary",
+            weak_points="空间轨迹",
+            class_id=0,
+            created_by_user_id=1,
+        )
+        version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=1,
+            generation_options={"schedule_mode": "compressed"},
+        )
+        lesson_manager.update_review_plan_version_source_artifact(
+            int(version["id"]),
+            source_text="原始课堂源材料",
+            cleaned_source_text="清洗后课堂源材料",
+            source_text_hash="sha256:" + "c" * 64,
+            source_brief={
+                "schema_version": "2026-07-01",
+                "source_text_hash": "sha256:" + "c" * 64,
+                "cleaned_text": "清洗后课堂源材料",
+                "lesson_title_candidates": ["动点与立体几何综合"],
+                "knowledge_points": [],
+                "method_chains": [],
+                "common_mistakes": [],
+                "example_stems": [],
+                "teacher_emphasis": [],
+                "excluded_noise": [],
+                "missing_fields": [],
+                "evidence_map": [],
+                "confidence": 0.8,
+            },
+        )
+        cached_version = lesson_manager.get_review_plan_version(version["id"])
+        self.assertTrue(cached_version["source_pack"]["cache_key"].startswith("sha256:"))
+        mock_generate_plan.return_value = valid_single_lesson_plan(subject="数学", topic="动点与立体几何综合")
+        mock_run_with_charge.side_effect = lambda **kwargs: kwargs["producer"]()
+
+        app_module._run_review_plan_generation_job(
+            lesson_id=lesson_id,
+            version_id=int(version["id"]),
+            user={"id": 1, "organization_id": 1},
+            chat_provider="deepseek",
+            chat_model="deepseek-v4-pro",
+            request_key="request-key",
+            request_id="request-id",
+        )
+
+        mock_update_source_artifact.assert_not_called()
+        self.assertEqual(mock_generate_plan.call_args.kwargs["summary_text"], "清洗后课堂源材料")
+        self.assertEqual(mock_generate_plan.call_args.kwargs["source_pack"]["cache_key"], cached_version["source_pack"]["cache_key"])
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
@@ -1239,7 +1423,10 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertTrue(saved_version["source_text_hash"].startswith("sha256:"))
         self.assertIn("先看固定量", saved_version["cleaned_source_text"])
         self.assertEqual(saved_version["source_brief"]["lesson_title_candidates"], ["动点与立体几何综合"])
+        self.assertEqual(saved_version["source_pack"]["title"], "动点与立体几何综合")
+        self.assertTrue(saved_version["source_pack"]["segments"])
         self.assertEqual(mock_generate_plan.call_args.kwargs["summary_text"], saved_version["cleaned_source_text"])
+        self.assertEqual(mock_generate_plan.call_args.kwargs["source_pack"]["source_hash"], saved_version["source_text_hash"])
         mock_generate_pdf.assert_called_once()
 
     @patch("review_plan_templates.single_lesson_pdf.generate_single_lesson_pdf")
@@ -1347,7 +1534,9 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertEqual(event_order[:2], ["source_artifact:原始转写：动点倒顶点距离不变。", "polish"])
         self.assertEqual(source_artifact_calls[0]["source_text"], "原始转写：动点倒顶点距离不变。")
         self.assertEqual(source_artifact_calls[0]["cleaned_source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertEqual(source_artifact_calls[0]["source_type"], "transcript")
         self.assertEqual(source_artifact_calls[-1]["source_text"], "原始转写：动点倒顶点距离不变。")
+        self.assertEqual(source_artifact_calls[-1]["source_type"], "transcript")
         generate_kwargs = mock_generate_plan.call_args.kwargs
         self.assertIn("润色转写：动点到定点距离不变，轨迹是球面。", generate_kwargs["summary_text"])
         self.assertNotIn("原始转写：动点倒顶点距离不变。", generate_kwargs["summary_text"])

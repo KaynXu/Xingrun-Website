@@ -124,6 +124,18 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
         self.assertEqual(reminders[0], "当天课后复习要完整扫过课堂主线。")
         self.assertEqual(filename, "代数基础巩固-96-v1.pdf")
 
+    def test_adapt_plan_to_review_template_replaces_legacy_compressed_day_label(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["label"] = "第1天集中复习"
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+
+        self.assertEqual(days[0]["day"], "当天课后复习")
+
     def test_adapt_plan_to_review_template_preserves_method_map_density(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template, extract_knowledge_sections
 
@@ -367,6 +379,42 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
 
         self.assertEqual(len(days[0]["choices"]), 3)
         self.assertEqual(days[0]["choices"][2]["question"], "选择题3：下列哪组是勾股数？")
+
+    def test_adapt_plan_to_review_template_keeps_all_printable_questions(self):
+        from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
+        from review_plan_workflow.printable_questions import count_printable_questions
+
+        plan = {
+            "lesson_info": {
+                "subject": "数学",
+                "topic": "勾股数与特殊角",
+                "key_categories": ["勾股定理", "整数勾股数", "特殊直角三角形"],
+            },
+            "full_review_topics": ["勾股定理", "整数勾股数", "特殊直角三角形"],
+            "days": [
+                {
+                    "day": 1,
+                    "blanks": [
+                        {"text": f"第{i}题：勾股定理等式为______。", "answer": "$a^2+b^2=c^2$"}
+                        for i in range(1, 9)
+                    ],
+                    "choices": [
+                        {
+                            "question": f"选择题{i}：下列哪组是勾股数？",
+                            "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                            "answer": "A",
+                        }
+                        for i in range(1, 3)
+                    ],
+                }
+            ],
+        }
+
+        _lesson, days, _reminders = adapt_plan_to_review_template(plan)
+        counts = count_printable_questions(plan)
+
+        self.assertEqual(counts.total_visible_questions, 10)
+        self.assertEqual(len(days[0]["blanks"]) + len(days[0]["choices"]), 10)
 
     def test_adapt_plan_to_review_template_formats_structured_active_recall_without_schema_keys(self):
         from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template

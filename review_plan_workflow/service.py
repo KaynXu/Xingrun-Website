@@ -11,6 +11,7 @@ from config_runtime import (
 )
 
 from .executor import run_workflow_node
+from .evaluator import build_review_plan_evaluation
 from .generation_options import normalize_generation_options
 from .nodes import (
     intake_normalizer_node,
@@ -38,6 +39,7 @@ from .quality_policy import (
 from .nodes.question_repair import can_repair_questions
 from .llm.client import merge_usage
 from .observability import (
+    build_workflow_runtime_summary,
     flush,
     record_quality_score,
     record_workflow_failure,
@@ -46,6 +48,7 @@ from .observability import (
 )
 from .schemas import (
     AgenticPlanBlueprint,
+    LessonSourcePack,
     QualityIssue,
     QualityReview,
     ReviewPlanInput,
@@ -53,6 +56,7 @@ from .schemas import (
     normalize_final_review_plan,
 )
 from .state import WorkflowContext
+from .validator import ReviewPlanValidationResult, validate_review_plan_delivery
 
 
 def _record_run(
@@ -109,6 +113,24 @@ def _score_quality(
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
+
+
+def _validate_delivery(
+    plan: dict[str, Any],
+    *,
+    review_input: ReviewPlanInput,
+    context: WorkflowContext,
+    node_key: str,
+) -> ReviewPlanValidationResult:
+    validation = validate_review_plan_delivery(
+        plan,
+        required_review_days=review_input.review_days,
+        constraints=review_input.constraints,
+        source_pack=review_input.source_pack,
+    )
+    context.node_outputs[node_key] = validation.model_dump()
+    context.node_outputs["review_plan_validator"] = validation.model_dump()
+    return validation
 
 
 def _fallback_agent_blueprint(
@@ -283,19 +305,30 @@ def _review_with_llm_quality_gate(
     prompt_bundle: Any,
     agent_blueprint: AgenticPlanBlueprint,
     source_brief: ReviewPlanSourceBrief | None = None,
+    validation: ReviewPlanValidationResult | None = None,
     context: WorkflowContext,
     node_key: str,
 ) -> tuple[QualityReview, dict[str, Any]]:
-    if not should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief):
+    validator_passed = validation.passed if validation is not None else True
+    if not should_run_llm_quality_review(
+        local_quality=local_quality,
+        source_brief=source_brief,
+        validator_passed=validator_passed,
+    ):
         skipped = {
             "mode": "skipped",
-            "reason": "local_quality_passed_with_high_source_confidence",
+            "reason": "validator_blocked_llm_review" if not validator_passed else "local_quality_passed_with_high_source_confidence",
             "score": local_quality.score,
             "source_confidence": source_brief.confidence if source_brief is not None else None,
+            "validator_passed": validator_passed,
         }
         context.node_outputs[node_key] = skipped
         context.node_outputs["quality_reviewer_llm_skipped"] = skipped
         context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+            local_quality=local_quality,
+            validator_result=validation,
+        ).model_dump()
         return local_quality, {}
 
     if not _has_runtime_key_for_provider(context.provider):
@@ -305,6 +338,10 @@ def _review_with_llm_quality_gate(
         }
         context.node_outputs[node_key] = local_quality.model_dump()
         context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+            local_quality=local_quality,
+            validator_result=validation,
+        ).model_dump()
         return local_quality, {}
     try:
         llm_quality, usage = run_workflow_node(
@@ -327,11 +364,20 @@ def _review_with_llm_quality_gate(
         )
         context.node_outputs[node_key] = local_quality.model_dump()
         context.node_outputs["quality_reviewer"] = local_quality.model_dump()
+        context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+            local_quality=local_quality,
+            validator_result=validation,
+        ).model_dump()
         return local_quality, {}
 
     merged = _merge_quality_reviews(local_quality, llm_quality)
     context.node_outputs[node_key] = merged.model_dump()
     context.node_outputs["quality_reviewer"] = merged.model_dump()
+    context.node_outputs["review_plan_evaluator"] = build_review_plan_evaluation(
+        local_quality=local_quality,
+        validator_result=validation,
+        llm_quality=llm_quality,
+    ).model_dump()
     return merged, usage
 
 
@@ -443,6 +489,12 @@ def _maybe_revise_plan(
 
         total_usage = merge_usage(total_usage, revision_usage)
         current_plan = _normalize_output_plan(revised_plan, review_input, source_brief)
+        current_validation = _validate_delivery(
+            current_plan,
+            review_input=review_input,
+            context=context,
+            node_key=f"review_plan_validator_after_revision_{attempt}",
+        )
         local_quality = _score_quality(
             current_plan,
             subject=subject,
@@ -457,6 +509,7 @@ def _maybe_revise_plan(
             prompt_bundle=prompt_bundle,
             agent_blueprint=agent_blueprint,
             source_brief=source_brief,
+            validation=current_validation,
             context=context,
             node_key=f"quality_reviewer_after_revision_{attempt}",
         )
@@ -500,6 +553,7 @@ def generate_single_lesson_review_plan(
     version_id: int = 0,
     organization_id: int = 0,
     generation_options: object | None = None,
+    source_pack: object | None = None,
     include_usage: bool = False,
 ) -> Union[dict[str, Any], Tuple[dict[str, Any], dict[str, Any]]]:
     resolved_provider = provider or resolve_review_plan_provider()
@@ -522,6 +576,7 @@ def generate_single_lesson_review_plan(
         daily_count=options.get("daily_count") if isinstance(options.get("daily_count"), int) else None,
         user_requirements=str(options.get("user_requirements") or ""),
         constraints=options.get("constraints") if isinstance(options.get("constraints"), dict) else {},
+        source_pack=LessonSourcePack.model_validate(source_pack) if source_pack else None,
     )
     _record_run(lesson_id=lesson_id, version_id=version_id, organization_id=organization_id, context=context, status="running")
 
@@ -614,6 +669,12 @@ def generate_single_lesson_review_plan(
                 context,
             )
             plan = _normalize_output_plan(plan, review_input, source_brief)
+            validation = _validate_delivery(
+                plan,
+                review_input=review_input,
+                context=context,
+                node_key="review_plan_validator_initial",
+            )
             local_quality = _score_quality(
                 plan,
                 subject=route.selected_subject,
@@ -628,6 +689,7 @@ def generate_single_lesson_review_plan(
                 prompt_bundle=prompt_bundle,
                 agent_blueprint=agent_blueprint,
                 source_brief=source_brief,
+                validation=validation,
                 context=context,
                 node_key="quality_reviewer_initial",
             )
@@ -644,6 +706,11 @@ def generate_single_lesson_review_plan(
                 context=context,
             )
             plan = _normalize_output_plan(plan, review_input, source_brief)
+            context.node_outputs["workflow_runtime"] = build_workflow_runtime_summary(
+                context,
+                usage=usage,
+                review_input=review_input,
+            )
             record_quality_score(context=context, quality=quality)
             record_workflow_result(context=context, plan=plan, quality=quality, usage=usage, status="succeeded")
 

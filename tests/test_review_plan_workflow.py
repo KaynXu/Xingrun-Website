@@ -448,6 +448,21 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertTrue(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
 
+    def test_quality_policy_skips_llm_reviewer_when_validator_blocks_delivery(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(score=50, passed=False, must_revise=True, issues=[], revision_instructions=[])
+        source_brief = ReviewPlanSourceBrief(confidence=0.2, missing_fields=["topic"])
+
+        self.assertFalse(
+            should_run_llm_quality_review(
+                local_quality=local_quality,
+                source_brief=source_brief,
+                validator_passed=False,
+            )
+        )
+
     def test_quality_policy_caps_structural_revision_attempts_to_one(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
         from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
@@ -463,7 +478,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
 
-    def test_quality_policy_allows_second_revision_for_question_factual_errors(self):
+    def test_quality_policy_limits_question_factual_errors_to_one_targeted_repair(self):
         from review_plan_workflow.quality_policy import max_revision_attempts_for_quality
         from review_plan_workflow.schemas import ReviewPlanSourceBrief
 
@@ -483,7 +498,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
         source_brief = ReviewPlanSourceBrief(confidence=0.82)
 
-        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 2)
+        self.assertEqual(max_revision_attempts_for_quality(quality=quality, source_brief=source_brief), 1)
 
     def test_quality_policy_softens_workload_after_revision_only_when_no_other_high_issue(self):
         from review_plan_workflow.quality_policy import can_soft_pass_after_revision, soften_quality_after_revision
@@ -1437,6 +1452,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(usage["input_tokens"], 4)
         self.assertEqual(usage["output_tokens"], 6)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(run["node_outputs"]["review_plan_validator_initial"]["passed"])
+        self.assertTrue(run["node_outputs"]["review_plan_evaluator"]["passed"])
         self.assertEqual(run["node_outputs"]["quality_reviewer_initial"]["mode"], "skipped")
         self.assertEqual(
             run["node_outputs"]["quality_reviewer_initial"]["reason"],
@@ -1744,7 +1761,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
     @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
-    def test_question_answer_error_gets_second_targeted_revision(
+    def test_question_answer_error_gets_single_targeted_repair(
         self,
         mock_parent_plan,
         mock_generate_plan,
@@ -1792,30 +1809,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                 {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
             ),
             (
-                {"score": 70, "passed": False, "must_revise": True, "issues": [factual_issue], "revision_instructions": ["继续重写错题"]},
-                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
-            ),
-            (
                 {"score": 95, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
                 {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
             ),
         ]
-        mock_question_repair.side_effect = [
-            (
-                {
-                    "repairs": [
-                        {
-                            "target_id": "day1_choice2",
-                            "kind": "choice",
-                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
-                            "options": ["A. 直角三角形", "B. 钝角三角形", "C. 等边三角形", "D. 不存在"],
-                            "answer": "A",
-                            "analysis": "第一次修复仍错误，审稿会继续拦截。",
-                        }
-                    ]
-                },
-                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 7, "output_tokens": 4},
-            ),
+        mock_question_repair.return_value = (
             (
                 {
                     "repairs": [
@@ -1830,8 +1828,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
                     ]
                 },
                 {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4},
-            ),
-        ]
+            )
+        )
 
         generated, usage = generate_single_lesson_review_plan(
             summary_text="课堂总结文本",
@@ -1845,9 +1843,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertEqual(generated["days"][0]["choices"][1]["answer"], "B")
         self.assertIn("锐角三角形", generated["days"][0]["choices"][1]["analysis"])
-        self.assertEqual(mock_question_repair.call_count, 2)
+        self.assertEqual(mock_question_repair.call_count, 1)
         mock_revise_plan.assert_not_called()
-        self.assertEqual(mock_llm_review.call_count, 3)
+        self.assertEqual(mock_llm_review.call_count, 2)
         self.assertEqual(mock_question_repair.call_args_list[0].kwargs["stage"], "question_repair")
         self.assertEqual(mock_question_repair.call_args_list[0].kwargs["provider"], "deepseek")
         self.assertEqual(mock_question_repair.call_args_list[0].kwargs["model"], "deepseek-v4-pro")
@@ -1908,6 +1906,18 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("formula_sheet", run["node_outputs"]["task_blueprint"]["required_components"])
         self.assertEqual(run["node_outputs"]["time_allocator"]["review_schedule"][0]["day"], 1)
         self.assertIn("中国小学、初中、高中课程与考试复习", run["node_outputs"]["prompt_bundle_builder"]["prompt_preview"])
+        runtime = run["node_outputs"]["workflow_runtime"]
+        self.assertEqual(runtime["path"], "fast_path")
+        self.assertEqual(runtime["model_call_count"], 1)
+        self.assertEqual(runtime["writer_model_call_count"], 1)
+        self.assertEqual(runtime["llm_reviewer_model_call_count"], 0)
+        self.assertIn("plan_generator", runtime["latency_by_stage"])
+        self.assertEqual(runtime["delivery_contract"]["generation_mode"], "standard")
+        self.assertGreater(runtime["delivery_contract"]["visible_question_count"], 0)
+        self.assertEqual(
+            runtime["delivery_contract"]["visible_question_count"],
+            runtime["delivery_contract"]["answer_key_count"],
+        )
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_passes_generation_options_through_workflow(self, mock_generate_plan):
