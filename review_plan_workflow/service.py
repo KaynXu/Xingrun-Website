@@ -268,6 +268,22 @@ def _run_parent_planner_with_fallback(
     source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
 ) -> tuple[AgenticPlanBlueprint, dict[str, Any]]:
+    if _should_skip_parent_planner(review_input=review_input, source_brief=source_brief):
+        fallback = _fallback_agent_blueprint(
+            review_input=review_input,
+            subject=getattr(route, "selected_subject", ""),
+            source=source,
+            task_blueprint=task_blueprint,
+        )
+        skipped = {
+            "reason": "deterministic_source_fast_path",
+            "source_type": _review_input_source_type(review_input),
+            "source_confidence": source_brief.confidence if source_brief is not None else None,
+            "missing_fields": list(source_brief.missing_fields or []) if source_brief is not None else [],
+        }
+        context.node_outputs["parent_planner"] = fallback.model_dump()
+        context.node_outputs["parent_planner_skipped"] = skipped
+        return fallback, {}
     if not _has_runtime_key_for_provider(context.provider):
         fallback = _fallback_agent_blueprint(
             review_input=review_input,
@@ -310,6 +326,26 @@ def _run_parent_planner_with_fallback(
         )
         context.node_outputs["parent_planner"] = fallback.model_dump()
         return fallback, {}
+
+
+def _review_input_source_type(review_input: ReviewPlanInput) -> str:
+    source_pack = review_input.source_pack
+    return str(getattr(source_pack, "source_type", "") or "text")
+
+
+def _should_skip_parent_planner(
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None = None,
+) -> bool:
+    if bool((review_input.constraints or {}).get("force_parent_planner")):
+        return False
+    if _review_input_source_type(review_input) != "text":
+        return False
+    if source_brief is None:
+        return False
+    missing_fields = {str(field or "") for field in (source_brief.missing_fields or []) if str(field or "")}
+    return source_brief.confidence >= 0.6 and not (missing_fields - {"example_stems"})
 
 
 def _dedupe_quality_issues(*issue_groups: list[QualityIssue]) -> list[QualityIssue]:

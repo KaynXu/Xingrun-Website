@@ -471,6 +471,30 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         self.assertTrue(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
 
+    def test_quality_policy_skips_llm_reviewer_for_soft_source_gap(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(score=100, passed=True, must_revise=False, issues=[], revision_instructions=[])
+        source_brief = ReviewPlanSourceBrief(confidence=0.65, missing_fields=["example_stems"])
+
+        self.assertFalse(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
+
+    def test_quality_policy_uses_local_revision_without_llm_reviewer(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(
+            score=75,
+            passed=False,
+            must_revise=True,
+            issues=[QualityIssue(severity="high", category="source_coverage", description="缺少课堂链路")],
+            revision_instructions=["补齐课堂链路"],
+        )
+        source_brief = ReviewPlanSourceBrief(confidence=0.65, missing_fields=["example_stems"])
+
+        self.assertFalse(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
+
     def test_quality_policy_skips_llm_reviewer_when_validator_blocks_delivery(self):
         from review_plan_workflow.quality_policy import should_run_llm_quality_review
         from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
@@ -746,6 +770,107 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(len(targets), 1)
         self.assertEqual(targets[0].target_id, "day7_choice2")
 
+    def test_question_repair_localizes_active_recall_and_blank_paths(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        day = plan["days"][0]
+        day["active_recall"] = {
+            "items": [
+                {"instruction": "默写 3:4:5、5:12:13。", "expected": "两组基础勾股数。"},
+                {"instruction": "说明 1:2:√5 中 α 的定义。", "expected": "1 对 α。"},
+                {"instruction": "错误推导：$\\frac{\\sqrt{2}+2}{4\\sqrt{2}}=1$，所以 α+β=45°。"},
+            ]
+        }
+        while len(day["blanks"]) < 6:
+            day["blanks"].append({"text": f"占位填空{len(day['blanks']) + 1}______。", "answer": "占位"})
+        quality = QualityReview(
+            score=72,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="days[0].active_recall[2] 的 α+β 推导出现数学错误。",
+                    suggested_fix="改用正切和角公式验证。",
+                    target_path="days[0].active_recall[2]",
+                    day=1,
+                ),
+                QualityIssue(
+                    severity="high",
+                    category="pdf_safety",
+                    description="days[0].blanks[5] 的公式中出现中文问号。",
+                    suggested_fix="把中文问号改成变量 x。",
+                    target_path="days[0].blanks[5]",
+                    day=1,
+                    question_index=6,
+                    question_type="blank",
+                ),
+            ],
+            revision_instructions=["局部修复主动回忆和填空题"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual([target.target_id for target in targets], ["day1_recall3", "day1_blank6"])
+        self.assertEqual(targets[0].kind, "active_recall")
+        self.assertEqual(targets[0].active_recall_key, "items")
+
+    def test_question_repair_applies_active_recall_repair(self):
+        from review_plan_workflow.nodes.question_repair import _apply_repairs, find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        day = plan["days"][0]
+        day["active_recall"] = [
+            {"instruction": "默写基础勾股数。"},
+            {"instruction": "说明 α、β 的定义。"},
+            {"instruction": "错误推导：$\\frac{\\sqrt{2}+2}{4\\sqrt{2}}=1$。"},
+        ]
+        quality = QualityReview(
+            score=72,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="days[0].active_recall[2] 的 α+β 推导出现数学错误。",
+                    suggested_fix="改用正切和角公式验证。",
+                    target_path="days[0].active_recall[2]",
+                    day=1,
+                )
+            ],
+            revision_instructions=["局部修复主动回忆"],
+        )
+        targets = find_question_repair_targets(plan, quality)
+
+        repaired = _apply_repairs(
+            plan,
+            targets,
+            {
+                "repairs": [
+                    {
+                        "target_id": "day1_recall3",
+                        "kind": "active_recall",
+                        "instruction": (
+                            "已知 $\\tan\\alpha=\\frac{1}{2}$、$\\tan\\beta=\\frac{1}{3}$，"
+                            "用正切和角公式证明 $\\alpha+\\beta=45^\\circ$。"
+                        ),
+                        "expected": (
+                            "$\\tan(\\alpha+\\beta)=\\frac{1/2+1/3}{1-1/6}=1$，"
+                            "所以 $\\alpha+\\beta=45^\\circ$。"
+                        ),
+                    }
+                ]
+            },
+        )
+
+        repaired_card = repaired["days"][0]["active_recall"][2]
+        self.assertIn("\\tan\\alpha", repaired_card["instruction"])
+        self.assertIn("=1", repaired_card["expected"])
+        self.assertNotIn("\\frac{\\sqrt{2}+2}{4\\sqrt{2}}=1", json.dumps(repaired_card, ensure_ascii=False))
+
     def test_source_brief_builder_records_structured_source_before_writer(self):
         from review_plan_workflow.executor import run_workflow_node
         from review_plan_workflow.nodes.intake_normalizer import intake_normalizer_node
@@ -861,6 +986,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             generation_options={
                 "schedule_mode": "compressed",
                 "user_requirements": "压缩成一天，少一点题量，多做诊断",
+                "constraints": {"force_parent_planner": True},
             },
             provider="deepseek",
             model="deepseek-v4-pro",
@@ -1550,9 +1676,14 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         mock_llm_review.assert_not_called()
-        self.assertEqual(usage["input_tokens"], 4)
-        self.assertEqual(usage["output_tokens"], 6)
+        mock_parent_plan.assert_not_called()
+        self.assertEqual(usage["input_tokens"], 3)
+        self.assertEqual(usage["output_tokens"], 4)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(
+            run["node_outputs"]["parent_planner_skipped"]["reason"],
+            "deterministic_source_fast_path",
+        )
         self.assertTrue(run["node_outputs"]["review_plan_validator_initial"]["passed"])
         self.assertTrue(run["node_outputs"]["review_plan_evaluator"]["passed"])
         self.assertEqual(run["node_outputs"]["quality_reviewer_initial"]["mode"], "skipped")
