@@ -484,6 +484,51 @@ def _remove_unsupported_teacher_claims(value: Any) -> Any:
     return value
 
 
+GENERIC_REVIEW_PLAN_TOPICS = {"", "课后", "课程", "数学 课程", "复习计划", "课堂复习", "本节课"}
+
+
+def _clean_topic_text(value: object) -> str:
+    text = str(value or "").strip()
+    for suffix in ("完整课堂逐字稿", "课堂逐字稿", "复习计划源文件"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip()
+    return text
+
+
+def _topic_from_source_context(
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> str:
+    explicit_topic = _clean_topic_text(review_input.topic)
+    if explicit_topic and explicit_topic not in GENERIC_REVIEW_PLAN_TOPICS:
+        return explicit_topic
+    if source_brief is not None:
+        for title in source_brief.lesson_title_candidates:
+            topic = _clean_topic_text(title)
+            if topic and topic not in GENERIC_REVIEW_PLAN_TOPICS:
+                return topic
+    source_pack = review_input.source_pack
+    if source_pack is not None:
+        for value in (source_pack.title, *(source_pack.detected_topics or [])):
+            topic = _clean_topic_text(value)
+            if topic and topic not in GENERIC_REVIEW_PLAN_TOPICS:
+                return topic
+    return explicit_topic
+
+
+def _knowledge_categories_from_source_brief(source_brief: ReviewPlanSourceBrief | None) -> list[str]:
+    if source_brief is None:
+        return []
+    categories: list[str] = []
+    for point in source_brief.knowledge_points:
+        name = _clean_topic_text(point.name)
+        if name and name not in categories:
+            categories.append(name)
+        if len(categories) >= 6:
+            break
+    return categories
+
+
 def _normalize_output_plan(
     plan: dict[str, Any],
     review_input: ReviewPlanInput,
@@ -500,6 +545,14 @@ def _normalize_output_plan(
         lesson_info["grade"] = review_input.grade
     if review_input.lesson_date:
         lesson_info["date"] = review_input.lesson_date
+    source_topic = _topic_from_source_context(review_input, source_brief)
+    current_topic = _clean_topic_text(lesson_info.get("topic"))
+    if source_topic and (not current_topic or current_topic in GENERIC_REVIEW_PLAN_TOPICS or not review_input.topic):
+        lesson_info["topic"] = source_topic
+    if not lesson_info.get("key_categories"):
+        categories = _knowledge_categories_from_source_brief(source_brief)
+        if categories:
+            lesson_info["key_categories"] = categories
     if isinstance(lesson_info.get("assumptions"), list):
         lesson_info["assumptions"] = [
             item for item in lesson_info["assumptions"] if not _assumption_mentions_trusted_metadata(item)
@@ -609,9 +662,8 @@ def _maybe_revise_plan(
             node_key=f"quality_reviewer_after_revision_{attempt}",
         )
         total_usage = merge_usage(total_usage, reviewer_usage)
-        if current_quality.score >= best_quality.score:
-            best_plan = current_plan
-            best_quality = current_quality
+        best_plan = current_plan
+        best_quality = current_quality
         if not current_quality.must_revise:
             return current_plan, current_quality, total_usage
 
@@ -688,7 +740,7 @@ def _maybe_revise_plan(
     if best_quality.must_revise:
         context.add_warning(
             "quality_revision_required",
-            f"质量门禁在 {max_attempts} 次 revision 后仍建议人工复核；已返回当前最高分版本。",
+            f"质量门禁在 {max_attempts} 次 revision 后仍建议人工复核；已返回最新修订版本。",
             "high",
         )
     return best_plan, best_quality, total_usage
