@@ -185,6 +185,73 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
         self.assertTrue(review.passed, [issue.description for issue in review.issues])
 
+    def test_normalizes_task_blocks_for_compressed_day_quality_gate(self):
+        plan = {
+            "lesson_info": {"subject": "数学", "grade": "八年级", "date": "2026-07-02", "topic": "勾股数与特殊角复习"},
+            "full_review_topics": ["整数勾股数", "根式勾股数", "特殊角 α β", "α+β=45°"],
+            "quotes": ["难题高频勾股比要求脱口而出。"],
+            "days": [
+                {
+                    "day": 1,
+                    "label": "当天课后复习",
+                    "goal": "用填空、选择和口述卡复盘勾股数组与特殊角推导。",
+                    "completion_standard": "填空和选择订正完成，并能口述 α+β=45° 的关键比例。",
+                    "blanks": [],
+                    "choices": [],
+                    "task_blocks": [
+                        {
+                            "type": "blanks",
+                            "items": [
+                                {"question": "最基础的整数勾股数组是什么？", "answer": "3:4:5"},
+                                {"question": "1:1:√2 对应的直角三角形两个锐角都是______。", "answer": "45°"},
+                                {"question": "1:√3:2 中短直角边对应的角是______。", "answer": "30°"},
+                                {"question": "α 对应的勾股比是______。", "answer": "1:2:√5"},
+                                {"question": "β 对应的勾股比是______。", "answer": "1:3:√10"},
+                            ],
+                        },
+                        {
+                            "type": "choices",
+                            "items": [
+                                {
+                                    "question": "若三边满足 a²+b²=c²，可以判断三角形是什么三角形？",
+                                    "options": ["A. 直角三角形", "B. 锐角三角形", "C. 钝角三角形", "D. 等边三角形"],
+                                    "answer": "A",
+                                },
+                                {
+                                    "question": "2α 与 2β 的关系是？",
+                                    "options": ["A. 互余", "B. 相等", "C. 互补", "D. 无法判断"],
+                                    "answer": "A",
+                                },
+                            ],
+                        },
+                        {
+                            "type": "active_recall",
+                            "items": [
+                                {"question": "口述 α+β=45° 的构造思路。"},
+                                {"question": "说明为什么 2α、2β 对应 3:4:5。"},
+                            ],
+                        },
+                    ],
+                }
+            ],
+        }
+
+        normalized = normalize_final_review_plan(plan)
+        day = normalized["days"][0]
+        self.assertEqual(len(day["blanks"]), 5)
+        self.assertEqual(len(day["choices"]), 2)
+        self.assertEqual(day["blanks"][0]["answer"], "3:4:5")
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+        )
+
+        self.assertTrue(review.passed, [issue.description for issue in review.issues])
+        self.assertFalse(any(issue.category == "pdf_readiness" for issue in review.issues))
+
     def test_normalization_keeps_blank_answer_aliases_without_duplicate_fill_items(self):
         plan = valid_single_lesson_plan(subject="数学", topic="二次函数")
         plan["days"] = [
