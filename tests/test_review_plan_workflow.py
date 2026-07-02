@@ -329,7 +329,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             WorkflowContext(),
         )
 
-        self.assertEqual(allocation.review_schedule[0]["label"], "第1天集中复习")
+        self.assertEqual(allocation.review_schedule[0]["label"], "当天课后复习")
 
     def test_review_plan_input_accepts_custom_review_days(self):
         review_input = ReviewPlanInput(

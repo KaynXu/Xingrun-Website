@@ -13,7 +13,7 @@ DEFAULT_FINAL_REMINDERS = [
     "遇到不会的题先回看课堂总结，再补做口头复述。",
 ]
 ONE_DAY_FINAL_REMINDERS = [
-    "本次集中复习要完整扫过课堂主线。",
+    "当天课后复习要完整扫过课堂主线。",
     "先回忆核心方法，再完成填空、选择和自查。",
     "把错题原因记录下来，方便老师下次讲评。",
 ]
@@ -475,7 +475,7 @@ def adapt_plan_to_review_template(plan_data: dict) -> tuple[dict, list[dict], li
         days = [adapt_day({"day": 1, "label": "第1天", "items": []}, question_pool, topic)]
     one_day_plan = len(days) == 1 and int(days[0].get("offset") or 1) == 1
     if one_day_plan and days[0].get("day") == "当天复现":
-        days[0]["day"] = "第1天集中复习"
+        days[0]["day"] = "当天课后复习"
     reminders = _dedupe_clean_lines(plan_data.get("final_reminder_lines")) or list(
         ONE_DAY_FINAL_REMINDERS if one_day_plan else DEFAULT_FINAL_REMINDERS
     )

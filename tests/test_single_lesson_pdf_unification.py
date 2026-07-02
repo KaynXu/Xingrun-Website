@@ -98,7 +98,7 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
 
         lesson, days, reminders = adapt_plan_to_review_template(plan_data)
 
-        self.assertEqual(reminders[0], "本次集中复习要完整扫过课堂主线。")
+        self.assertEqual(reminders[0], "当天课后复习要完整扫过课堂主线。")
         self.assertEqual(lesson["full_review_topics"], ["1. 折射率与全反射", "[ ] 干涉", "机械波->图像判断"])
         self.assertEqual(days[0]["focus"], "[已完成] 第1天复盘")
         self.assertEqual(days[0]["tasks"][0], "题型 [填空题·折射率]")
@@ -120,8 +120,8 @@ class SingleLessonPdfUnificationTestCase(unittest.TestCase):
 
         self.assertEqual(lesson["title"], "代数基础巩固复习计划")
         self.assertNotIn("待确认", lesson["title"])
-        self.assertEqual(days[0]["day"], "第1天集中复习")
-        self.assertEqual(reminders[0], "本次集中复习要完整扫过课堂主线。")
+        self.assertEqual(days[0]["day"], "当天课后复习")
+        self.assertEqual(reminders[0], "当天课后复习要完整扫过课堂主线。")
         self.assertEqual(filename, "代数基础巩固-96-v1.pdf")
 
     def test_adapt_plan_to_review_template_preserves_method_map_density(self):

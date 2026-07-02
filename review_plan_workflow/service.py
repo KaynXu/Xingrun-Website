@@ -139,9 +139,9 @@ def _fallback_agent_blueprint(
     if compressed_single_day:
         writer_instructions.extend(
             [
-                "当前是 1 天集中复习：只输出 day=1，但这一天要压缩承载整节课内容。",
-                "第1天必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz 对应内容。",
-                "第1天至少提供 5 个不重复的可打印题目，其中填空不少于 3 个，选择诊断不少于 2 个。",
+                "当前是当天课后复习模式：只输出 day=1，把本节课内容压缩成当天可完成的复习。",
+                "当天课后复习必须包含 worked_example、targeted_practice、error_log、timed_practice/checkpoint_quiz 对应内容。",
+                "当天课后复习至少提供 5 个不重复的可打印题目，其中填空不少于 3 个，选择诊断不少于 2 个。",
             ]
         )
     return AgenticPlanBlueprint(
