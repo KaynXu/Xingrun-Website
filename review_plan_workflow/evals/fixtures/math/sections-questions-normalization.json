@@ -1,0 +1,36 @@
+{
+  "name": "sections-questions-normalization",
+  "input": {
+    "subject": "math",
+    "courseSystem": "中国初中数学",
+    "grade": "八年级",
+    "source_type": "text",
+    "target": "新旧题目结构归一化后 PDF 不丢题",
+    "topic": "分式方程四步解法",
+    "summary_text": "主题：分式方程四步解法\n第一部分：定义和限制值\n说话人1：分母中含有未知数的方程叫分式方程，去分母前先写限制值。\n第二部分：去分母和解整式方程\n说话人1：两边同乘最简公分母，转化为整式方程。\n第三部分：增根检验\n说话人1：解完必须代回原分母检验，增根要舍去。\n课堂收尾\n说话人1：课后把四步法写成流程图，明天抽查。",
+    "knownWeaknesses": ["结构放错位置", "PDF 丢题", "增根检验遗漏"],
+    "generation_options": {
+      "schedule_mode": "compressed",
+      "review_days": [1],
+      "user_requirements": "题目可以来自 blanks、items、steps 或 task_blocks，但 PDF 里必须都能看到。"
+    }
+  },
+  "expectedCriteria": [
+    "must normalize sectioned source text",
+    "must not drop printable questions in renderer",
+    "must keep answer count equal to visible question count"
+  ],
+  "checks": [
+    {"name": "fraction_equation_terms", "containsAny": ["分式方程", "增根", "检验"]},
+    {"name": "one_day_schedule", "daysExactly": [1]},
+    {"name": "schema_boundary", "schemaValid": true}
+  ],
+  "assertions": [
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1]},
+    {"name": "answer_key_count_equals_visible"},
+    {"name": "renderer_has_no_dropped_items"},
+    {"name": "source_pack_min_segments", "minimum": 8},
+    {"name": "source_pack_detects_topics", "containsAny": ["分式方程", "增根检验"]},
+    {"name": "source_pack_no_raw_text_in_trace_payload", "notContainsAny": ["课后把四步法写成流程图"]}
+  ]
+}

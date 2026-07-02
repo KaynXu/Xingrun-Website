@@ -1,0 +1,37 @@
+{
+  "name": "wrong-math-answer-repair",
+  "input": {
+    "subject": "math",
+    "courseSystem": "中国初中数学",
+    "grade": "八年级",
+    "source_type": "text",
+    "target": "题目级数学答案错误应触发定点修复，而不是整份计划失败",
+    "topic": "三角形形状判断",
+    "summary_text": "主题：三角形形状判断\n重点：比较最大边平方与另外两边平方和。\n例题：三边为 √3、√4、√5 时，最大边平方为5，另外两边平方和为3+4=7，所以是锐角三角形。\n易错：把 5 和 7 错判成相等，误判为直角三角形。",
+    "knownWeaknesses": ["勾股逆定理误判", "答案订正"],
+    "generation_options": {
+      "schedule_mode": "compressed",
+      "review_days": [1],
+      "user_requirements": "如果只有单题答案错误，优先修这道题，不要整份报错。"
+    }
+  },
+  "expectedCriteria": [
+    "must include answer keys",
+    "must keep renderer contract intact after targeted repair",
+    "must preserve factual math source evidence"
+  ],
+  "checks": [
+    {"name": "triangle_judgement_terms", "containsAny": ["锐角三角形", "最大边平方", "勾股"]},
+    {"name": "one_day_schedule", "daysExactly": [1]},
+    {"name": "schema_boundary", "schemaValid": true}
+  ],
+  "assertions": [
+    {"name": "fixed_single_lesson_review_days", "daysExactly": [1]},
+    {"name": "answer_key_count_equals_visible"},
+    {"name": "renderer_has_no_dropped_items"},
+    {"name": "source_pack_min_segments", "minimum": 4},
+    {"name": "source_pack_detects_topics", "containsAny": ["三角形形状判断"]},
+    {"name": "source_pack_has_math_blocks", "minimum": 3, "containsAny": ["√3", "√5"]},
+    {"name": "source_pack_no_raw_text_in_trace_payload", "notContainsAny": ["误判为直角三角形"]}
+  ]
+}

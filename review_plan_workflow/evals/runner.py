@@ -5,8 +5,11 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from review_plan_workflow.printable_questions import count_printable_questions
 from review_plan_workflow.quality_gate import review_single_lesson_plan
-from review_plan_workflow.schemas import validate_final_review_plan
+from review_plan_workflow.renderer_contract import dry_run_review_plan_renderer
+from review_plan_workflow.schemas import normalize_final_review_plan, validate_final_review_plan
+from review_plan_workflow.source_pack import build_lesson_source_pack, source_pack_trace_payload
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures"
@@ -38,6 +41,13 @@ ASSERTION_NAMES = {
     "choices_have_complete_options",
     "no_duplicate_printable_tasks",
     "no_generic_checklist_choices",
+    "visible_question_count_equals",
+    "answer_key_count_equals_visible",
+    "renderer_has_no_dropped_items",
+    "source_pack_min_segments",
+    "source_pack_detects_topics",
+    "source_pack_has_math_blocks",
+    "source_pack_no_raw_text_in_trace_payload",
 }
 
 
@@ -63,6 +73,28 @@ def _stringify(value: Any) -> str:
 def _subject_from_fixture(fixture: dict[str, Any]) -> str:
     input_payload = fixture.get("input") if isinstance(fixture.get("input"), dict) else {}
     return str(input_payload.get("subject") or "").lower()
+
+
+def _generation_options_from_fixture(fixture: dict[str, Any]) -> dict[str, Any]:
+    input_payload = fixture.get("input") if isinstance(fixture.get("input"), dict) else {}
+    generation_options = input_payload.get("generation_options")
+    if not isinstance(generation_options, dict):
+        generation_options = input_payload.get("generationOptions")
+    return generation_options if isinstance(generation_options, dict) else {}
+
+
+def _required_review_days_from_fixture(fixture: dict[str, Any]) -> list[int] | None:
+    generation_options = _generation_options_from_fixture(fixture)
+    review_days = generation_options.get("review_days") or generation_options.get("reviewDays")
+    if not isinstance(review_days, list):
+        return None
+    days: list[int] = []
+    for day in review_days:
+        try:
+            days.append(int(day))
+        except (TypeError, ValueError):
+            continue
+    return days or None
 
 
 def _list_value(value: Any) -> list[Any]:
@@ -239,6 +271,28 @@ def _assert_no_generic_checklist_choices(plan: dict[str, Any], assertion: dict[s
             assert not (checklist_pair or generic_phrase), f"choice is checklist-like: {choice_text}"
 
 
+def _assert_visible_question_count_equals(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    expected = int(assertion.get("equals") or assertion.get("count") or 0)
+    counts = count_printable_questions(plan, raw_plan=plan)
+    assert counts.total_visible_questions == expected, (
+        f"expected {expected} visible printable questions, got {counts.total_visible_questions}"
+    )
+
+
+def _assert_answer_key_count_equals_visible(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    counts = count_printable_questions(plan, raw_plan=plan)
+    assert counts.total_answer_items == counts.total_visible_questions, (
+        f"expected answer key count {counts.total_answer_items} to equal visible question count "
+        f"{counts.total_visible_questions}"
+    )
+
+
+def _assert_renderer_has_no_dropped_items(plan: dict[str, Any], assertion: dict[str, Any]) -> None:
+    report = dry_run_review_plan_renderer(plan)
+    problems = [*report.errors, *report.formula_failures, *report.dropped_items]
+    assert report.passed and not problems, "renderer dry run problems: " + "；".join(problems[:5])
+
+
 ASSERTION_HANDLERS = {
     "fixed_single_lesson_review_days": _assert_fixed_single_lesson_review_days,
     "topic_contains": _assert_topic_contains,
@@ -248,10 +302,102 @@ ASSERTION_HANDLERS = {
     "choices_have_complete_options": _assert_choices_have_complete_options,
     "no_duplicate_printable_tasks": _assert_no_duplicate_printable_tasks,
     "no_generic_checklist_choices": _assert_no_generic_checklist_choices,
+    "visible_question_count_equals": _assert_visible_question_count_equals,
+    "answer_key_count_equals_visible": _assert_answer_key_count_equals_visible,
+    "renderer_has_no_dropped_items": _assert_renderer_has_no_dropped_items,
+}
+
+
+def _fixture_source_text(fixture: dict[str, Any]) -> str:
+    input_payload = fixture.get("input") if isinstance(fixture.get("input"), dict) else {}
+    return str(
+        input_payload.get("source_text")
+        or input_payload.get("sourceText")
+        or input_payload.get("transcript")
+        or input_payload.get("summary_text")
+        or input_payload.get("summaryText")
+        or ""
+    )
+
+
+def _source_pack_for_fixture(fixture: dict[str, Any]):
+    input_payload = fixture.get("input") if isinstance(fixture.get("input"), dict) else {}
+    generation_options = input_payload.get("generation_options")
+    if not isinstance(generation_options, dict):
+        generation_options = input_payload.get("generationOptions")
+    if not isinstance(generation_options, dict):
+        generation_options = {}
+    return build_lesson_source_pack(
+        raw_text=_fixture_source_text(fixture),
+        source_type=str(input_payload.get("source_type") or input_payload.get("sourceType") or "text"),
+        title=str(input_payload.get("title") or input_payload.get("topic") or input_payload.get("target") or ""),
+        language=str(input_payload.get("language") or "zh-CN"),
+        subject=str(input_payload.get("subject") or ""),
+        topic=str(input_payload.get("topic") or input_payload.get("target") or ""),
+        weak_points="；".join(str(item) for item in _list_value(input_payload.get("knownWeaknesses"))),
+        user_requirements=str(generation_options.get("user_requirements") or generation_options.get("userRequirements") or ""),
+    )
+
+
+def _assert_source_pack_min_segments(plan: dict[str, Any], assertion: dict[str, Any], fixture: dict[str, Any]) -> None:
+    pack = _source_pack_for_fixture(fixture)
+    minimum = int(assertion.get("minimum") or 1)
+    assert len(pack.segments) >= minimum, f"expected at least {minimum} source segments, got {len(pack.segments)}"
+
+
+def _assert_source_pack_detects_topics(plan: dict[str, Any], assertion: dict[str, Any], fixture: dict[str, Any]) -> None:
+    pack = _source_pack_for_fixture(fixture)
+    topic_text = " ".join([pack.title, *pack.detected_topics])
+    expected_terms = _check_terms(assertion.get("containsAll") or assertion.get("containsAny"))
+    if assertion.get("containsAny"):
+        matched = [term for term in expected_terms if term in topic_text]
+        assert matched, f"expected source pack topics to contain any of {expected_terms}, got {pack.detected_topics}"
+        return
+    missing = [term for term in expected_terms if term not in topic_text]
+    assert not missing, f"missing source pack topics {missing}, got {pack.detected_topics}"
+
+
+def _assert_source_pack_has_math_blocks(plan: dict[str, Any], assertion: dict[str, Any], fixture: dict[str, Any]) -> None:
+    pack = _source_pack_for_fixture(fixture)
+    minimum = int(assertion.get("minimum") or 1)
+    math_text = " ".join(block.raw for block in pack.math_blocks)
+    expected_terms = _check_terms(assertion.get("containsAny"))
+    assert len(pack.math_blocks) >= minimum, f"expected at least {minimum} math blocks, got {len(pack.math_blocks)}"
+    if expected_terms:
+        matched = [term for term in expected_terms if term in math_text]
+        assert matched, f"expected math blocks to contain any of {expected_terms}, got {math_text}"
+
+
+def _assert_source_pack_no_raw_text_in_trace_payload(
+    plan: dict[str, Any],
+    assertion: dict[str, Any],
+    fixture: dict[str, Any],
+) -> None:
+    pack = _source_pack_for_fixture(fixture)
+    payload_text = _stringify(source_pack_trace_payload(pack))
+    raw_text = _fixture_source_text(fixture)
+    forbidden_terms = _check_terms(assertion.get("notContainsAny"))
+    if not forbidden_terms:
+        forbidden_terms = [line.strip() for line in raw_text.splitlines() if len(line.strip()) >= 8][:3]
+    leaked = [term for term in forbidden_terms if term and term in payload_text]
+    assert not leaked, f"source pack trace payload leaked raw text markers: {leaked}"
+
+
+CONTEXT_ASSERTION_HANDLERS = {
+    "source_pack_min_segments": _assert_source_pack_min_segments,
+    "source_pack_detects_topics": _assert_source_pack_detects_topics,
+    "source_pack_has_math_blocks": _assert_source_pack_has_math_blocks,
+    "source_pack_no_raw_text_in_trace_payload": _assert_source_pack_no_raw_text_in_trace_payload,
 }
 
 
 def evaluate_fixture_assertions(plan: dict[str, Any], fixture: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        assertion_plan = normalize_final_review_plan(plan)
+    except Exception:
+        assertion_plan = plan
+    if not (isinstance(plan, dict) and plan.get("schema_version") == "lesson_review_plan_v1"):
+        assertion_plan = plan
     results = []
     assertions = fixture.get("assertions") if isinstance(fixture.get("assertions"), list) else []
     for assertion in assertions:
@@ -259,11 +405,15 @@ def evaluate_fixture_assertions(plan: dict[str, Any], fixture: dict[str, Any]) -
             continue
         name = str(assertion.get("name") or "unnamed_assertion")
         handler = ASSERTION_HANDLERS.get(name)
-        if handler is None:
+        context_handler = CONTEXT_ASSERTION_HANDLERS.get(name)
+        if handler is None and context_handler is None:
             results.append({"name": name, "passed": False, "error": "unsupported fixture assertion"})
             continue
         try:
-            handler(plan, assertion)
+            if context_handler is not None:
+                context_handler(assertion_plan, assertion, fixture)
+            elif handler is not None:
+                handler(assertion_plan, assertion)
             results.append({"name": name, "passed": True})
         except AssertionError as exc:
             results.append({"name": name, "passed": False, "error": str(exc)})
@@ -340,8 +490,18 @@ def evaluate_plan_against_fixture(plan: dict[str, Any], fixture: dict[str, Any],
     _, schema_errors = validate_final_review_plan(plan)
     schema_valid = not schema_errors
     subject = _subject_from_fixture(fixture)
-    quality = review_single_lesson_plan(plan, subject=subject)
-    plan_text = _stringify(plan)
+    try:
+        evaluation_plan = normalize_final_review_plan(plan)
+    except Exception:
+        evaluation_plan = plan
+    generation_options = _generation_options_from_fixture(fixture)
+    quality = review_single_lesson_plan(
+        evaluation_plan,
+        subject=subject,
+        required_review_days=_required_review_days_from_fixture(fixture),
+        schedule_mode=str(generation_options.get("schedule_mode") or generation_options.get("scheduleMode") or "standard"),
+    )
+    plan_text = _stringify(evaluation_plan)
 
     checks = list(fixture.get("checks") if isinstance(fixture.get("checks"), list) else [])
     if subject in {"math", "physics"} and not fixture.get("allowInternationalCourse"):
@@ -351,7 +511,7 @@ def evaluate_plan_against_fixture(plan: dict[str, Any], fixture: dict[str, Any],
         _evaluate_check(
             check,
             plan_text=plan_text,
-            plan=plan,
+            plan=evaluation_plan,
             quality_score=quality.score,
             schema_valid=schema_valid,
         )
