@@ -344,8 +344,26 @@ def _should_skip_parent_planner(
         return False
     if source_brief is None:
         return False
+    if _needs_parent_planner_for_compressed_math(review_input=review_input, source_brief=source_brief):
+        return False
     missing_fields = {str(field or "") for field in (source_brief.missing_fields or []) if str(field or "")}
     return source_brief.confidence >= 0.6 and not (missing_fields - {"example_stems"})
+
+
+def _needs_parent_planner_for_compressed_math(
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief,
+) -> bool:
+    if review_input.subject not in {"数学", "math"}:
+        return False
+    if not _is_compressed_single_day(review_input):
+        return False
+    requested_count = (review_input.constraints or {}).get("requested_question_count")
+    if not isinstance(requested_count, int) or not 8 <= requested_count <= 12:
+        return False
+    text = source_brief.cleaned_text
+    return any(marker in text for marker in ("α", "β", "份数", "配方法", "一元二次", "逆向", "二倍角", "4β"))
 
 
 def _dedupe_quality_issues(*issue_groups: list[QualityIssue]) -> list[QualityIssue]:

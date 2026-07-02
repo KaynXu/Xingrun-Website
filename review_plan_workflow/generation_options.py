@@ -11,7 +11,7 @@ SUPPORTED_SCHEDULE_MODES = {"standard", "compressed", "daily", "custom"}
 MAX_REVIEW_DAYS = 30
 MAX_USER_REQUIREMENTS_CHARS = 1000
 QUESTION_COUNT_PATTERNS = (
-    re.compile(r"(?:题目|题量|练习|可打印题|打印题)?\s*(?:控制|限制|限定|保持|总共|一共|共|只要|不要超过|不超过|至少)?\s*在?\s*(\d{1,2})\s*(?:道)?\s*题"),
+    re.compile(r"(?:题目|题量|练习|可打印题|打印题)?\s*(?:控制|限制|限定|保持|总共|一共|共|只要|不要超过|不超过|至少)?\s*在?\s*(\d{1,2})\s*(?:道|个)?\s*(?:题|问题)"),
     re.compile(r"(\d{1,2})\s*(?:道)?\s*(?:题目|题量|练习|可打印题|打印题)"),
 )
 

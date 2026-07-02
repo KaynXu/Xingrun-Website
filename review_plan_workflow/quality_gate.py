@@ -41,6 +41,7 @@ BAD_QUOTE_PATTERNS = (
     "能独立",
 )
 MATH_SOURCE_COVERAGE_GROUPS = (
+    ("勾股逆向：三角形三边满足 a²+b²=c²", ("逆向", "三角形三边", "勾股逆定理")),
     ("份数计算", ("份数", "一份", "份长度", "几份")),
     ("α+β 和角推导", ("α+β", "和角", "45°", "45度")),
     ("二倍角关系", ("2α", "2β", "4β", "二倍角")),
@@ -578,12 +579,9 @@ def review_single_lesson_plan(
             subject_key=subject_key,
         )
         if missing_source_groups:
-            severity = "high"
-            if len(missing_source_groups) <= 2:
-                severity = "medium"
             issues.append(
                 QualityIssue(
-                    severity=severity,
+                    severity="high",
                     category="source_coverage",
                     description="当天课后复习遗漏了课堂材料中的关键知识链路：" + "、".join(missing_source_groups[:5]) + "。",
                     suggested_fix=(
@@ -621,7 +619,7 @@ def review_single_lesson_plan(
         )
 
     text_blob = str(normalized_plan)
-    if _contains_any(text_blob, (*PLACEHOLDER_PATTERNS, "正确答案")):
+    if _contains_any(text_blob, PLACEHOLDER_PATTERNS):
         issues.append(
             QualityIssue(
                 severity="high",

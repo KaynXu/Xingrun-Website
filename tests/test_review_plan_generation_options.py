@@ -87,16 +87,18 @@ class ReviewPlanGenerationOptionsTestCase(unittest.TestCase):
         self.assertLessEqual(len(trace["user_requirements_preview"]), 40)
 
     def test_parses_teacher_question_count_constraint(self):
-        options = normalize_generation_options(
-            {
-                "schedule_mode": "compressed",
-                "user_requirements": "题目控制在10道题，选择题不要全是执行清单",
-            }
-        )
+        for requirements in ("题目控制在10道题，选择题不要全是执行清单", "生成当天的复习计划，题目控制在10个题"):
+            with self.subTest(requirements=requirements):
+                options = normalize_generation_options(
+                    {
+                        "schedule_mode": "compressed",
+                        "user_requirements": requirements,
+                    }
+                )
 
-        self.assertEqual(options["constraints"]["requested_question_count"], 10)
-        trace = generation_options_trace_summary(options)
-        self.assertEqual(trace["requested_question_count"], 10)
+                self.assertEqual(options["constraints"]["requested_question_count"], 10)
+                trace = generation_options_trace_summary(options)
+                self.assertEqual(trace["requested_question_count"], 10)
 
 
 if __name__ == "__main__":
