@@ -33,7 +33,7 @@ class ReviewPlanValidatorTestCase(unittest.TestCase):
         self.assertTrue(any(issue.category == "constraints" for issue in result.issues))
 
     def test_validator_blocks_renderer_dry_run_question_loss(self):
-        with patch("review_plan_workflow.validator.adapt_plan_to_review_template") as mock_adapt:
+        with patch("review_plan_workflow.renderer_contract.adapt_plan_to_review_template") as mock_adapt:
             mock_adapt.return_value = ({}, [{"blanks": [], "choices": []}], [])
             result = validate_review_plan_delivery(
                 valid_plan_v1(),
@@ -43,6 +43,8 @@ class ReviewPlanValidatorTestCase(unittest.TestCase):
 
         self.assertFalse(result.passed)
         self.assertEqual(result.rendered_question_count, 0)
+        self.assertEqual(result.answer_key_count, 0)
+        self.assertEqual(result.renderer_report["canonical_visible_question_count"], 10)
         self.assertTrue(any(issue.category == "renderer" for issue in result.issues))
 
     def test_validator_blocks_unknown_source_coverage_segment(self):

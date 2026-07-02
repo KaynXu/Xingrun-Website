@@ -5,8 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from review_plan_templates.single_lesson_pdf import adapt_plan_to_review_template
 from review_plan_workflow.printable_questions import count_printable_questions
+from review_plan_workflow.renderer_contract import dry_run_review_plan_renderer
 from review_plan_workflow.schemas import LessonSourcePack, normalize_final_review_plan, validate_final_review_plan
 
 
@@ -24,6 +24,8 @@ class ReviewPlanValidationResult(BaseModel):
     issues: list[ReviewPlanValidationIssue] = Field(default_factory=list)
     printable_question_count: int = 0
     rendered_question_count: int = 0
+    answer_key_count: int = 0
+    renderer_report: dict[str, Any] = Field(default_factory=dict)
 
 
 def _clean_text(value: object) -> str:
@@ -79,18 +81,6 @@ def _source_pack_segment_ids(source_pack: LessonSourcePack | dict[str, Any] | No
     else:
         parsed = source_pack
     return {segment.id for segment in parsed.segments if segment.id}
-
-
-def _rendered_question_count(plan: dict[str, Any]) -> int:
-    _lesson, days, _reminders = adapt_plan_to_review_template(plan)
-    total = 0
-    for day in days:
-        if not isinstance(day, dict):
-            continue
-        blanks = day.get("blanks") if isinstance(day.get("blanks"), list) else []
-        choices = day.get("choices") if isinstance(day.get("choices"), list) else []
-        total += len(blanks) + len(choices)
-    return total
 
 
 def validate_review_plan_delivery(
@@ -210,26 +200,56 @@ def validate_review_plan_delivery(
             )
 
     rendered_count = 0
+    answer_key_count = 0
+    renderer_report: dict[str, Any] = {}
     if not schema_errors:
-        try:
-            rendered_count = _rendered_question_count(normalized)
-        except Exception as exc:
+        report = dry_run_review_plan_renderer(normalized)
+        renderer_report = report.model_dump()
+        rendered_count = report.visible_question_count
+        answer_key_count = report.answer_key_count
+        for error in report.errors:
             issues.append(
                 ReviewPlanValidationIssue(
                     severity="high",
                     category="renderer",
-                    description="PDF 渲染 dry run 失败：" + str(exc),
+                    description="PDF 渲染 dry run 失败：" + str(error),
                 )
             )
-        if rendered_count != printable_counts.total_visible_questions:
+        if report.visible_question_count != printable_counts.total_visible_questions:
             issues.append(
                 ReviewPlanValidationIssue(
                     severity="high",
                     category="renderer",
                     description=(
-                        f"PDF dry run 可见题量 {rendered_count} 与 canonical 可打印题量 "
+                        f"PDF dry run 可见题量 {report.visible_question_count} 与 canonical 可打印题量 "
                         f"{printable_counts.total_visible_questions} 不一致。"
                     ),
+                )
+            )
+        if report.answer_key_count != report.visible_question_count:
+            issues.append(
+                ReviewPlanValidationIssue(
+                    severity="high",
+                    category="renderer",
+                    description=f"PDF dry run 答案数量 {report.answer_key_count} 与可见题量 {report.visible_question_count} 不一致。",
+                )
+            )
+        for failure in report.formula_failures:
+            issues.append(
+                ReviewPlanValidationIssue(
+                    severity="high",
+                    category="renderer",
+                    description="PDF dry run 公式或结构渲染异常：" + failure,
+                )
+            )
+        for item in report.dropped_items:
+            if item.startswith("renderer_visible_count_mismatch") or item.startswith("renderer_answer_count_mismatch"):
+                continue
+            issues.append(
+                ReviewPlanValidationIssue(
+                    severity="medium",
+                    category="renderer",
+                    description="PDF dry run 发现渲染丢弃项：" + item,
                 )
             )
 
@@ -238,4 +258,6 @@ def validate_review_plan_delivery(
         issues=issues,
         printable_question_count=printable_counts.total_visible_questions,
         rendered_question_count=rendered_count,
+        answer_key_count=answer_key_count,
+        renderer_report=renderer_report,
     )
