@@ -269,7 +269,107 @@ def _count_success_logs(logs: list[object], node_name: str) -> int:
     )
 
 
-def build_workflow_runtime_summary(context: object, *, usage: object | None = None) -> dict[str, Any]:
+def _count_by_key(items: object, key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    if not isinstance(items, list):
+        return counts
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get(key) or "").strip() or "unknown"
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _issue_summary(items: object) -> dict[str, Any]:
+    issues = items if isinstance(items, list) else []
+    return {
+        "count": len(issues),
+        "by_severity": _count_by_key(issues, "severity"),
+        "by_category": _count_by_key(issues, "category"),
+    }
+
+
+def _compact_result_summary(payload: object) -> dict[str, Any]:
+    data = payload if isinstance(payload, dict) else {}
+    return {
+        "passed": bool(data.get("passed")),
+        "must_revise": bool(data.get("must_revise")),
+        "score": int(data.get("score") or 0),
+        "issues": _issue_summary(data.get("issues")),
+    }
+
+
+def _review_input_contract_summary(review_input: object | None) -> dict[str, Any]:
+    if review_input is None:
+        return {}
+    if hasattr(review_input, "model_dump"):
+        try:
+            data = review_input.model_dump()
+        except Exception:
+            data = {}
+    elif isinstance(review_input, dict):
+        data = review_input
+    else:
+        data = {}
+    source_pack = data.get("source_pack") if isinstance(data.get("source_pack"), dict) else {}
+    constraints = data.get("constraints") if isinstance(data.get("constraints"), dict) else {}
+    return {
+        "source_hash": str(
+            source_pack.get("raw_source_hash")
+            or source_pack.get("source_hash")
+            or data.get("source_text_hash")
+            or ""
+        ),
+        "source_type": str(source_pack.get("source_type") or "text"),
+        "generation_mode": str(data.get("schedule_mode") or ""),
+        "review_days": list(data.get("review_days") or []),
+        "parsed_teacher_constraints": {
+            key: value
+            for key, value in constraints.items()
+            if isinstance(value, (str, int, float, bool)) or value is None
+        },
+    }
+
+
+def build_delivery_contract_summary(context: object, *, review_input: object | None = None) -> dict[str, Any]:
+    node_outputs = getattr(context, "node_outputs", {}) or {}
+    if not isinstance(node_outputs, dict):
+        node_outputs = {}
+    validator = node_outputs.get("review_plan_validator") if isinstance(node_outputs.get("review_plan_validator"), dict) else {}
+    evaluator = node_outputs.get("review_plan_evaluator") if isinstance(node_outputs.get("review_plan_evaluator"), dict) else {}
+    renderer_report = validator.get("renderer_report") if isinstance(validator.get("renderer_report"), dict) else {}
+    source_brief = node_outputs.get("source_brief") if isinstance(node_outputs.get("source_brief"), dict) else {}
+    input_summary = _review_input_contract_summary(review_input)
+    if not input_summary.get("source_hash"):
+        input_summary["source_hash"] = str(source_brief.get("source_text_hash") or "")
+    return {
+        **input_summary,
+        "source_pack_confidence": float(source_brief.get("confidence") or 0.0),
+        "validator_result": {
+            **_compact_result_summary(validator),
+            "printable_question_count": int(validator.get("printable_question_count") or 0),
+            "rendered_question_count": int(validator.get("rendered_question_count") or 0),
+            "answer_key_count": int(validator.get("answer_key_count") or 0),
+        },
+        "evaluator_result": {
+            **_compact_result_summary(evaluator),
+            "validator_passed": bool(evaluator.get("validator_passed", True)),
+            "llm_review_used": bool(evaluator.get("llm_review_used")),
+        },
+        "visible_question_count": int(renderer_report.get("visible_question_count") or validator.get("rendered_question_count") or 0),
+        "answer_key_count": int(renderer_report.get("answer_key_count") or validator.get("answer_key_count") or 0),
+        "renderer_dropped_count": len(renderer_report.get("dropped_items") or []),
+        "renderer_formula_failure_count": len(renderer_report.get("formula_failures") or []),
+    }
+
+
+def build_workflow_runtime_summary(
+    context: object,
+    *,
+    usage: object | None = None,
+    review_input: object | None = None,
+) -> dict[str, Any]:
     node_outputs = getattr(context, "node_outputs", {}) or {}
     if not isinstance(node_outputs, dict):
         node_outputs = {}
@@ -321,6 +421,7 @@ def build_workflow_runtime_summary(context: object, *, usage: object | None = No
         "total_node_latency_ms": sum(latency_by_stage.values()),
         "failed_stages": failed_stages,
         "usage": summarize_usage(usage or {}),
+        "delivery_contract": build_delivery_contract_summary(context, review_input=review_input),
     }
 
 
@@ -582,7 +683,10 @@ def record_workflow_result(
     if client is None:
         return
     quality_payload = quality.model_dump() if hasattr(quality, "model_dump") else quality
-    runtime = build_workflow_runtime_summary(context, usage=usage)
+    node_outputs = getattr(context, "node_outputs", {}) or {}
+    runtime = node_outputs.get("workflow_runtime") if isinstance(node_outputs, dict) else None
+    if not isinstance(runtime, dict):
+        runtime = build_workflow_runtime_summary(context, usage=usage)
     _safe_current_update(
         client,
         output={

@@ -706,7 +706,11 @@ def generate_single_lesson_review_plan(
                 context=context,
             )
             plan = _normalize_output_plan(plan, review_input, source_brief)
-            context.node_outputs["workflow_runtime"] = build_workflow_runtime_summary(context, usage=usage)
+            context.node_outputs["workflow_runtime"] = build_workflow_runtime_summary(
+                context,
+                usage=usage,
+                review_input=review_input,
+            )
             record_quality_score(context=context, quality=quality)
             record_workflow_result(context=context, plan=plan, quality=quality, usage=usage, status="succeeded")
 

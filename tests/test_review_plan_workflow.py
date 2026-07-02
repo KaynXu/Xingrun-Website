@@ -1912,6 +1912,12 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(runtime["writer_model_call_count"], 1)
         self.assertEqual(runtime["llm_reviewer_model_call_count"], 0)
         self.assertIn("plan_generator", runtime["latency_by_stage"])
+        self.assertEqual(runtime["delivery_contract"]["generation_mode"], "standard")
+        self.assertGreater(runtime["delivery_contract"]["visible_question_count"], 0)
+        self.assertEqual(
+            runtime["delivery_contract"]["visible_question_count"],
+            runtime["delivery_contract"]["answer_key_count"],
+        )
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_passes_generation_options_through_workflow(self, mock_generate_plan):
