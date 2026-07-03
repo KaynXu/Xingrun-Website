@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from reportlab.lib.pagesizes import A4
+from reportlab.graphics.shapes import Drawing
+from reportlab.platypus import Image as ReportLabImage
 
 from review_plan_templates import generate_review_pdfs
 
@@ -245,6 +247,38 @@ class ReviewPlanPdfLayoutTestCase(unittest.TestCase):
         )
 
         self.assertEqual(box._nrows, 3)
+
+    def test_choice_table_keeps_short_formula_options_as_text(self):
+        generate_review_pdfs.register_fonts()
+        styles = generate_review_pdfs.build_styles()
+
+        table = generate_review_pdfs.make_choice_table(
+            [
+                {
+                    "question": "若 tan α=1/2，tan β=1/3，则 tan(α+β)=？",
+                    "options": [r"A. $1$", r"B. $\sqrt{3}$", r"C. $\frac{1}{\sqrt{3}}$", "D. 3"],
+                    "answer": "A",
+                }
+            ],
+            styles,
+            chinese_only=True,
+        )
+
+        flowables = []
+        for row in table._cellvalues:
+            for cell in row:
+                if isinstance(cell, list):
+                    flowables.extend(cell)
+        plain_text = "\n".join(
+            flowable.getPlainText()
+            for flowable in flowables
+            if hasattr(flowable, "getPlainText")
+        )
+
+        self.assertIn("A. 1", plain_text)
+        self.assertIn("B. √(3)", plain_text)
+        self.assertIn("C. (1)/(√(3))", plain_text)
+        self.assertFalse(any(isinstance(flowable, (Drawing, ReportLabImage)) for flowable in flowables))
 
     def test_cli_output_filename_uses_lesson_knowledge_points(self):
         output_dir = Path("/tmp/review-plan-layout-test")

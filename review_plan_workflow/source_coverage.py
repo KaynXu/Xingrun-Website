@@ -72,8 +72,30 @@ def _iter_strings(value: Any) -> list[str]:
     return []
 
 
+def _iter_practice_strings(value: Any, *, parent_key: str = "") -> list[str]:
+    if parent_key in {"full_review_topics", "key_categories", "lesson_info"}:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        strings: list[str] = []
+        for key, item in value.items():
+            strings.extend(_iter_practice_strings(item, parent_key=str(key)))
+        return strings
+    if isinstance(value, list):
+        strings = []
+        for item in value:
+            strings.extend(_iter_practice_strings(item, parent_key=parent_key))
+        return strings
+    return []
+
+
 def plan_text_blob(plan: dict[str, Any]) -> str:
     return "\n".join(_iter_strings(plan))
+
+
+def practice_text_blob(plan: dict[str, Any]) -> str:
+    return "\n".join(_iter_practice_strings(plan))
 
 
 def source_coverage_groups(source_brief: Any, *, subject_key: str) -> list[SourceCoverageGroup]:
@@ -129,7 +151,7 @@ def missing_source_coverage_groups(
     groups = source_coverage_groups(source_brief, subject_key=subject_key)
     if len(groups) < 4:
         return []
-    plan_text = plan_text_blob(normalized_plan)
+    plan_text = practice_text_blob(normalized_plan)
     return [group for group in groups if not compact_contains_any(plan_text, group.terms)]
 
 

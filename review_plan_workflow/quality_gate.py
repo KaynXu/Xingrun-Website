@@ -580,7 +580,7 @@ def review_single_lesson_plan(
                     category="source_coverage",
                     description="当天课后复习遗漏了课堂材料中的关键知识链路：" + "、".join(missing_source_groups[:5]) + "。",
                     suggested_fix=(
-                        "在 full_review_topics、填空/选择题和主动回忆卡片中补齐这些关键链路；"
+                        "full_review_topics 只能列范围，关键链路必须实际进入填空/选择题或主动回忆卡片；"
                         "10题限制下优先把记忆题、计算题、推导题和方法口述卡分层覆盖。"
                     ),
                 )
