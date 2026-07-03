@@ -7,6 +7,7 @@ from reportlab.platypus import Flowable
 from review_plan_templates.generate_review_pdfs import (
     _mathjax_renderer_available,
     build_styles,
+    choice_options_need_full_width,
     localize_paragraph_text,
     normalize_portable_text,
     normalize_portable_text_preserving_latex,
@@ -14,6 +15,7 @@ from review_plan_templates.generate_review_pdfs import (
     render_latex_formula_flowable,
     rich_text_flowables,
 )
+from review_plan_workflow.math_contract import bare_math_contract_violations, normalize_bare_math_text
 
 
 def _flowable_width(flowable):
@@ -103,6 +105,20 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertNotIn("tanbeta", normalized_question)
         self.assertNotIn("(1)/(2)", normalized_question)
         self.assertEqual(normalize_portable_text("alphabet"), "alphabet")
+
+    def test_math_contract_normalizes_greek_names_next_to_chinese_text(self):
+        text = "alpha角与beta三角形中，alpha斜边和beta短直角边都要写清楚。"
+
+        normalized = normalize_bare_math_text(text)
+
+        self.assertIn(r"$\alpha$角", normalized)
+        self.assertIn(r"$\beta$三角形", normalized)
+        self.assertFalse(bare_math_contract_violations(normalized))
+        self.assertEqual(normalize_bare_math_text("alphabet"), "alphabet")
+
+    def test_choice_options_with_formulas_use_full_width_layout(self):
+        self.assertTrue(choice_options_need_full_width(["A. 1,2,3", r"D. $\sqrt{2},\sqrt{3},\sqrt{5}$"], True))
+        self.assertTrue(choice_options_need_full_width(["A. 1,2,3", "D. √(2),√(3),√(5)"], True))
 
     def test_render_latex_formula_flowable_renders_fraction_as_image(self):
         flowable = render_latex_formula_flowable(

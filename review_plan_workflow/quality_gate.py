@@ -312,6 +312,55 @@ def _choice_options_are_complete(choice: dict[str, Any]) -> bool:
     return True
 
 
+def _coverage_topic_key(value: object) -> str:
+    text = _clean_text(value)
+    compact = _compact_text(text).lower()
+    if "三角形三边满足" in compact and any(token in compact for token in ("a²+b²=c²", "a^2+b^2=c^2")):
+        return "pythagorean_converse"
+    return compact
+
+
+def _find_repeated_coverage_topics(topics: list[object]) -> list[str]:
+    seen: dict[str, str] = {}
+    repeated: list[str] = []
+    for topic in topics:
+        text = _clean_text(topic)
+        key = _coverage_topic_key(text)
+        if not key:
+            continue
+        if key in seen:
+            repeated_text = f"{seen[key]} / {text}"
+            if repeated_text not in repeated:
+                repeated.append(repeated_text)
+        else:
+            seen[key] = text
+    return repeated
+
+
+def _choice_answer_option_body(choice: dict[str, Any]) -> str:
+    answer = _clean_text(choice.get("answer")).upper()[:1]
+    options = choice.get("options") if isinstance(choice.get("options"), list) else []
+    if not answer:
+        return ""
+    for option in options:
+        text = _clean_text(option)
+        if text.upper().startswith(answer):
+            return re.sub(r"^[A-Da-d][\.．、\)]?\s*", "", text).strip()
+    return ""
+
+
+def _choice_confuses_integer_pythagorean_triple(choice: dict[str, Any]) -> bool:
+    stem = _clean_text(choice.get("question") or choice.get("stem"))
+    if "勾股数" not in stem:
+        return False
+    if any(term in stem for term in ("根式", "三边比", "边之比", "比例", "特殊直角三角形")):
+        return False
+    if any(term in stem for term in ("不是", "不属于", "错误", "不能")):
+        return False
+    answer_body = _choice_answer_option_body(choice)
+    return "√" in answer_body or "\\sqrt" in answer_body
+
+
 def review_single_lesson_plan(
     plan: dict[str, Any],
     *,
@@ -405,6 +454,16 @@ def review_single_lesson_plan(
                 suggested_fix="至少补到 5-10 个颗粒化条目；宽主题不能只写课题名或一两个大类。",
             )
         )
+    repeated_topics = _find_repeated_coverage_topics(granular_topics)
+    if repeated_topics:
+        issues.append(
+            QualityIssue(
+                severity="high",
+                category="pdf_readiness",
+                description="全课覆盖清单存在重复知识链路：" + "；".join(repeated_topics[:3]),
+                suggested_fix="合并重复条目，把空出的覆盖位补成不同知识点、方法链、题型或错因。",
+            )
+        )
 
     quotes = _collect_quotes(normalized_plan)
     bad_quotes = [quote for quote in quotes if _quote_is_bad(quote)]
@@ -486,6 +545,15 @@ def review_single_lesson_plan(
                         category="question_quality",
                         description=f"第 {day.get('day')} 天选择题选项是空壳或少于 4 个完整选项。",
                         suggested_fix="把每道选择题改成 4 个完整选项字符串，例如 A. 具体表达；禁止只输出 A/B/C/D。",
+                    )
+                )
+            if isinstance(choice, dict) and _choice_confuses_integer_pythagorean_triple(choice):
+                issues.append(
+                    QualityIssue(
+                        severity="high",
+                        category="question_quality",
+                        description=f"第 {day.get('day')} 天选择题把根式比例当成整数勾股数正确答案。",
+                        suggested_fix="若题干问“勾股数”，正确答案必须是整数勾股数组；若要考根式比例，题干应明确写“根式勾股比/特殊直角三角形三边比”。",
                     )
                 )
 

@@ -35,12 +35,14 @@ BARE_ALPHA_BETA_PAIR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 BARE_ALPHA_BETA_PATTERN = re.compile(r"(?<![A-Za-z\\])alpha\s*\+\s*beta(?![A-Za-z])", re.IGNORECASE)
+BARE_GREEK_CJK_PATTERN = re.compile(r"(?<![A-Za-z\\])(?P<name>alpha|beta)(?=[\u4e00-\u9fff])", re.IGNORECASE)
 BARE_MATH_CONTRACT_PATTERNS = (
     BARE_TRIG_FRACTION_PATTERN,
     BARE_TRIG_ALPHA_BETA_SUM_PATTERN,
     BARE_ALPHA_BETA_SUM_PATTERN,
     BARE_ALPHA_BETA_PAIR_PATTERN,
     BARE_ALPHA_BETA_PATTERN,
+    BARE_GREEK_CJK_PATTERN,
 )
 
 
@@ -60,11 +62,15 @@ def _replace_bare_math_segment(text: str) -> str:
     def replace_pair(match: re.Match[str]) -> str:
         return f"$\\alpha${match.group('join')}$\\beta$"
 
+    def replace_greek_cjk(match: re.Match[str]) -> str:
+        return f"${GREEK_NAMES[match.group('name').lower()]}$"
+
     normalized = BARE_TRIG_FRACTION_PATTERN.sub(replace_trig, text)
     normalized = BARE_TRIG_ALPHA_BETA_SUM_PATTERN.sub(replace_trig_sum, normalized)
     normalized = BARE_ALPHA_BETA_SUM_PATTERN.sub(replace_sum, normalized)
     normalized = BARE_ALPHA_BETA_PAIR_PATTERN.sub(replace_pair, normalized)
-    return BARE_ALPHA_BETA_PATTERN.sub(r"$\\alpha+\\beta$", normalized)
+    normalized = BARE_ALPHA_BETA_PATTERN.sub(r"$\\alpha+\\beta$", normalized)
+    return BARE_GREEK_CJK_PATTERN.sub(replace_greek_cjk, normalized)
 
 
 def normalize_bare_math_text(value: str) -> str:

@@ -1755,6 +1755,40 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertTrue(review.must_revise)
         self.assertTrue(any("空壳" in issue.description for issue in review.issues))
 
+    def test_quality_gate_rejects_repeated_coverage_chain(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = [
+            "整数勾股数",
+            "根式勾股数",
+            "逆向：三角形三边满足a²+b²=c²",
+            "勾股逆向：三角形三边满足a²+b²=c²",
+            "配方法推导",
+        ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(any("重复知识链路" in issue.description for issue in review.issues))
+
+    def test_quality_gate_rejects_root_ratio_as_integer_pythagorean_answer(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = ["整数勾股数", "根式勾股数", "特殊角定义", "份数计算", "配方法推导"]
+        for day in plan["days"]:
+            day["choices"] = [
+                {
+                    "question": "下列哪一组数是勾股数？",
+                    "options": ["A. 1,2,3", "B. 1,2,√(3)", "C. 1,√(3),2", "D. 3,4,6"],
+                    "answer": "C",
+                }
+            ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(any("根式比例当成整数勾股数" in issue.description for issue in review.issues))
+
     def test_generate_review_plan_json_sets_timeout(self):
         response = type(
             "Response",

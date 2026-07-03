@@ -60,6 +60,20 @@ def _choice_has_answer(choice: object) -> bool:
     return isinstance(choice, dict) and bool(_clean_text(choice.get("answer")))
 
 
+def _choice_option_problems(choice: object, choice_index: int) -> list[str]:
+    if not isinstance(choice, dict):
+        return [f"rendered_choice_not_dict:{choice_index}"]
+    options = choice.get("options") if isinstance(choice.get("options"), list) else []
+    problems: list[str] = []
+    if len(options) != 4:
+        problems.append(f"rendered_choice_options_count:{choice_index}:{len(options)}")
+    for option_index, option in enumerate(options):
+        text = _clean_text(option)
+        if not re.match(r"^[A-D]\.\s*\S+", text):
+            problems.append(f"rendered_choice_empty_option:{choice_index}:{option_index}")
+    return problems
+
+
 def _is_renderer_fallback_blank(blank: object) -> bool:
     text = ""
     answer = ""
@@ -113,6 +127,8 @@ def _formula_failures_from_rendered_days(days: list[dict[str, Any]]) -> list[str
 
 
 def dry_run_review_plan_renderer(plan: dict[str, Any]) -> RendererDryRunReport:
+    from review_plan_workflow.math_contract import bare_math_contract_violations
+
     normalized = normalize_final_review_plan(plan)
     canonical = count_printable_questions(normalized, raw_plan=plan)
     report = RendererDryRunReport(
@@ -142,6 +158,7 @@ def dry_run_review_plan_renderer(plan: dict[str, Any]) -> RendererDryRunReport:
         for choice_index, choice in enumerate(choices):
             if not _choice_has_answer(choice):
                 dropped_items.append(f"rendered_choice_without_answer:{choice_index}")
+            dropped_items.extend(_choice_option_problems(choice, choice_index))
         day_report = RendererDayReport(
             day=_day_number(day),
             blank_count=len(blanks),
@@ -157,6 +174,8 @@ def dry_run_review_plan_renderer(plan: dict[str, Any]) -> RendererDryRunReport:
         report.dropped_items.extend(dropped_items)
 
     report.formula_failures.extend(_formula_failures_from_rendered_days(days))
+    for violation in bare_math_contract_violations({"days": days}):
+        report.formula_failures.append("visible_bare_math:" + violation[:120])
     if report.visible_question_count != report.canonical_visible_question_count:
         report.dropped_items.append(
             f"renderer_visible_count_mismatch:{report.visible_question_count}!={report.canonical_visible_question_count}"

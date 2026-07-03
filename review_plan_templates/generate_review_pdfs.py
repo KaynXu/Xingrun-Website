@@ -1641,7 +1641,15 @@ def localize_choice_option_lines(values, chinese_only):
 def choice_options_need_full_width(options, chinese_only):
     for option in options:
         localized = localize_text(option, chinese_only)
-        if "；" in localized or "\\begin{cases}" in str(option):
+        raw = str(option)
+        if (
+            "；" in localized
+            or "\\begin{cases}" in raw
+            or "$" in raw
+            or "\\sqrt" in raw
+            or "\\frac" in raw
+            or "√" in localized
+        ):
             return True
         if len(re.sub(r"\s+", "", localized)) > 44:
             return True
