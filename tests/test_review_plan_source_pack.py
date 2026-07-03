@@ -5,6 +5,7 @@ from review_plan_workflow.source_pack import (
     source_pack_cache_key_for_text,
     source_pack_needs_rebuild,
     source_pack_trace_payload,
+    source_pack_writer_payload,
 )
 
 
@@ -107,6 +108,33 @@ class ReviewPlanSourcePackTestCase(unittest.TestCase):
         self.assertGreaterEqual(payload["sections_count"], 3)
         self.assertEqual(payload["segment_cache_key_count"], len(pack.segments))
         self.assertNotIn("第134个勾股数例题", str(payload))
+
+    def test_writer_payload_selects_late_section_evidence_without_full_source_dump(self):
+        lines = [
+            "勾股数、特殊角与和角推导完整课堂逐字稿",
+            "第一部分：整数勾股数讲解",
+        ]
+        for index in range(1, 95):
+            lines.append(f"说话人1：例题：第{index}个前置练习，使用 3:4:5。")
+        lines.extend(
+            [
+                "第二部分：配方法推导",
+                "说话人1：重点：一元二次方程配方法推导过程要重新演算，先移项、再配方、最后开方。",
+                "课堂收尾",
+                "说话人1：课后作业：完整抄写配方法推导并明天抽查。",
+            ]
+        )
+        source = "\n".join(lines)
+        pack = build_lesson_source_pack(raw_text=source, source_type="transcript", subject="数学")
+
+        payload = source_pack_writer_payload(pack, max_sections=4, total_excerpt_chars=2200)
+        payload_text = str(payload)
+
+        self.assertIn("配方法推导", payload_text)
+        self.assertIn("先移项、再配方、最后开方", payload_text)
+        self.assertIn("完整抄写配方法推导", payload_text)
+        self.assertLess(len(payload_text), len(source) + 800)
+        self.assertNotIn("第94个前置练习", payload_text)
 
 
 if __name__ == "__main__":

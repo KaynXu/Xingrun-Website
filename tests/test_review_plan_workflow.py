@@ -37,6 +37,7 @@ from review_plan_workflow.service import (
     generate_single_lesson_review_plan,
 )
 from review_plan_workflow.source_brief import build_deterministic_source_brief, source_brief_trace_payload
+from review_plan_workflow.source_pack import build_lesson_source_pack
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -939,13 +940,18 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         self.assertEqual(brief.lesson_title_candidates[0], "动点与立体几何综合")
+        self.assertIsNotNone(review_input.source_pack)
+        self.assertTrue(review_input.source_pack.segments)
         self.assertTrue(brief.evidence_map)
         self.assertIn("source_brief", context.node_outputs)
+        self.assertIn("source_pack", context.node_outputs)
+        self.assertEqual(context.node_outputs["source_pack"]["segments_count"], len(review_input.source_pack.segments))
         trace_source_brief = context.node_outputs["source_brief"]
         self.assertEqual(trace_source_brief["schema_version"], "2026-07-01")
         self.assertIn("cleaned_text_length", trace_source_brief)
         self.assertNotIn("cleaned_text", trace_source_brief)
         self.assertNotIn("压缩成一天，少一点题量", str(trace_source_brief))
+        self.assertNotIn("动点 P 到定点 O", str(context.node_outputs["source_pack"]))
         executor_source_brief = context.node_outputs["source_brief_builder"]
         self.assertIn("cleaned_text_length", executor_source_brief)
         self.assertNotIn("cleaned_text", executor_source_brief)
@@ -1042,6 +1048,76 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("结构化课堂材料", writer_message)
         self.assertIn("动点与立体几何综合", writer_message)
         self.assertIn("压缩成一天，少一点题量，多做诊断", writer_message)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_writer_message_uses_section_aware_source_pack_for_late_material(self, mock_generate_plan):
+        lines = [
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿",
+            "第一部分：整数勾股数讲解",
+        ]
+        for index in range(1, 100):
+            lines.append(f"说话人1：例题：第{index}个前置练习，使用 3:4:5 勾股数。")
+        lines.extend(
+            [
+                "第二部分：特殊角与和角推导",
+                "说话人1：重点：α+β=45°，必须重新演算正切和角公式。",
+                "第三部分：配方法推导",
+                "说话人1：重点：一元二次方程配方法推导过程要重新演算，先移项、再配方、最后开方。",
+            ]
+        )
+        transcript = "\n".join(lines)
+        mock_generate_plan.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导"),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4},
+        )
+
+        generate_single_lesson_review_plan(
+            summary_text=transcript,
+            subject="数学",
+            grade="高一",
+            topic="",
+            lesson_date="2026-07-02",
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            provider="deepseek",
+            model="deepseek-v4-pro",
+        )
+
+        writer_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn("课堂材料章节证据包", writer_message)
+        self.assertIn("配方法推导过程要重新演算", writer_message)
+        self.assertIn("α+β=45°", writer_message)
+        self.assertIn("不得只依据前 1600 字生成", writer_message)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_cached_source_pack_reaches_writer_without_rebuilding_trace_payload(self, mock_generate_plan):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "第一部分：整数勾股数讲解\n"
+            "说话人1：必须背熟 3:4:5。\n"
+            "第二部分：配方法推导\n"
+            "说话人1：重点：配方法推导要先移项、再配方、最后开方。"
+        )
+        cached_pack = build_lesson_source_pack(raw_text=transcript, source_type="transcript", subject="数学")
+        mock_generate_plan.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导"),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4},
+        )
+
+        generate_single_lesson_review_plan(
+            summary_text=transcript,
+            subject="数学",
+            grade="高一",
+            topic="",
+            lesson_date="2026-07-02",
+            source_pack=cached_pack.model_dump(),
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            provider="deepseek",
+            model="deepseek-v4-pro",
+        )
+
+        writer_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn(cached_pack.cache_key[:18], writer_message)
+        self.assertIn("配方法推导要先移项、再配方、最后开方", writer_message)
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_node_outputs_do_not_store_source_text_quotes(self, mock_generate_plan):

@@ -30,6 +30,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSour
             weak_points=review_input.weak_points,
             user_requirements=review_input.user_requirements,
         )
+        review_input.source_pack = source_pack
         context.node_outputs["source_pack"] = source_pack_trace_payload(source_pack)
     brief = build_deterministic_source_brief(
         raw_text=raw_text,

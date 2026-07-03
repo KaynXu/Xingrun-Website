@@ -21,6 +21,7 @@ from review_plan_workflow.schemas import (
     validate_final_review_plan,
 )
 from review_plan_workflow.source_brief import source_brief_trace_payload
+from review_plan_workflow.source_pack import source_pack_writer_payload
 from review_plan_workflow.state import WorkflowContext
 
 
@@ -38,7 +39,13 @@ def _source_brief_sections(
     sections = [
         "结构化课堂材料：\n" + json.dumps(safe_brief, ensure_ascii=False, indent=2),
     ]
-    if source_brief is not None and source_brief.cleaned_text:
+    source_pack_payload = source_pack_writer_payload(review_input.source_pack)
+    if source_pack_payload:
+        sections.append(
+            "课堂材料章节证据包（按原文顺序跨章节节选；优先覆盖后段、公式、例题和老师要求）：\n"
+            + json.dumps(source_pack_payload, ensure_ascii=False, indent=2)
+        )
+    elif source_brief is not None and source_brief.cleaned_text:
         sections.append("课堂材料摘录：\n" + source_brief.cleaned_text[:1600])
     return sections
 
@@ -93,6 +100,7 @@ def _user_message(
             "覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；素材充足时优先来自课堂材料，素材不足时生成该年级该科目的通用复习范围，不能只写“本节课内容/综合复习”。",
             "硬性课堂金句契约：quotes 只保留课堂文本中老师真实强调过的方法句；没有证据就返回空数组，禁止把使用说明、完成标准、正确率要求或“每一个复习日都要完整复习整节课内容”写成金句。",
             "硬性数学公式契约：数学公式、分式、根式、对数、分段函数、区间和不等式链必须写成 `$...$` LaTeX；JSON 反斜杠要正确转义，禁止 begincases/endcases/sqrt[/log_( 等坏文本。",
+            "硬性章节覆盖契约：如果存在“课堂材料章节证据包”，最终计划必须覆盖其中每个 selected section 的核心知识、公式或老师动作；不得只依据前 1600 字生成。",
             "硬性顶层 JSON 契约：顶层必须直接包含 lesson_info, full_review_topics, quotes, days；禁止输出 plan, reviewPlan, result, data, output, content, response 等包裹字段；禁止把 days 放进 plan.days 或其他内层对象。",
             "请返回可直接进入现有 PDF 渲染链路的 JSON object，不要输出 Markdown 包裹。",
         ]
