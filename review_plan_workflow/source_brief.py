@@ -12,6 +12,7 @@ from review_plan_workflow.schemas import (
     SourceMistake,
     SourceTeacherEmphasis,
 )
+from review_plan_workflow.source_coverage import source_coverage_trace_payload
 
 
 SOURCE_BRIEF_SCHEMA_VERSION = "2026-07-01"
@@ -71,7 +72,7 @@ def source_evidence_list_trace_payload(values: object) -> list[dict]:
     return [payload for payload in (source_evidence_trace_payload(item) for item in values[:20]) if payload]
 
 
-def source_brief_trace_payload(brief: ReviewPlanSourceBrief | dict | None) -> dict:
+def source_brief_trace_payload(brief: ReviewPlanSourceBrief | dict | None, *, subject_key: str = "") -> dict:
     if brief is None:
         return {}
     if hasattr(brief, "model_dump"):
@@ -97,6 +98,7 @@ def source_brief_trace_payload(brief: ReviewPlanSourceBrief | dict | None) -> di
         "missing_fields": list(data.get("missing_fields") or [])[:10],
         "evidence_map": source_evidence_list_trace_payload(evidence_map),
         "evidence_count": len(evidence_map) if isinstance(evidence_map, list) else 0,
+        "coverage_requirements": source_coverage_trace_payload(brief, subject_key=subject_key),
         "confidence": float(data.get("confidence") or 0.0),
     }
 

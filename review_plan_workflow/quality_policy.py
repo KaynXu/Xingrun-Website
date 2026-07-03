@@ -52,6 +52,7 @@ HARD_EVIDENCE_MARKERS = (
     "teacher quote",
     "teacher_emphasis",
 )
+SOFT_SOURCE_MISSING_FIELDS = {"example_stems"}
 
 
 def _has_high_issue(quality: QualityReview) -> bool:
@@ -143,14 +144,15 @@ def should_run_llm_quality_review(
     if not validator_passed:
         return False
     if not local_quality.passed or local_quality.must_revise or _has_high_issue(local_quality):
-        return True
+        return False
     if local_quality.score < 92:
         return True
     if source_brief is None:
         return True
-    if source_brief.confidence < 0.75:
+    missing_fields = {str(field or "") for field in (source_brief.missing_fields or []) if str(field or "")}
+    if source_brief.confidence < 0.6:
         return True
-    if source_brief.missing_fields:
+    if missing_fields - SOFT_SOURCE_MISSING_FIELDS:
         return True
     return False
 

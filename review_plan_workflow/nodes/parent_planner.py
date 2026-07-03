@@ -51,7 +51,10 @@ def _planner_message(
     source_payload = source.model_dump()
     source_payload["evidence_map"] = source_evidence_list_trace_payload(source_payload.get("evidence_map"))
     if source.source_brief is not None:
-        source_payload["source_brief"] = source_brief_trace_payload(source.source_brief)
+        source_payload["source_brief"] = source_brief_trace_payload(
+            source.source_brief,
+            subject_key=route.selected_subject,
+        )
     payload = {
         "input": {
             "subject": review_input.subject,
@@ -68,7 +71,7 @@ def _planner_message(
         "normalized": normalized.model_dump(),
         "route": route.model_dump(),
         "source": source_payload,
-        "source_brief": source_brief_trace_payload(source_brief or source.source_brief),
+        "source_brief": source_brief_trace_payload(source_brief or source.source_brief, subject_key=route.selected_subject),
         "scope": scope.model_dump(),
         "time_allocation": time_allocation.model_dump(),
         "task_blueprint": task_blueprint.model_dump(),
@@ -105,6 +108,7 @@ def _planner_message(
             "目标是让后续 writer 像 Codex 一样先理解再执行，而不是一次性套模板。",
             "如果 source_brief 缺 topic/knowledge_points 或课堂材料过短，不要中止；基于 subject、grade、user_requirements 规划通用可交付复习，并在 assumptions 标明课堂主题需老师确认。",
             "不要把低证据推测写成已确认课堂事实；标题和 topic 不要出现“待确认/需确认”，可以把内部依据写成 assumptions 或 low_source_fallback。",
+            "如果本次是当天课后复习且题量约 10 道，先列出必须覆盖的 5-8 条 source key chains，再分配到基础记忆、计算应用、推导链路、综合诊断和口述卡片。",
             "请返回严格 JSON object，字段按 output_contract。",
             "output_contract:\n" + json.dumps(output_contract, ensure_ascii=False, indent=2),
             "workflow_input:\n" + json.dumps(payload, ensure_ascii=False, indent=2),

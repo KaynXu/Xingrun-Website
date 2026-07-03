@@ -14,6 +14,7 @@ import lesson_manager
 import app as app_module
 from review_plan_workflow.llm import client as llm_client_module
 from review_plan_workflow.llm import PromptRegistry, render_prompt
+from review_plan_workflow.printable_questions import count_printable_questions
 from review_plan_workflow.quality_gate import review_single_lesson_plan
 from review_plan_workflow.schemas import (
     NormalizedBrief,
@@ -22,12 +23,21 @@ from review_plan_workflow.schemas import (
     ReviewPlanInput,
     ReviewPlanSourceBrief,
     ScopePlan,
+    SourceKnowledgePoint,
     SourceSummary,
     TaskBlueprint,
     normalize_final_review_plan,
     validate_final_review_plan,
 )
-from review_plan_workflow.service import _fallback_agent_blueprint, _normalize_output_plan, generate_single_lesson_review_plan
+from review_plan_workflow.service import (
+    _fallback_agent_blueprint,
+    _normalize_output_plan,
+    _repair_source_coverage_gaps,
+    _should_skip_parent_planner,
+    generate_single_lesson_review_plan,
+)
+from review_plan_workflow.source_brief import build_deterministic_source_brief, source_brief_trace_payload
+from review_plan_workflow.source_pack import build_lesson_source_pack
 from tests.review_plan_test_utils import (
     components_only_single_lesson_plan,
     desktop_writer_single_lesson_plan,
@@ -205,6 +215,42 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("spiral_review", normalized["days"][0])
         self.assertIn("交叉回收", normalized["days"][0]["spiral_review"][0])
         self.assertIn("隔题复现", normalized["days"][0]["spiral_review"][1])
+
+    def test_output_normalization_converts_bare_math_to_latex_contract(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="特殊角推导")
+        plan.setdefault("full_review_topics", []).append("alpha+beta=45°")
+        plan["days"][0]["blanks"] = [
+            {
+                "text": "已知alpha和beta为锐角，且tanalpha=(1)/(2)，tanbeta=(1)/(3)，tan(alpha+beta)=1，则alpha+beta等于______。",
+                "answer": "alpha+beta=45°",
+            }
+        ]
+        review_input = ReviewPlanInput(
+            summary_text="已知 alpha 和 beta 为锐角，且 tanalpha=(1)/(2)，tanbeta=(1)/(3)。",
+            subject="数学",
+            grade="高一",
+            topic="特殊角推导",
+            schedule_mode="compressed",
+            review_days=[1],
+        )
+
+        normalized = _normalize_output_plan(plan, review_input)
+        blank = normalized["days"][0]["blanks"][0]
+        topic = normalized["full_review_topics"][0]
+
+        self.assertIn("已知$\\alpha$和$\\beta$为锐角", blank["text"])
+        self.assertIn("$\\tan\\alpha=\\frac{1}{2}$", blank["text"])
+        self.assertIn("$\\tan\\beta=\\frac{1}{3}$", blank["text"])
+        self.assertIn("$\\tan(\\alpha+\\beta)=1$", blank["text"])
+        self.assertIn("$\\alpha+\\beta$", blank["text"])
+        self.assertEqual(blank["answer"], "$\\alpha+\\beta=45^\\circ$")
+        self.assertEqual(topic, "$\\alpha+\\beta=45^\\circ$")
+        self.assertNotIn("tanalpha=(1)/(2)", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("tanbeta=(1)/(3)", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("tan(alpha+beta)=1", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("tan($", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("alpha和beta", json.dumps(normalized, ensure_ascii=False))
+        self.assertNotIn("alpha+beta", json.dumps(normalized, ensure_ascii=False))
 
     def test_normalizes_task_blocks_for_compressed_day_quality_gate(self):
         plan = {
@@ -468,6 +514,30 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         source_brief = ReviewPlanSourceBrief(confidence=0.5, missing_fields=["topic"])
 
         self.assertTrue(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
+
+    def test_quality_policy_skips_llm_reviewer_for_soft_source_gap(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(score=100, passed=True, must_revise=False, issues=[], revision_instructions=[])
+        source_brief = ReviewPlanSourceBrief(confidence=0.65, missing_fields=["example_stems"])
+
+        self.assertFalse(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
+
+    def test_quality_policy_uses_local_revision_without_llm_reviewer(self):
+        from review_plan_workflow.quality_policy import should_run_llm_quality_review
+        from review_plan_workflow.schemas import QualityIssue, QualityReview, ReviewPlanSourceBrief
+
+        local_quality = QualityReview(
+            score=75,
+            passed=False,
+            must_revise=True,
+            issues=[QualityIssue(severity="high", category="source_coverage", description="缺少课堂链路")],
+            revision_instructions=["补齐课堂链路"],
+        )
+        source_brief = ReviewPlanSourceBrief(confidence=0.65, missing_fields=["example_stems"])
+
+        self.assertFalse(should_run_llm_quality_review(local_quality=local_quality, source_brief=source_brief))
 
     def test_quality_policy_skips_llm_reviewer_when_validator_blocks_delivery(self):
         from review_plan_workflow.quality_policy import should_run_llm_quality_review
@@ -744,6 +814,107 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(len(targets), 1)
         self.assertEqual(targets[0].target_id, "day7_choice2")
 
+    def test_question_repair_localizes_active_recall_and_blank_paths(self):
+        from review_plan_workflow.nodes.question_repair import find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        day = plan["days"][0]
+        day["active_recall"] = {
+            "items": [
+                {"instruction": "默写 3:4:5、5:12:13。", "expected": "两组基础勾股数。"},
+                {"instruction": "说明 1:2:√5 中 α 的定义。", "expected": "1 对 α。"},
+                {"instruction": "错误推导：$\\frac{\\sqrt{2}+2}{4\\sqrt{2}}=1$，所以 α+β=45°。"},
+            ]
+        }
+        while len(day["blanks"]) < 6:
+            day["blanks"].append({"text": f"占位填空{len(day['blanks']) + 1}______。", "answer": "占位"})
+        quality = QualityReview(
+            score=72,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="days[0].active_recall[2] 的 α+β 推导出现数学错误。",
+                    suggested_fix="改用正切和角公式验证。",
+                    target_path="days[0].active_recall[2]",
+                    day=1,
+                ),
+                QualityIssue(
+                    severity="high",
+                    category="pdf_safety",
+                    description="days[0].blanks[5] 的公式中出现中文问号。",
+                    suggested_fix="把中文问号改成变量 x。",
+                    target_path="days[0].blanks[5]",
+                    day=1,
+                    question_index=6,
+                    question_type="blank",
+                ),
+            ],
+            revision_instructions=["局部修复主动回忆和填空题"],
+        )
+
+        targets = find_question_repair_targets(plan, quality)
+
+        self.assertEqual([target.target_id for target in targets], ["day1_recall3", "day1_blank6"])
+        self.assertEqual(targets[0].kind, "active_recall")
+        self.assertEqual(targets[0].active_recall_key, "items")
+
+    def test_question_repair_applies_active_recall_repair(self):
+        from review_plan_workflow.nodes.question_repair import _apply_repairs, find_question_repair_targets
+
+        plan = normalize_final_review_plan(writer_style_single_lesson_plan())
+        day = plan["days"][0]
+        day["active_recall"] = [
+            {"instruction": "默写基础勾股数。"},
+            {"instruction": "说明 α、β 的定义。"},
+            {"instruction": "错误推导：$\\frac{\\sqrt{2}+2}{4\\sqrt{2}}=1$。"},
+        ]
+        quality = QualityReview(
+            score=72,
+            passed=False,
+            must_revise=True,
+            issues=[
+                QualityIssue(
+                    severity="high",
+                    category="question_quality",
+                    description="days[0].active_recall[2] 的 α+β 推导出现数学错误。",
+                    suggested_fix="改用正切和角公式验证。",
+                    target_path="days[0].active_recall[2]",
+                    day=1,
+                )
+            ],
+            revision_instructions=["局部修复主动回忆"],
+        )
+        targets = find_question_repair_targets(plan, quality)
+
+        repaired = _apply_repairs(
+            plan,
+            targets,
+            {
+                "repairs": [
+                    {
+                        "target_id": "day1_recall3",
+                        "kind": "active_recall",
+                        "instruction": (
+                            "已知 $\\tan\\alpha=\\frac{1}{2}$、$\\tan\\beta=\\frac{1}{3}$，"
+                            "用正切和角公式证明 $\\alpha+\\beta=45^\\circ$。"
+                        ),
+                        "expected": (
+                            "$\\tan(\\alpha+\\beta)=\\frac{1/2+1/3}{1-1/6}=1$，"
+                            "所以 $\\alpha+\\beta=45^\\circ$。"
+                        ),
+                    }
+                ]
+            },
+        )
+
+        repaired_card = repaired["days"][0]["active_recall"][2]
+        self.assertIn("\\tan\\alpha", repaired_card["instruction"])
+        self.assertIn("=1", repaired_card["expected"])
+        self.assertNotIn("\\frac{\\sqrt{2}+2}{4\\sqrt{2}}=1", json.dumps(repaired_card, ensure_ascii=False))
+
     def test_source_brief_builder_records_structured_source_before_writer(self):
         from review_plan_workflow.executor import run_workflow_node
         from review_plan_workflow.nodes.intake_normalizer import intake_normalizer_node
@@ -769,13 +940,18 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         self.assertEqual(brief.lesson_title_candidates[0], "动点与立体几何综合")
+        self.assertIsNotNone(review_input.source_pack)
+        self.assertTrue(review_input.source_pack.segments)
         self.assertTrue(brief.evidence_map)
         self.assertIn("source_brief", context.node_outputs)
+        self.assertIn("source_pack", context.node_outputs)
+        self.assertEqual(context.node_outputs["source_pack"]["segments_count"], len(review_input.source_pack.segments))
         trace_source_brief = context.node_outputs["source_brief"]
         self.assertEqual(trace_source_brief["schema_version"], "2026-07-01")
         self.assertIn("cleaned_text_length", trace_source_brief)
         self.assertNotIn("cleaned_text", trace_source_brief)
         self.assertNotIn("压缩成一天，少一点题量", str(trace_source_brief))
+        self.assertNotIn("动点 P 到定点 O", str(context.node_outputs["source_pack"]))
         executor_source_brief = context.node_outputs["source_brief_builder"]
         self.assertIn("cleaned_text_length", executor_source_brief)
         self.assertNotIn("cleaned_text", executor_source_brief)
@@ -859,6 +1035,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             generation_options={
                 "schedule_mode": "compressed",
                 "user_requirements": "压缩成一天，少一点题量，多做诊断",
+                "constraints": {"force_parent_planner": True},
             },
             provider="deepseek",
             model="deepseek-v4-pro",
@@ -871,6 +1048,76 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("结构化课堂材料", writer_message)
         self.assertIn("动点与立体几何综合", writer_message)
         self.assertIn("压缩成一天，少一点题量，多做诊断", writer_message)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_writer_message_uses_section_aware_source_pack_for_late_material(self, mock_generate_plan):
+        lines = [
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿",
+            "第一部分：整数勾股数讲解",
+        ]
+        for index in range(1, 100):
+            lines.append(f"说话人1：例题：第{index}个前置练习，使用 3:4:5 勾股数。")
+        lines.extend(
+            [
+                "第二部分：特殊角与和角推导",
+                "说话人1：重点：α+β=45°，必须重新演算正切和角公式。",
+                "第三部分：配方法推导",
+                "说话人1：重点：一元二次方程配方法推导过程要重新演算，先移项、再配方、最后开方。",
+            ]
+        )
+        transcript = "\n".join(lines)
+        mock_generate_plan.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导"),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4},
+        )
+
+        generate_single_lesson_review_plan(
+            summary_text=transcript,
+            subject="数学",
+            grade="高一",
+            topic="",
+            lesson_date="2026-07-02",
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            provider="deepseek",
+            model="deepseek-v4-pro",
+        )
+
+        writer_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn("课堂材料章节证据包", writer_message)
+        self.assertIn("配方法推导过程要重新演算", writer_message)
+        self.assertIn("α+β=45°", writer_message)
+        self.assertIn("不得只依据前 1600 字生成", writer_message)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_cached_source_pack_reaches_writer_without_rebuilding_trace_payload(self, mock_generate_plan):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "第一部分：整数勾股数讲解\n"
+            "说话人1：必须背熟 3:4:5。\n"
+            "第二部分：配方法推导\n"
+            "说话人1：重点：配方法推导要先移项、再配方、最后开方。"
+        )
+        cached_pack = build_lesson_source_pack(raw_text=transcript, source_type="transcript", subject="数学")
+        mock_generate_plan.return_value = (
+            valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导"),
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 3, "output_tokens": 4},
+        )
+
+        generate_single_lesson_review_plan(
+            summary_text=transcript,
+            subject="数学",
+            grade="高一",
+            topic="",
+            lesson_date="2026-07-02",
+            source_pack=cached_pack.model_dump(),
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            provider="deepseek",
+            model="deepseek-v4-pro",
+        )
+
+        writer_message = mock_generate_plan.call_args.kwargs["user_message"]
+        self.assertIn(cached_pack.cache_key[:18], writer_message)
+        self.assertIn("配方法推导要先移项、再配方、最后开方", writer_message)
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_node_outputs_do_not_store_source_text_quotes(self, mock_generate_plan):
@@ -1154,6 +1401,337 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertFalse(review.passed)
         self.assertTrue(any("老师要求题目控制在 10 道" in issue.description for issue in review.issues))
 
+    def test_quality_gate_rejects_thin_one_day_plan_missing_source_key_chains(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "第一部分：整数勾股数（奇数型、偶数型）、根式勾股数讲解\n"
+            "说话人1：逆向判断时，三角形三边满足 a²+b²=c² 才能判定直角三角形。\n"
+            "第二部分：α、β定义，互余角勾股比规律\n"
+            "第三部分：和角推导——α+β=45°\n"
+            "说话人1：β 三角形斜边和上面线段等长，先算一份长度，再按份数还原两条直角边。\n"
+            "第四部分：二倍角构造与3:4:5勾股数推导\n"
+            "说话人1：作垂直平分线构造二倍角，得到 2α 对应 4:3:5，2β 对应 3:4:5。\n"
+            "说话人1：课后继续用相同辅助线方法推导 4β 的勾股比。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数与特殊角推导",
+            user_requirements="当天课后复习，题目控制在10道题。",
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = ["勾股定理", "整数勾股数", "根式勾股数", "特殊角", "αβ 定义"]
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：勾股定理等式为______。", "answer": "$a^2+b^2=c^2$"}
+            for i in range(1, 7)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 5)
+        ]
+        plan["days"][0]["active_recall"] = {"instructions": "口述勾股定理公式。"}
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=source_brief,
+        )
+
+        self.assertFalse(review.passed)
+        descriptions = "\n".join(issue.description for issue in review.issues)
+        self.assertIn("关键知识链路", descriptions)
+        self.assertIn("勾股逆向", descriptions)
+        self.assertIn("source_coverage", {issue.category for issue in review.issues})
+        self.assertTrue(any(issue.category == "source_coverage" and issue.severity == "high" for issue in review.issues))
+
+    def test_quality_gate_treats_single_missing_source_key_chain_as_revision_blocker(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：必须背熟 3:4:5、5:12:13。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：作垂直平分线构造二倍角，得到 2α 对应 4:3:5。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数与特殊角推导",
+            user_requirements="当天课后复习，题目控制在10道题。",
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = ["整数勾股数", "份数计算", "α+β 和角推导", "二倍角关系", "垂直平分线构造"]
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["blanks"] = [
+            {"text": "3:4:5 中斜边是______。", "answer": "5"},
+            {"text": "先算______长度，再还原两条直角边。", "answer": "一份"},
+            {"text": "课堂推导得到 α+β=______。", "answer": "45°"},
+            {"text": "2α 和 2β 的关系是______。", "answer": "互余"},
+            {"text": "二倍角构造要作______。", "answer": "垂直平分线"},
+            {"text": "4β 继续沿用______方法追问。", "answer": "二倍角构造"},
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 5)
+        ]
+        plan["days"][0]["active_recall"] = {
+            "items": [
+                {"text": "口述份数计算、α+β、2α、2β、4β 的课堂链路。", "answer": "按课堂顺序复述。"}
+            ]
+        }
+
+        review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=source_brief,
+        )
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(
+            any(
+                issue.category == "source_coverage"
+                and issue.severity == "high"
+                and "配方法推导" in issue.description
+                for issue in review.issues
+            )
+        )
+
+    def test_quality_gate_allows_completion_standard_to_say_correct_answer(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"][0]["completion_standard"] = "选择题选出正确答案，并能说明错误选项的原因。"
+        plan["days"][0]["self_test_phrase"] = "选择题选出正确答案。"
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertTrue(review.passed, review.model_dump())
+        self.assertFalse(any(issue.category == "style" for issue in review.issues))
+
+    def test_complex_compressed_math_keeps_parent_planner(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：逆向：三角形三边满足a²+b²=c²才能判定直角三角形。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数、特殊角度αβ与和角推导",
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+        )
+        review_input = ReviewPlanInput(
+            summary_text=transcript,
+            subject="数学",
+            schedule_mode="compressed",
+            review_days=[1],
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+            constraints={"requested_question_count": 10},
+        )
+
+        self.assertFalse(_should_skip_parent_planner(review_input=review_input, source_brief=source_brief))
+
+    def test_source_brief_trace_includes_coverage_requirements_without_raw_text(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：逆向：三角形三边满足a²+b²=c²才能判定直角三角形。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数、特殊角度αβ与和角推导",
+        )
+
+        trace = source_brief_trace_payload(source_brief, subject_key="math")
+
+        requirements = trace["coverage_requirements"]
+        labels = [item["label"] for item in requirements]
+        self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", labels)
+        self.assertIn("配方法推导", labels)
+        self.assertNotIn("cleaned_text", trace)
+
+    def test_source_coverage_repair_fills_missing_key_chains_before_failure(self):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：逆向：三角形三边满足a²+b²=c²才能判定直角三角形。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        source_brief = build_deterministic_source_brief(
+            raw_text=transcript,
+            subject="数学",
+            topic="勾股数、特殊角度αβ与和角推导",
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+        )
+        review_input = ReviewPlanInput(
+            summary_text=transcript,
+            subject="数学",
+            schedule_mode="compressed",
+            review_days=[1],
+            user_requirements="生成当天的复习计划，题目控制在10个题",
+            constraints={"requested_question_count": 10},
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["steps"] = []
+        plan["days"][0]["items"] = []
+        plan["full_review_topics"] = ["整数勾股数", "特殊角定义", "基础勾股比", "互余角关系", "二倍角关系"]
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：3:4:5 中斜边是______。", "answer": "5"}
+            for i in range(1, 7)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 5)
+        ]
+        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "expected": "按课堂顺序。"}]}
+        self.assertEqual(count_printable_questions(plan).total_visible_questions, 10)
+
+        initial_review = review_single_lesson_plan(
+            plan,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=source_brief,
+        )
+        self.assertTrue(any(issue.category == "source_coverage" for issue in initial_review.issues))
+
+        repaired, labels = _repair_source_coverage_gaps(
+            plan,
+            review_input=review_input,
+            source_brief=source_brief,
+            subject="math",
+        )
+        repaired_review = review_single_lesson_plan(
+            repaired,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=source_brief,
+        )
+
+        self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", labels)
+        self.assertIn("配方法推导", labels)
+        self.assertFalse(any(issue.category == "source_coverage" for issue in repaired_review.issues))
+        self.assertFalse(any("当前可打印题目为" in issue.description for issue in repaired_review.issues))
+        self.assertEqual(count_printable_questions(repaired).total_visible_questions, 10)
+        active_recall_text = json.dumps(repaired["days"][0]["active_recall"], ensure_ascii=False)
+        self.assertIn("配方法推导", active_recall_text)
+        self.assertIn("勾股逆向", active_recall_text)
+        self.assertIn("expected", active_recall_text)
+
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_service_deterministically_repairs_source_coverage_before_returning(self, mock_generate_plan):
+        transcript = (
+            "勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n"
+            "说话人1：逆向：三角形三边满足a²+b²=c²才能判定直角三角形。\n"
+            "说话人1：先算一份长度，再按份数还原两条直角边。\n"
+            "说话人1：通过构造推出 α+β=45°，再推出 2α、2β 互余。\n"
+            "说话人1：一元二次方程配方法推导过程要重新演算。"
+        )
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数、特殊角度αβ与和角推导")
+        plan["days"] = [plan["days"][0]]
+        plan["days"][0]["day"] = 1
+        plan["days"][0]["steps"] = []
+        plan["days"][0]["items"] = []
+        plan["full_review_topics"] = ["整数勾股数", "特殊角定义", "基础勾股比", "互余角关系", "二倍角关系"]
+        plan["days"][0]["blanks"] = [
+            {"text": f"第{i}题：3:4:5 中斜边是______。", "answer": "5"}
+            for i in range(1, 7)
+        ]
+        plan["days"][0]["choices"] = [
+            {
+                "question": f"第{i}题：下列哪组是勾股数？",
+                "options": ["A. 3,4,5", "B. 2,2,5", "C. 1,1,3", "D. 4,4,9"],
+                "answer": "A",
+            }
+            for i in range(1, 5)
+        ]
+        plan["days"][0]["active_recall"] = {"items": [{"text": "口述整数勾股数。", "expected": "按课堂顺序。"}]}
+        self.assertEqual(count_printable_questions(plan).total_visible_questions, 10)
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-03",
+            subject="数学",
+            grade="高一",
+            topic="勾股数、特殊角度αβ与和角推导",
+            summary=transcript,
+            weak_points="当天课后复习",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text=transcript,
+            subject="数学",
+            grade="高一",
+            topic="勾股数、特殊角度αβ与和角推导",
+            weak_points="当天课后复习",
+            lesson_date="2026-07-03",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={
+                "schedule_mode": "compressed",
+                "review_days": [1],
+                "user_requirements": "生成当天的复习计划，题目控制在10个题",
+                "constraints": {"requested_question_count": 10},
+            },
+            include_usage=True,
+        )
+
+        output_text = json.dumps(generated, ensure_ascii=False)
+        self.assertIn("勾股逆向：三角形三边满足 a²+b²=c²", output_text)
+        self.assertIn("配方法推导", output_text)
+        self.assertIn("口述课堂关键链路", output_text)
+        self.assertEqual(count_printable_questions(generated).total_visible_questions, 10)
+        review = review_single_lesson_plan(
+            generated,
+            subject="math",
+            required_review_days=[1],
+            schedule_mode="compressed",
+            constraints={"requested_question_count": 10},
+            source_brief=build_deterministic_source_brief(
+                raw_text=transcript,
+                subject="数学",
+                topic="勾股数、特殊角度αβ与和角推导",
+                user_requirements="生成当天的复习计划，题目控制在10个题",
+            ),
+        )
+        self.assertFalse(any(issue.category == "source_coverage" for issue in review.issues))
+        self.assertFalse(any("当前可打印题目为" in issue.description for issue in review.issues))
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertIn("source_coverage_repair_initial", run["node_outputs"])
+
     def test_quality_gate_rejects_pdf_fallback_content(self):
         broken_plan = valid_single_lesson_plan(subject="数学", topic="课后")
         broken_plan["lesson_info"]["topic"] = ""
@@ -1252,6 +1830,40 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertFalse(review.passed)
         self.assertTrue(review.must_revise)
         self.assertTrue(any("空壳" in issue.description for issue in review.issues))
+
+    def test_quality_gate_rejects_repeated_coverage_chain(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = [
+            "整数勾股数",
+            "根式勾股数",
+            "逆向：三角形三边满足a²+b²=c²",
+            "勾股逆向：三角形三边满足a²+b²=c²",
+            "配方法推导",
+        ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(any("重复知识链路" in issue.description for issue in review.issues))
+
+    def test_quality_gate_rejects_root_ratio_as_integer_pythagorean_answer(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
+        plan["full_review_topics"] = ["整数勾股数", "根式勾股数", "特殊角定义", "份数计算", "配方法推导"]
+        for day in plan["days"]:
+            day["choices"] = [
+                {
+                    "question": "下列哪一组数是勾股数？",
+                    "options": ["A. 1,2,3", "B. 1,2,√(3)", "C. 1,√(3),2", "D. 3,4,6"],
+                    "answer": "C",
+                }
+            ]
+
+        review = review_single_lesson_plan(plan, subject="math")
+
+        self.assertFalse(review.passed)
+        self.assertTrue(review.must_revise)
+        self.assertTrue(any("根式比例当成整数勾股数" in issue.description for issue in review.issues))
 
     def test_generate_review_plan_json_sets_timeout(self):
         response = type(
@@ -1499,9 +2111,14 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
 
         mock_llm_review.assert_not_called()
-        self.assertEqual(usage["input_tokens"], 4)
-        self.assertEqual(usage["output_tokens"], 6)
+        mock_parent_plan.assert_not_called()
+        self.assertEqual(usage["input_tokens"], 3)
+        self.assertEqual(usage["output_tokens"], 4)
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertEqual(
+            run["node_outputs"]["parent_planner_skipped"]["reason"],
+            "deterministic_source_fast_path",
+        )
         self.assertTrue(run["node_outputs"]["review_plan_validator_initial"]["passed"])
         self.assertTrue(run["node_outputs"]["review_plan_evaluator"]["passed"])
         self.assertEqual(run["node_outputs"]["quality_reviewer_initial"]["mode"], "skipped")
@@ -1509,6 +2126,190 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             run["node_outputs"]["quality_reviewer_initial"]["reason"],
             "local_quality_passed_with_high_source_confidence",
         )
+
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_compressed_single_day_accepts_final_polish_after_local_validation(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] == 1]
+        polished = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        polished["days"] = [day for day in polished["days"] if day["day"] == 1]
+        polished["weak_points_summary"] = "学生需要巩固一次函数题干信息提取，并把斜率、截距和代入步骤说完整。"
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_final_polish.return_value = (
+            polished,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 30, "output_tokens": 40},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], polished["weak_points_summary"])
+        self.assertEqual(usage["input_tokens"], 40)
+        self.assertEqual(usage["output_tokens"], 60)
+        self.assertEqual(mock_final_polish.call_args.kwargs["stage"], "final_polish")
+        self.assertEqual(mock_final_polish.call_args.kwargs["timeout_seconds"], 60.0)
+        self.assertEqual(mock_final_polish.call_args.kwargs["provider"], "deepseek")
+        self.assertEqual(mock_final_polish.call_args.kwargs["model"], "deepseek-v4-pro")
+        self.assertIn("\\tan(\\alpha+\\beta)", mock_final_polish.call_args.kwargs["user_message"])
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(run["node_outputs"]["final_polish_decision"]["accepted"])
+        self.assertTrue(run["node_outputs"]["review_plan_validator_after_final_polish"]["passed"])
+
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_compressed_single_day_keeps_original_when_final_polish_fails(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] == 1]
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_final_polish.side_effect = TimeoutError("final polish timeout")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], plan["weak_points_summary"])
+        self.assertEqual(usage["input_tokens"], 10)
+        self.assertEqual(usage["output_tokens"], 20)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(any(warning["code"] == "final_polish_failed" for warning in run["warnings"]))
+
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_final_polish_discards_plan_that_fails_second_validation(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] == 1]
+        invalid_polished = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_final_polish.return_value = (
+            invalid_polished,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 30, "output_tokens": 40},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], plan["weak_points_summary"])
+        self.assertEqual(usage["input_tokens"], 40)
+        self.assertEqual(usage["output_tokens"], 60)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertFalse(run["node_outputs"]["final_polish_decision"]["accepted"])
+        self.assertFalse(run["node_outputs"]["review_plan_validator_after_final_polish"]["passed"])
+        self.assertTrue(any(warning["code"] == "final_polish_discarded" for warning in run["warnings"]))
+
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_final_polish_skips_non_single_day_compressed_plan(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        _generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            generation_options={"schedule_mode": "standard", "review_days": [1, 2, 7, 14, 30]},
+            include_usage=True,
+        )
+
+        mock_final_polish.assert_not_called()
+        self.assertEqual(usage["input_tokens"], 10)
+        self.assertEqual(usage["output_tokens"], 20)
 
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
@@ -1904,6 +2705,397 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertNotIn("当前计划 JSON", mock_question_repair.call_args_list[0].kwargs["user_message"])
         self.assertEqual(usage["provider"], "openai")
 
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.question_repair.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_question_issue_after_full_revision_gets_targeted_repair_before_failure(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_question_repair,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "先修正无证据话术，再校验题目答案。",
+                "student_diagnosis": ["容易把三角形分类算错"],
+                "knowledge_map": [{"name": "勾股逆定理", "role": "分类判断", "evidence": "课堂"}],
+                "day_strategies": [{"day": 1, "objective": "当天课后复习"}],
+                "writer_instructions": ["不要写无证据老师原话。"],
+                "quality_risks": ["选择题答案可能算错。"],
+                "success_criteria": ["题目答案必须验算一致。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = writer_style_single_lesson_plan()
+        initial_plan["lesson_info"]["topic"] = "勾股定理及勾股数应用"
+        initial_plan["days"] = [initial_plan["days"][0]]
+        initial_plan["days"][0]["day"] = 1
+        initial_plan["days"][0]["active_recall"] = {"instructions": "请默写老师在课堂上强调的两组勾股比。"}
+        revised_plan = normalize_final_review_plan(initial_plan)
+        revised_plan["days"][0]["active_recall"] = {"instructions": "请默写本课需要掌握的两组勾股比。"}
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 9, "output_tokens": 4},
+        )
+        teacher_claim_issue = {
+            "severity": "high",
+            "category": "factuality",
+            "description": "生成结果包含没有课堂证据的老师原话。",
+            "suggested_fix": "删除“老师在课堂上强调”等无证据表述。",
+        }
+        question_issue = {
+            "severity": "high",
+            "category": "question_quality",
+            "description": "第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+            "suggested_fix": "重写该题并重新验算答案。",
+            "target_path": "days[0].choices[1]",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {
+                    "score": 70,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [teacher_claim_issue, question_issue],
+                    "revision_instructions": ["删除无证据老师话术并修正错题"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {
+                    "score": 78,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [question_issue],
+                    "revision_instructions": ["修正第1天选择题第2题"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 95, "passed": True, "must_revise": False, "issues": [], "revision_instructions": []},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_question_repair.return_value = (
+            (
+                {
+                    "repairs": [
+                        {
+                            "target_id": "day1_choice2",
+                            "kind": "choice",
+                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
+                            "options": ["A. 直角三角形", "B. 锐角三角形", "C. 钝角三角形", "D. 不存在"],
+                            "answer": "B",
+                            "analysis": "最大边平方为 5，另外两边平方和为 7，5<7，所以是锐角三角形。",
+                        }
+                    ]
+                },
+                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4},
+            )
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="高一",
+            topic="勾股定理及勾股数应用",
+            summary="勾股定理、根式勾股数和三角形分类。",
+            weak_points="三角形分类判断",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="勾股定理、根式勾股数和三角形分类。",
+            subject="数学",
+            grade="高一",
+            topic="勾股定理及勾股数应用",
+            lesson_date="2026-07-02",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["days"][0]["choices"][1]["answer"], "B")
+        self.assertEqual(mock_revise_plan.call_count, 1)
+        self.assertEqual(mock_question_repair.call_count, 1)
+        self.assertEqual(mock_llm_review.call_count, 3)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertIsNotNone(run)
+        self.assertEqual(run["quality_review"]["passed"], True)
+        self.assertIn("quality_reviewer_after_question_repair_2", run["node_outputs"])
+        self.assertEqual(run["node_outputs"]["question_repair_attempts"][0]["target_ids"], ["day1_choice2"])
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.question_repair.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_failed_question_repair_reports_latest_issue_even_when_score_drops(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_question_repair,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "先修正无证据话术，再校验题目答案。",
+                "student_diagnosis": ["容易把三角形分类算错"],
+                "knowledge_map": [{"name": "勾股逆定理", "role": "分类判断", "evidence": "课堂"}],
+                "day_strategies": [{"day": 1, "objective": "当天课后复习"}],
+                "writer_instructions": ["不要写无证据老师原话。"],
+                "quality_risks": ["选择题答案可能算错。"],
+                "success_criteria": ["失败原因必须来自最新审稿结果。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = writer_style_single_lesson_plan()
+        initial_plan["lesson_info"]["topic"] = "勾股定理及勾股数应用"
+        initial_plan["days"] = [initial_plan["days"][0]]
+        initial_plan["days"][0]["day"] = 1
+        initial_plan["days"][0]["active_recall"] = {"instructions": "请默写老师在课堂上强调的两组勾股比。"}
+        revised_plan = normalize_final_review_plan(initial_plan)
+        revised_plan["days"][0]["active_recall"] = {"instructions": "请默写本课需要掌握的两组勾股比。"}
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 9, "output_tokens": 4},
+        )
+        teacher_claim_issue = {
+            "severity": "high",
+            "category": "factuality",
+            "description": "生成结果包含没有课堂证据的老师原话。",
+            "suggested_fix": "删除“老师在课堂上强调”等无证据表述。",
+        }
+        question_issue = {
+            "severity": "high",
+            "category": "question_quality",
+            "description": "第1天选择题第2题答案错误：应为锐角三角形，不是直角三角形。",
+            "suggested_fix": "重写该题并重新验算答案。",
+            "target_path": "days[0].choices[1]",
+        }
+        latest_issue = {
+            "severity": "high",
+            "category": "pdf_readiness",
+            "description": "第1天填空题第1题公式无法渲染。",
+            "suggested_fix": "修复第1天填空题第1题公式。",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {
+                    "score": 70,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [teacher_claim_issue, question_issue],
+                    "revision_instructions": ["删除无证据老师话术并修正错题"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {
+                    "score": 78,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [question_issue],
+                    "revision_instructions": ["修正第1天选择题第2题"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {
+                    "score": 60,
+                    "passed": False,
+                    "must_revise": True,
+                    "issues": [latest_issue],
+                    "revision_instructions": ["修复第1天填空题第1题公式"],
+                },
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        mock_question_repair.return_value = (
+            (
+                {
+                    "repairs": [
+                        {
+                            "target_id": "day1_choice2",
+                            "kind": "choice",
+                            "question": "三边为 $\\sqrt{3}$、$\\sqrt{4}$、$\\sqrt{5}$ 的三角形是什么三角形？",
+                            "options": ["A. 直角三角形", "B. 锐角三角形", "C. 钝角三角形", "D. 不存在"],
+                            "answer": "B",
+                            "analysis": "最大边平方为 5，另外两边平方和为 7，5<7，所以是锐角三角形。",
+                        }
+                    ]
+                },
+                {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 8, "output_tokens": 4},
+            )
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="高一",
+            topic="勾股定理及勾股数应用",
+            summary="勾股定理、根式勾股数和三角形分类。",
+            weak_points="三角形分类判断",
+        )
+
+        generate_single_lesson_review_plan(
+            summary_text="勾股定理、根式勾股数和三角形分类。",
+            subject="数学",
+            grade="高一",
+            topic="勾股定理及勾股数应用",
+            lesson_date="2026-07-02",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+        )
+
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        quality_blob = json.dumps(run["quality_review"], ensure_ascii=False)
+        self.assertIn("公式无法渲染", quality_blob)
+        self.assertNotIn("选择题第2题答案错误", quality_blob)
+
+    @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.parent_planner.generate_review_plan_json")
+    def test_failed_revision_reports_latest_quality_issue_not_stale_initial_topic_issue(
+        self,
+        mock_parent_plan,
+        mock_generate_plan,
+        mock_llm_review,
+        mock_revise_plan,
+    ):
+        config_runtime.write_file_config({
+            "openai_api_key": "test-openai",
+            "deepseek_api_key": "test-deepseek",
+            "review_plan_provider": "openai",
+            "review_plan_model": "gpt-5.4",
+            "review_plan_writer_provider": "deepseek",
+            "review_plan_writer_model": "deepseek-v4-pro",
+        })
+        mock_parent_plan.return_value = (
+            {
+                "strategy_summary": "基于勾股数课堂文本生成当天复习。",
+                "student_diagnosis": [],
+                "knowledge_map": [{"name": "勾股数与特殊角", "role": "课堂主题", "evidence": "source title"}],
+                "day_strategies": [{"day": 1, "objective": "当天课后复习"}],
+                "writer_instructions": ["topic 必须来自 source_brief 标题。"],
+                "quality_risks": ["α+β 推导题可能不自洽。"],
+                "success_criteria": ["题目必须能独立作答。"],
+                "assumptions": [],
+                "confidence": 0.82,
+            },
+            {"provider": "openai", "model": "gpt-5.4", "input_tokens": 5, "output_tokens": 2},
+        )
+        initial_plan = writer_style_single_lesson_plan()
+        initial_plan["lesson_info"]["topic"] = ""
+        initial_plan["days"] = [initial_plan["days"][0]]
+        initial_plan["days"][0]["day"] = 1
+        revised_plan = normalize_final_review_plan(initial_plan)
+        revised_plan["lesson_info"]["topic"] = "勾股数、特殊角度αβ与和角推导"
+        revised_plan["weak_points_summary"] = "按实际填写"
+        revised_plan["days"][0]["active_recall"] = {
+            "instructions": "用错误拼接方程回忆 α+β=45° 推导。",
+            "items": [
+                {
+                    "text": "$2^2+(1+x)^2=(\\sqrt{5})^2+(\\sqrt{10})^2$ 化简得到的方程是______。",
+                    "answer": "7x^2-4x-20=0",
+                }
+            ],
+        }
+        revised_plan["days"][0]["blanks"][0]["text"] = "已知 f(x)=begincases 2x, x>0 endcases，则定义域为______。"
+        mock_generate_plan.return_value = (
+            initial_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 5},
+        )
+        mock_revise_plan.return_value = (
+            revised_plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 9, "output_tokens": 4},
+        )
+        stale_topic_issue = {
+            "severity": "high",
+            "category": "pdf_readiness",
+            "description": "lesson_info.topic 为空或退回通用“课后”，PDF 会生成空壳标题。",
+            "suggested_fix": "把用户主题或 lesson_topic 映射为 lesson_info.topic。",
+        }
+        latest_math_issue = {
+            "severity": "high",
+            "category": "question_quality",
+            "description": "active_recall 中的 α+β=45° 推导题不可做且数学关系错误。",
+            "suggested_fix": "删除错误拼接方程，改成可验证的同类推导。",
+            "target_path": "days[0].active_recall",
+            "day": 1,
+            "question_index": 11,
+            "question_type": "blank",
+        }
+        mock_llm_review.side_effect = [
+            (
+                {"score": 74, "passed": False, "must_revise": True, "issues": [stale_topic_issue], "revision_instructions": ["补 topic"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+            (
+                {"score": 72, "passed": False, "must_revise": True, "issues": [latest_math_issue], "revision_instructions": ["修 active_recall"]},
+                {"provider": "openai", "model": "gpt-5.4", "input_tokens": 3, "output_tokens": 1},
+            ),
+        ]
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-02",
+            subject="数学",
+            grade="高一",
+            topic="",
+            summary="勾股数、特殊角度αβ与和角推导完整课堂逐字稿",
+            weak_points="",
+        )
+
+        generated, _usage = generate_single_lesson_review_plan(
+            summary_text="勾股数、特殊角度αβ与和角推导完整课堂逐字稿",
+            subject="数学",
+            grade="高一",
+            topic="",
+            lesson_date="2026-07-02",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["lesson_info"]["topic"], "勾股数、特殊角度αβ与和角推导")
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        quality_blob = json.dumps(run["quality_review"], ensure_ascii=False)
+        self.assertIn("公式", quality_blob)
+        self.assertNotIn("topic 为空", quality_blob)
+
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_service_records_trace_run_without_mutating_plan_json(self, mock_generate_plan):
         plan = valid_single_lesson_plan(subject="物理", topic="电路")
@@ -2065,6 +3257,11 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         plan["lesson_info"]["assumptions"] = ["年级'九年级'为学生用户输入，课堂材料中不可核验。", "主题来自课堂材料。"]
         plan["quotes"] = ["老师说一定要这样做。"]
         plan["days"][0]["quotes"] = ["老师原话：先看题号。"]
+        plan["days"][0]["active_recall"] = {
+            "instructions": "请默写老师在课堂上强调的两组必须脱口而出的勾股比。",
+            "items": [{"text": "老师提醒：先平方再比较最长边。"}],
+        }
+        plan["days"][0]["steps"] = [{"description": "课堂原话：列式前先确认哪条边最大。"}]
         mock_generate_plan.return_value = (
             plan,
             {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
@@ -2087,6 +3284,37 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertEqual(generated["lesson_info"]["assumptions"], ["主题来自课堂材料。"])
         self.assertEqual(generated["quotes"], [])
         self.assertEqual(generated["days"][0].get("quotes"), [])
+        generated_blob = json.dumps(generated, ensure_ascii=False)
+        self.assertNotIn("老师在课堂上强调", generated_blob)
+        self.assertNotIn("老师提醒", generated_blob)
+        self.assertNotIn("课堂原话", generated_blob)
+        self.assertIn("本课需要掌握的两组必须脱口而出的勾股比", generated_blob)
+
+    def test_output_normalization_uses_source_title_when_model_leaves_topic_empty(self):
+        plan = valid_single_lesson_plan(subject="数学", topic="")
+        plan["lesson_info"]["topic"] = ""
+        plan["lesson_info"]["key_categories"] = []
+        review_input = ReviewPlanInput(
+            summary_text="勾股数、特殊角度αβ与和角推导完整课堂逐字稿\n今天学习勾股定理。",
+            subject="数学",
+            grade="高一",
+            lesson_date="2026-07-02",
+        )
+        source_brief = ReviewPlanSourceBrief(
+            lesson_title_candidates=["勾股数、特殊角度αβ与和角推导"],
+            knowledge_points=[
+                SourceKnowledgePoint(name="整数勾股数（奇数型、偶数型）", evidence_ids=["ev-002"], confidence=0.68),
+                SourceKnowledgePoint(name="α+β=45°推导", evidence_ids=["ev-020"], confidence=0.68),
+            ],
+        )
+
+        generated = _normalize_output_plan(plan, review_input, source_brief)
+
+        self.assertEqual(generated["lesson_info"]["topic"], "勾股数、特殊角度αβ与和角推导")
+        self.assertEqual(
+            generated["lesson_info"]["key_categories"],
+            ["整数勾股数（奇数型、偶数型）", "α+β=45°推导"],
+        )
 
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
     def test_plan_generator_repairs_invalid_schema_once(self, mock_generate_plan):

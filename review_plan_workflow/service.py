@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, Optional, Tuple, Union
 
 from config_runtime import (
@@ -8,12 +9,14 @@ from config_runtime import (
     resolve_review_plan_model,
     resolve_review_plan_provider,
     resolve_review_plan_reasoning_effort,
+    resolve_review_plan_writer_provider,
 )
 
 from .executor import run_workflow_node
 from .evaluator import build_review_plan_evaluation
 from .generation_options import normalize_generation_options
 from .nodes import (
+    final_polish_node,
     intake_normalizer_node,
     parent_planner_node,
     plan_generator_node,
@@ -29,6 +32,7 @@ from .nodes import (
     time_allocator_node,
 )
 from .quality_gate import review_single_lesson_plan
+from .math_contract import normalize_plan_math_contract
 from .quality_policy import (
     can_soft_pass_after_revision,
     max_revision_attempts_for_quality,
@@ -56,6 +60,7 @@ from .schemas import (
     ReviewPlanSourceBrief,
     normalize_final_review_plan,
 )
+from .source_coverage import missing_source_coverage_groups
 from .state import WorkflowContext
 from .validator import ReviewPlanValidationResult, validate_review_plan_delivery
 
@@ -101,6 +106,7 @@ def _score_quality(
     *,
     subject: str,
     review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
     node_key: str,
 ) -> QualityReview:
@@ -110,10 +116,110 @@ def _score_quality(
         required_review_days=review_input.review_days,
         schedule_mode=review_input.schedule_mode,
         constraints=review_input.constraints,
+        source_brief=source_brief,
     )
     context.node_outputs[node_key] = quality.model_dump()
     context.node_outputs["quality_reviewer"] = quality.model_dump()
     return quality
+
+
+def _subject_key(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"数学", "math"}:
+        return "math"
+    return text
+
+
+def _merge_unique_texts(existing: object, additions: list[str]) -> list[str]:
+    values = [str(item or "").strip() for item in existing] if isinstance(existing, list) else []
+    merged: list[str] = []
+    for item in (*values, *additions):
+        if item and item not in merged:
+            merged.append(item)
+    return merged
+
+
+def _active_recall_items(value: object) -> list[dict[str, str]]:
+    if isinstance(value, dict):
+        source = value.get("items")
+        if isinstance(source, list):
+            return [item for item in source if isinstance(item, dict)]
+        text = str(value.get("instructions") or value.get("text") or "").strip()
+        return [{"text": text, "answer": ""}] if text else []
+    if isinstance(value, list):
+        return [item if isinstance(item, dict) else {"text": str(item), "answer": ""} for item in value if str(item or "").strip()]
+    text = str(value or "").strip()
+    return [{"text": text, "answer": ""}] if text else []
+
+
+def _repair_source_coverage_gaps(
+    plan: dict[str, Any],
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+    subject: str,
+) -> tuple[dict[str, Any], list[str]]:
+    if source_brief is None or not _is_compressed_single_day(review_input):
+        return plan, []
+    subject_key = _subject_key(subject or review_input.subject)
+    missing_groups = missing_source_coverage_groups(
+        normalize_final_review_plan(plan),
+        source_brief,
+        subject_key=subject_key,
+    )
+    if not missing_groups:
+        return plan, []
+
+    repaired = copy.deepcopy(plan)
+    labels = [group.label for group in missing_groups]
+    repaired["full_review_topics"] = _merge_unique_texts(repaired.get("full_review_topics"), labels)
+
+    lesson_info = repaired.setdefault("lesson_info", {})
+    if isinstance(lesson_info, dict):
+        lesson_info["key_categories"] = _merge_unique_texts(lesson_info.get("key_categories"), labels)
+
+    days = repaired.get("days") if isinstance(repaired.get("days"), list) else []
+    if days and isinstance(days[0], dict):
+        day = days[0]
+        items = _active_recall_items(day.get("active_recall"))
+        existing_text = "\n".join(str(item.get("text") or "") for item in items if isinstance(item, dict))
+        for group in missing_groups:
+            if group.label in existing_text:
+                continue
+            terms = "、".join(group.terms[:3])
+            items.append(
+                {
+                    "text": f"口述课堂关键链路：{group.label}。说明它的判断入口、关键步骤和容易漏掉的条件。",
+                    "expected": f"能围绕 {terms} 说清楚本节课的推导或判定过程。",
+                }
+            )
+        day["active_recall"] = {"items": items}
+    return repaired, labels
+
+
+def _repair_source_coverage_gaps_with_context(
+    plan: dict[str, Any],
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+    subject: str,
+    context: WorkflowContext,
+    node_key: str,
+) -> dict[str, Any]:
+    repaired, labels = _repair_source_coverage_gaps(
+        plan,
+        review_input=review_input,
+        source_brief=source_brief,
+        subject=subject,
+    )
+    if labels:
+        context.node_outputs[node_key] = {"repaired_labels": labels}
+        context.add_warning(
+            "source_coverage_deterministic_repair",
+            "已把课堂材料中遗漏的关键知识链路确定性补入复习计划：" + "、".join(labels),
+            "medium",
+        )
+    return repaired
 
 
 def _validate_delivery(
@@ -266,6 +372,22 @@ def _run_parent_planner_with_fallback(
     source_brief: ReviewPlanSourceBrief | None = None,
     context: WorkflowContext,
 ) -> tuple[AgenticPlanBlueprint, dict[str, Any]]:
+    if _should_skip_parent_planner(review_input=review_input, source_brief=source_brief):
+        fallback = _fallback_agent_blueprint(
+            review_input=review_input,
+            subject=getattr(route, "selected_subject", ""),
+            source=source,
+            task_blueprint=task_blueprint,
+        )
+        skipped = {
+            "reason": "deterministic_source_fast_path",
+            "source_type": _review_input_source_type(review_input),
+            "source_confidence": source_brief.confidence if source_brief is not None else None,
+            "missing_fields": list(source_brief.missing_fields or []) if source_brief is not None else [],
+        }
+        context.node_outputs["parent_planner"] = fallback.model_dump()
+        context.node_outputs["parent_planner_skipped"] = skipped
+        return fallback, {}
     if not _has_runtime_key_for_provider(context.provider):
         fallback = _fallback_agent_blueprint(
             review_input=review_input,
@@ -308,6 +430,44 @@ def _run_parent_planner_with_fallback(
         )
         context.node_outputs["parent_planner"] = fallback.model_dump()
         return fallback, {}
+
+
+def _review_input_source_type(review_input: ReviewPlanInput) -> str:
+    source_pack = review_input.source_pack
+    return str(getattr(source_pack, "source_type", "") or "text")
+
+
+def _should_skip_parent_planner(
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None = None,
+) -> bool:
+    if bool((review_input.constraints or {}).get("force_parent_planner")):
+        return False
+    if _review_input_source_type(review_input) != "text":
+        return False
+    if source_brief is None:
+        return False
+    if _needs_parent_planner_for_compressed_math(review_input=review_input, source_brief=source_brief):
+        return False
+    missing_fields = {str(field or "") for field in (source_brief.missing_fields or []) if str(field or "")}
+    return source_brief.confidence >= 0.6 and not (missing_fields - {"example_stems"})
+
+
+def _needs_parent_planner_for_compressed_math(
+    *,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief,
+) -> bool:
+    if review_input.subject not in {"数学", "math"}:
+        return False
+    if not _is_compressed_single_day(review_input):
+        return False
+    requested_count = (review_input.constraints or {}).get("requested_question_count")
+    if not isinstance(requested_count, int) or not 8 <= requested_count <= 12:
+        return False
+    text = source_brief.cleaned_text
+    return any(marker in text for marker in ("α", "β", "份数", "配方法", "一元二次", "逆向", "二倍角", "4β"))
 
 
 def _dedupe_quality_issues(*issue_groups: list[QualityIssue]) -> list[QualityIssue]:
@@ -437,12 +597,105 @@ def _assumption_mentions_trusted_metadata(value: object) -> bool:
     )
 
 
+def _sanitize_unsupported_teacher_claim_text(value: str) -> str:
+    replacements = (
+        ("老师在课堂上强调的", "本课需要掌握的"),
+        ("课堂上老师强调的", "本课需要掌握的"),
+        ("课堂中老师强调的", "本课需要掌握的"),
+        ("老师特别强调的", "本课需要掌握的"),
+        ("老师强调的", "本课需要掌握的"),
+        ("老师在课堂上强调", "本课需要掌握"),
+        ("课堂上老师强调", "本课需要掌握"),
+        ("课堂中老师强调", "本课需要掌握"),
+        ("老师特别强调", "本课需要掌握"),
+        ("老师强调", "本课需要掌握"),
+        ("老师说的", "本课提到的"),
+        ("老师说", "本课提到"),
+        ("老师要求的", "本次需要完成的"),
+        ("老师要求", "本次需要完成"),
+        ("老师提醒的", "本课需要注意的"),
+        ("老师提醒", "本课需要注意"),
+        ("课堂原话回放：", "复习要点："),
+        ("课堂原话回放:", "复习要点："),
+        ("课堂原话：", "复习要点："),
+        ("课堂原话:", "复习要点："),
+        ("老师原话：", "复习要点："),
+        ("老师原话:", "复习要点："),
+    )
+    text = value
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text
+
+
+def _remove_unsupported_teacher_claims(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "quotes" and isinstance(item, list):
+                cleaned[key] = []
+            else:
+                cleaned[key] = _remove_unsupported_teacher_claims(item)
+        return cleaned
+    if isinstance(value, list):
+        return [_remove_unsupported_teacher_claims(item) for item in value]
+    if isinstance(value, str):
+        return _sanitize_unsupported_teacher_claim_text(value)
+    return value
+
+
+GENERIC_REVIEW_PLAN_TOPICS = {"", "课后", "课程", "数学 课程", "复习计划", "课堂复习", "本节课"}
+
+
+def _clean_topic_text(value: object) -> str:
+    text = str(value or "").strip()
+    for suffix in ("完整课堂逐字稿", "课堂逐字稿", "复习计划源文件"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip()
+    return text
+
+
+def _topic_from_source_context(
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> str:
+    explicit_topic = _clean_topic_text(review_input.topic)
+    if explicit_topic and explicit_topic not in GENERIC_REVIEW_PLAN_TOPICS:
+        return explicit_topic
+    if source_brief is not None:
+        for title in source_brief.lesson_title_candidates:
+            topic = _clean_topic_text(title)
+            if topic and topic not in GENERIC_REVIEW_PLAN_TOPICS:
+                return topic
+    source_pack = review_input.source_pack
+    if source_pack is not None:
+        for value in (source_pack.title, *(source_pack.detected_topics or [])):
+            topic = _clean_topic_text(value)
+            if topic and topic not in GENERIC_REVIEW_PLAN_TOPICS:
+                return topic
+    return explicit_topic
+
+
+def _knowledge_categories_from_source_brief(source_brief: ReviewPlanSourceBrief | None) -> list[str]:
+    if source_brief is None:
+        return []
+    categories: list[str] = []
+    for point in source_brief.knowledge_points:
+        name = _clean_topic_text(point.name)
+        if name and name not in categories:
+            categories.append(name)
+        if len(categories) >= 6:
+            break
+    return categories
+
+
 def _normalize_output_plan(
     plan: dict[str, Any],
     review_input: ReviewPlanInput,
     source_brief: ReviewPlanSourceBrief | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_final_review_plan(plan)
+    normalized = normalize_plan_math_contract(normalized)
     lesson_info = normalized.setdefault("lesson_info", {})
     if not isinstance(lesson_info, dict):
         lesson_info = {}
@@ -453,17 +706,24 @@ def _normalize_output_plan(
         lesson_info["grade"] = review_input.grade
     if review_input.lesson_date:
         lesson_info["date"] = review_input.lesson_date
+    source_topic = _topic_from_source_context(review_input, source_brief)
+    current_topic = _clean_topic_text(lesson_info.get("topic"))
+    if source_topic and (not current_topic or current_topic in GENERIC_REVIEW_PLAN_TOPICS or not review_input.topic):
+        lesson_info["topic"] = source_topic
+    if not lesson_info.get("key_categories"):
+        categories = _knowledge_categories_from_source_brief(source_brief)
+        if categories:
+            lesson_info["key_categories"] = categories
     if isinstance(lesson_info.get("assumptions"), list):
         lesson_info["assumptions"] = [
             item for item in lesson_info["assumptions"] if not _assumption_mentions_trusted_metadata(item)
         ]
     if source_brief is not None and not source_brief.teacher_emphasis:
-        normalized["quotes"] = []
-        if isinstance(lesson_info.get("quotes"), list):
-            lesson_info["quotes"] = []
-        for day in normalized.get("days", []) if isinstance(normalized.get("days"), list) else []:
-            if isinstance(day, dict) and isinstance(day.get("quotes"), list):
-                day["quotes"] = []
+        normalized = _remove_unsupported_teacher_claims(normalized)
+        lesson_info = normalized.setdefault("lesson_info", {})
+        if not isinstance(lesson_info, dict):
+            lesson_info = {}
+            normalized["lesson_info"] = lesson_info
     _ensure_single_day_spiral_review(normalized, review_input)
     return normalized
 
@@ -491,6 +751,7 @@ def _maybe_revise_plan(
     max_attempts = max_revision_attempts_for_quality(quality=quality, source_brief=source_brief)
     if max_attempts <= 0:
         return plan, quality, usage
+    question_repair_attempts_before = len(context.node_outputs.get("question_repair_attempts") or [])
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -537,6 +798,14 @@ def _maybe_revise_plan(
 
         total_usage = merge_usage(total_usage, revision_usage)
         current_plan = _normalize_output_plan(revised_plan, review_input, source_brief)
+        current_plan = _repair_source_coverage_gaps_with_context(
+            current_plan,
+            review_input=review_input,
+            source_brief=source_brief,
+            subject=subject,
+            context=context,
+            node_key=f"source_coverage_repair_after_revision_{attempt}",
+        )
         current_validation = _validate_delivery(
             current_plan,
             review_input=review_input,
@@ -547,6 +816,7 @@ def _maybe_revise_plan(
             current_plan,
             subject=subject,
             review_input=review_input,
+            source_brief=source_brief,
             context=context,
             node_key=f"quality_reviewer_rules_after_revision_{attempt}",
         )
@@ -562,11 +832,78 @@ def _maybe_revise_plan(
             node_key=f"quality_reviewer_after_revision_{attempt}",
         )
         total_usage = merge_usage(total_usage, reviewer_usage)
-        if current_quality.score >= best_quality.score:
-            best_plan = current_plan
-            best_quality = current_quality
+        best_plan = current_plan
+        best_quality = current_quality
         if not current_quality.must_revise:
             return current_plan, current_quality, total_usage
+
+    question_repair_attempts_after = len(context.node_outputs.get("question_repair_attempts") or [])
+    if (
+        best_quality.must_revise
+        and question_repair_attempts_after == question_repair_attempts_before
+        and can_repair_questions(best_plan, best_quality)
+    ):
+        attempt = max_attempts + 1
+        try:
+            repaired_plan, repair_usage = run_workflow_node(
+                question_repair_node,
+                {
+                    "input": review_input,
+                    "prompt_bundle": prompt_bundle,
+                    "plan": best_plan,
+                    "quality": best_quality,
+                    "attempt": attempt,
+                    "agent_blueprint": agent_blueprint,
+                    "source_brief": source_brief,
+                },
+                context,
+            )
+            total_usage = merge_usage(total_usage, repair_usage)
+            repaired_plan = _normalize_output_plan(repaired_plan, review_input, source_brief)
+            repaired_plan = _repair_source_coverage_gaps_with_context(
+                repaired_plan,
+                review_input=review_input,
+                source_brief=source_brief,
+                subject=subject,
+                context=context,
+                node_key=f"source_coverage_repair_after_question_repair_{attempt}",
+            )
+            repaired_validation = _validate_delivery(
+                repaired_plan,
+                review_input=review_input,
+                context=context,
+                node_key=f"review_plan_validator_after_question_repair_{attempt}",
+            )
+            repaired_local_quality = _score_quality(
+                repaired_plan,
+                subject=subject,
+                review_input=review_input,
+                source_brief=source_brief,
+                context=context,
+                node_key=f"quality_reviewer_rules_after_question_repair_{attempt}",
+            )
+            repaired_quality, reviewer_usage = _review_with_llm_quality_gate(
+                plan=repaired_plan,
+                local_quality=repaired_local_quality,
+                review_input=review_input,
+                prompt_bundle=prompt_bundle,
+                agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
+                validation=repaired_validation,
+                context=context,
+                node_key=f"quality_reviewer_after_question_repair_{attempt}",
+            )
+            total_usage = merge_usage(total_usage, reviewer_usage)
+            best_plan = repaired_plan
+            best_quality = repaired_quality
+            if not repaired_quality.must_revise:
+                return repaired_plan, repaired_quality, total_usage
+        except Exception as exc:
+            context.add_warning(
+                "question_repair_after_revision_failed",
+                f"完整修订后剩余题目级问题，但定点修复失败：{exc}",
+                "high",
+            )
 
     if best_quality.must_revise and can_soft_pass_after_revision(best_quality):
         softened_quality = soften_quality_after_revision(best_quality)
@@ -581,10 +918,108 @@ def _maybe_revise_plan(
     if best_quality.must_revise:
         context.add_warning(
             "quality_revision_required",
-            f"质量门禁在 {max_attempts} 次 revision 后仍建议人工复核；已返回当前最高分版本。",
+            f"质量门禁在 {max_attempts} 次 revision 后仍建议人工复核；已返回最新修订版本。",
             "high",
         )
     return best_plan, best_quality, total_usage
+
+
+def _should_run_final_polish(review_input: ReviewPlanInput, quality: QualityReview) -> bool:
+    return (
+        review_input.schedule_mode == "compressed"
+        and review_input.review_days == [1]
+        and not quality.must_revise
+        and quality.passed
+        and not quality.issues
+    )
+
+
+def _maybe_apply_final_polish(
+    *,
+    plan: dict[str, Any],
+    quality: QualityReview,
+    usage: dict[str, Any],
+    review_input: ReviewPlanInput,
+    prompt_bundle: Any,
+    agent_blueprint: AgenticPlanBlueprint,
+    source_brief: ReviewPlanSourceBrief | None = None,
+    subject: str,
+    context: WorkflowContext,
+) -> tuple[dict[str, Any], QualityReview, dict[str, Any]]:
+    if not _should_run_final_polish(review_input, quality):
+        return plan, quality, usage
+
+    writer_provider = resolve_review_plan_writer_provider()
+    if not _has_runtime_key_for_provider(writer_provider):
+        context.node_outputs["final_polish_skipped"] = {
+            "reason": "missing_runtime_key_for_direct_service_call",
+            "provider": writer_provider,
+        }
+        return plan, quality, usage
+
+    try:
+        polished_plan, polish_usage = run_workflow_node(
+            final_polish_node,
+            {
+                "input": review_input,
+                "prompt_bundle": prompt_bundle,
+                "plan": plan,
+                "agent_blueprint": agent_blueprint,
+                "source_brief": source_brief,
+            },
+            context,
+        )
+    except Exception as exc:
+        context.add_warning(
+            "final_polish_failed",
+            f"最终成品润色失败，已保留质量门禁通过的原计划：{exc}",
+            "medium",
+        )
+        return plan, quality, usage
+
+    total_usage = merge_usage(usage, polish_usage)
+    polished_plan = _normalize_output_plan(polished_plan, review_input, source_brief)
+    polished_plan = _repair_source_coverage_gaps_with_context(
+        polished_plan,
+        review_input=review_input,
+        source_brief=source_brief,
+        subject=subject,
+        context=context,
+        node_key="source_coverage_repair_after_final_polish",
+    )
+    polished_validation = _validate_delivery(
+        polished_plan,
+        review_input=review_input,
+        context=context,
+        node_key="review_plan_validator_after_final_polish",
+    )
+    polished_quality = _score_quality(
+        polished_plan,
+        subject=subject,
+        review_input=review_input,
+        source_brief=source_brief,
+        context=context,
+        node_key="quality_reviewer_rules_after_final_polish",
+    )
+    if polished_validation.passed and not polished_quality.must_revise:
+        context.node_outputs["final_polish_decision"] = {
+            "accepted": True,
+            "score": polished_quality.score,
+        }
+        return polished_plan, polished_quality, total_usage
+
+    context.node_outputs["final_polish_decision"] = {
+        "accepted": False,
+        "validator_passed": polished_validation.passed,
+        "score": polished_quality.score,
+        "must_revise": polished_quality.must_revise,
+    }
+    context.add_warning(
+        "final_polish_discarded",
+        "最终成品润色未通过二次质量校验，已丢弃润色版并保留原计划。",
+        "medium",
+    )
+    return plan, quality, total_usage
 
 
 def generate_single_lesson_review_plan(
@@ -717,6 +1152,14 @@ def generate_single_lesson_review_plan(
                 context,
             )
             plan = _normalize_output_plan(plan, review_input, source_brief)
+            plan = _repair_source_coverage_gaps_with_context(
+                plan,
+                review_input=review_input,
+                source_brief=source_brief,
+                subject=route.selected_subject,
+                context=context,
+                node_key="source_coverage_repair_initial",
+            )
             validation = _validate_delivery(
                 plan,
                 review_input=review_input,
@@ -727,6 +1170,7 @@ def generate_single_lesson_review_plan(
                 plan,
                 subject=route.selected_subject,
                 review_input=review_input,
+                source_brief=source_brief,
                 context=context,
                 node_key="quality_reviewer_rules_initial",
             )
@@ -743,6 +1187,17 @@ def generate_single_lesson_review_plan(
             )
             usage = merge_usage(planner_usage, usage, reviewer_usage)
             plan, quality, usage = _maybe_revise_plan(
+                plan=plan,
+                quality=quality,
+                usage=usage,
+                review_input=review_input,
+                prompt_bundle=prompt_bundle,
+                agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
+                subject=route.selected_subject,
+                context=context,
+            )
+            plan, quality, usage = _maybe_apply_final_polish(
                 plan=plan,
                 quality=quality,
                 usage=usage,

@@ -1,15 +1,33 @@
 import unittest
 
+from reportlab.graphics.shapes import Drawing
 from reportlab.platypus import Image as ReportLabImage
+from reportlab.platypus import Flowable
 
 from review_plan_templates.generate_review_pdfs import (
+    _mathjax_renderer_available,
     build_styles,
+    choice_options_need_full_width,
     localize_paragraph_text,
     normalize_portable_text,
+    normalize_portable_text_preserving_latex,
     register_fonts,
     render_latex_formula_flowable,
     rich_text_flowables,
 )
+from review_plan_workflow.math_contract import bare_math_contract_violations, normalize_bare_math_text
+
+
+def _flowable_width(flowable):
+    return getattr(flowable, "drawWidth", getattr(flowable, "width", 0))
+
+
+def _flowable_height(flowable):
+    return getattr(flowable, "drawHeight", getattr(flowable, "height", 0))
+
+
+def _is_formula_flowable(flowable):
+    return isinstance(flowable, (Drawing, ReportLabImage))
 
 
 class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
@@ -75,15 +93,55 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertNotIn("^circ", normalized)
         self.assertNotIn("cong", normalized)
 
+    def test_normalize_portable_text_normalizes_bare_greek_trig_fragments(self):
+        question = "已知alpha和beta为锐角，且tanalpha=(1)/(2)，tanbeta=(1)/(3)，则alpha+beta等于？"
+
+        normalized_question = normalize_portable_text_preserving_latex(question)
+        normalized_answer = normalize_portable_text_preserving_latex("alpha+beta=45°")
+
+        self.assertEqual(normalized_question, "已知α和β为锐角，且tanα=1/2，tanβ=1/3，则α+β等于？")
+        self.assertEqual(normalized_answer, "α+β=45°")
+        self.assertNotIn("tanalpha", normalized_question)
+        self.assertNotIn("tanbeta", normalized_question)
+        self.assertNotIn("(1)/(2)", normalized_question)
+        self.assertEqual(normalize_portable_text("alphabet"), "alphabet")
+
+    def test_math_contract_normalizes_greek_names_next_to_chinese_text(self):
+        text = "alpha角与beta三角形中，alpha斜边和beta短直角边都要写清楚。"
+
+        normalized = normalize_bare_math_text(text)
+
+        self.assertIn(r"$\alpha$角", normalized)
+        self.assertIn(r"$\beta$三角形", normalized)
+        self.assertFalse(bare_math_contract_violations(normalized))
+        self.assertEqual(normalize_bare_math_text("alphabet"), "alphabet")
+
+    def test_choice_options_with_formulas_use_full_width_layout(self):
+        self.assertTrue(choice_options_need_full_width(["A. 1,2,3", r"D. $\sqrt{2},\sqrt{3},\sqrt{5}$"], True))
+        self.assertTrue(choice_options_need_full_width(["A. 1,2,3", "D. √(2),√(3),√(5)"], True))
+
     def test_render_latex_formula_flowable_renders_fraction_as_image(self):
         flowable = render_latex_formula_flowable(
             r"\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}",
             max_width=120,
         )
 
-        self.assertIsInstance(flowable, ReportLabImage)
-        self.assertLessEqual(flowable.drawWidth, 120)
-        self.assertGreater(flowable.drawHeight, 0)
+        self.assertIsInstance(flowable, Flowable)
+        self.assertLessEqual(_flowable_width(flowable), 120)
+        self.assertGreater(_flowable_height(flowable), 0)
+
+    def test_render_latex_formula_flowable_uses_mathjax_when_available(self):
+        if not _mathjax_renderer_available():
+            self.skipTest("MathJax frontend dependencies are not installed")
+
+        flowable = render_latex_formula_flowable(
+            r"\begin{aligned} \tan\alpha&=\frac{1}{2}\\ \alpha+\beta&=45^\circ \end{aligned}",
+            max_width=180,
+        )
+
+        self.assertIsInstance(flowable, Drawing)
+        self.assertLessEqual(_flowable_width(flowable), 180)
+        self.assertGreater(_flowable_height(flowable), 0)
 
     def test_render_latex_formula_flowable_respects_requested_font_size(self):
         latex = r"\frac{a^2}{x}+\frac{b^2}{y}\ge \frac{(a+b)^2}{x+y}"
@@ -91,10 +149,10 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         body_formula = render_latex_formula_flowable(latex, max_width=180, font_size=10.3)
         small_formula = render_latex_formula_flowable(latex, max_width=180, font_size=8.6)
 
-        self.assertIsInstance(body_formula, ReportLabImage)
-        self.assertIsInstance(small_formula, ReportLabImage)
-        self.assertLess(small_formula.drawHeight, body_formula.drawHeight)
-        self.assertLess(small_formula.drawWidth, body_formula.drawWidth)
+        self.assertIsInstance(body_formula, Flowable)
+        self.assertIsInstance(small_formula, Flowable)
+        self.assertLess(_flowable_height(small_formula), _flowable_height(body_formula))
+        self.assertLess(_flowable_width(small_formula), _flowable_width(body_formula))
 
     def test_rich_text_flowables_embeds_standalone_fraction_formula_image(self):
         register_fonts()
@@ -106,7 +164,7 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
             True,
         )
 
-        self.assertTrue(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
+        self.assertTrue(any(_is_formula_flowable(flowable) for flowable in flowables))
 
     def test_rich_text_flowables_keeps_inline_fraction_formula_compact(self):
         register_fonts()
@@ -119,7 +177,7 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         )
 
         self.assertEqual(len(flowables), 1)
-        self.assertFalse(any(isinstance(flowable, ReportLabImage) for flowable in flowables))
+        self.assertFalse(any(_is_formula_flowable(flowable) for flowable in flowables))
         self.assertIn("全方和不等式", flowables[0].getPlainText())
 
     def test_rich_text_flowables_formula_size_follows_paragraph_style(self):
@@ -130,17 +188,17 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         body_images = [
             flowable
             for flowable in rich_text_flowables(text, styles["body"], True)
-            if isinstance(flowable, ReportLabImage)
+            if _is_formula_flowable(flowable)
         ]
         small_images = [
             flowable
             for flowable in rich_text_flowables(text, styles["small"], True)
-            if isinstance(flowable, ReportLabImage)
+            if _is_formula_flowable(flowable)
         ]
 
         self.assertTrue(body_images)
         self.assertTrue(small_images)
-        self.assertLess(small_images[0].drawHeight, body_images[0].drawHeight)
+        self.assertLess(_flowable_height(small_images[0]), _flowable_height(body_images[0]))
 
     def test_normalize_portable_text_normalizes_bare_latex_fragments_like_wrong_question_text(self):
         text = (
@@ -173,6 +231,19 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertIn("(a²)/(x)+(b²)/(y)≥", normalized)
         self.assertIn("______", normalized)
         self.assertIn("(x+y)", normalized)
+
+    def test_normalize_portable_text_cleans_escaped_blank_underscores(self):
+        normalized = normalize_portable_text(r"写出比例 5: \_\_\_\_:\_\_\_\_。")
+
+        self.assertEqual(normalized, "写出比例 5:____:____。")
+        self.assertNotIn("\\_", normalized)
+
+    def test_normalize_portable_text_collapses_option_formula_newline(self):
+        normalized = normalize_portable_text("A.\n\\\\sqrt{3}")
+
+        self.assertEqual(normalized, "A. √(3)")
+        self.assertNotIn("\n", normalized)
+        self.assertNotIn("\\√", normalized)
 
     def test_normalize_portable_text_renders_cases_as_printable_conditions(self):
         text = r"$\begin{cases} 2x+1 > x+3 \\ 2x+1 > -5 \\ x+3 > -5 \end{cases}$"

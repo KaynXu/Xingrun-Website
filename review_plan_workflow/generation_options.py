@@ -11,7 +11,7 @@ SUPPORTED_SCHEDULE_MODES = {"standard", "compressed", "daily", "custom"}
 MAX_REVIEW_DAYS = 30
 MAX_USER_REQUIREMENTS_CHARS = 1000
 QUESTION_COUNT_PATTERNS = (
-    re.compile(r"(?:题目|题量|练习|可打印题|打印题)?\s*(?:控制|限制|限定|保持|总共|一共|共|只要|不要超过|不超过|至少)?\s*在?\s*(\d{1,2})\s*(?:道)?\s*题"),
+    re.compile(r"(?:题目|题量|练习|可打印题|打印题)?\s*(?:控制|限制|限定|保持|总共|一共|共|只要|不要超过|不超过|至少)?\s*在?\s*(\d{1,2})\s*(?:道|个)?\s*(?:题|问题)"),
     re.compile(r"(\d{1,2})\s*(?:道)?\s*(?:题目|题量|练习|可打印题|打印题)"),
 )
 
@@ -100,6 +100,15 @@ def parse_generation_constraints(user_requirements: object) -> dict[str, object]
     }
 
 
+def _merge_raw_constraints(parsed: dict[str, object], raw_constraints: object) -> dict[str, object]:
+    constraints = dict(parsed)
+    if not isinstance(raw_constraints, Mapping):
+        return constraints
+    if isinstance(raw_constraints.get("force_parent_planner"), bool):
+        constraints["force_parent_planner"] = raw_constraints["force_parent_planner"]
+    return constraints
+
+
 def normalize_generation_options(value: object | None, *, source: str = "create") -> dict[str, object]:
     raw = _coerce_mapping(value)
     mode = str(raw.get("schedule_mode") or "standard").strip() or "standard"
@@ -119,12 +128,16 @@ def normalize_generation_options(value: object | None, *, source: str = "create"
         review_days = _parse_review_days(raw.get("review_days"))
 
     user_requirements = _clean_user_requirements(raw.get("user_requirements"))
+    constraints = _merge_raw_constraints(
+        parse_generation_constraints(user_requirements),
+        raw.get("constraints"),
+    )
     return {
         "schedule_mode": mode,
         "review_days": review_days,
         "daily_count": daily_count,
         "user_requirements": user_requirements,
-        "constraints": parse_generation_constraints(user_requirements),
+        "constraints": constraints,
         "source": str(source or raw.get("source") or "create").strip() or "create",
     }
 

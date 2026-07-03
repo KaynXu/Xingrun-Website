@@ -8,7 +8,9 @@ from .printable_questions import (
     count_printable_questions,
     merge_visible_and_raw_counts,
 )
+from .math_contract import bare_math_contract_violations
 from .schemas import QualityIssue, QualityReview, normalize_final_review_plan, validate_final_review_plan
+from .source_coverage import missing_source_coverage_groups as find_missing_source_coverage_groups
 
 
 def _contains_any(text: str, candidates: tuple[str, ...]) -> bool:
@@ -30,6 +32,14 @@ BAD_QUOTE_PATTERNS = (
     "正确率≥",
     "正确率>=",
     "填空题全部正确",
+    "独立完成全部填空题",
+    "答案正确且可推导",
+    "能口头复述",
+    "完成全部",
+    "完成选择题",
+    "完成填空题",
+    "执行清单",
+    "自查答案",
     "能独立",
 )
 BAD_MATH_TEXT_PATTERNS = (
@@ -109,6 +119,35 @@ def _clean_text(value: object) -> str:
 
 def _compact_text(value: str) -> str:
     return re.sub(r"[\s,，。.!！?？、:：;；《》「」“”\"'`（）()\[\]【】\-_/]+", "", value)
+
+
+def _plan_text_blob(plan: dict[str, Any]) -> str:
+    return "\n".join(_iter_strings(plan))
+
+
+def _compact_contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    compact_text = _compact_text(text)
+    for term in terms:
+        compact_term = _compact_text(term)
+        if compact_term and compact_term in compact_text:
+            return True
+    return False
+
+
+def _missing_source_coverage_groups(
+    normalized_plan: dict[str, Any],
+    source_brief: Any,
+    *,
+    subject_key: str,
+) -> list[str]:
+    return [
+        group.label
+        for group in find_missing_source_coverage_groups(
+            normalized_plan,
+            source_brief,
+            subject_key=subject_key,
+        )
+    ]
 
 
 def _strip_topic_suffixes(value: str) -> str:
@@ -273,6 +312,55 @@ def _choice_options_are_complete(choice: dict[str, Any]) -> bool:
     return True
 
 
+def _coverage_topic_key(value: object) -> str:
+    text = _clean_text(value)
+    compact = _compact_text(text).lower()
+    if "三角形三边满足" in compact and any(token in compact for token in ("a²+b²=c²", "a^2+b^2=c^2")):
+        return "pythagorean_converse"
+    return compact
+
+
+def _find_repeated_coverage_topics(topics: list[object]) -> list[str]:
+    seen: dict[str, str] = {}
+    repeated: list[str] = []
+    for topic in topics:
+        text = _clean_text(topic)
+        key = _coverage_topic_key(text)
+        if not key:
+            continue
+        if key in seen:
+            repeated_text = f"{seen[key]} / {text}"
+            if repeated_text not in repeated:
+                repeated.append(repeated_text)
+        else:
+            seen[key] = text
+    return repeated
+
+
+def _choice_answer_option_body(choice: dict[str, Any]) -> str:
+    answer = _clean_text(choice.get("answer")).upper()[:1]
+    options = choice.get("options") if isinstance(choice.get("options"), list) else []
+    if not answer:
+        return ""
+    for option in options:
+        text = _clean_text(option)
+        if text.upper().startswith(answer):
+            return re.sub(r"^[A-Da-d][\.．、\)]?\s*", "", text).strip()
+    return ""
+
+
+def _choice_confuses_integer_pythagorean_triple(choice: dict[str, Any]) -> bool:
+    stem = _clean_text(choice.get("question") or choice.get("stem"))
+    if "勾股数" not in stem:
+        return False
+    if any(term in stem for term in ("根式", "三边比", "边之比", "比例", "特殊直角三角形")):
+        return False
+    if any(term in stem for term in ("不是", "不属于", "错误", "不能")):
+        return False
+    answer_body = _choice_answer_option_body(choice)
+    return "√" in answer_body or "\\sqrt" in answer_body
+
+
 def review_single_lesson_plan(
     plan: dict[str, Any],
     *,
@@ -280,6 +368,7 @@ def review_single_lesson_plan(
     required_review_days: list[int] | None = None,
     schedule_mode: str = "standard",
     constraints: dict[str, Any] | None = None,
+    source_brief: Any = None,
 ) -> QualityReview:
     normalized_plan = normalize_final_review_plan(plan)
     issues: list[QualityIssue] = []
@@ -365,6 +454,16 @@ def review_single_lesson_plan(
                 suggested_fix="至少补到 5-10 个颗粒化条目；宽主题不能只写课题名或一两个大类。",
             )
         )
+    repeated_topics = _find_repeated_coverage_topics(granular_topics)
+    if repeated_topics:
+        issues.append(
+            QualityIssue(
+                severity="high",
+                category="pdf_readiness",
+                description="全课覆盖清单存在重复知识链路：" + "；".join(repeated_topics[:3]),
+                suggested_fix="合并重复条目，把空出的覆盖位补成不同知识点、方法链、题型或错因。",
+            )
+        )
 
     quotes = _collect_quotes(normalized_plan)
     bad_quotes = [quote for quote in quotes if _quote_is_bad(quote)]
@@ -448,6 +547,15 @@ def review_single_lesson_plan(
                         suggested_fix="把每道选择题改成 4 个完整选项字符串，例如 A. 具体表达；禁止只输出 A/B/C/D。",
                     )
                 )
+            if isinstance(choice, dict) and _choice_confuses_integer_pythagorean_triple(choice):
+                issues.append(
+                    QualityIssue(
+                        severity="high",
+                        category="question_quality",
+                        description=f"第 {day.get('day')} 天选择题把根式比例当成整数勾股数正确答案。",
+                        suggested_fix="若题干问“勾股数”，正确答案必须是整数勾股数组；若要考根式比例，题干应明确写“根式勾股比/特殊直角三角形三边比”。",
+                    )
+                )
 
     if schedule_mode == "compressed" and len(required_days) == 1 and days:
         unique_fills, unique_choices, _raw_fills = _collect_day_unique_question_counts(days[0])
@@ -458,6 +566,23 @@ def review_single_lesson_plan(
                     category="task_actionability",
                     description="当天课后复习的可打印题目密度不足，无法承载整节课复习。",
                     suggested_fix="当天课后复习至少提供 5 个不重复的可打印填空/选择/口述任务，并覆盖主要错因。",
+                )
+            )
+        missing_source_groups = _missing_source_coverage_groups(
+            normalized_plan,
+            source_brief,
+            subject_key=subject_key,
+        )
+        if missing_source_groups:
+            issues.append(
+                QualityIssue(
+                    severity="high",
+                    category="source_coverage",
+                    description="当天课后复习遗漏了课堂材料中的关键知识链路：" + "、".join(missing_source_groups[:5]) + "。",
+                    suggested_fix=(
+                        "在 full_review_topics、填空/选择题和主动回忆卡片中补齐这些关键链路；"
+                        "10题限制下优先把记忆题、计算题、推导题和方法口述卡分层覆盖。"
+                    ),
                 )
             )
 
@@ -487,9 +612,18 @@ def review_single_lesson_plan(
                 suggested_fix="把分式、根式、对数、分段函数等改成 `$...$` 包裹的 LaTeX；JSON 中反斜杠要转义，禁止 begincases/endcases/sqrt[/log_( 这类坏文本。",
             )
         )
+    if subject_key == "math" and bare_math_contract_violations(normalized_plan):
+        issues.append(
+            QualityIssue(
+                severity="high",
+                category="math_contract",
+                description="数学表达含裸文本片段，未使用 math_blocks 或标准 LaTeX。",
+                suggested_fix="把 tanalpha=(1)/(2)、alpha+beta=45° 这类内容改成 `$\\tan\\alpha=\\frac{1}{2}$`、`$\\alpha+\\beta=45^\\circ$`。",
+            )
+        )
 
     text_blob = str(normalized_plan)
-    if _contains_any(text_blob, (*PLACEHOLDER_PATTERNS, "正确答案")):
+    if _contains_any(text_blob, PLACEHOLDER_PATTERNS):
         issues.append(
             QualityIssue(
                 severity="high",

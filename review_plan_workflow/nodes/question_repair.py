@@ -39,15 +39,22 @@ class QuestionRepairTarget:
     kind: str
     question_position: int
     issue: QualityIssue
-    question: dict[str, Any]
+    question: Any
     day_context: dict[str, Any]
+    active_recall_key: str = ""
 
 
 _CN_TARGET_PATTERNS = [
     re.compile(r"第\s*(?P<day>\d+)\s*天.*?(?P<kind>选择题|选择|choice|choices|填空题|填空|blank|blanks).*?第\s*(?P<index>\d+)\s*题", re.I),
     re.compile(r"第\s*(?P<day>\d+)\s*天.*?第\s*(?P<index>\d+)\s*题.*?(?P<kind>选择题|选择|choice|choices|填空题|填空|blank|blanks)", re.I),
 ]
-_PATH_TARGET_RE = re.compile(r"days\[(?P<day_index>\d+)\]\.(?P<kind>choices|blanks)\[(?P<question_index>\d+)\]", re.I)
+_PATH_TARGET_RE = re.compile(
+    r"days\[(?P<day_index>\d+)\]\."
+    r"(?P<kind>choices|blanks|active_recall)"
+    r"(?:\.(?P<active_recall_key>items|cards|content))?"
+    r"\[(?P<question_index>\d+)\]",
+    re.I,
+)
 
 
 def _kind_from_text(value: str) -> str:
@@ -56,6 +63,8 @@ def _kind_from_text(value: str) -> str:
         return "choice"
     if any(token in text for token in ("填空", "blank")):
         return "blank"
+    if any(token in text for token in ("主动回忆", "口述", "active_recall", "recall")):
+        return "active_recall"
     return ""
 
 
@@ -110,10 +119,18 @@ def find_question_repair_targets(plan: dict[str, Any], quality: QualityReview) -
     targets: list[QuestionRepairTarget] = []
     seen: set[str] = set()
     for issue in repairable_issues:
+        active_recall_key = ""
         path_match = _PATH_TARGET_RE.search(str(getattr(issue, "target_path", "") or ""))
         if path_match:
             day_position = int(path_match.group("day_index"))
-            kind = "choice" if path_match.group("kind").lower() == "choices" else "blank"
+            path_kind = path_match.group("kind").lower()
+            if path_kind == "choices":
+                kind = "choice"
+            elif path_kind == "blanks":
+                kind = "blank"
+            else:
+                kind = "active_recall"
+                active_recall_key = str(path_match.group("active_recall_key") or "").strip()
             question_number = int(path_match.group("question_index")) + 1
         else:
             day_number, kind, question_number = _issue_location(issue)
@@ -131,11 +148,37 @@ def find_question_repair_targets(plan: dict[str, Any], quality: QualityReview) -
         day_number = int(day.get("day") or 0)
         if not day_number:
             return []
-        collection_name = "choices" if kind == "choice" else "blanks"
-        collection = day.get(collection_name) if isinstance(day.get(collection_name), list) else []
-        if question_number < 1 or question_number > len(collection) or not isinstance(collection[question_number - 1], dict):
+        if kind == "choice":
+            collection = day.get("choices") if isinstance(day.get("choices"), list) else []
+        elif kind == "blank":
+            collection = day.get("blanks") if isinstance(day.get("blanks"), list) else []
+        elif kind == "active_recall":
+            active_recall = day.get("active_recall")
+            if isinstance(active_recall, list):
+                collection = active_recall
+            elif isinstance(active_recall, dict):
+                if active_recall_key and isinstance(active_recall.get(active_recall_key), list):
+                    collection = active_recall.get(active_recall_key) or []
+                else:
+                    active_recall_key = next(
+                        (
+                            key
+                            for key in ("items", "cards", "content")
+                            if isinstance(active_recall.get(key), list)
+                        ),
+                        "",
+                    )
+                    collection = active_recall.get(active_recall_key) if active_recall_key else []
+            else:
+                collection = []
+        else:
             return []
-        target_id = f"day{day_number}_{kind}{question_number}"
+        if question_number < 1 or question_number > len(collection):
+            return []
+        if kind != "active_recall" and not isinstance(collection[question_number - 1], dict):
+            return []
+        target_label = "recall" if kind == "active_recall" else kind
+        target_id = f"day{day_number}_{target_label}{question_number}"
         if target_id in seen:
             continue
         seen.add(target_id)
@@ -149,6 +192,7 @@ def find_question_repair_targets(plan: dict[str, Any], quality: QualityReview) -
                 issue=issue,
                 question=copy.deepcopy(collection[question_number - 1]),
                 day_context=_day_context(day),
+                active_recall_key=active_recall_key,
             )
         )
     return targets
@@ -158,15 +202,26 @@ def can_repair_questions(plan: dict[str, Any], quality: QualityReview) -> bool:
     return bool(find_question_repair_targets(plan, quality))
 
 
-def _compact_source_brief(prompt_bundle: PromptBundle, source_brief: ReviewPlanSourceBrief | None) -> dict[str, Any]:
+def _compact_source_brief(
+    prompt_bundle: PromptBundle,
+    review_input: ReviewPlanInput,
+    source_brief: ReviewPlanSourceBrief | None,
+) -> dict[str, Any]:
     safe_brief = prompt_bundle.variables.get("source_brief")
     if not isinstance(safe_brief, dict) and source_brief is not None:
-        safe_brief = source_brief_trace_payload(source_brief)
+        safe_brief = source_brief_trace_payload(source_brief, subject_key=review_input.subject)
     if not isinstance(safe_brief, dict):
         return {}
     return {
         key: safe_brief.get(key)
-        for key in ("lesson_title_candidates", "knowledge_points", "method_chains", "common_mistakes", "confidence")
+        for key in (
+            "lesson_title_candidates",
+            "knowledge_points",
+            "method_chains",
+            "common_mistakes",
+            "coverage_requirements",
+            "confidence",
+        )
         if safe_brief.get(key) not in (None, "", [], {})
     }
 
@@ -204,7 +259,7 @@ def _repair_message(
             "user_requirements": review_input.user_requirements,
         },
         "full_review_topics": normalized.get("full_review_topics", [])[:10],
-        "source_brief": _compact_source_brief(prompt_bundle, source_brief),
+        "source_brief": _compact_source_brief(prompt_bundle, review_input, source_brief),
         "parent_blueprint": blueprint_payload,
         "targets": [
             {
@@ -252,6 +307,28 @@ def _normalize_blank_repair(value: dict[str, Any]) -> dict[str, Any]:
     return {"text": text, "answer": answer_text}
 
 
+def _normalize_active_recall_repair(value: dict[str, Any]) -> dict[str, Any]:
+    instruction = str(
+        value.get("instruction")
+        or value.get("question")
+        or value.get("prompt")
+        or value.get("stem")
+        or value.get("text")
+        or ""
+    ).strip()
+    expected = value.get("expected") or value.get("answer") or value.get("reference_answer") or value.get("analysis")
+    if isinstance(expected, list):
+        expected = "；".join(str(item).strip() for item in expected if str(item or "").strip())
+    expected_text = str(expected or "").strip()
+    if not instruction:
+        raise ValueError("active recall repair must include instruction")
+    repaired = {"instruction": instruction}
+    if expected_text:
+        repaired["expected"] = expected_text
+        repaired["answer_ref"] = expected_text
+    return repaired
+
+
 def _repairs_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     repairs = payload.get("repairs")
     if isinstance(repairs, list):
@@ -278,6 +355,25 @@ def _apply_repairs(plan: dict[str, Any], targets: list[QuestionRepairTarget], pa
             day["choices"][target.question_position] = _normalize_choice_repair(repair)
         elif target.kind == "blank":
             day["blanks"][target.question_position] = _normalize_blank_repair(repair)
+        elif target.kind == "active_recall":
+            active_recall = day.get("active_recall")
+            repaired = _normalize_active_recall_repair(repair)
+            if isinstance(active_recall, list):
+                active_recall[target.question_position] = repaired
+            elif isinstance(active_recall, dict):
+                key = target.active_recall_key or next(
+                    (
+                        candidate
+                        for candidate in ("items", "cards", "content")
+                        if isinstance(active_recall.get(candidate), list)
+                    ),
+                    "",
+                )
+                if not key or not isinstance(active_recall.get(key), list):
+                    raise ValueError("active recall repair target is not a list")
+                active_recall[key][target.question_position] = repaired
+            else:
+                raise ValueError("active recall repair target is not available")
         else:
             raise ValueError(f"unsupported repair kind: {target.kind}")
     return normalized

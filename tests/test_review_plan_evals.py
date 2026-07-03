@@ -50,11 +50,33 @@ def _pythagorean_one_day_10q_plan() -> dict:
     plan["document_title"] = "勾股数与特殊角"
     plan["audience"]["subject"] = "数学"
     plan["audience"]["grade"] = "高一"
+    plan["lesson_summary"] = "复习整数勾股数、根式比例、份数计算、αβ 和角推导、二倍角构造与配方法推导。"
+    plan["knowledge_map"] = [
+        {"id": "k1", "title": "整数勾股数", "summary": "熟记 3:4:5、5:12:13、7:24:25、9:40:41。"},
+        {"id": "k2", "title": "根式勾股数", "summary": "掌握 1:1:√2、1:√3:2、1:2:√5、1:3:√10。"},
+        {"id": "k3", "title": "α、β 定义", "summary": "α 和 β 都是短边 1 所对的锐角。"},
+        {"id": "k4", "title": "份数计算", "summary": "用斜边比例求一份长度，再还原两条直角边。"},
+        {"id": "k5", "title": "α+β=45°", "summary": "能复述构造和比例推导。"},
+        {"id": "k6", "title": "二倍角构造", "summary": "2α 对应 4:3:5，2β 对应 3:4:5，并继续追问 4β。"},
+        {"id": "k7", "title": "配方法推导", "summary": "能复述一元二次方程配方过程的关键步骤。"},
+    ]
+    plan["math_blocks"] = [
+        {"id": "pythagorean", "latex": "a^2+b^2=c^2", "display": True},
+        {"id": "alpha_beta_sum", "latex": "\\alpha+\\beta=45^\\circ", "display": True},
+        {"id": "double_angle", "latex": "2\\alpha+2\\beta=90^\\circ", "display": True},
+    ]
+    plan["teacher_checkpoints"] = [
+        {"id": "t1", "text": "基础比例必须脱口而出。"},
+        {"id": "t2", "text": "份数计算、二倍角构造和配方法推导必须能口述。"},
+    ]
+    plan["source_coverage"] = [
+        {"source_segment_id": "seg-1", "covered_by": ["k1", "k2", "k3", "k4", "k5", "k6", "k7"]}
+    ]
     fill_questions = [
         ("勾股定理中，两条直角边 a、b 和斜边 c 满足______。", "$a^2+b^2=c^2$"),
         ("3、4、5 这组三边中，斜边是______。", "5"),
         ("1:1:√2 对应的直角三角形两个锐角都是______。", "45°"),
-        ("1:√3:2 中，短直角边所对的锐角是______。", "30°"),
+        ("β 三角形斜边已知时，先用斜边比例求______长度。", "一份"),
         ("α 表示 1:2:√5 中短边 1 所对的______。", "锐角"),
     ]
     choice_questions = [
@@ -74,7 +96,7 @@ def _pythagorean_one_day_10q_plan() -> dict:
             "A",
         ),
         (
-            "构造二倍角时，课堂强调的辅助线是？",
+            "继续推导 4β 时，首先要沿用哪种课堂方法？",
             ["A. 斜边的垂直平分线", "B. 任意中线", "C. 角平分线", "D. 平行线"],
             "A",
         ),
@@ -106,8 +128,8 @@ def _pythagorean_one_day_10q_plan() -> dict:
         {
             "id": "s1",
             "day": 1,
-            "question": "口述 α+β 推导最终得到______。",
-            "answer": "45°",
+            "question": "口述一遍：先算份数，再推出 α+β=45°，并说明 2α、2β、4β 与配方法推导为什么要继续追问。",
+            "answer": "用份数还原边长；α+β=45°；2α 和 2β 互余，4β 继续用二倍角方法追问；配方法用于还原课堂推导步骤。",
         }
     ]
     return plan

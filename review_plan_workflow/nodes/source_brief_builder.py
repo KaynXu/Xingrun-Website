@@ -9,8 +9,8 @@ from review_plan_workflow.source_pack import build_lesson_source_pack, source_pa
 from review_plan_workflow.state import WorkflowContext
 
 
-def _trace_safe_source_brief(brief: ReviewPlanSourceBrief) -> dict[str, Any]:
-    return source_brief_trace_payload(brief)
+def _trace_safe_source_brief(brief: ReviewPlanSourceBrief, *, subject_key: str = "") -> dict[str, Any]:
+    return source_brief_trace_payload(brief, subject_key=subject_key)
 
 
 def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSourceBrief:
@@ -30,6 +30,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSour
             weak_points=review_input.weak_points,
             user_requirements=review_input.user_requirements,
         )
+        review_input.source_pack = source_pack
         context.node_outputs["source_pack"] = source_pack_trace_payload(source_pack)
     brief = build_deterministic_source_brief(
         raw_text=raw_text,
@@ -38,7 +39,7 @@ def _run(input_data: dict[str, Any], context: WorkflowContext) -> ReviewPlanSour
         weak_points=review_input.weak_points,
         user_requirements=review_input.user_requirements,
     )
-    context.node_outputs["source_brief"] = _trace_safe_source_brief(brief)
+    context.node_outputs["source_brief"] = _trace_safe_source_brief(brief, subject_key=review_input.subject)
     if brief.missing_fields:
         context.add_warning(
             "source_brief_missing_fields",

@@ -21,23 +21,31 @@ from review_plan_workflow.schemas import (
     validate_final_review_plan,
 )
 from review_plan_workflow.source_brief import source_brief_trace_payload
+from review_plan_workflow.source_pack import source_pack_writer_payload
 from review_plan_workflow.state import WorkflowContext
 
 
 def _source_brief_sections(
     prompt_bundle: PromptBundle,
+    review_input: ReviewPlanInput,
     source_brief: ReviewPlanSourceBrief | None,
 ) -> list[str]:
     safe_brief = prompt_bundle.variables.get("source_brief")
     if not isinstance(safe_brief, dict) and source_brief is not None:
-        safe_brief = source_brief_trace_payload(source_brief)
+        safe_brief = source_brief_trace_payload(source_brief, subject_key=review_input.subject)
     if not isinstance(safe_brief, dict) or not safe_brief:
         return []
 
     sections = [
         "结构化课堂材料：\n" + json.dumps(safe_brief, ensure_ascii=False, indent=2),
     ]
-    if source_brief is not None and source_brief.cleaned_text:
+    source_pack_payload = source_pack_writer_payload(review_input.source_pack)
+    if source_pack_payload:
+        sections.append(
+            "课堂材料章节证据包（按原文顺序跨章节节选；优先覆盖后段、公式、例题和老师要求）：\n"
+            + json.dumps(source_pack_payload, ensure_ascii=False, indent=2)
+        )
+    elif source_brief is not None and source_brief.cleaned_text:
         sections.append("课堂材料摘录：\n" + source_brief.cleaned_text[:1600])
     return sections
 
@@ -77,7 +85,7 @@ def _user_message(
             "父模型教学蓝图（必须优先执行；如果课堂信息不足，把假设写进 assumptions，不能伪装成已确认课堂事实）：\n"
             + agent_blueprint.model_dump_json(indent=2)
         )
-    source_sections = _source_brief_sections(prompt_bundle, source_brief)
+    source_sections = _source_brief_sections(prompt_bundle, review_input, source_brief)
     if source_sections:
         sections.extend(source_sections)
     else:
@@ -87,10 +95,12 @@ def _user_message(
             "硬性选择题契约：所有 choices 必须有完整 question、4 个完整 options 和 answer；options 不能只写 A/B/C/D，必须写成 A. 具体选项内容；answer 只能是 A/B/C/D。",
             f"硬性复习日契约：days 必须且只能覆盖 {review_input.review_days}；不得额外生成 1/2/7/14/30 中未被指定的日期。",
             "硬性题量契约：如果已解析老师硬约束里有 requested_question_count，最终可打印填空题和选择题总数必须精确匹配该数量。",
+            "当天10题质量契约：如果 schedule_mode=compressed 且 requested_question_count 约为 10，题目要覆盖基础记忆/公式比例、计算应用、推导链路和综合诊断；主动回忆卡片至少承接 3 条课堂方法链，不要只写薄的定义记忆题。",
             "弱素材兜底契约：如果 source_brief 缺 topic/knowledge_points 或课堂总结过短，仍要生成可交付计划；使用 subject/grade/user_requirements 做通用复习，topic 写成可读课程标题但不要出现“待确认/需确认”，需要确认的信息只写进 assumptions。",
             "覆盖清单契约：full_review_topics 必须是 5-10 条颗粒化知识点/方法链/错因；素材充足时优先来自课堂材料，素材不足时生成该年级该科目的通用复习范围，不能只写“本节课内容/综合复习”。",
             "硬性课堂金句契约：quotes 只保留课堂文本中老师真实强调过的方法句；没有证据就返回空数组，禁止把使用说明、完成标准、正确率要求或“每一个复习日都要完整复习整节课内容”写成金句。",
             "硬性数学公式契约：数学公式、分式、根式、对数、分段函数、区间和不等式链必须写成 `$...$` LaTeX；JSON 反斜杠要正确转义，禁止 begincases/endcases/sqrt[/log_( 等坏文本。",
+            "硬性章节覆盖契约：如果存在“课堂材料章节证据包”，最终计划必须覆盖其中每个 selected section 的核心知识、公式或老师动作；不得只依据前 1600 字生成。",
             "硬性顶层 JSON 契约：顶层必须直接包含 lesson_info, full_review_topics, quotes, days；禁止输出 plan, reviewPlan, result, data, output, content, response 等包裹字段；禁止把 days 放进 plan.days 或其他内层对象。",
             "请返回可直接进入现有 PDF 渲染链路的 JSON object，不要输出 Markdown 包裹。",
         ]

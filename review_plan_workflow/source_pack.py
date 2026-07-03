@@ -20,6 +20,9 @@ SOURCE_PACK_SCHEMA_VERSION = "lesson_source_pack_v1"
 SOURCE_PACK_PARSER_VERSION = "source_pack_parser_v2"
 MAX_SOURCE_SEGMENTS = 240
 SEGMENT_MAX_CHARS = 900
+WRITER_MAX_SECTIONS = 10
+WRITER_SECTION_EXCERPT_CHARS = 760
+WRITER_TOTAL_EXCERPT_CHARS = 5600
 _MATH_TOKEN_RE = re.compile(
     r"(\$[^$]{1,120}\$|\\(?:sqrt|frac|angle|triangle|cong|circ)\b[^\s，。；;、]{0,40}|√\d+|[αβ]\+?[αβ]?|[a-zA-Z]\^\d|[0-9]+:[0-9√:]+)"
 )
@@ -318,6 +321,225 @@ def source_pack_trace_payload(source_pack: LessonSourcePack | dict | None) -> di
         "raw_source_hash": str(data.get("raw_source_hash") or ""),
         "cleaned_source_hash": str(data.get("cleaned_source_hash") or ""),
         "cache_key": str(data.get("cache_key") or ""),
+    }
+
+
+def _source_pack_data(source_pack: LessonSourcePack | dict | None) -> dict[str, Any]:
+    if source_pack is None:
+        return {}
+    if hasattr(source_pack, "model_dump"):
+        return source_pack.model_dump()
+    if isinstance(source_pack, dict):
+        return source_pack
+    return {}
+
+
+def _segment_section_id(segment: dict[str, Any]) -> str:
+    return str(segment.get("section_id") or segment.get("id") or "")
+
+
+def _segment_signal_score(segment: dict[str, Any], action_segment_ids: set[str]) -> int:
+    text = str(segment.get("text") or "")
+    score = 0
+    score += min(6, int(segment.get("math_count") or 0) * 2)
+    score += min(4, int(segment.get("example_count") or 0) * 2)
+    score += 3 if segment.get("local_topics") else 0
+    score += 3 if str(segment.get("id") or "") in action_segment_ids else 0
+    score += 2 if str(segment.get("kind") or "") == "heading" else 0
+    if _TEACHER_ACTION_RE.search(text):
+        score += 3
+    if _MATH_TOKEN_RE.search(text):
+        score += 2
+    return score
+
+
+def _section_excerpt(
+    segments: list[dict[str, Any]],
+    *,
+    action_segment_ids: set[str],
+    max_chars: int,
+) -> str:
+    if not segments or max_chars <= 0:
+        return ""
+    ranked = sorted(
+        enumerate(segments),
+        key=lambda item: (
+            -_segment_signal_score(item[1], action_segment_ids),
+            item[0],
+        ),
+    )
+    selected_indexes = {0}
+    for index, segment in ranked:
+        if _segment_signal_score(segment, action_segment_ids) <= 0 and len(selected_indexes) >= 2:
+            continue
+        selected_indexes.add(index)
+        if len(selected_indexes) >= 5:
+            break
+    parts: list[str] = []
+    used = 0
+    for index in sorted(selected_indexes):
+        text = str(segments[index].get("text") or "").strip()
+        if not text:
+            continue
+        remaining = max_chars - used
+        if remaining <= 0:
+            break
+        clipped = text[:remaining]
+        parts.append(clipped)
+        used += len(clipped) + 1
+    return "\n".join(parts).strip()
+
+
+def source_pack_writer_payload(
+    source_pack: LessonSourcePack | dict | None,
+    *,
+    max_sections: int = WRITER_MAX_SECTIONS,
+    section_excerpt_chars: int = WRITER_SECTION_EXCERPT_CHARS,
+    total_excerpt_chars: int = WRITER_TOTAL_EXCERPT_CHARS,
+) -> dict[str, Any]:
+    """Build a bounded, section-aware source payload for the writer prompt.
+
+    This payload intentionally contains short source excerpts, so callers must
+    only use it inside transient LLM messages. Persisted traces should continue
+    using ``source_pack_trace_payload``.
+    """
+
+    data = _source_pack_data(source_pack)
+    raw_segments = data.get("segments") if isinstance(data.get("segments"), list) else []
+    segments = [segment for segment in raw_segments if isinstance(segment, dict) and str(segment.get("text") or "").strip()]
+    if not segments:
+        return {}
+
+    raw_actions = data.get("teacher_actions") if isinstance(data.get("teacher_actions"), list) else []
+    teacher_actions = [item for item in raw_actions if isinstance(item, dict)]
+    action_segment_ids = {str(item.get("segment_id") or "") for item in teacher_actions if str(item.get("segment_id") or "")}
+
+    sections: list[dict[str, Any]] = []
+    section_lookup: dict[str, int] = {}
+    for segment in segments:
+        section_id = _segment_section_id(segment)
+        if section_id not in section_lookup:
+            section_lookup[section_id] = len(sections)
+            sections.append(
+                {
+                    "section_id": section_id,
+                    "title": str(segment.get("section_title") or "")[:100],
+                    "segments": [],
+                    "score": 0,
+                }
+            )
+        section = sections[section_lookup[section_id]]
+        if not section["title"] and str(segment.get("kind") or "") == "heading":
+            section["title"] = str(segment.get("text") or "")[:100]
+        section["segments"].append(segment)
+        section["score"] += _segment_signal_score(segment, action_segment_ids)
+
+    selected_indexes = set(range(len(sections))) if len(sections) <= max_sections else {0, len(sections) - 1}
+    if len(sections) > max_sections:
+        ranked_sections = sorted(
+            enumerate(sections),
+            key=lambda item: (-int(item[1].get("score") or 0), item[0]),
+        )
+        for index, _section in ranked_sections:
+            selected_indexes.add(index)
+            if len(selected_indexes) >= max_sections:
+                break
+
+    segment_to_section = {str(segment.get("id") or ""): _segment_section_id(segment) for segment in segments}
+    selected_section_ids = {sections[index]["section_id"] for index in selected_indexes if index < len(sections)}
+    section_payloads: list[dict[str, Any]] = []
+    used_chars = 0
+    for index in sorted(selected_indexes):
+        if index >= len(sections):
+            continue
+        section = sections[index]
+        remaining = total_excerpt_chars - used_chars
+        if remaining <= 0:
+            break
+        excerpt = _section_excerpt(
+            section["segments"],
+            action_segment_ids=action_segment_ids,
+            max_chars=min(section_excerpt_chars, remaining),
+        )
+        if not excerpt:
+            continue
+        section_segments = section["segments"]
+        local_topics = _dedupe_strings(
+            [
+                topic
+                for segment in section_segments
+                for topic in (segment.get("local_topics") or [])
+                if isinstance(topic, str)
+            ],
+            6,
+        )
+        math_count = sum(int(segment.get("math_count") or 0) for segment in section_segments)
+        example_count = sum(int(segment.get("example_count") or 0) for segment in section_segments)
+        section_payloads.append(
+            {
+                "section_id": section["section_id"],
+                "title": section["title"],
+                "segment_count": len(section_segments),
+                "char_count": sum(int(segment.get("char_count") or len(str(segment.get("text") or ""))) for segment in section_segments),
+                "math_count": math_count,
+                "example_count": example_count,
+                "local_topics": local_topics,
+                "excerpt": excerpt,
+            }
+        )
+        used_chars += len(excerpt)
+
+    math_blocks = []
+    for block in data.get("math_blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        section_id = segment_to_section.get(str(block.get("segment_id") or ""), "")
+        if section_id and section_id not in selected_section_ids:
+            continue
+        math_blocks.append(
+            {
+                "id": str(block.get("id") or ""),
+                "raw": str(block.get("raw") or "")[:80],
+                "latex": str(block.get("latex") or "")[:120],
+                "segment_id": str(block.get("segment_id") or ""),
+                "section_id": section_id,
+            }
+        )
+        if len(math_blocks) >= 30:
+            break
+
+    action_payloads = []
+    for action in teacher_actions:
+        section_id = segment_to_section.get(str(action.get("segment_id") or ""), "")
+        if section_id and section_id not in selected_section_ids:
+            continue
+        action_payloads.append(
+            {
+                "id": str(action.get("id") or ""),
+                "action_type": str(action.get("action_type") or "instruction"),
+                "segment_id": str(action.get("segment_id") or ""),
+                "section_id": section_id,
+                "text": str(action.get("text") or "")[:160],
+            }
+        )
+        if len(action_payloads) >= 12:
+            break
+
+    return {
+        "schema_version": str(data.get("schema_version") or SOURCE_PACK_SCHEMA_VERSION),
+        "parser_version": str(data.get("parser_version") or SOURCE_PACK_PARSER_VERSION),
+        "source_id": str(data.get("source_id") or ""),
+        "title": str(data.get("title") or "")[:100],
+        "source_hash": str(data.get("source_hash") or ""),
+        "cache_key": str(data.get("cache_key") or ""),
+        "segments_count": len(segments),
+        "sections_count": len(sections),
+        "selected_sections_count": len(section_payloads),
+        "detected_topics": list(data.get("detected_topics") or [])[:12],
+        "sections": section_payloads,
+        "math_blocks": math_blocks,
+        "teacher_actions": action_payloads,
+        "warnings": list(data.get("warnings") or [])[:10],
     }
 
 

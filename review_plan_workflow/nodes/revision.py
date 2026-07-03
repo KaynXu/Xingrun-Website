@@ -26,11 +26,12 @@ from review_plan_workflow.state import WorkflowContext
 
 def _source_brief_revision_section(
     prompt_bundle: PromptBundle,
+    review_input: ReviewPlanInput,
     source_brief: ReviewPlanSourceBrief | None,
 ) -> str:
     safe_brief = prompt_bundle.variables.get("source_brief")
     if not isinstance(safe_brief, dict) and source_brief is not None:
-        safe_brief = source_brief_trace_payload(source_brief)
+        safe_brief = source_brief_trace_payload(source_brief, subject_key=review_input.subject)
     if not isinstance(safe_brief, dict) or not safe_brief:
         return ""
     return "结构化课堂材料：\n" + json.dumps(safe_brief, ensure_ascii=False, indent=2)
@@ -60,6 +61,7 @@ def _revision_message(
         "不得虚构教材页码、考试日期、学生成绩、老师原话或未提供的题目来源。",
         "subject、grade、lesson_date、review_days 是页面/班级/工作流元数据，可以写入 lesson_info；不要把它们写成“课堂转录中可核验”或“学生用户输入”的假设。",
         "老师原话必须来自课堂材料、source_brief 或老师本次要求；没有 teacher_emphasis 证据时 quotes 留空。",
+        "如果 issue 指向当天10题覆盖不足，不要增加题量；在既定题量内重分配题目，把缺失的 source key chains 放进 full_review_topics、填空/选择题和主动回忆卡片。",
         "如果课堂材料缺 topic/knowledge_points，不要让计划失败；改成基于 subject/grade/user_requirements 的通用复习主题，标题和 topic 不要出现“待确认/需确认”，并在 assumptions 写清“课堂主题需老师确认”。",
         "弱素材修订目标：保留可打印题目、可执行清单和完整 days；把未经证实的具体知识点从“课堂事实”改成 assumptions 或通用练习范围，不要写进可见标题。",
         f"必须返回完整 JSON object，且 days 只包含 {review_input.review_days} 的复习节点。",
@@ -73,7 +75,7 @@ def _revision_message(
     if agent_blueprint is not None:
         sections.append("父模型教学蓝图：\n" + agent_blueprint.model_dump_json(indent=2))
     if prompt_bundle is not None:
-        source_section = _source_brief_revision_section(prompt_bundle, source_brief)
+        source_section = _source_brief_revision_section(prompt_bundle, review_input, source_brief)
         if source_section:
             sections.append(source_section)
     sections.extend(
