@@ -1546,7 +1546,13 @@ def rich_text_flowables(
                     continue
             parts.append(("text", _format_latex_math_segment(segment)))
         else:
-            parts.append(("text", normalize_portable_text(segment)))
+            text = normalize_portable_text(segment)
+            if text:
+                if segment[:1].isspace() and not text.startswith(" "):
+                    text = " " + text
+                if segment[-1:].isspace() and not text.endswith(" "):
+                    text += " "
+            parts.append(("text", text))
 
     if not saw_rendered_formula:
         combined = "".join(str(part) for kind, part in parts if kind == "text").strip()
@@ -2039,6 +2045,7 @@ def make_choice_table(choices, styles, chinese_only=False):
                     styles["small"],
                     chinese_only,
                     max_width=72 * mm,
+                    render_display_formulas=False,
                 )
             )
         if choice_options_need_full_width(choice["options"], chinese_only):
