@@ -2017,6 +2017,190 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
             "local_quality_passed_with_high_source_confidence",
         )
 
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_compressed_single_day_accepts_final_polish_after_local_validation(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] == 1]
+        polished = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        polished["days"] = [day for day in polished["days"] if day["day"] == 1]
+        polished["weak_points_summary"] = "学生需要巩固一次函数题干信息提取，并把斜率、截距和代入步骤说完整。"
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_final_polish.return_value = (
+            polished,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 30, "output_tokens": 40},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], polished["weak_points_summary"])
+        self.assertEqual(usage["input_tokens"], 40)
+        self.assertEqual(usage["output_tokens"], 60)
+        self.assertEqual(mock_final_polish.call_args.kwargs["stage"], "final_polish")
+        self.assertEqual(mock_final_polish.call_args.kwargs["timeout_seconds"], 60.0)
+        self.assertEqual(mock_final_polish.call_args.kwargs["provider"], "deepseek")
+        self.assertEqual(mock_final_polish.call_args.kwargs["model"], "deepseek-v4-pro")
+        self.assertIn("\\tan(\\alpha+\\beta)", mock_final_polish.call_args.kwargs["user_message"])
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(run["node_outputs"]["final_polish_decision"]["accepted"])
+        self.assertTrue(run["node_outputs"]["review_plan_validator_after_final_polish"]["passed"])
+
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_compressed_single_day_keeps_original_when_final_polish_fails(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] == 1]
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_final_polish.side_effect = TimeoutError("final polish timeout")
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], plan["weak_points_summary"])
+        self.assertEqual(usage["input_tokens"], 10)
+        self.assertEqual(usage["output_tokens"], 20)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertTrue(any(warning["code"] == "final_polish_failed" for warning in run["warnings"]))
+
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_final_polish_discards_plan_that_fails_second_validation(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        plan["days"] = [day for day in plan["days"] if day["day"] == 1]
+        invalid_polished = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+        mock_final_polish.return_value = (
+            invalid_polished,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 30, "output_tokens": 40},
+        )
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-07-01",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+        )
+
+        generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            lesson_id=lesson_id,
+            organization_id=1,
+            generation_options={"schedule_mode": "compressed", "review_days": [1]},
+            include_usage=True,
+        )
+
+        self.assertEqual(generated["weak_points_summary"], plan["weak_points_summary"])
+        self.assertEqual(usage["input_tokens"], 40)
+        self.assertEqual(usage["output_tokens"], 60)
+        run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
+        self.assertFalse(run["node_outputs"]["final_polish_decision"]["accepted"])
+        self.assertFalse(run["node_outputs"]["review_plan_validator_after_final_polish"]["passed"])
+        self.assertTrue(any(warning["code"] == "final_polish_discarded" for warning in run["warnings"]))
+
+    @patch("review_plan_workflow.nodes.final_polish.generate_review_plan_json")
+    @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")
+    def test_final_polish_skips_non_single_day_compressed_plan(
+        self,
+        mock_generate_plan,
+        mock_final_polish,
+    ):
+        config_runtime.write_file_config({"deepseek_api_key": "test-deepseek"})
+        plan = valid_single_lesson_plan(subject="数学", topic="一次函数")
+        mock_generate_plan.return_value = (
+            plan,
+            {"provider": "deepseek", "model": "deepseek-v4-pro", "input_tokens": 10, "output_tokens": 20},
+        )
+
+        _generated, usage = generate_single_lesson_review_plan(
+            summary_text="课堂总结文本",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            weak_points="斜率判断",
+            lesson_date="2026-07-01",
+            provider="openai",
+            model="gpt-5.4",
+            generation_options={"schedule_mode": "standard", "review_days": [1, 2, 7, 14, 30]},
+            include_usage=True,
+        )
+
+        mock_final_polish.assert_not_called()
+        self.assertEqual(usage["input_tokens"], 10)
+        self.assertEqual(usage["output_tokens"], 20)
+
     @patch("review_plan_workflow.nodes.revision.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.llm_quality_reviewer.generate_review_plan_json")
     @patch("review_plan_workflow.nodes.plan_generator.generate_review_plan_json")

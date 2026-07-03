@@ -9,12 +9,14 @@ from config_runtime import (
     resolve_review_plan_model,
     resolve_review_plan_provider,
     resolve_review_plan_reasoning_effort,
+    resolve_review_plan_writer_provider,
 )
 
 from .executor import run_workflow_node
 from .evaluator import build_review_plan_evaluation
 from .generation_options import normalize_generation_options
 from .nodes import (
+    final_polish_node,
     intake_normalizer_node,
     parent_planner_node,
     plan_generator_node,
@@ -922,6 +924,104 @@ def _maybe_revise_plan(
     return best_plan, best_quality, total_usage
 
 
+def _should_run_final_polish(review_input: ReviewPlanInput, quality: QualityReview) -> bool:
+    return (
+        review_input.schedule_mode == "compressed"
+        and review_input.review_days == [1]
+        and not quality.must_revise
+        and quality.passed
+        and not quality.issues
+    )
+
+
+def _maybe_apply_final_polish(
+    *,
+    plan: dict[str, Any],
+    quality: QualityReview,
+    usage: dict[str, Any],
+    review_input: ReviewPlanInput,
+    prompt_bundle: Any,
+    agent_blueprint: AgenticPlanBlueprint,
+    source_brief: ReviewPlanSourceBrief | None = None,
+    subject: str,
+    context: WorkflowContext,
+) -> tuple[dict[str, Any], QualityReview, dict[str, Any]]:
+    if not _should_run_final_polish(review_input, quality):
+        return plan, quality, usage
+
+    writer_provider = resolve_review_plan_writer_provider()
+    if not _has_runtime_key_for_provider(writer_provider):
+        context.node_outputs["final_polish_skipped"] = {
+            "reason": "missing_runtime_key_for_direct_service_call",
+            "provider": writer_provider,
+        }
+        return plan, quality, usage
+
+    try:
+        polished_plan, polish_usage = run_workflow_node(
+            final_polish_node,
+            {
+                "input": review_input,
+                "prompt_bundle": prompt_bundle,
+                "plan": plan,
+                "agent_blueprint": agent_blueprint,
+                "source_brief": source_brief,
+            },
+            context,
+        )
+    except Exception as exc:
+        context.add_warning(
+            "final_polish_failed",
+            f"最终成品润色失败，已保留质量门禁通过的原计划：{exc}",
+            "medium",
+        )
+        return plan, quality, usage
+
+    total_usage = merge_usage(usage, polish_usage)
+    polished_plan = _normalize_output_plan(polished_plan, review_input, source_brief)
+    polished_plan = _repair_source_coverage_gaps_with_context(
+        polished_plan,
+        review_input=review_input,
+        source_brief=source_brief,
+        subject=subject,
+        context=context,
+        node_key="source_coverage_repair_after_final_polish",
+    )
+    polished_validation = _validate_delivery(
+        polished_plan,
+        review_input=review_input,
+        context=context,
+        node_key="review_plan_validator_after_final_polish",
+    )
+    polished_quality = _score_quality(
+        polished_plan,
+        subject=subject,
+        review_input=review_input,
+        source_brief=source_brief,
+        context=context,
+        node_key="quality_reviewer_rules_after_final_polish",
+    )
+    if polished_validation.passed and not polished_quality.must_revise:
+        context.node_outputs["final_polish_decision"] = {
+            "accepted": True,
+            "score": polished_quality.score,
+        }
+        return polished_plan, polished_quality, total_usage
+
+    context.node_outputs["final_polish_decision"] = {
+        "accepted": False,
+        "validator_passed": polished_validation.passed,
+        "score": polished_quality.score,
+        "must_revise": polished_quality.must_revise,
+    }
+    context.add_warning(
+        "final_polish_discarded",
+        "最终成品润色未通过二次质量校验，已丢弃润色版并保留原计划。",
+        "medium",
+    )
+    return plan, quality, total_usage
+
+
 def generate_single_lesson_review_plan(
     *,
     summary_text: str,
@@ -1087,6 +1187,17 @@ def generate_single_lesson_review_plan(
             )
             usage = merge_usage(planner_usage, usage, reviewer_usage)
             plan, quality, usage = _maybe_revise_plan(
+                plan=plan,
+                quality=quality,
+                usage=usage,
+                review_input=review_input,
+                prompt_bundle=prompt_bundle,
+                agent_blueprint=agent_blueprint,
+                source_brief=source_brief,
+                subject=route.selected_subject,
+                context=context,
+            )
+            plan, quality, usage = _maybe_apply_final_polish(
                 plan=plan,
                 quality=quality,
                 usage=usage,
