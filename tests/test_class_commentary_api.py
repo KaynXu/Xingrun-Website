@@ -503,6 +503,42 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(stored["chat_provider"], "openai")
         self.assertEqual(stored["chat_model"], "gpt-5.5")
 
+    def test_generate_filters_students_to_attending_roster(self):
+        class_id = lesson_manager.save_class(
+            "数学·七年级·5班",
+            subject="数学",
+            grade="七年级",
+            organization_id=self.owner["organization_id"],
+            teacher_user_id=self.owner["id"],
+        )
+        present_student = lesson_manager.create_student_for_class(class_id, "小王")
+        absent_student = lesson_manager.create_student_for_class(class_id, "小李")
+        another_present_student = lesson_manager.create_student_for_class(class_id, "小张")
+        (self.skill_dir / "teacher-a.skill").write_text("warm direct style", encoding="utf-8")
+        task = self._create_transcribed_task(class_id, "小王和小张今天计算有进步")
+
+        def fake_charge(**kwargs):
+            result = kwargs["producer"]()
+            return result[0] if isinstance(result, tuple) else result
+
+        with patch.object(self.app_module, "has_class_commentary_api_key", return_value=True), \
+             patch.object(self.app_module, "_run_ai_feature_with_charge", side_effect=fake_charge), \
+             patch.object(self.app_module, "generate_class_commentary_feedback", return_value=("到课反馈", {"input_tokens": 3, "output_tokens": 2})) as generate:
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{task['id']}/generate",
+                headers=self.headers,
+                json={
+                    "skill_id": "teacher-a",
+                    "attending_student_ids": [present_student["id"], another_present_student["id"]],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        generate.assert_called_once()
+        sent_students = generate.call_args.kwargs["students"]
+        self.assertEqual([student["id"] for student in sent_students], [present_student["id"], another_present_student["id"]])
+        self.assertNotIn(absent_student["id"], [student["id"] for student in sent_students])
+
     def test_generate_failure_returns_500_with_failed_task_payload(self):
         class_id = self._create_class_with_student()
         (self.skill_dir / "teacher-a.skill").write_text("warm direct style", encoding="utf-8")

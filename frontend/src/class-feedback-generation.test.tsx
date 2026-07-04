@@ -19,7 +19,9 @@ test('class feedback generation page uses class-commentary api client', () => {
 test('class feedback generation page uses shadcn components for visible controls', () => {
   assert.match(source, /@\/components\/ui\/button/);
   assert.match(source, /@\/components\/ui\/card/);
+  assert.match(source, /@\/components\/ui\/checkbox/);
   assert.match(source, /@\/components\/ui\/input/);
+  assert.match(source, /@\/components\/ui\/popover/);
   assert.match(source, /@\/components\/ui\/progress/);
   assert.match(source, /@\/components\/ui\/select/);
   assert.match(source, /@\/components\/ui\/badge/);
@@ -58,7 +60,7 @@ test('class feedback generation page exposes generated task history', () => {
 test('class feedback generation page saves transcript before generation', () => {
   assert.match(source, /if \(!trimmedConfirmedTranscript\) \{\s*setErrorMessage\('请先确认转写文本'\);/);
   assert.match(source, /const savedTask = task && canUseTranscript\s*\?\s*\(transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task\)\s*:\s*await createClassCommentaryTextTask\(Number\(selectedClassId\), trimmedConfirmedTranscript\);/);
-  assert.match(source, /await generateClassCommentaryFeedback\(savedTask\.id, selectedSkillId\)/);
+  assert.match(source, /await generateClassCommentaryFeedback\(savedTask\.id, selectedSkillId, attendingStudentIds\)/);
 });
 
 test('class feedback generation page does not trim undefined persisted transcript', () => {
@@ -67,11 +69,29 @@ test('class feedback generation page does not trim undefined persisted transcrip
 
 test('class feedback generation page allows manual transcript generation without audio task', () => {
   assert.match(source, /const canCreateManualTextTask = !task \|\| task\.status === 'uploaded' \|\| task\.status === 'transcribing';/);
-  assert.match(source, /const canGenerate = !busy && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\);/);
+  assert.match(source, /const canGenerate = !busy && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && \(!classStudents\.length \|\| attendingStudentIds\.length > 0\);/);
   assert.match(source, /disabled=\{loadingInitial\}/);
   assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
 });
 
 test('class feedback generation creates a new text task when the selected task is still transcribing', () => {
   assert.match(source, /const savedTask = task && canUseTranscript\s*\?\s*\(transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task\)\s*:\s*await createClassCommentaryTextTask\(Number\(selectedClassId\), trimmedConfirmedTranscript\);/);
+});
+
+test('class feedback generation page loads class students and renders attendance selection', () => {
+  assert.match(source, /type ClassFeedbackStudent = \{\s*id: number;\s*name: string;/);
+  assert.match(source, /apiFetch<\{ students: ClassFeedbackStudent\[] \}>\(`\/api\/classes\/\$\{encodeURIComponent\(selectedClassId\)\}\/students`\)/);
+  assert.match(source, /const \[attendingStudentIds, setAttendingStudentIds\] = useState<number\[]>\(\[]\);/);
+  assert.match(source, /setAttendingStudentIds\(nextStudents\.map\(\(item\) => item\.id\)\);/);
+  assert.match(source, /<PopoverTrigger asChild>/);
+  assert.match(source, /<Button type="button" variant="outline" disabled=\{!selectedClassId \|\| busy\}>\s*到课学生\s*<\/Button>/);
+  assert.match(source, /<PopoverTitle>到课学生<\/PopoverTitle>/);
+  assert.match(source, /<Checkbox/);
+  assert.match(source, /全选/);
+  assert.doesNotMatch(source, /type="checkbox"/);
+  assert.doesNotMatch(source, /rounded-lg border border-border\/70 px-3 py-3/);
+});
+
+test('class feedback generation class select uses popper content for stable scrolling', () => {
+  assert.match(source, /<SelectContent position="popper" className="max-h-72">/);
 });

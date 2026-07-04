@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,14 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -45,6 +54,11 @@ import { apiFetch } from '../../workspaceShared';
 
 type ClassFeedbackGenerationPageProps = {
   currentUser: CurrentUser;
+};
+
+type ClassFeedbackStudent = {
+  id: number;
+  name: string;
 };
 
 function canUseTranscriptState(task: ClassCommentaryTask | null): boolean {
@@ -114,6 +128,8 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [skills, setSkills] = useState<ClassCommentarySkill[]>([]);
   const [historyTasks, setHistoryTasks] = useState<ClassCommentaryTask[]>([]);
+  const [classStudents, setClassStudents] = useState<ClassFeedbackStudent[]>([]);
+  const [attendingStudentIds, setAttendingStudentIds] = useState<number[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedSkillId, setSelectedSkillId] = useState('');
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -122,6 +138,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const [errorMessage, setErrorMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingClassStudents, setLoadingClassStudents] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copied, setCopied] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -160,6 +177,40 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   }, []);
 
   useEffect(() => {
+    if (!selectedClassId) {
+      setClassStudents([]);
+      setAttendingStudentIds([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingClassStudents(true);
+    apiFetch<{ students: ClassFeedbackStudent[] }>(`/api/classes/${encodeURIComponent(selectedClassId)}/students`)
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        const nextStudents = Array.isArray(payload.students) ? payload.students : [];
+        setClassStudents(nextStudents);
+        setAttendingStudentIds(nextStudents.map((item) => item.id));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setClassStudents([]);
+          setAttendingStudentIds([]);
+          setErrorMessage(error instanceof Error ? error.message : '加载学生名单失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingClassStudents(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClassId]);
+
+  useEffect(() => {
     if (!task || !shouldPollClassCommentaryTask(task.status)) {
       return;
     }
@@ -189,7 +240,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const canCreateManualTextTask = !task || task.status === 'uploaded' || task.status === 'transcribing';
   const canCreateTask = !loadingInitial && !busy && Boolean(selectedClassId && audioFile);
   const canSaveTranscript = !busy && canUseTranscript && hasTranscriptText;
-  const canGenerate = !busy && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask);
+  const canGenerate = !busy && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
 
   async function handleCreateTask() {
     if (!selectedClassId || !audioFile) {
@@ -243,6 +294,10 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
       setErrorMessage('请先确认转写文本');
       return;
     }
+    if (classStudents.length && !attendingStudentIds.length) {
+      setErrorMessage('请选择到课学生');
+      return;
+    }
     setBusy(true);
     setErrorMessage('');
     try {
@@ -252,7 +307,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
       setTask(savedTask);
       setHistoryTasks((current) => mergeHistoryTask(current, savedTask));
       setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text || '');
-      const nextTask = await generateClassCommentaryFeedback(savedTask.id, selectedSkillId);
+      const nextTask = await generateClassCommentaryFeedback(savedTask.id, selectedSkillId, attendingStudentIds);
       setTask(nextTask);
       setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
     } catch (error) {
@@ -287,6 +342,15 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     setErrorMessage('');
     setCopied(false);
     setHistoryDialogOpen(false);
+  }
+
+  function handleToggleAttendingStudent(studentId: number, checked: boolean) {
+    setAttendingStudentIds((current) => {
+      if (checked) {
+        return current.includes(studentId) ? current : [...current, studentId];
+      }
+      return current.filter((item) => item !== studentId);
+    });
   }
 
   return (
@@ -396,20 +460,68 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
                 <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                   <div className="flex flex-col gap-2">
                     <p className="text-sm font-medium text-foreground">班级</p>
-                    <Select value={selectedClassId || undefined} onValueChange={setSelectedClassId}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="请选择班级" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {classes.map((item) => (
-                            <SelectItem key={item.id} value={String(item.id)}>
-                              {item.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <Select value={selectedClassId || undefined} onValueChange={setSelectedClassId}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="请选择班级" />
+                        </SelectTrigger>
+                        <SelectContent position="popper" className="max-h-72">
+                          <SelectGroup>
+                            {classes.map((item) => (
+                              <SelectItem key={item.id} value={String(item.id)}>
+                                {item.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline" disabled={!selectedClassId || busy}>
+                            到课学生
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-72">
+                          <PopoverHeader>
+                            <PopoverTitle>到课学生</PopoverTitle>
+                            <PopoverDescription>
+                              {loadingClassStudents ? '名单加载中' : classStudents.length ? `已到 ${attendingStudentIds.length}/${classStudents.length}` : '暂无学生名单'}
+                            </PopoverDescription>
+                          </PopoverHeader>
+                          {loadingClassStudents ? (
+                            <div className="flex flex-col gap-2">
+                              <Skeleton className="h-8 w-full" />
+                              <Skeleton className="h-8 w-full" />
+                            </div>
+                          ) : classStudents.length ? (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <Button type="button" size="xs" variant="outline" onClick={() => setAttendingStudentIds(classStudents.map((item) => item.id))} disabled={busy}>
+                                  全选
+                                </Button>
+                                <Button type="button" size="xs" variant="outline" onClick={() => setAttendingStudentIds([])} disabled={busy}>
+                                  清空
+                                </Button>
+                              </div>
+                              <ScrollArea className="max-h-56">
+                                <div className="flex flex-col gap-2 pr-2">
+                                  {classStudents.map((student) => (
+                                    <label key={student.id} className="flex min-h-8 items-center gap-2 text-sm text-foreground">
+                                      <Checkbox
+                                        checked={attendingStudentIds.includes(student.id)}
+                                        onCheckedChange={(checked) => handleToggleAttendingStudent(student.id, checked === true)}
+                                        disabled={busy}
+                                      />
+                                      <span className="min-w-0 truncate">{student.name}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </ScrollArea>
+                            </>
+                          ) : null}
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <p className="text-sm font-medium text-foreground">同事风格</p>
@@ -417,7 +529,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="请选择风格" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" className="max-h-72">
                         <SelectGroup>
                           {skills.map((item) => (
                             <SelectItem key={item.id} value={item.id}>

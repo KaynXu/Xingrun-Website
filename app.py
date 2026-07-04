@@ -3942,6 +3942,38 @@ def _get_accessible_class_commentary_task_or_error(user: dict, task_id: int):
     return task, None
 
 
+def _filter_class_commentary_students_by_attendance(class_students: list[dict], data: dict):
+    raw_student_ids = data.get("attending_student_ids")
+    if raw_student_ids is None:
+        return class_students, None
+    if not isinstance(raw_student_ids, list):
+        return [], (jsonify({"error": "attending_student_ids must be a list"}), 400)
+
+    selected_ids: set[int] = set()
+    for raw_student_id in raw_student_ids:
+        if isinstance(raw_student_id, bool):
+            return [], (jsonify({"error": "attending_student_ids must contain student ids"}), 400)
+        try:
+            student_id = int(raw_student_id)
+        except (TypeError, ValueError):
+            return [], (jsonify({"error": "attending_student_ids must contain student ids"}), 400)
+        if student_id <= 0:
+            return [], (jsonify({"error": "attending_student_ids must contain student ids"}), 400)
+        selected_ids.add(student_id)
+
+    if not selected_ids:
+        return [], (jsonify({"error": "attending_student_ids is required"}), 400)
+
+    class_student_ids = {int(student.get("id") or 0) for student in class_students}
+    if not selected_ids.issubset(class_student_ids):
+        return [], (jsonify({"error": "attending_student_ids must belong to class"}), 400)
+    return [
+        student
+        for student in class_students
+        if int(student.get("id") or 0) in selected_ids
+    ], None
+
+
 def _member_can_read_student_profile(user: dict, student_id: int) -> bool:
     if user.get("role") != "member":
         return True
@@ -8556,6 +8588,9 @@ def api_class_commentary_task_generate(task_id: int):
     if not cls:
         return jsonify({"error": "not found"}), 404
     class_students = list_students_for_class(int(task["class_id"]))
+    class_students, attendance_error = _filter_class_commentary_students_by_attendance(class_students, data or {})
+    if attendance_error:
+        return attendance_error
     skill_dir = str(get_config().get("colleague_skill_dir") or "")
     try:
         skill = load_colleague_skill(skill_dir, skill_id)

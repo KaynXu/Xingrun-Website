@@ -67,3 +67,8 @@ test('fetchClassCommentaryTasks exposes the class-commentary task list helper', 
 test('createClassCommentaryTextTask exposes the manual transcript task helper', () => {
   assert.equal(typeof createClassCommentaryTextTask, 'function');
 });
+
+test('generateClassCommentaryFeedback sends attending student ids to generation api', () => {
+  assert.match(source, /export async function generateClassCommentaryFeedback\(taskId: number, skillId: string, attendingStudentIds: number\[]/);
+  assert.match(source, /body: JSON\.stringify\(\{ skill_id: skillId, attending_student_ids: attendingStudentIds \}\)/);
+});

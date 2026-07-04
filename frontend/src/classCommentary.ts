@@ -153,10 +153,10 @@ export async function saveClassCommentaryTranscript(taskId: number, text: string
   return normalizeClassCommentaryTask(payload);
 }
 
-export async function generateClassCommentaryFeedback(taskId: number, skillId: string): Promise<ClassCommentaryTask> {
+export async function generateClassCommentaryFeedback(taskId: number, skillId: string, attendingStudentIds: number[] = []): Promise<ClassCommentaryTask> {
   const payload = await apiFetch<Record<string, unknown>>(`${buildClassCommentaryTaskPath(taskId)}/generate`, {
     method: 'POST',
-    body: JSON.stringify({ skill_id: skillId }),
+    body: JSON.stringify({ skill_id: skillId, attending_student_ids: attendingStudentIds }),
   });
   return normalizeClassCommentaryTask(payload);
 }
