@@ -83,9 +83,11 @@ test('class feedback generation page loads class students and renders attendance
   assert.match(source, /apiFetch<\{ students: ClassFeedbackStudent\[] \}>\(`\/api\/classes\/\$\{encodeURIComponent\(selectedClassId\)\}\/students`\)/);
   assert.match(source, /const \[attendingStudentIds, setAttendingStudentIds\] = useState<number\[]>\(\[]\);/);
   assert.match(source, /setAttendingStudentIds\(nextStudents\.map\(\(item\) => item\.id\)\);/);
+  assert.match(source, /const attendanceListHeight = Math\.min\(224, Math\.max\(32, classStudents\.length \* 40 - 8\)\);/);
   assert.match(source, /<PopoverTrigger asChild>/);
   assert.match(source, /<Button type="button" variant="outline" disabled=\{!selectedClassId \|\| busy\}>\s*到课学生\s*<\/Button>/);
   assert.match(source, /<PopoverTitle>到课学生<\/PopoverTitle>/);
+  assert.match(source, /<ScrollArea className="max-h-56 overflow-hidden" style=\{\{ height: attendanceListHeight \}\}>/);
   assert.match(source, /<Checkbox/);
   assert.match(source, /全选/);
   assert.doesNotMatch(source, /type="checkbox"/);

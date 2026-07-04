@@ -241,6 +241,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   const canCreateTask = !loadingInitial && !busy && Boolean(selectedClassId && audioFile);
   const canSaveTranscript = !busy && canUseTranscript && hasTranscriptText;
   const canGenerate = !busy && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
+  const attendanceListHeight = Math.min(224, Math.max(32, classStudents.length * 40 - 8));
 
   async function handleCreateTask() {
     if (!selectedClassId || !audioFile) {
@@ -503,7 +504,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
                                   清空
                                 </Button>
                               </div>
-                              <ScrollArea className="max-h-56">
+                              <ScrollArea className="max-h-56 overflow-hidden" style={{ height: attendanceListHeight }}>
                                 <div className="flex flex-col gap-2 pr-2">
                                   {classStudents.map((student) => (
                                     <label key={student.id} className="flex min-h-8 items-center gap-2 text-sm text-foreground">
