@@ -94,6 +94,14 @@ test('class feedback generation page loads class students and renders attendance
   assert.doesNotMatch(source, /rounded-lg border border-border\/70 px-3 py-3/);
 });
 
+test('class feedback generation page remembers selected coworker style for the current teacher', () => {
+  assert.match(source, /readClassCommentarySkillPreference/);
+  assert.match(source, /writeClassCommentarySkillPreference/);
+  assert.match(source, /setSelectedSkillId\(\(currentValue\) => currentValue \|\| readClassCommentarySkillPreference\(currentUser, nextSkills\) \|\| \(nextSkills\[0\]\?\.id \|\| ''\)\);/);
+  assert.match(source, /function handleSkillChange\(nextSkillId: string\) \{\s*setSelectedSkillId\(nextSkillId\);\s*writeClassCommentarySkillPreference\(currentUser, nextSkillId\);/);
+  assert.match(source, /<Select value=\{selectedSkillId \|\| undefined\} onValueChange=\{handleSkillChange\}>/);
+});
+
 test('class feedback generation class select uses popper content for stable scrolling', () => {
   assert.match(source, /<SelectContent position="popper" className="max-h-72">/);
 });

@@ -1,4 +1,9 @@
-import { apiFetch, apiUploadFormWithProgress } from './workspaceShared';
+import {
+  apiFetch,
+  apiUploadFormWithProgress,
+  readLocalStorageItem,
+  writeLocalStorageItem,
+} from './workspaceShared';
 
 export type ClassCommentaryStatus = 'uploaded' | 'transcribing' | 'transcribed' | 'generating' | 'ready' | 'failed';
 export type ClassCommentaryFailureStage = '' | 'transcription' | 'generation';
@@ -32,6 +37,11 @@ export type ClassCommentaryTask = {
   updated_at: string;
 };
 
+type ClassCommentarySkillPreferenceUser = {
+  id?: number | string | null;
+  organization_id?: number | string | null;
+};
+
 const validStatuses = new Set<ClassCommentaryStatus>([
   'uploaded',
   'transcribing',
@@ -48,6 +58,37 @@ function stringValue(value: unknown): string {
 
 function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : Number(value || 0) || 0;
+}
+
+function storageKeyPart(value: unknown, fallback: string): string {
+  const normalized = String(value ?? '').trim();
+  return normalized || fallback;
+}
+
+export function buildClassCommentarySkillPreferenceKey(user: ClassCommentarySkillPreferenceUser | null | undefined): string {
+  return `xr_class_commentary_skill:${storageKeyPart(user?.organization_id, '0')}:${storageKeyPart(user?.id, '0')}`;
+}
+
+export function readClassCommentarySkillPreference(
+  user: ClassCommentarySkillPreferenceUser | null | undefined,
+  skills: ClassCommentarySkill[],
+): string {
+  const savedSkillId = readLocalStorageItem(buildClassCommentarySkillPreferenceKey(user)).trim();
+  if (!savedSkillId) {
+    return '';
+  }
+  return skills.some((item) => item.id === savedSkillId) ? savedSkillId : '';
+}
+
+export function writeClassCommentarySkillPreference(
+  user: ClassCommentarySkillPreferenceUser | null | undefined,
+  skillId: string,
+): void {
+  const normalizedSkillId = skillId.trim();
+  if (!normalizedSkillId) {
+    return;
+  }
+  writeLocalStorageItem(buildClassCommentarySkillPreferenceKey(user), normalizedSkillId);
 }
 
 export function normalizeClassCommentaryTask(source: Record<string, unknown>): ClassCommentaryTask {

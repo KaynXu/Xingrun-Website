@@ -45,10 +45,12 @@ import {
   fetchClassCommentaryTasks,
   fetchClassCommentaryTask,
   generateClassCommentaryFeedback,
+  readClassCommentarySkillPreference,
   saveClassCommentaryTranscript,
   shouldPollClassCommentaryTask,
   type ClassCommentarySkill,
   type ClassCommentaryTask,
+  writeClassCommentarySkillPreference,
 } from '../../classCommentary';
 import { apiFetch } from '../../workspaceShared';
 
@@ -124,7 +126,7 @@ function mergeHistoryTask(historyTasks: ClassCommentaryTask[], nextTask: ClassCo
   return [nextTask, ...historyTasks.filter((item) => item.id !== nextTask.id)].slice(0, 30);
 }
 
-export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: ClassFeedbackGenerationPageProps) {
+export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenerationPageProps) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [skills, setSkills] = useState<ClassCommentarySkill[]>([]);
   const [historyTasks, setHistoryTasks] = useState<ClassCommentaryTask[]>([]);
@@ -159,7 +161,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
         setSkills(nextSkills);
         setHistoryTasks(nextHistoryTasks);
         setSelectedClassId((currentValue) => currentValue || (nextClasses[0] ? String(nextClasses[0].id) : ''));
-        setSelectedSkillId((currentValue) => currentValue || (nextSkills[0]?.id || ''));
+        setSelectedSkillId((currentValue) => currentValue || readClassCommentarySkillPreference(currentUser, nextSkills) || (nextSkills[0]?.id || ''));
       })
       .catch((error) => {
         if (!cancelled) {
@@ -174,7 +176,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentUser.id, currentUser.organization_id]);
 
   useEffect(() => {
     if (!selectedClassId) {
@@ -336,13 +338,20 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
   }
 
   function handleSelectHistoryTask(nextTask: ClassCommentaryTask) {
+    const nextSkillId = nextTask.skill_id || selectedSkillId;
     setTask(nextTask);
     setSelectedClassId(String(nextTask.class_id));
-    setSelectedSkillId(nextTask.skill_id || selectedSkillId);
+    setSelectedSkillId(nextSkillId);
+    writeClassCommentarySkillPreference(currentUser, nextSkillId);
     setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
     setErrorMessage('');
     setCopied(false);
     setHistoryDialogOpen(false);
+  }
+
+  function handleSkillChange(nextSkillId: string) {
+    setSelectedSkillId(nextSkillId);
+    writeClassCommentarySkillPreference(currentUser, nextSkillId);
   }
 
   function handleToggleAttendingStudent(studentId: number, checked: boolean) {
@@ -526,7 +535,7 @@ export function ClassFeedbackGenerationPage({ currentUser: _currentUser }: Class
                   </div>
                   <div className="flex flex-col gap-2">
                     <p className="text-sm font-medium text-foreground">同事风格</p>
-                    <Select value={selectedSkillId || undefined} onValueChange={setSelectedSkillId}>
+                    <Select value={selectedSkillId || undefined} onValueChange={handleSkillChange}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="请选择风格" />
                       </SelectTrigger>
