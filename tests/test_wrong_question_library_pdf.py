@@ -288,7 +288,7 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         rotated = PILImage.open(io.BytesIO(base64.b64decode(encoded_bytes)))
         self.assertEqual(rotated.size, (1, 2))
 
-    def test_generate_student_wrong_question_library_pdf_skips_image_fetch_for_non_geometry(self):
+    def test_generate_student_wrong_question_library_pdf_fetches_original_image_for_non_geometry(self):
         records = [
             {
                 "student_name": "Alice",
@@ -310,6 +310,7 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, "", "")
 
         with patch("urllib.request.urlopen") as urlopen, patch("pdf_engine.subprocess.run", side_effect=fake_run):
+            urlopen.return_value.__enter__.return_value.read.return_value = SAMPLE_PNG_BYTES
             result = pdf_engine.generate_student_wrong_question_library_pdf(
                 student_name="Alice",
                 class_name="六年级 1 班",
@@ -320,8 +321,8 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertEqual(result, str(output_path.resolve()))
         self.assertTrue(output_path.exists())
         self.assertGreater(output_path.stat().st_size, 0)
-        urlopen.assert_not_called()
-        self.assertEqual(captured_payloads[0]["records"][0]["image_data_url"], "")
+        urlopen.assert_called_once_with("https://files.example.com/non-geometry-1.png", timeout=10)
+        self.assertRegex(captured_payloads[0]["records"][0]["image_data_url"], r"^data:image/png;base64,")
 
     def test_generate_student_wrong_question_library_pdf_passes_teacher_title_once_to_browser_renderer(self):
         records = [
@@ -442,6 +443,18 @@ class WrongQuestionLibraryPdfTestCase(unittest.TestCase):
         self.assertEqual(len(card._cellvalues), 3)
         self.assertIsInstance(card._cellvalues[1][0], Paragraph)
         self.assertEqual(card._cellvalues[1][0].getPlainText(), "图片暂时无法载入，已保留原图记录。")
+
+    def test_build_wrong_question_image_card_uses_non_geometry_copy(self):
+        with patch("urllib.request.urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = SAMPLE_PNG_BYTES
+            card = pdf_engine._build_wrong_question_geometry_image_card(
+                "https://files.example.com/question-1.png",
+                pdf_engine._make_styles(),
+                is_geometry=False,
+            )
+
+        self.assertEqual(card._cellvalues[0][0].getPlainText(), "原题图片")
+        self.assertEqual(card._cellvalues[2][0].getPlainText(), "保留原图入库，便于对照复盘。")
 
     def test_recognize_wrong_question_image_rejects_blank_non_geometry_text(self):
         with self.assertRaises(ValueError):

@@ -74,18 +74,22 @@ function buildQuestionBlock(record) {
     `;
   }
 
-  if (record.is_geometry) {
-    if (record.image_data_url) {
-      return `
-        ${questionTextBlock}
-        <div class="geometry-card source-image-card">
-          <div class="geometry-title">几何原题图片</div>
-          <img src="${record.image_data_url}" alt="几何原题图片" class="geometry-image source-image" />
-          <div class="geometry-caption">保留原图入库，便于按图复盘几何关系。</div>
-        </div>
-      `;
-    }
+  if (record.image_data_url) {
+    const imageTitle = record.is_geometry ? '几何原题图片' : '原题图片';
+    const imageCaption = record.is_geometry
+      ? '保留原图入库，便于按图复盘几何关系。'
+      : '保留原图入库，便于对照复盘。';
+    return `
+      ${questionTextBlock}
+      <div class="geometry-card source-image-card">
+        <div class="geometry-title">${imageTitle}</div>
+        <img src="${record.image_data_url}" alt="${imageTitle}" class="geometry-image source-image" />
+        <div class="geometry-caption">${imageCaption}</div>
+      </div>
+    `;
+  }
 
+  if (record.is_geometry) {
     return `
       ${questionTextBlock}
       <div class="geometry-card">

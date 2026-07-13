@@ -113,6 +113,25 @@ test('buildDocumentMarkup renders generated diagram with its recognized question
   assert.doesNotMatch(markup, /保留原图入库/);
 });
 
+test('buildDocumentMarkup renders original image for a non-geometry scan record', async () => {
+  const markup = await buildDocumentMarkup({
+    studentName: 'Alice',
+    className: '六年级 1 班',
+    teacherTitle: '平台管理员',
+    records: [{
+      created_at: '2026-07-13 12:00:00',
+      is_geometry: false,
+      question_text: '第1页扫描错题（见原PDF页面图片）',
+      image_data_url: 'data:image/png;base64,ZmFrZQ==',
+    }],
+  });
+
+  assert.match(markup, /原题图片/);
+  assert.match(markup, /class="geometry-card source-image-card"/);
+  assert.match(markup, /class="geometry-image source-image"/);
+  assert.match(markup, /保留原图入库，便于对照复盘。/);
+});
+
 test('calculateSourceImageFrameWidth preserves image ratio within the page height', () => {
   assert.equal(calculateSourceImageFrameWidth({
     naturalWidth: 992,
