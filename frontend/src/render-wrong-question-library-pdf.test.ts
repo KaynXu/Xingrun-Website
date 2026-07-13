@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildDocumentMarkup,
+  calculateSourceImageFrameWidth,
   resolveChromiumLaunchOptions,
 } from '../scripts/renderWrongQuestionLibraryPdf.mjs';
 
@@ -79,10 +80,13 @@ test('buildDocumentMarkup keeps non-empty question blocks for missing notes and 
   });
 
   assert.equal((markup.match(/class="question-text-block"/g) || []).length, 1);
-  assert.equal((markup.match(/class="geometry-card"/g) || []).length, 2);
+  assert.equal((markup.match(/class="geometry-card(?: source-image-card)?"/g) || []).length, 2);
   assert.match(markup, /向量 AB 长度为 √\(16\)/);
   assert.match(markup, /mjx-container/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZQ=="/);
+  assert.match(markup, /class="geometry-card source-image-card"/);
+  assert.match(markup, /class="geometry-image source-image"/);
+  assert.match(markup, /\.source-image \{[\s\S]*?width: 100%;[\s\S]*?height: auto;[\s\S]*?max-height: none;/);
   assert.match(markup, /图片暂时无法载入，已保留原图记录。/);
   assert.doesNotMatch(markup, /\\overrightarrow|undefined/);
 });
@@ -107,6 +111,21 @@ test('buildDocumentMarkup renders generated diagram with its recognized question
   assert.match(markup, /生成图像/);
   assert.match(markup, /src="data:image\/svg\+xml;base64,PHN2Zz48L3N2Zz4="/);
   assert.doesNotMatch(markup, /保留原图入库/);
+});
+
+test('calculateSourceImageFrameWidth preserves image ratio within the page height', () => {
+  assert.equal(calculateSourceImageFrameWidth({
+    naturalWidth: 992,
+    naturalHeight: 1404,
+    availableWidth: 688,
+    maxImageHeight: 737,
+  }), 737 * (992 / 1404));
+  assert.equal(calculateSourceImageFrameWidth({
+    naturalWidth: 1404,
+    naturalHeight: 992,
+    availableWidth: 688,
+    maxImageHeight: 737,
+  }), 688);
 });
 
 test('resolveChromiumLaunchOptions prefers explicit environment paths', async () => {

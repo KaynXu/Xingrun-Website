@@ -25,6 +25,7 @@ const COMMON_CHROMIUM_EXECUTABLE_PATHS = {
   ],
 };
 const LINUX_CHROMIUM_STABILITY_ARGS = ['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'];
+const SOURCE_IMAGE_MAX_HEIGHT_MM = 195;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -77,9 +78,9 @@ function buildQuestionBlock(record) {
     if (record.image_data_url) {
       return `
         ${questionTextBlock}
-        <div class="geometry-card">
+        <div class="geometry-card source-image-card">
           <div class="geometry-title">几何原题图片</div>
-          <img src="${record.image_data_url}" alt="几何原题图片" class="geometry-image" />
+          <img src="${record.image_data_url}" alt="几何原题图片" class="geometry-image source-image" />
           <div class="geometry-caption">保留原图入库，便于按图复盘几何关系。</div>
         </div>
       `;
@@ -389,6 +390,18 @@ export async function buildDocumentMarkup(payload) {
             color: #0f172a;
           }
 
+          .source-image-card {
+            width: 100%;
+            padding: 0;
+            overflow: hidden;
+            margin-left: auto;
+            margin-right: auto;
+          }
+
+          .source-image-card .geometry-title {
+            padding: 12px 16px 0;
+          }
+
           .geometry-image {
             display: block;
             max-width: 100%;
@@ -399,10 +412,22 @@ export async function buildDocumentMarkup(payload) {
             background: #ffffff;
           }
 
+          .source-image {
+            width: 100%;
+            max-width: none;
+            height: auto;
+            max-height: none;
+            border-radius: 0;
+          }
+
           .geometry-caption {
             margin-top: 12px;
             font-size: 12px;
             color: #64748b;
+          }
+
+          .source-image-card .geometry-caption {
+            padding: 0 16px 12px;
           }
 
           @media (max-width: 760px) {
@@ -455,6 +480,51 @@ export async function resolveChromiumLaunchOptions({
   return args ? { args } : undefined;
 }
 
+export function calculateSourceImageFrameWidth({
+  naturalWidth,
+  naturalHeight,
+  availableWidth,
+  maxImageHeight,
+}) {
+  const width = Number(naturalWidth);
+  const height = Number(naturalHeight);
+  const containerWidth = Number(availableWidth);
+  const heightLimit = Number(maxImageHeight);
+  if (width <= 0 || height <= 0 || containerWidth <= 0 || heightLimit <= 0) {
+    return 0;
+  }
+  return Math.min(containerWidth, heightLimit * (width / height));
+}
+
+async function fitSourceImageFrames(page) {
+  const maxImageHeight = SOURCE_IMAGE_MAX_HEIGHT_MM * (96 / 25.4);
+  await page.evaluate(async ({ heightLimit }) => {
+    const images = Array.from(document.querySelectorAll('.source-image'));
+    await Promise.all(images.map((image) => {
+      if (image.complete && image.naturalWidth > 0) {
+        return Promise.resolve();
+      }
+      return new Promise((resolveImage) => {
+        image.addEventListener('load', resolveImage, { once: true });
+        image.addEventListener('error', resolveImage, { once: true });
+      });
+    }));
+
+    for (const image of images) {
+      const card = image.closest('.source-image-card');
+      const availableWidth = card?.parentElement?.clientWidth || card?.clientWidth || 0;
+      if (!card || image.naturalWidth <= 0 || image.naturalHeight <= 0 || availableWidth <= 0) {
+        continue;
+      }
+      const frameWidth = Math.min(
+        availableWidth,
+        heightLimit * (image.naturalWidth / image.naturalHeight),
+      );
+      card.style.width = `${frameWidth}px`;
+    }
+  }, { heightLimit: maxImageHeight });
+}
+
 async function main() {
   const [, , inputPath, outputPath] = process.argv;
 
@@ -471,6 +541,7 @@ async function main() {
     const page = await browser.newPage();
     await page.setContent(documentMarkup, { waitUntil: 'load' });
     await page.emulateMedia({ media: 'screen' });
+    await fitSourceImageFrames(page);
     await mkdir(dirname(outputPath), { recursive: true });
     await page.pdf({
       path: outputPath,
