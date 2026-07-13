@@ -608,6 +608,8 @@ def _normalize_task_blocks_payload(value: Any) -> tuple[list[dict[str, Any]], li
 
 def _normalize_day(day: dict[str, Any]) -> dict[str, Any]:
     normalized = copy.deepcopy(day)
+    for key in ("timed_practice", "checkpoint_quiz", "spiral_review"):
+        normalized.pop(key, None)
     try:
         day_number = int(normalized.get("day") or normalized.get("day_number") or 0) or 1
     except (TypeError, ValueError):

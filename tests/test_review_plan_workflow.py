@@ -105,6 +105,10 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn("full_review_topics` 是首页“全课覆盖清单”，必须输出 5-10 条颗粒化条目", math_prompt)
         self.assertIn("JSON 字符串中的 LaTeX 反斜杠必须转义", math_prompt)
         self.assertIn("禁止把使用说明、完成标准、正确率要求、系统兜底句写进 `quotes`", math_prompt)
+        self.assertNotIn("timed_practice", math_prompt)
+        self.assertNotIn("checkpoint_quiz", math_prompt)
+        self.assertNotIn("spiral_review", math_prompt)
+        self.assertNotIn("timed_practice", ielts_prompt)
 
     def test_quality_gate_flags_invalid_single_lesson_shape(self):
         review = review_single_lesson_plan({"lesson_info": {"topic": "一次函数"}, "days": []}, subject="math")
@@ -195,11 +199,13 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         )
         self.assertTrue(review.passed, [issue.description for issue in review.issues])
 
-    def test_compressed_single_day_normalization_adds_lightweight_spiral_review(self):
+    def test_compressed_single_day_normalization_drops_non_rendered_legacy_modules(self):
         plan = valid_single_lesson_plan(subject="数学", topic="勾股数与特殊角推导")
         plan["days"] = [plan["days"][0]]
         plan["days"][0]["day"] = 1
-        plan["days"][0].pop("spiral_review", None)
+        plan["days"][0]["timed_practice"] = {"instruction": "完成填空题第1、2、3题。"}
+        plan["days"][0]["checkpoint_quiz"] = {"instruction": "任选2题完成。"}
+        plan["days"][0]["spiral_review"] = ["隔题复现。"]
         review_input = ReviewPlanInput(
             summary_text="勾股数、特殊角度αβ与和角推导完整课堂逐字稿",
             subject="数学",
@@ -212,9 +218,9 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
 
         normalized = _normalize_output_plan(plan, review_input)
 
-        self.assertIn("spiral_review", normalized["days"][0])
-        self.assertIn("交叉回收", normalized["days"][0]["spiral_review"][0])
-        self.assertIn("隔题复现", normalized["days"][0]["spiral_review"][1])
+        self.assertNotIn("timed_practice", normalized["days"][0])
+        self.assertNotIn("checkpoint_quiz", normalized["days"][0])
+        self.assertNotIn("spiral_review", normalized["days"][0])
 
     def test_output_normalization_converts_bare_math_to_latex_contract(self):
         plan = valid_single_lesson_plan(subject="数学", topic="特殊角推导")
@@ -446,8 +452,8 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         criteria = "\n".join(blueprint.success_criteria)
         self.assertIn("只输出 day=1", instructions)
         self.assertIn("至少提供 5 个不重复的可打印题目", instructions)
-        self.assertIn("worked_example", instructions)
-        self.assertIn("error_log", criteria)
+        self.assertIn("blanks、choices 和 active_recall", instructions)
+        self.assertIn("包含组件：completion_standard", criteria)
 
     def test_time_allocator_uses_readable_label_for_compressed_one_day_plan(self):
         from review_plan_workflow.nodes.time_allocator import time_allocator_node
@@ -2103,6 +2109,7 @@ class ReviewPlanWorkflowTestCase(unittest.TestCase):
         self.assertIn('"grade": "高一"', reviewer_kwargs["user_message"])
         self.assertIn("不要因为课堂材料里没重复出现这些字段", reviewer_kwargs["user_message"])
         self.assertIn("弱素材降级", reviewer_kwargs["user_message"])
+        self.assertIn("只对最终 PDF 可见内容判定 high issue", reviewer_kwargs["user_message"])
         run = lesson_manager.get_latest_review_plan_run_for_lesson(lesson_id)
         self.assertIn("parent_planner", run["node_outputs"])
         self.assertIn("quality_reviewer_llm", run["node_outputs"])

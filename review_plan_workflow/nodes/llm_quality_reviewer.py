@@ -45,6 +45,7 @@ def _review_message(
             "内容边界：teacher quotes 必须来自课堂材料、source_brief 或老师本次要求；没有证据的老师原话仍是 high issue。",
             "弱素材降级：如果 source_brief 缺 topic/knowledge_points 或 lesson_title_candidates_count 为 0，但计划是可打印、题目可做、并把主题/知识点写成 assumptions/待确认/通用复习，不要判为不可交付；最多给 medium 提醒。",
             "低证据硬失败只用于计划把推测内容伪装成已确认课堂事实，且会明显误导老师或学生；普通数学兜底题、年级适配题和通用复习目标不应仅因课堂材料缺失而失败。",
+            "交付边界：只对最终 PDF 可见内容判定 high issue；不可见的额外规划字段不能单独阻断生成。",
             "当天10题覆盖：如果 schedule_mode=compressed 且题量约 10，道数正确但遗漏 source key chains、方法推导或口述复盘，必须给出覆盖度问题和定向修订建议。",
             "如果 source_brief.teacher_emphasis 为空，quotes 应为空或不使用；不要接受没有课堂证据的“老师原话”。",
             "必须返回严格 JSON object，字段按 output_contract。",
