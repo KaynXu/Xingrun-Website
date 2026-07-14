@@ -1218,6 +1218,8 @@ Revision `learning_evidence_snapshot_json`只用于后台学习提取, 不直接
 
 本文的`永久保留`指正常产品生命周期内不被重新生成, 编辑或普通删除覆盖. 普通删除使用 soft delete: 隐藏 task, generation 和 revision, 撤销相关 evidence, 将 Mem0 desired state 转为 delete, 但保留受限审计记录.
 
+Soft delete 判定以任何已存在的 task, generation 或 revision 历史为准. 即使尚未登记 skill, 尚未提取 memory 或确认时未选择学习, 也不得退回 hard delete 并级联删除审计链.
+
 依法或由明确授权触发的隐私擦除是唯一例外. Erasure flow 物理删除或不可逆脱敏必须擦除的 transcript, roster, prompt, output, learning evidence snapshot 和 memory content, 同时保留不含个人内容的 erasure event, object ID, 时间和操作结果. 不能为了满足审计而继续保存被要求擦除的个人文本.
 
 删除一条来源 evidence 不影响仍由其他 active evidence 支持的共享学生事实. 删除整个 organization 时清理该 organization 的所有 Mem0 records 和 Qdrant vectors.
