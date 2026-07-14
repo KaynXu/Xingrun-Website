@@ -157,6 +157,46 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
             )
         self.assertEqual(self._row_counts(), counts_after_first)
 
+    def test_repeat_import_keeps_an_evolved_active_version(self):
+        content = "# Teacher One\nUse short sentences.\n"
+        source_path = self._source_path("teacher-one.skill", content)
+        manifest = {
+            "organization_id": self.org_one_id,
+            "skill_id": "teacher-one",
+            "owner_teacher_user_id": self.teacher_one_id,
+            "source_path": str(source_path),
+            "content": content,
+        }
+        imported = lesson_manager.import_class_commentary_skill_manifest(**manifest)
+        evolved_content = content + "Prefer one concrete next step.\n"
+        evolved_hash = hashlib.sha256(evolved_content.encode("utf-8")).hexdigest()
+        with lesson_manager.get_conn() as conn:
+            version = conn.execute(
+                """
+                INSERT INTO class_commentary_skill_versions (
+                    organization_id, skill_registry_id, version_no, version_kind,
+                    content, content_hash, review_status
+                ) VALUES (?, ?, 2, 'candidate', ?, ?, 'approved')
+                """,
+                (
+                    self.org_one_id,
+                    imported["registry_id"],
+                    evolved_content,
+                    evolved_hash,
+                ),
+            )
+            conn.execute(
+                "UPDATE class_commentary_skills SET active_version_id=? WHERE id=?",
+                (version.lastrowid, imported["registry_id"]),
+            )
+        counts_before_repeat = self._row_counts()
+
+        repeated = lesson_manager.import_class_commentary_skill_manifest(**manifest)
+
+        self.assertEqual(repeated["active_version_id"], version.lastrowid)
+        self.assertEqual(repeated["content"], evolved_content)
+        self.assertEqual(self._row_counts(), counts_before_repeat)
+
     def test_cross_organization_owner_is_rejected_and_teacher_lists_are_isolated(self):
         source_one = self._source_path("teacher-one.skill", "Teacher one style")
         source_two = self._source_path("teacher-two.skill", "Teacher two style")

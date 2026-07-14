@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import io
 import json
@@ -79,7 +80,17 @@ from lesson_manager import (
     ClassCommentaryConfirmationRequestConflict,
     ClassCommentaryDraftVersionConflict,
     ClassCommentaryGenerationRequestConflict,
+    ClassCommentaryMemoryEvidenceNotRevocable,
+    ClassCommentaryMemoryEvidenceRequestConflict,
     ClassCommentaryMemoryNotEnabled,
+    ClassCommentaryMemoryRetryRequestConflict,
+    ClassCommentaryMemoryRevisionNotRetryable,
+    ClassCommentarySkillActivationRequestConflict,
+    ClassCommentarySkillCandidateNotReady,
+    ClassCommentarySkillCandidateRequestConflict,
+    ClassCommentarySkillCandidateStale,
+    ClassCommentarySkillVersionConflict,
+    activate_class_commentary_skill_candidate_version,
     actor_can_manage_user,
     attach_student_library_pdf_path,
     build_wrong_question_practice_pack_schedule,
@@ -95,6 +106,7 @@ from lesson_manager import (
     bind_parent_to_student,
     complete_review_plan_version,
     create_class_commentary_task,
+    create_class_commentary_skill_candidate_build,
     complete_class_commentary_generation,
     confirm_class_commentary_feedback,
     finalize_class_commentary_generation_execution_snapshot,
@@ -138,6 +150,11 @@ from lesson_manager import (
     get_class_commentary_feedback_draft,
     get_class_commentary_generation,
     get_class_commentary_generation_by_request,
+    get_class_commentary_memory_evidence,
+    get_class_commentary_memory_records_by_ids,
+    get_class_commentary_revision,
+    get_class_commentary_skill_candidate_build,
+    get_class_commentary_skill_candidate_eligibility,
     get_class_commentary_skill_for_teacher,
     get_class_teacher_user_id,
     get_conn,
@@ -175,7 +192,9 @@ from lesson_manager import (
     list_class_commentary_tasks_for_classes,
     list_class_commentary_tasks_for_organization,
     list_class_commentary_generations,
+    list_class_commentary_revision_memories,
     list_class_commentary_revisions,
+    list_class_commentary_skill_versions_for_teacher,
     list_class_commentary_skills_for_teacher,
     list_class_teacher_bindings,
     list_classes,
@@ -211,6 +230,7 @@ from lesson_manager import (
     list_wechat_wrong_question_submissions,
     list_weekly_wrong_question_activity_summary,
     list_weekly_wrong_question_followup_students,
+    mark_class_commentary_memory_records_reconcile_needed,
     list_registration_requests_for_actor,
     list_unbound_classes_for_user_claim,
     list_users_for_actor,
@@ -221,6 +241,9 @@ from lesson_manager import (
     preview_student_class_invite,
     reject_organization_request,
     reject_registration_request,
+    retry_class_commentary_memory_revision,
+    revoke_class_commentary_memory_evidence,
+    rollback_class_commentary_skill_version,
     requeue_lesson_generation,
     reset_class_invite,
     reset_organization_invite,
@@ -293,6 +316,15 @@ from class_commentary import (
     payload_to_json,
     sanitize_class_commentary_roster,
 )
+from class_commentary_memory import ClassCommentaryMemoryService
+from class_commentary_memory_queue import (
+    class_commentary_memory_queue_healthcheck,
+    dispatch_class_commentary_memory_work,
+)
+from class_commentary_memory_retrieval import (
+    empty_class_commentary_memory_context,
+    retrieve_class_commentary_memory_context,
+)
 import smart_wrong_questions
 import master_data
 from review_plan_workflow.generation_options import normalize_generation_options
@@ -328,6 +360,16 @@ _AI_REQUEST_IN_FLIGHT_LOCK = threading.Lock()
 _AI_ORGANIZATION_CONCURRENCY_LIMIT = 10
 _AI_ORGANIZATION_IN_FLIGHT: dict[int, list[float]] = {}
 _AI_ORGANIZATION_IN_FLIGHT_LOCK = threading.Lock()
+_CLASS_COMMENTARY_MEMORY_HEALTH_TTL_SECONDS = 60.0
+_CLASS_COMMENTARY_MEMORY_HEALTH_LOCK = threading.Lock()
+_CLASS_COMMENTARY_MEMORY_HEALTH_CACHE: dict[str, object] = {
+    "config_key": "",
+    "expires_at": 0.0,
+    "payload": None,
+}
+_CLASS_COMMENTARY_MEMORY_SERVICE_LOCK = threading.Lock()
+_CLASS_COMMENTARY_MEMORY_SERVICE_KEY = ""
+_CLASS_COMMENTARY_MEMORY_SERVICE: Optional[ClassCommentaryMemoryService] = None
 WRONG_QUESTION_CHAT_ARCHIVE_SCHEMA_VERSION = "wrong_question_archive_schema.v1"
 WRONG_QUESTION_CHAT_ARCHIVE_PROMPT_VERSION = "wrong_question_chat_prompt.2026-06-03"
 WRONG_QUESTION_CHAT_ARCHIVE_TEMPLATE_VERSION = "wrong_question_chat_archive_template.2026-06-03"
@@ -335,6 +377,111 @@ WRONG_QUESTION_CHAT_ARCHIVE_RULE_VERSION = "wrong_question_chat_archive_rules.20
 # ─── 工具函数 ──────────────────────────────────────────────────────────────────
 def get_config():
     return get_runtime_config()
+
+
+def _class_commentary_memory_config_key(config: dict) -> str:
+    keys = (
+        "class_commentary_memory_enabled",
+        "class_commentary_memory_queue",
+        "redis_url",
+        "mem0_vector_provider",
+        "mem0_qdrant_url",
+        "mem0_qdrant_api_key",
+        "mem0_collection_name",
+        "mem0_embedder_provider",
+        "mem0_embedder_model",
+        "mem0_embedding_dims",
+        "mem0_style_limit",
+        "mem0_student_limit",
+        "mem0_context_char_limit",
+        "provider",
+        "class_commentary_provider",
+        "class_commentary_model",
+        "class_commentary_openai_api_key",
+        "class_commentary_openai_base_url",
+        "openai_api_key",
+        "openai_base_url",
+        "openai_model",
+        "deepseek_api_key",
+        "deepseek_model",
+    )
+    payload = {key: config.get(key) for key in keys}
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _get_class_commentary_memory_service(
+    config: Optional[dict] = None,
+) -> ClassCommentaryMemoryService:
+    global _CLASS_COMMENTARY_MEMORY_SERVICE
+    global _CLASS_COMMENTARY_MEMORY_SERVICE_KEY
+    runtime = dict(config or get_config())
+    config_key = _class_commentary_memory_config_key(runtime)
+    with _CLASS_COMMENTARY_MEMORY_SERVICE_LOCK:
+        if (
+            _CLASS_COMMENTARY_MEMORY_SERVICE is None
+            or _CLASS_COMMENTARY_MEMORY_SERVICE_KEY != config_key
+        ):
+            _CLASS_COMMENTARY_MEMORY_SERVICE = ClassCommentaryMemoryService(
+                runtime_config=runtime
+            )
+            _CLASS_COMMENTARY_MEMORY_SERVICE_KEY = config_key
+        return _CLASS_COMMENTARY_MEMORY_SERVICE
+
+
+def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
+    runtime = get_config()
+    if not bool(runtime.get("class_commentary_memory_enabled")):
+        return {
+            "memory_learning_enabled": False,
+            "skill_evolution_enabled": False,
+        }
+    config_key = _class_commentary_memory_config_key(runtime)
+    now = monotonic()
+    with _CLASS_COMMENTARY_MEMORY_HEALTH_LOCK:
+        cached_payload = _CLASS_COMMENTARY_MEMORY_HEALTH_CACHE.get("payload")
+        if (
+            not force
+            and _CLASS_COMMENTARY_MEMORY_HEALTH_CACHE.get("config_key") == config_key
+            and float(_CLASS_COMMENTARY_MEMORY_HEALTH_CACHE.get("expires_at") or 0) > now
+            and isinstance(cached_payload, dict)
+        ):
+            return dict(cached_payload)
+    memory_health = _get_class_commentary_memory_service(runtime).healthcheck()
+    queue_health = class_commentary_memory_queue_healthcheck(runtime_config=runtime)
+    healthy = bool(memory_health.get("healthy")) and bool(
+        queue_health.get("healthy")
+    )
+    payload = {
+        "memory_learning_enabled": healthy,
+        "skill_evolution_enabled": healthy,
+    }
+    with _CLASS_COMMENTARY_MEMORY_HEALTH_LOCK:
+        _CLASS_COMMENTARY_MEMORY_HEALTH_CACHE.update(
+            {
+                "config_key": config_key,
+                "expires_at": now + _CLASS_COMMENTARY_MEMORY_HEALTH_TTL_SECONDS,
+                "payload": dict(payload),
+            }
+        )
+    return payload
+
+
+def _dispatch_class_commentary_memory_best_effort() -> dict:
+    try:
+        return dispatch_class_commentary_memory_work(runtime_config=get_config())
+    except Exception as exc:
+        logger.warning(
+            "class commentary memory dispatch unavailable: %s",
+            type(exc).__name__,
+        )
+        return {
+            "enabled": bool(get_config().get("class_commentary_memory_enabled")),
+            "extractions": 0,
+            "operations": 0,
+            "errors": [type(exc).__name__],
+        }
 
 
 def _default_ai_provider_name() -> str:
@@ -3222,6 +3369,420 @@ def _serialize_class_commentary_revision_for_response(revision: dict) -> dict:
     }
 
 
+def _serialize_class_commentary_memory_summary(
+    raw_summary: dict,
+    *,
+    actor_user_id: int,
+) -> dict:
+    revision_id = int(raw_summary.get("revision_id") or 0)
+    revision = get_class_commentary_revision(revision_id) if revision_id else None
+    generation = (
+        get_class_commentary_generation(int(revision["generation_id"]))
+        if revision
+        else None
+    )
+    student_names = {
+        int(item.get("student_id") or 0): str(item.get("student_name") or "")
+        for item in _class_commentary_json_value(
+            (generation or {}).get("attending_roster_snapshot_json"),
+            [],
+        )
+        if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
+    }
+    job = raw_summary.get("job") if isinstance(raw_summary.get("job"), dict) else None
+    job_status = str((job or {}).get("status") or "")
+    raw_memories = [
+        item for item in raw_summary.get("memories", []) if isinstance(item, dict)
+    ]
+    operation_statuses = {
+        str(item.get("latest_operation_status") or "")
+        for item in raw_memories
+        if item.get("latest_operation_status")
+    }
+    learn_requested = bool(raw_summary.get("learn_requested"))
+    retryable = False
+    error = ""
+    if not learn_requested:
+        status = "not_requested"
+    elif job_status in {"queued", "retry_wait"}:
+        status = "queued"
+    elif job_status == "running":
+        status = "extracting"
+    elif job_status == "obsolete":
+        status = "obsolete"
+    elif job_status in {"failed", "integrity_failed"}:
+        status = "failed"
+        retryable = job_status == "failed"
+        error = (
+            "学习任务失败, 可以重试."
+            if retryable
+            else "学习记录校验失败, 已停止自动重试."
+        )
+    elif job_status == "extracted":
+        failed_operations = operation_statuses & {"failed"}
+        pending_operations = operation_statuses & {
+            "pending",
+            "running",
+            "retry_wait",
+            "reconcile_needed",
+        }
+        applied_count = sum(
+            1
+            for item in raw_memories
+            if str(item.get("desired_status") or "")
+            == str(item.get("applied_status") or "")
+        )
+        if failed_operations:
+            status = "partial" if applied_count else "failed"
+            retryable = True
+            error = "部分记忆同步失败, 可以重试."
+        elif pending_operations:
+            status = "syncing"
+        else:
+            status = "complete"
+    else:
+        status = "queued"
+
+    memories = []
+    for item in raw_memories:
+        student_id = int(item.get("student_id") or 0) or None
+        evidence_status = str(item.get("status") or "active")
+        if evidence_status not in {"active", "revoked", "superseded"}:
+            evidence_status = "active"
+        memories.append(
+            {
+                "id": int(item.get("memory_record_id") or 0),
+                "evidence_id": int(item.get("id") or 0),
+                "memory_type": str(item.get("memory_type") or "teacher_style"),
+                "memory_text": str(item.get("memory_text") or ""),
+                "student_id": student_id,
+                "student_name": student_names.get(student_id or 0, ""),
+                "confidence": float(item.get("confidence") or 0),
+                "evidence_status": evidence_status,
+                "active_evidence_count": int(item.get("active_evidence_count") or 0),
+                "operation_status": str(item.get("latest_operation_status") or ""),
+                "can_revoke": evidence_status == "active"
+                and int(item.get("source_teacher_user_id") or 0) == int(actor_user_id),
+            }
+        )
+    return {
+        "revision_id": revision_id,
+        "status": status,
+        "retryable": retryable,
+        "extraction_status": job_status,
+        "error": error,
+        "memories": memories,
+    }
+
+
+_CLASS_COMMENTARY_SKILL_STALE_REASONS = {
+    "base_version_changed",
+    "base_version_missing",
+    "frozen_revision_count_mismatch",
+    "registry_scope_mismatch",
+    "revision_not_effective",
+    "revision_scope_mismatch",
+    "revision_snapshot_mismatch",
+    "selection_policy_mismatch",
+    "source_snapshot_mismatch",
+    "supporting_evidence_not_active",
+    "supporting_evidence_revision_mismatch",
+    "supporting_evidence_scope_mismatch",
+    "supporting_task_count_mismatch",
+}
+
+
+def _class_commentary_safe_skill_stale_reason(value: object) -> str:
+    reason = str(value or "").strip()
+    if not reason:
+        return ""
+    if reason in _CLASS_COMMENTARY_SKILL_STALE_REASONS:
+        return reason
+    return "candidate_source_changed"
+
+
+def _serialize_class_commentary_skill_for_evolution(skill: dict) -> dict:
+    return {
+        "registry_id": int(skill.get("registry_id") or 0),
+        "id": str(skill.get("skill_id") or skill.get("id") or ""),
+        "skill_id": str(skill.get("skill_id") or skill.get("id") or ""),
+        "name": str(skill.get("name") or skill.get("skill_id") or ""),
+        "organization_id": int(skill.get("organization_id") or 0),
+        "owner_teacher_user_id": int(skill.get("owner_teacher_user_id") or 0),
+        "status": str(skill.get("status") or ""),
+        "active_version_id": int(skill.get("active_version_id") or 0) or None,
+        "version_id": int(skill.get("version_id") or 0) or None,
+        "version_no": int(skill.get("version_no") or 0),
+        "version_kind": str(skill.get("version_kind") or ""),
+        "content": str(skill.get("content") or ""),
+        "content_hash": str(skill.get("content_hash") or ""),
+        "updated_at": str(skill.get("updated_at") or ""),
+    }
+
+
+def _serialize_class_commentary_skill_candidate_build_for_response(
+    build: dict,
+) -> dict:
+    frozen_revisions = [
+        item
+        for item in build.get("frozen_revisions", [])
+        if isinstance(item, dict)
+    ]
+    frozen_evidence = [
+        item for item in build.get("frozen_evidence", []) if isinstance(item, dict)
+    ]
+    status = str(build.get("status") or "failed")
+    if status not in {
+        "queued",
+        "running",
+        "retry_wait",
+        "succeeded",
+        "failed",
+        "obsolete",
+    }:
+        status = "failed"
+    stale_reason = _class_commentary_safe_skill_stale_reason(
+        build.get("stale_reason")
+    )
+    is_stale = bool(build.get("is_stale")) or status == "obsolete"
+    if is_stale and not stale_reason:
+        stale_reason = "candidate_source_changed"
+    error_message = ""
+    if status == "failed":
+        error_message = "候选生成失败, 请重新生成."
+    elif status == "obsolete":
+        error_message = "候选依据已变化, 请基于最新证据重新生成."
+    return {
+        "id": int(build.get("id") or 0),
+        "expected_active_version_id": int(
+            build.get("expected_active_version_id") or 0
+        ),
+        "base_version_id": int(build.get("base_version_id") or 0),
+        "candidate_version_id": int(build.get("candidate_version_id") or 0)
+        or None,
+        "effective_task_count": int(build.get("effective_task_count") or 0),
+        "supporting_task_count": int(build.get("supporting_task_count") or 0),
+        "min_effective_tasks": int(build.get("min_effective_tasks") or 0),
+        "min_supporting_tasks": int(build.get("min_support_tasks") or 0),
+        "status": status,
+        "error_message": error_message,
+        "can_retry": status in {"failed", "obsolete"},
+        "is_terminal": status in {"succeeded", "failed", "obsolete"},
+        "is_stale": is_stale,
+        "stale_reason": stale_reason,
+        "source_cutoff_at": str(build.get("source_cutoff_at") or ""),
+        "selection_policy_version": str(
+            build.get("selection_policy_version") or ""
+        ),
+        "frozen_task_ids": sorted(
+            {
+                int(item.get("task_id") or 0)
+                for item in frozen_revisions
+                if int(item.get("task_id") or 0) > 0
+            }
+        ),
+        "frozen_revision_ids": sorted(
+            {
+                int(item.get("revision_id") or 0)
+                for item in frozen_revisions
+                if int(item.get("revision_id") or 0) > 0
+            }
+        ),
+        "frozen_evidence_ids": sorted(
+            {
+                int(item.get("memory_evidence_id") or 0)
+                for item in frozen_evidence
+                if int(item.get("memory_evidence_id") or 0) > 0
+            }
+        ),
+        "frozen_memory_record_ids": sorted(
+            {
+                int(item.get("memory_record_id") or 0)
+                for item in frozen_evidence
+                if int(item.get("memory_record_id") or 0) > 0
+            }
+        ),
+        "frozen_revision_count": len(frozen_revisions),
+        "frozen_evidence_count": len(frozen_evidence),
+        "created_at": str(build.get("created_at") or ""),
+        "started_at": str(build.get("started_at") or ""),
+        "completed_at": str(build.get("completed_at") or ""),
+    }
+
+
+def _class_commentary_skill_content_diff(
+    base_content: str,
+    content: str,
+    *,
+    base_version_no: int,
+    version_no: int,
+) -> str:
+    if not base_content:
+        return ""
+    return "\n".join(
+        difflib.unified_diff(
+            base_content.splitlines(),
+            content.splitlines(),
+            fromfile=f"version-{base_version_no}",
+            tofile=f"version-{version_no}",
+            lineterm="",
+        )
+    )
+
+
+def _serialize_class_commentary_skill_evaluation_for_response(
+    evaluation: dict,
+) -> dict:
+    metrics = evaluation.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+    current_metrics = evaluation.get("current_metrics")
+    if not isinstance(current_metrics, dict):
+        current_metrics = metrics.get("current") or metrics.get("base") or {}
+    candidate_metrics = evaluation.get("candidate_metrics")
+    if not isinstance(candidate_metrics, dict):
+        candidate_metrics = metrics.get("candidate") or {}
+    known_risks = [
+        str(item).strip()
+        for item in evaluation.get("known_risks", [])
+        if str(item).strip()
+    ]
+    failed_samples = [
+        str(item).strip()
+        for item in evaluation.get("failed_samples", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    if not failed_samples:
+        for sample in evaluation.get("samples", []):
+            if not isinstance(sample, dict):
+                continue
+            failed = (
+                sample.get("candidate_roster_consistent") is False
+                or sample.get("candidate_plain_text_valid") is False
+                or sample.get("candidate_structure_valid") is False
+                or int(sample.get("candidate_unsupported_fact_count") or 0) > 0
+            )
+            if failed:
+                failed_samples.append(
+                    f"task-{int(sample.get('task_id') or 0)}-revision-{int(sample.get('revision_id') or 0)}"
+                )
+    return {
+        "current_metrics": current_metrics,
+        "candidate_metrics": candidate_metrics,
+        "known_risks": known_risks,
+        "failed_samples": failed_samples,
+    }
+
+
+def _serialize_class_commentary_skill_versions_for_response(
+    versions: list[dict],
+    *,
+    active_version_id: int,
+) -> list[dict]:
+    by_id = {
+        int(version.get("id") or 0): version
+        for version in versions
+        if isinstance(version, dict)
+    }
+    serialized = []
+    for version in versions:
+        candidate_build = (
+            version.get("candidate_build")
+            if isinstance(version.get("candidate_build"), dict)
+            else None
+        )
+        safe_build = (
+            _serialize_class_commentary_skill_candidate_build_for_response(
+                candidate_build
+            )
+            if candidate_build
+            else None
+        )
+        base_version_id = int(version.get("base_version_id") or 0) or None
+        base_version = by_id.get(base_version_id or 0)
+        base_content = str((base_version or {}).get("content") or "")
+        content = str(version.get("content") or "")
+        evaluation = version.get("evaluation_snapshot")
+        if not isinstance(evaluation, dict):
+            evaluation = _class_commentary_json_value(
+                version.get("evaluation_snapshot_json"),
+                {},
+            )
+        if not isinstance(evaluation, dict):
+            evaluation = {}
+        serialized_evaluation = (
+            _serialize_class_commentary_skill_evaluation_for_response(evaluation)
+        )
+        frozen_revision_ids = (
+            list(safe_build["frozen_revision_ids"]) if safe_build else []
+        )
+        frozen_evidence_ids = (
+            list(safe_build["frozen_evidence_ids"]) if safe_build else []
+        )
+        stale_reason = _class_commentary_safe_skill_stale_reason(
+            version.get("stale_reason")
+        )
+        serialized.append(
+            {
+                "id": int(version.get("id") or 0),
+                "organization_id": int(version.get("organization_id") or 0),
+                "skill_registry_id": int(version.get("skill_registry_id") or 0),
+                "version_no": int(version.get("version_no") or 0),
+                "version_kind": str(version.get("version_kind") or "imported"),
+                "candidate_build_id": int(version.get("candidate_build_id") or 0)
+                or None,
+                "content": content,
+                "content_hash": str(version.get("content_hash") or ""),
+                "base_version_id": base_version_id,
+                "base_content": base_content,
+                "content_diff": _class_commentary_skill_content_diff(
+                    base_content,
+                    content,
+                    base_version_no=int((base_version or {}).get("version_no") or 0),
+                    version_no=int(version.get("version_no") or 0),
+                ),
+                "evaluation": serialized_evaluation,
+                "evaluation_snapshot": serialized_evaluation,
+                "review_status": str(version.get("review_status") or "not_required"),
+                "is_active": int(version.get("id") or 0)
+                == int(active_version_id),
+                "is_stale": bool(version.get("is_stale")),
+                "stale_reason": stale_reason,
+                "effective_task_count": int(
+                    (safe_build or {}).get("effective_task_count") or 0
+                ),
+                "supporting_task_count": int(
+                    (safe_build or {}).get("supporting_task_count") or 0
+                ),
+                "frozen_revision_count": len(frozen_revision_ids),
+                "frozen_evidence_count": len(frozen_evidence_ids),
+                "frozen_revision_ids": frozen_revision_ids,
+                "frozen_evidence_ids": frozen_evidence_ids,
+                "candidate_build": safe_build,
+                "created_at": str(version.get("created_at") or ""),
+                "reviewed_at": str(version.get("reviewed_at") or ""),
+            }
+        )
+    return serialized
+
+
+def _serialize_class_commentary_skill_activation_event_for_response(
+    event: dict,
+) -> dict:
+    return {
+        "id": int(event.get("id") or 0),
+        "from_version_id": int(event.get("from_version_id") or 0) or None,
+        "to_version_id": int(event.get("to_version_id") or 0),
+        "active_version_id": int(event.get("active_version_id") or 0) or None,
+        "current_active_version_id": int(
+            event.get("current_active_version_id") or 0
+        )
+        or None,
+        "reason": str(event.get("reason") or ""),
+        "created_at": str(event.get("created_at") or ""),
+    }
+
+
 def _serialize_class_commentary_generation_result(task: dict, generation: dict) -> dict:
     task_payload = _serialize_class_commentary_task_for_response(
         task,
@@ -4157,6 +4718,215 @@ def _get_owned_class_commentary_task_or_error(user: dict, task_id: int):
     return task, None
 
 
+def _get_owned_class_commentary_revision_or_error(user: dict, revision_id: int):
+    revision = get_class_commentary_revision(revision_id)
+    if not revision:
+        return None, None, (jsonify({"error": "not found"}), 404)
+    task, error = _get_owned_class_commentary_task_or_error(
+        user,
+        int(revision["task_id"]),
+    )
+    if error:
+        return None, None, error
+    if int(revision["teacher_user_id"]) != int(user.get("id") or 0):
+        return None, None, (jsonify({"error": "forbidden"}), 403)
+    return revision, task, None
+
+
+def _get_owned_class_commentary_skill_or_error(user: dict, skill_id: str):
+    skill = get_class_commentary_skill_for_teacher(
+        int(user.get("organization_id") or 0),
+        int(user.get("id") or 0),
+        str(skill_id or "").strip(),
+    )
+    if not skill:
+        return None, (jsonify({"error": "not found"}), 404)
+    return skill, None
+
+
+def _list_class_commentary_skill_candidate_builds_for_response(
+    *,
+    skill: dict,
+    user: dict,
+) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id FROM class_commentary_skill_candidate_builds
+            WHERE organization_id=? AND skill_registry_id=?
+            ORDER BY id DESC
+            """,
+            (user["organization_id"], skill["registry_id"]),
+        ).fetchall()
+    builds = []
+    for row in rows:
+        build = get_class_commentary_skill_candidate_build(
+            int(row["id"]),
+            organization_id=int(user["organization_id"]),
+            actor_user_id=int(user["id"]),
+        )
+        if build:
+            builds.append(
+                _serialize_class_commentary_skill_candidate_build_for_response(build)
+            )
+    return builds
+
+
+def _class_commentary_skill_evolution_envelope(
+    *,
+    skill: dict,
+    user: dict,
+) -> dict:
+    versions = list_class_commentary_skill_versions_for_teacher(
+        organization_id=int(user["organization_id"]),
+        skill_id=str(skill["skill_id"]),
+        actor_user_id=int(user["id"]),
+    )
+    active_version_id = int(skill.get("active_version_id") or 0)
+    serialized_versions = _serialize_class_commentary_skill_versions_for_response(
+        versions,
+        active_version_id=active_version_id,
+    )
+    eligibility = get_class_commentary_skill_candidate_eligibility(
+        organization_id=int(user["organization_id"]),
+        skill_id=str(skill["skill_id"]),
+        actor_user_id=int(user["id"]),
+    )
+    if bool(eligibility.get("eligible")):
+        eligibility_reason = ""
+    elif int(eligibility.get("effective_task_count") or 0) < int(
+        eligibility.get("min_effective_tasks") or 0
+    ):
+        eligibility_reason = "insufficient_effective_tasks"
+    else:
+        eligibility_reason = "insufficient_supporting_tasks"
+    return {
+        "skill": _serialize_class_commentary_skill_for_evolution(skill),
+        "versions": serialized_versions,
+        "candidate_builds": _list_class_commentary_skill_candidate_builds_for_response(
+            skill=skill,
+            user=user,
+        ),
+        "eligibility": {
+            "eligible": bool(eligibility.get("eligible")),
+            "reason": eligibility_reason,
+            "effective_task_count": int(
+                eligibility.get("effective_task_count") or 0
+            ),
+            "supporting_task_count": int(
+                eligibility.get("supporting_task_count") or 0
+            ),
+            "min_effective_tasks": int(
+                eligibility.get("min_effective_tasks") or 0
+            ),
+            "min_supporting_tasks": int(
+                eligibility.get("min_support_tasks") or 0
+            ),
+        },
+    }
+
+
+def _class_commentary_skill_activation_envelope(
+    *,
+    skill_id: str,
+    version_id: int,
+    activation_event: dict,
+    user: dict,
+) -> dict:
+    skill = get_class_commentary_skill_for_teacher(
+        int(user["organization_id"]),
+        int(user["id"]),
+        skill_id,
+    )
+    if not skill:
+        raise LookupError("class commentary skill not found")
+    versions = list_class_commentary_skill_versions_for_teacher(
+        organization_id=int(user["organization_id"]),
+        skill_id=skill_id,
+        actor_user_id=int(user["id"]),
+    )
+    serialized_versions = _serialize_class_commentary_skill_versions_for_response(
+        versions,
+        active_version_id=int(skill.get("active_version_id") or 0),
+    )
+    version = next(
+        (item for item in serialized_versions if int(item["id"]) == int(version_id)),
+        None,
+    )
+    if not version:
+        raise LookupError("class commentary skill version not found")
+    return {
+        "skill": _serialize_class_commentary_skill_for_evolution(skill),
+        "version": version,
+        "activation_event": _serialize_class_commentary_skill_activation_event_for_response(
+            activation_event
+        ),
+    }
+
+
+def _class_commentary_skill_evolution_error_response(exc: Exception):
+    if isinstance(exc, ClassCommentarySkillCandidateRequestConflict):
+        return jsonify({"error": "candidate_request_conflict"}), 409
+    if isinstance(exc, ClassCommentarySkillActivationRequestConflict):
+        return jsonify({"error": "activation_request_conflict"}), 409
+    if isinstance(exc, ClassCommentarySkillCandidateNotReady):
+        return jsonify(
+            {
+                "error": exc.code,
+                "effective_task_count": exc.effective_task_count,
+                "supporting_task_count": exc.supporting_task_count,
+                "min_effective_tasks": exc.min_effective_tasks,
+                "min_supporting_tasks": exc.min_support_tasks,
+            }
+        ), 409
+    if isinstance(exc, ClassCommentarySkillCandidateStale):
+        return jsonify(
+            {
+                "error": exc.code,
+                "stale_reason": _class_commentary_safe_skill_stale_reason(
+                    exc.reason
+                ),
+            }
+        ), 409
+    if isinstance(exc, ClassCommentarySkillVersionConflict):
+        return jsonify({"error": exc.code}), 409
+    if isinstance(exc, (LookupError, PermissionError)):
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"error": "invalid_skill_evolution_state"}), 409
+
+
+def _require_class_commentary_skill_evolution_capability():
+    capabilities = _class_commentary_memory_capabilities()
+    if not bool(capabilities.get("skill_evolution_enabled")):
+        return jsonify({"error": "skill_evolution_disabled"}), 409
+    return None
+
+
+def _class_commentary_skill_change_request_payload():
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return None, None, payload_error
+    request_id = str((data or {}).get("request_id") or "").strip()
+    if not request_id:
+        return None, None, (jsonify({"error": "request_id is required"}), 400)
+    raw_expected_version_id = (data or {}).get("expected_active_version_id")
+    if isinstance(raw_expected_version_id, bool):
+        return None, None, (
+            jsonify({"error": "expected_active_version_id must be a positive integer"}),
+            400,
+        )
+    try:
+        expected_version_id = int(raw_expected_version_id)
+    except (TypeError, ValueError):
+        expected_version_id = 0
+    if expected_version_id <= 0:
+        return None, None, (
+            jsonify({"error": "expected_active_version_id must be a positive integer"}),
+            400,
+        )
+    return request_id, expected_version_id, None
+
+
 def _parse_class_commentary_attending_student_ids(data: dict):
     raw_student_ids = data.get("attending_student_ids")
     if raw_student_ids is None:
@@ -4964,12 +5734,17 @@ def api_admin_organization_delete(org_id: int):
     if error:
         return error
     try:
-        delete_organization(org_id)
+        result = delete_organization(org_id)
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
-    return jsonify({"ok": True})
+    if result.get("action") == "deleted":
+        return jsonify({"ok": True})
+    memory_cleanup = result.pop("memory_cleanup", None)
+    if isinstance(memory_cleanup, dict) and memory_cleanup.get("operation_ids"):
+        _dispatch_class_commentary_memory_best_effort()
+    return jsonify({"ok": True, **result})
 
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
@@ -5088,10 +5863,15 @@ def api_admin_user_delete(user_id):
     if error:
         return error
     try:
-        delete_user_for_actor(user, user_id)
+        result = delete_user_for_actor(user, user_id)
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
-    return jsonify({"ok": True})
+    if result.get("action") == "deleted":
+        return jsonify({"ok": True})
+    memory_cleanup = result.pop("memory_cleanup", None)
+    if isinstance(memory_cleanup, dict) and memory_cleanup.get("operation_ids"):
+        _dispatch_class_commentary_memory_best_effort()
+    return jsonify({"ok": True, **result})
 
 
 @app.route("/api/wrong-question-followups/weekly", methods=["GET"])
@@ -7423,6 +8203,9 @@ def api_student_profile_delete(student_id):
         result = delete_or_archive_student_profile(student_id, user.get("organization_id"))
     except LookupError:
         return jsonify({"error": "not found"}), 404
+    memory_cleanup = result.pop("memory_cleanup", {}) or {}
+    if memory_cleanup.get("operation_ids"):
+        _dispatch_class_commentary_memory_best_effort()
     return jsonify(result)
 
 
@@ -8142,8 +8925,13 @@ def api_class_delete(class_id):
         return jsonify({"error": "not found"}), 404
     if not _filter_classes_for_user(user, [cls]):
         return jsonify({"error": "forbidden"}), 403
-    db_delete_class(class_id)
-    return jsonify({"ok": True})
+    result = db_delete_class(class_id)
+    if result.get("action") == "deleted":
+        return jsonify({"ok": True})
+    memory_cleanup = result.pop("memory_cleanup", None)
+    if isinstance(memory_cleanup, dict) and memory_cleanup.get("operation_ids"):
+        _dispatch_class_commentary_memory_best_effort()
+    return jsonify({"ok": True, **result})
 
 
 @app.route("/api/review-plans", methods=["GET"])
@@ -8669,14 +9457,197 @@ def api_class_commentary_skills():
         int(user["organization_id"]),
         int(user["id"]),
     )
+    capabilities = _class_commentary_memory_capabilities()
     return jsonify({
         "skills": skills,
         "configured": bool(skills),
-        "capabilities": {
-            "memory_learning_enabled": False,
-            "skill_evolution_enabled": False,
-        },
+        "capabilities": capabilities,
     })
+
+
+@app.route(
+    "/api/class-commentary/skills/<string:skill_id>/versions",
+    methods=["GET"],
+)
+def api_class_commentary_skill_versions(skill_id: str):
+    user, error = _require_auth()
+    if error:
+        return error
+    skill, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    if skill_error:
+        return skill_error
+    try:
+        return jsonify(
+            _class_commentary_skill_evolution_envelope(skill=skill, user=user)
+        )
+    except Exception as exc:
+        if isinstance(
+            exc,
+            (
+                ClassCommentarySkillCandidateRequestConflict,
+                ClassCommentarySkillActivationRequestConflict,
+                ClassCommentarySkillCandidateNotReady,
+                ClassCommentarySkillCandidateStale,
+                ClassCommentarySkillVersionConflict,
+                LookupError,
+                PermissionError,
+                ValueError,
+            ),
+        ):
+            return _class_commentary_skill_evolution_error_response(exc)
+        raise
+
+
+@app.route(
+    "/api/class-commentary/skills/<string:skill_id>/candidates",
+    methods=["POST"],
+)
+def api_class_commentary_skill_candidates(skill_id: str):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    if skill_error:
+        return skill_error
+    capability_error = _require_class_commentary_skill_evolution_capability()
+    if capability_error:
+        return capability_error
+    request_id, expected_version_id, payload_error = (
+        _class_commentary_skill_change_request_payload()
+    )
+    if payload_error:
+        return payload_error
+    try:
+        build = create_class_commentary_skill_candidate_build(
+            organization_id=int(user["organization_id"]),
+            skill_id=skill_id,
+            actor_user_id=int(user["id"]),
+            candidate_request_id=request_id,
+            expected_active_version_id=expected_version_id,
+        )
+    except Exception as exc:
+        if isinstance(
+            exc,
+            (
+                ClassCommentarySkillCandidateRequestConflict,
+                ClassCommentarySkillCandidateNotReady,
+                ClassCommentarySkillVersionConflict,
+                LookupError,
+                PermissionError,
+                ValueError,
+            ),
+        ):
+            return _class_commentary_skill_evolution_error_response(exc)
+        raise
+    _dispatch_class_commentary_memory_best_effort()
+    return jsonify(
+        {
+            "build": _serialize_class_commentary_skill_candidate_build_for_response(
+                build
+            )
+        }
+    ), 202
+
+
+@app.route(
+    "/api/class-commentary/skills/<string:skill_id>/versions/<int:version_id>/activate",
+    methods=["POST"],
+)
+def api_class_commentary_skill_version_activate(skill_id: str, version_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    if skill_error:
+        return skill_error
+    capability_error = _require_class_commentary_skill_evolution_capability()
+    if capability_error:
+        return capability_error
+    request_id, expected_version_id, payload_error = (
+        _class_commentary_skill_change_request_payload()
+    )
+    if payload_error:
+        return payload_error
+    try:
+        event = activate_class_commentary_skill_candidate_version(
+            organization_id=int(user["organization_id"]),
+            skill_id=skill_id,
+            actor_user_id=int(user["id"]),
+            version_id=version_id,
+            activation_request_id=request_id,
+            expected_active_version_id=expected_version_id,
+        )
+        payload = _class_commentary_skill_activation_envelope(
+            skill_id=skill_id,
+            version_id=version_id,
+            activation_event=event,
+            user=user,
+        )
+    except Exception as exc:
+        if isinstance(
+            exc,
+            (
+                ClassCommentarySkillActivationRequestConflict,
+                ClassCommentarySkillCandidateStale,
+                ClassCommentarySkillVersionConflict,
+                LookupError,
+                PermissionError,
+                ValueError,
+            ),
+        ):
+            return _class_commentary_skill_evolution_error_response(exc)
+        raise
+    return jsonify(payload)
+
+
+@app.route(
+    "/api/class-commentary/skills/<string:skill_id>/versions/<int:version_id>/rollback",
+    methods=["POST"],
+)
+def api_class_commentary_skill_version_rollback(skill_id: str, version_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    if skill_error:
+        return skill_error
+    capability_error = _require_class_commentary_skill_evolution_capability()
+    if capability_error:
+        return capability_error
+    request_id, expected_version_id, payload_error = (
+        _class_commentary_skill_change_request_payload()
+    )
+    if payload_error:
+        return payload_error
+    try:
+        event = rollback_class_commentary_skill_version(
+            organization_id=int(user["organization_id"]),
+            skill_id=skill_id,
+            actor_user_id=int(user["id"]),
+            version_id=version_id,
+            activation_request_id=request_id,
+            expected_active_version_id=expected_version_id,
+        )
+        payload = _class_commentary_skill_activation_envelope(
+            skill_id=skill_id,
+            version_id=version_id,
+            activation_event=event,
+            user=user,
+        )
+    except Exception as exc:
+        if isinstance(
+            exc,
+            (
+                ClassCommentarySkillActivationRequestConflict,
+                ClassCommentarySkillVersionConflict,
+                LookupError,
+                PermissionError,
+                ValueError,
+            ),
+        ):
+            return _class_commentary_skill_evolution_error_response(exc)
+        raise
+    return jsonify(payload)
 
 
 @app.route("/api/class-commentary/capabilities", methods=["GET"])
@@ -8684,10 +9655,7 @@ def api_class_commentary_capabilities():
     _, error = _require_auth()
     if error:
         return error
-    return jsonify({
-        "memory_learning_enabled": False,
-        "skill_evolution_enabled": False,
-    })
+    return jsonify(_class_commentary_memory_capabilities())
 
 
 @app.route("/api/class-commentary/tasks", methods=["POST"])
@@ -8965,13 +9933,27 @@ def api_class_commentary_feedback_confirm(task_id: int):
         }), 409
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    memory_summary = None
+    if bool(get_config().get("class_commentary_memory_enabled")):
+        _dispatch_class_commentary_memory_best_effort()
+    if bool((data or {}).get("learn")):
+        memory_summary = _serialize_class_commentary_memory_summary(
+            list_class_commentary_revision_memories(
+                int(revision["id"]),
+                actor_user_id=int(user["id"]),
+            ),
+            actor_user_id=int(user["id"]),
+        )
     serialized = _serialize_class_commentary_revision_for_response(revision)
-    return jsonify({
+    response_payload = {
         **serialized,
         "revision_id": serialized["id"],
         "revision": serialized,
         "draft": revision.get("draft"),
-    })
+    }
+    if memory_summary is not None:
+        response_payload["memory"] = memory_summary
+    return jsonify(response_payload)
 
 
 @app.route("/api/class-commentary/tasks/<int:task_id>/feedback-revisions", methods=["GET"])
@@ -8989,6 +9971,132 @@ def api_class_commentary_feedback_revisions(task_id: int):
             for revision in revisions
         ]
     })
+
+
+@app.route(
+    "/api/class-commentary/revisions/<int:revision_id>/memories",
+    methods=["GET"],
+)
+def api_class_commentary_revision_memories(revision_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, _, revision_error = _get_owned_class_commentary_revision_or_error(
+        user,
+        revision_id,
+    )
+    if revision_error:
+        return revision_error
+    try:
+        summary = list_class_commentary_revision_memories(
+            revision_id,
+            actor_user_id=int(user["id"]),
+        )
+    except ValueError:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(
+        _serialize_class_commentary_memory_summary(
+            summary,
+            actor_user_id=int(user["id"]),
+        )
+    )
+
+
+@app.route(
+    "/api/class-commentary/revisions/<int:revision_id>/memory-retry",
+    methods=["POST"],
+)
+def api_class_commentary_revision_memory_retry(revision_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, _, revision_error = _get_owned_class_commentary_revision_or_error(
+        user,
+        revision_id,
+    )
+    if revision_error:
+        return revision_error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    request_id = str((data or {}).get("request_id") or "").strip()
+    if not request_id:
+        return jsonify({"error": "request_id is required"}), 400
+    try:
+        retry_class_commentary_memory_revision(
+            revision_id,
+            actor_user_id=int(user["id"]),
+            request_id=request_id,
+        )
+    except ClassCommentaryMemoryRetryRequestConflict:
+        return jsonify({"error": "memory_retry_request_conflict"}), 409
+    except ClassCommentaryMemoryRevisionNotRetryable as exc:
+        return jsonify({"error": exc.code}), 409
+    except ValueError:
+        return jsonify({"error": "not found"}), 404
+    _dispatch_class_commentary_memory_best_effort()
+    summary = list_class_commentary_revision_memories(
+        revision_id,
+        actor_user_id=int(user["id"]),
+    )
+    return jsonify(
+        {
+            "memory": _serialize_class_commentary_memory_summary(
+                summary,
+                actor_user_id=int(user["id"]),
+            )
+        }
+    )
+
+
+@app.route(
+    "/api/class-commentary/memory-evidence/<int:evidence_id>/revoke",
+    methods=["POST"],
+)
+def api_class_commentary_memory_evidence_revoke(evidence_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    evidence = get_class_commentary_memory_evidence(evidence_id)
+    if not evidence:
+        return jsonify({"error": "not found"}), 404
+    _, _, revision_error = _get_owned_class_commentary_revision_or_error(
+        user,
+        int(evidence["revision_id"]),
+    )
+    if revision_error:
+        return revision_error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    request_id = str((data or {}).get("request_id") or "").strip()
+    if not request_id:
+        return jsonify({"error": "request_id is required"}), 400
+    try:
+        revoke_class_commentary_memory_evidence(
+            evidence_id,
+            actor_user_id=int(user["id"]),
+            request_id=request_id,
+        )
+    except ClassCommentaryMemoryEvidenceRequestConflict:
+        return jsonify({"error": "memory_evidence_request_conflict"}), 409
+    except ClassCommentaryMemoryEvidenceNotRevocable as exc:
+        return jsonify({"error": exc.code}), 409
+    except ValueError:
+        return jsonify({"error": "not found"}), 404
+    _dispatch_class_commentary_memory_best_effort()
+    summary = list_class_commentary_revision_memories(
+        int(evidence["revision_id"]),
+        actor_user_id=int(user["id"]),
+    )
+    return jsonify(
+        {
+            "memory": _serialize_class_commentary_memory_summary(
+                summary,
+                actor_user_id=int(user["id"]),
+            )
+        }
+    )
 
 
 @app.route("/api/class-commentary/tasks/<int:task_id>/transcript", methods=["PUT"])
@@ -9068,7 +10176,7 @@ def api_class_commentary_task_generate(task_id: int):
         ), status_code
 
     if not has_class_commentary_api_key():
-        return jsonify({"error": "系统 API Key 未配置，请联系管理员"}), 400
+        return jsonify({"error": "系统 API Key 未配置, 请联系管理员"}), 400
     if str(task.get("status") or "") not in {"transcribed", "failed", "ready", "generating"}:
         return jsonify({"error": "task must be transcribed before generation"}), 400
     confirmed_transcript_text = str(task.get("confirmed_transcript_text") or "").strip()
@@ -9077,8 +10185,16 @@ def api_class_commentary_task_generate(task_id: int):
     cls = get_class(int(task["class_id"]))
     if not cls:
         return jsonify({"error": "not found"}), 404
-    class_students = list_students_for_class(int(task["class_id"]))
-    class_students, attendance_error = _filter_class_commentary_students_by_attendance(class_students, data or {})
+    current_class_students = list_students_for_class(int(task["class_id"]))
+    live_student_ids = [
+        int(student["id"])
+        for student in current_class_students
+        if int(student.get("id") or 0) > 0
+    ]
+    class_students, attendance_error = _filter_class_commentary_students_by_attendance(
+        current_class_students,
+        data or {},
+    )
     if attendance_error:
         return attendance_error
     skill = get_class_commentary_skill_for_teacher(
@@ -9140,19 +10256,34 @@ def api_class_commentary_task_generate(task_id: int):
             "content": str(generation.get("skill_content_snapshot") or ""),
         }
         frozen_transcript = str(generation.get("confirmed_transcript_snapshot") or "")
-        memory_context = {
-            "records": [],
-            "rendered_text": "",
-            "student_history_memories": [],
-            "teacher_style_memories": [],
-        }
+        try:
+            memory_context = retrieve_class_commentary_memory_context(
+                generation=generation,
+                live_student_ids=live_student_ids,
+                memory_service=_get_class_commentary_memory_service(),
+                record_loader=lambda record_ids: get_class_commentary_memory_records_by_ids(
+                    record_ids,
+                    organization_id=int(generation["organization_id"]),
+                ),
+                reconciliation_marker=lambda organization_id, record_ids, reason: (
+                    mark_class_commentary_memory_records_reconcile_needed(
+                        record_ids,
+                        reason,
+                        organization_id=organization_id,
+                    )
+                ),
+            )
+        except Exception as exc:
+            memory_context = empty_class_commentary_memory_context(
+                f"retrieval_{type(exc).__name__}"
+            )
         chat_request = build_class_commentary_chat_request(
             class_record=frozen_class,
             students=frozen_students,
             transcript_text=frozen_transcript,
             skill=frozen_skill,
-            teacher_style_memories=[],
-            student_history_memories=[],
+            teacher_style_memories=memory_context["teacher_style_memories"],
+            student_history_memories=memory_context["student_history_memories"],
         )
         generation = finalize_class_commentary_generation_execution_snapshot(
             int(generation["id"]),
