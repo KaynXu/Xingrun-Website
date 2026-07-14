@@ -26,7 +26,7 @@ import urllib.request
 import wave
 from pathlib import Path
 from class_commentary import (
-    build_class_commentary_generation_payload,
+    build_class_commentary_chat_request,
     build_class_commentary_transcript_polish_payload,
     normalize_class_commentary_feedback_text,
     payload_to_json,
@@ -2393,32 +2393,22 @@ def generate_class_commentary_feedback(
     openai_api_key: str = "",
     openai_base_url: str = "",
     openai_headers: str = "",
+    chat_request: dict | None = None,
     include_usage: bool = False,
 ):
     provider = normalize_chat_provider(provider or _provider_name())
     model = _get_chat_model(provider, model)
     client = _get_class_commentary_client(provider, openai_api_key, openai_base_url, openai_headers)
-    payload = build_class_commentary_generation_payload(
+    request_payload = chat_request or build_class_commentary_chat_request(
         class_record=class_record,
         students=students,
         transcript_text=transcript_text,
         skill=skill,
     )
-    system_prompt = (
-        "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
-        "Do not invent facts. Do not include roster students who are not clearly mentioned. "
-        "Treat the supplied colleague skill as the primary working instructions for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
-        "Infer the selected skill's emoji system from its examples, including tokens, density, placement, and meaning; match it when appropriate, and do not force emojis for low-emoji skills. "
-        "Use the transcript and roster as the only source of student facts. "
-        "Return plain text only. Do not flatten every student into one long paragraph."
-    )
     response = client.chat.completions.create(
         model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": payload_to_json(payload)},
-        ],
-        temperature=0.55,
+        messages=request_payload["messages"],
+        temperature=float(request_payload["temperature"]),
     )
     text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
     if include_usage:

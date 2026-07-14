@@ -17,6 +17,7 @@ from __future__ import annotations
 """
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -57,6 +58,29 @@ CONFIGURABLE_VISIBLE_PAGES = (
     "smartWrongQuestions",
     "classes",
 )
+CLASS_SUBJECT_KEY_ALIASES = {
+    "math": "math",
+    "mathematics": "math",
+    "数学": "math",
+    "chinese": "chinese",
+    "语文": "chinese",
+    "english": "english",
+    "英语": "english",
+    "physics": "physics",
+    "物理": "physics",
+    "chemistry": "chemistry",
+    "化学": "chemistry",
+    "biology": "biology",
+    "生物": "biology",
+    "history": "history",
+    "历史": "history",
+    "geography": "geography",
+    "地理": "geography",
+    "politics": "politics",
+    "政治": "politics",
+    "science": "science",
+    "科学": "science",
+}
 WECHAT_CHILD_REASON_INPUT_MODES = {"text", "voice"}
 PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED = "未分类"
 PRIMARY_WRONG_QUESTION_TOPIC_PRESETS = (
@@ -2310,6 +2334,397 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) 
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
+def canonicalize_class_subject_key(subject: object) -> Optional[str]:
+    normalized = str(subject or "").strip().casefold()
+    return CLASS_SUBJECT_KEY_ALIASES.get(normalized)
+
+
+def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
+    _ensure_column(conn, "classes", "subject_key", "TEXT")
+    class_rows = conn.execute(
+        "SELECT id, subject FROM classes WHERE subject_key IS NULL OR subject_key=''"
+    ).fetchall()
+    for class_row in class_rows:
+        subject_key = canonicalize_class_subject_key(class_row["subject"])
+        if subject_key:
+            conn.execute(
+                "UPDATE classes SET subject_key=? WHERE id=?",
+                (subject_key, class_row["id"]),
+            )
+    _ensure_column(
+        conn,
+        "class_commentary_tasks",
+        "confirmed_transcript_version",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(conn, "class_commentary_tasks", "final_feedback_text", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "class_commentary_tasks", "generation_seq", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "class_commentary_tasks", "feedback_confirmed_at", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "class_commentary_tasks", "feedback_revision_no", "INTEGER NOT NULL DEFAULT 0")
+    conn.execute(
+        """
+        UPDATE class_commentary_tasks
+        SET confirmed_transcript_version=1
+        WHERE confirmed_transcript_version=0
+          AND confirmed_transcript_text<>''
+        """
+    )
+
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS class_commentary_skills (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            skill_id TEXT NOT NULL,
+            owner_teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+            source_type TEXT NOT NULL,
+            source_path TEXT,
+            source_content_hash TEXT NOT NULL,
+            active_version_id INTEGER REFERENCES class_commentary_skill_versions(id),
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(organization_id, skill_id),
+            CHECK(source_type IN ('external_skill_package','database')),
+            CHECK(status IN ('active','disabled'))
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_skill_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            skill_registry_id INTEGER NOT NULL REFERENCES class_commentary_skills(id) ON DELETE CASCADE,
+            version_no INTEGER NOT NULL,
+            version_kind TEXT NOT NULL,
+            candidate_build_id INTEGER,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            base_version_id INTEGER REFERENCES class_commentary_skill_versions(id),
+            source_snapshot_hash TEXT,
+            evaluation_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            evaluation_hash TEXT NOT NULL DEFAULT '',
+            review_status TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            reviewed_at TEXT,
+            UNIQUE(skill_registry_id, version_no),
+            UNIQUE(candidate_build_id),
+            CHECK(version_kind IN ('imported','candidate')),
+            CHECK(review_status IN ('not_required','pending','approved','rejected'))
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_skill_activation_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            skill_registry_id INTEGER NOT NULL REFERENCES class_commentary_skills(id) ON DELETE CASCADE,
+            activation_request_id TEXT NOT NULL,
+            activation_payload_hash TEXT NOT NULL,
+            from_version_id INTEGER REFERENCES class_commentary_skill_versions(id),
+            to_version_id INTEGER NOT NULL REFERENCES class_commentary_skill_versions(id),
+            actor_user_id INTEGER NOT NULL REFERENCES users(id),
+            reason TEXT NOT NULL,
+            evaluation_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(skill_registry_id, activation_request_id),
+            CHECK(reason IN ('initial_import','candidate_approved','rollback'))
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_generations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES class_commentary_tasks(id) ON DELETE CASCADE,
+            generation_no INTEGER NOT NULL,
+            generation_request_id TEXT,
+            generation_request_payload_hash TEXT,
+            teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+            class_id INTEGER NOT NULL REFERENCES classes(id),
+            subject_key TEXT,
+            confirmed_transcript_version INTEGER NOT NULL DEFAULT 0,
+            confirmed_transcript_snapshot TEXT NOT NULL DEFAULT '',
+            confirmed_transcript_hash TEXT NOT NULL DEFAULT '',
+            attending_roster_snapshot_json TEXT NOT NULL DEFAULT '[]',
+            attending_roster_hash TEXT NOT NULL DEFAULT '',
+            attending_roster_explicit INTEGER NOT NULL DEFAULT 0,
+            skill_registry_id INTEGER REFERENCES class_commentary_skills(id),
+            skill_id TEXT,
+            skill_version_id INTEGER REFERENCES class_commentary_skill_versions(id),
+            skill_content_snapshot TEXT NOT NULL DEFAULT '',
+            skill_content_hash TEXT NOT NULL DEFAULT '',
+            model_provider TEXT,
+            model_name TEXT,
+            model_parameters_json TEXT,
+            prompt_version TEXT,
+            prompt_payload_snapshot_json TEXT,
+            prompt_payload_hash TEXT,
+            memory_context_snapshot_json TEXT,
+            memory_context_hash TEXT,
+            execution_snapshot_status TEXT NOT NULL DEFAULT 'ready',
+            execution_snapshot_finalized_at TEXT,
+            generated_feedback_text TEXT NOT NULL DEFAULT '',
+            origin TEXT NOT NULL,
+            snapshot_completeness TEXT NOT NULL,
+            missing_snapshot_fields_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL,
+            error_code TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            completed_at TEXT,
+            UNIQUE(task_id, generation_no),
+            UNIQUE(task_id, generation_request_id),
+            CHECK(origin IN ('runtime','legacy_migration')),
+            CHECK(snapshot_completeness IN ('complete','partial')),
+            CHECK(attending_roster_explicit IN (0,1)),
+            CHECK(execution_snapshot_status IN ('pending','ready')),
+            CHECK(status IN ('generating','succeeded','failed')),
+            CHECK(
+                (
+                    origin='legacy_migration'
+                    AND snapshot_completeness='partial'
+                    AND missing_snapshot_fields_json<>'[]'
+                )
+                OR
+                (
+                    origin='runtime'
+                    AND snapshot_completeness='complete'
+                    AND generation_request_id IS NOT NULL
+                    AND generation_request_id<>''
+                    AND generation_request_payload_hash IS NOT NULL
+                    AND generation_request_payload_hash<>''
+                    AND confirmed_transcript_snapshot<>''
+                    AND confirmed_transcript_hash<>''
+                    AND attending_roster_hash<>''
+                    AND skill_registry_id IS NOT NULL
+                    AND skill_id IS NOT NULL
+                    AND skill_id<>''
+                    AND skill_version_id IS NOT NULL
+                    AND skill_content_hash<>''
+                    AND model_provider IS NOT NULL
+                    AND model_provider<>''
+                    AND model_name IS NOT NULL
+                    AND model_name<>''
+                    AND model_parameters_json IS NOT NULL
+                    AND prompt_version IS NOT NULL
+                    AND prompt_version<>''
+                    AND prompt_payload_snapshot_json IS NOT NULL
+                    AND prompt_payload_hash IS NOT NULL
+                    AND prompt_payload_hash<>''
+                    AND memory_context_snapshot_json IS NOT NULL
+                    AND memory_context_hash IS NOT NULL
+                    AND memory_context_hash<>''
+                    AND missing_snapshot_fields_json='[]'
+                )
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_feedback_drafts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES class_commentary_tasks(id) ON DELETE CASCADE,
+            generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
+            teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+            based_on_revision_id INTEGER REFERENCES class_commentary_revisions(id) ON DELETE SET NULL,
+            feedback_text TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            draft_version INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(task_id, generation_id, teacher_user_id),
+            CHECK(draft_version >= 1)
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES class_commentary_tasks(id) ON DELETE CASCADE,
+            generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id),
+            teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+            revision_no INTEGER NOT NULL,
+            confirmation_request_id TEXT NOT NULL,
+            confirmation_payload_hash TEXT NOT NULL,
+            previous_revision_id INTEGER REFERENCES class_commentary_revisions(id),
+            confirmed_draft_version INTEGER NOT NULL DEFAULT 0,
+            confirmed_draft_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            final_feedback_text TEXT NOT NULL,
+            generation_diff_json TEXT NOT NULL,
+            previous_revision_diff_json TEXT,
+            learning_evidence_schema_version TEXT NOT NULL,
+            learning_evidence_selector_version TEXT NOT NULL,
+            learning_evidence_snapshot_json TEXT NOT NULL,
+            learning_evidence_source_refs_json TEXT NOT NULL,
+            learning_evidence_hash TEXT NOT NULL,
+            learning_evidence_captured_at TEXT NOT NULL,
+            learning_evidence_completeness TEXT NOT NULL,
+            learning_evidence_missing_sources_json TEXT NOT NULL,
+            learn_requested INTEGER NOT NULL,
+            accepted_without_edit INTEGER NOT NULL,
+            unchanged_from_previous_revision INTEGER NOT NULL,
+            confirmed_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(task_id, revision_no),
+            UNIQUE(task_id, confirmation_request_id),
+            CHECK(learning_evidence_completeness IN ('complete','partial','empty')),
+            CHECK(learn_requested IN (0,1)),
+            CHECK(accepted_without_edit IN (0,1)),
+            CHECK(unchanged_from_previous_revision IN (0,1))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_generations_task_created
+        ON class_commentary_generations (task_id, generation_no DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_revisions_task_confirmed
+        ON class_commentary_revisions (task_id, revision_no DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_skills_owner
+        ON class_commentary_skills (organization_id, owner_teacher_user_id, status);
+        """
+    )
+
+    _ensure_column(
+        conn,
+        "class_commentary_tasks",
+        "latest_generation_id",
+        "INTEGER REFERENCES class_commentary_generations(id) ON DELETE SET NULL",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_tasks",
+        "latest_revision_id",
+        "INTEGER REFERENCES class_commentary_revisions(id) ON DELETE SET NULL",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_generations",
+        "attending_roster_explicit",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_generations",
+        "execution_snapshot_status",
+        "TEXT NOT NULL DEFAULT 'ready'",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_generations",
+        "execution_snapshot_finalized_at",
+        "TEXT",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_revisions",
+        "confirmed_draft_version",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_revisions",
+        "confirmed_draft_snapshot_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )
+
+    legacy_tasks = conn.execute(
+        """
+        SELECT task.*, class.subject_key
+        FROM class_commentary_tasks AS task
+        JOIN classes AS class ON class.id = task.class_id
+        WHERE feedback_text <> ''
+          AND latest_generation_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM class_commentary_generations AS generation
+              WHERE generation.task_id = task.id
+                AND generation.origin = 'legacy_migration'
+          )
+        ORDER BY id
+        """
+    ).fetchall()
+    for task in legacy_tasks:
+        transcript_text = task["confirmed_transcript_text"] or ""
+        transcript_hash = hashlib.sha256(transcript_text.encode("utf-8")).hexdigest()
+        skill_content = task["skill_content_snapshot"] or ""
+        skill_content_hash = hashlib.sha256(skill_content.encode("utf-8")).hexdigest()
+        missing_snapshot_fields = [
+            "generation_request_id",
+            "generation_request_payload_hash",
+            "attending_roster_snapshot_json",
+            "attending_roster_hash",
+            "skill_registry_id",
+            "skill_version_id",
+            "model_parameters_json",
+            "prompt_version",
+            "prompt_payload_snapshot_json",
+            "prompt_payload_hash",
+            "memory_context_snapshot_json",
+            "memory_context_hash",
+        ]
+        if not transcript_text:
+            missing_snapshot_fields.extend(
+                ["confirmed_transcript_snapshot", "confirmed_transcript_hash"]
+            )
+        if not task["subject_key"]:
+            missing_snapshot_fields.append("subject_key")
+        if not task["skill_id"]:
+            missing_snapshot_fields.append("skill_id")
+        if not skill_content:
+            missing_snapshot_fields.extend(["skill_content_snapshot", "skill_content_hash"])
+        if not task["chat_provider"]:
+            missing_snapshot_fields.append("model_provider")
+        if not task["chat_model"]:
+            missing_snapshot_fields.append("model_name")
+        cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_generations (
+                organization_id,
+                task_id,
+                generation_no,
+                teacher_user_id,
+                class_id,
+                subject_key,
+                confirmed_transcript_version,
+                confirmed_transcript_snapshot,
+                confirmed_transcript_hash,
+                attending_roster_snapshot_json,
+                attending_roster_hash,
+                skill_id,
+                skill_content_snapshot,
+                skill_content_hash,
+                model_provider,
+                model_name,
+                generated_feedback_text,
+                origin,
+                snapshot_completeness,
+                missing_snapshot_fields_json,
+                status,
+                completed_at
+            )
+            VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?, ?, ?,
+                    'legacy_migration', 'partial', ?, 'succeeded', ?)
+            """,
+            (
+                task["organization_id"],
+                task["id"],
+                task["teacher_user_id"],
+                task["class_id"],
+                task["subject_key"] or None,
+                task["confirmed_transcript_version"],
+                transcript_text,
+                transcript_hash,
+                task["skill_id"] or None,
+                skill_content,
+                skill_content_hash,
+                task["chat_provider"] or None,
+                task["chat_model"] or None,
+                task["feedback_text"],
+                json.dumps(missing_snapshot_fields, ensure_ascii=False, separators=(",", ":")),
+                task["updated_at"],
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET latest_generation_id=?, generation_seq=1
+            WHERE id=?
+            """,
+            (cursor.lastrowid, task["id"]),
+        )
+
+
 def _migrate_course_calendar_time_blocks(conn: sqlite3.Connection) -> None:
     for legacy_block, current_block in LEGACY_COURSE_CALENDAR_TIME_BLOCKS.items():
         conn.execute(
@@ -3534,6 +3949,7 @@ def init_db():
         _ensure_column(conn, "class_commentary_tasks", "roster_snapshot", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "class_commentary_tasks", "transcript_polish_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "class_commentary_tasks", "transcript_polished_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_class_commentary_evolution_schema(conn)
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
         _ensure_review_plan_versions_schema(conn)
@@ -6669,13 +7085,14 @@ def save_class(name: str, subject: str = "", grade: str = "",
         cur = conn.execute(
             """
             INSERT INTO classes (
-                organization_id, name, subject, grade, teacher_name, teacher_email,
+                organization_id, name, subject, subject_key, grade, teacher_name, teacher_email,
                 stage, class_type, current_grade, class_number, cohort_year, show_cohort_year, is_bridge, bridge_target, content_track
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                organization_id, payload["name"], payload["subject"], payload["grade"], teacher_name, teacher_email,
+                organization_id, payload["name"], payload["subject"], canonicalize_class_subject_key(payload["subject"]),
+                payload["grade"], teacher_name, teacher_email,
                 payload["stage"], payload["class_type"], payload["current_grade"], payload["class_number"], payload["cohort_year"],
                 payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"], payload["content_track"],
             )
@@ -6808,12 +7225,13 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             conn.execute(
                 """
                 UPDATE classes
-                SET name=?, subject=?, grade=?, teacher_email='', stage=?, class_type=?, current_grade=?,
+                SET name=?, subject=?, subject_key=?, grade=?, teacher_email='', stage=?, class_type=?, current_grade=?,
                     class_number=?, cohort_year=?, show_cohort_year=?, is_bridge=?, bridge_target=?, content_track=?
                 WHERE id=?
                 """,
                 (
-                    payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["class_type"], payload["current_grade"],
+                    payload["name"], payload["subject"], canonicalize_class_subject_key(payload["subject"]), payload["grade"],
+                    payload["stage"], payload["class_type"], payload["current_grade"],
                     payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                     payload["content_track"], class_id,
                 )
@@ -6825,6 +7243,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             UPDATE classes
             SET name=?,
                 subject=?,
+                subject_key=?,
                 grade=?,
                 stage=?,
                 class_type=?,
@@ -6840,7 +7259,8 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             WHERE id=?
             """,
             (
-                payload["name"], payload["subject"], payload["grade"], payload["stage"], payload["class_type"], payload["current_grade"],
+                payload["name"], payload["subject"], canonicalize_class_subject_key(payload["subject"]), payload["grade"],
+                payload["stage"], payload["class_type"], payload["current_grade"],
                 payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                 payload["content_track"], teacher_name, teacher_email, class_id,
             )
@@ -7565,6 +7985,1333 @@ def list_students_for_class(class_id: int) -> list:
     return [dict(row) for row in rows]
 
 
+class ClassCommentarySkillImportConflict(ValueError):
+    pass
+
+
+class ClassCommentaryGenerationRequestConflict(ValueError):
+    pass
+
+
+class ClassCommentaryDraftVersionConflict(ValueError):
+    def __init__(self, current_draft: Optional[dict]):
+        super().__init__("draft_version_conflict")
+        self.code = "draft_version_conflict"
+        self.current_draft = current_draft
+
+
+class ClassCommentaryConfirmationRequestConflict(ValueError):
+    pass
+
+
+class ClassCommentaryMemoryNotEnabled(ValueError):
+    def __init__(self):
+        super().__init__("memory_not_enabled")
+        self.code = "memory_not_enabled"
+
+
+def _class_commentary_canonical_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _class_commentary_content_hash(value: object) -> str:
+    return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+
+def _read_class_commentary_skill_source(source_path: str) -> str:
+    path = Path(str(source_path or "")).expanduser().resolve()
+    if path.is_dir():
+        parts = []
+        for filename in ("SKILL.md", "work.md", "persona.md"):
+            file_path = path / filename
+            if file_path.is_file():
+                text = file_path.read_text(encoding="utf-8").strip()
+                if text:
+                    parts.append(f"## {filename}\n{text}")
+        content = "\n\n".join(parts).strip()
+    elif path.is_file():
+        if path.name == "SKILL.md":
+            return _read_class_commentary_skill_source(str(path.parent))
+        content = path.read_text(encoding="utf-8").strip()
+    else:
+        raise ValueError("skill source_path not found")
+    if not content:
+        raise ValueError("skill content is empty")
+    return content
+
+
+def _class_commentary_skill_display_name(skill_id: str, source_path: str) -> str:
+    path = Path(source_path)
+    if path.is_dir():
+        meta_path = path / "meta.json"
+    elif path.name == "SKILL.md":
+        meta_path = path.parent / "meta.json"
+    else:
+        meta_path = Path("")
+    if meta_path and meta_path.is_file():
+        try:
+            metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+        if isinstance(metadata, dict) and str(metadata.get("name") or "").strip():
+            return str(metadata["name"]).strip()
+    return skill_id
+
+
+def _serialize_class_commentary_skill_row(row: sqlite3.Row) -> dict:
+    item = dict(row)
+    source_path = str(item.get("source_path") or "")
+    skill_id = str(item["skill_id"])
+    return {
+        "registry_id": int(item["registry_id"]),
+        "id": skill_id,
+        "skill_id": skill_id,
+        "name": _class_commentary_skill_display_name(skill_id, source_path),
+        "organization_id": int(item["organization_id"]),
+        "owner_teacher_user_id": int(item["owner_teacher_user_id"]),
+        "source_type": str(item["source_type"]),
+        "source_path": source_path,
+        "filename": Path(source_path).name if source_path else "",
+        "source_content_hash": str(item["source_content_hash"]),
+        "status": str(item["status"]),
+        "active_version_id": int(item["active_version_id"]),
+        "version_id": int(item["version_id"]),
+        "version_no": int(item["version_no"]),
+        "version_kind": str(item["version_kind"]),
+        "content": str(item["content"]),
+        "content_hash": str(item["content_hash"]),
+        "updated_at": str(item["updated_at"] or ""),
+    }
+
+
+def _class_commentary_skill_select_sql() -> str:
+    return """
+        SELECT registry.id AS registry_id,
+               registry.organization_id,
+               registry.skill_id,
+               registry.owner_teacher_user_id,
+               registry.source_type,
+               registry.source_path,
+               registry.source_content_hash,
+               registry.status,
+               registry.active_version_id,
+               registry.updated_at,
+               version.id AS version_id,
+               version.version_no,
+               version.version_kind,
+               version.content,
+               version.content_hash
+        FROM class_commentary_skills AS registry
+        JOIN class_commentary_skill_versions AS version
+          ON version.id = registry.active_version_id
+         AND version.skill_registry_id = registry.id
+         AND version.organization_id = registry.organization_id
+    """
+
+
+def _get_class_commentary_skill_for_teacher_conn(
+    conn: sqlite3.Connection,
+    organization_id: int,
+    owner_teacher_user_id: int,
+    skill_id: str,
+):
+    return conn.execute(
+        f"""
+        {_class_commentary_skill_select_sql()}
+        WHERE registry.organization_id=?
+          AND registry.owner_teacher_user_id=?
+          AND registry.skill_id=?
+          AND registry.status='active'
+        """,
+        (organization_id, owner_teacher_user_id, str(skill_id or "").strip()),
+    ).fetchone()
+
+
+def import_class_commentary_skill_manifest(
+    *,
+    organization_id: int,
+    skill_id: str,
+    owner_teacher_user_id: int,
+    source_path: str,
+    content: Optional[str] = None,
+) -> dict:
+    normalized_skill_id = str(skill_id or "").strip()
+    if not normalized_skill_id or "/" in normalized_skill_id or "\\" in normalized_skill_id:
+        raise ValueError("invalid skill_id")
+    resolved_source_path = str(Path(str(source_path or "")).expanduser().absolute())
+    source_content = str(content).strip() if content is not None else _read_class_commentary_skill_source(resolved_source_path)
+    if not source_content:
+        raise ValueError("skill content is empty")
+    content_hash = _class_commentary_content_hash(source_content)
+    activation_request_id = f"initial-import:{organization_id}:{normalized_skill_id}"
+    activation_payload = {
+        "organization_id": int(organization_id),
+        "owner_teacher_user_id": int(owner_teacher_user_id),
+        "skill_id": normalized_skill_id,
+        "source_content_hash": content_hash,
+        "source_path": resolved_source_path,
+    }
+    activation_payload_hash = _class_commentary_content_hash(
+        _class_commentary_canonical_json(activation_payload)
+    )
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        organization = conn.execute(
+            "SELECT id FROM organizations WHERE id=?",
+            (organization_id,),
+        ).fetchone()
+        if not organization:
+            raise ValueError("organization not found")
+        owner = conn.execute(
+            "SELECT organization_id, status FROM users WHERE id=?",
+            (owner_teacher_user_id,),
+        ).fetchone()
+        if not owner or int(owner["organization_id"] or 0) != int(organization_id):
+            raise ValueError("skill owner must belong to organization")
+        if str(owner["status"] or "") != "active":
+            raise ValueError("skill owner must be active")
+
+        existing = conn.execute(
+            """
+            SELECT id, owner_teacher_user_id, source_type, source_path,
+                   source_content_hash, active_version_id, status
+            FROM class_commentary_skills
+            WHERE organization_id=? AND skill_id=?
+            """,
+            (organization_id, normalized_skill_id),
+        ).fetchone()
+        if existing:
+            active_version = conn.execute(
+                """
+                SELECT version_no, version_kind, content, content_hash, review_status
+                FROM class_commentary_skill_versions
+                WHERE id=? AND skill_registry_id=? AND organization_id=?
+                """,
+                (existing["active_version_id"], existing["id"], organization_id),
+            ).fetchone()
+            exact_match = bool(
+                int(existing["owner_teacher_user_id"]) == int(owner_teacher_user_id)
+                and existing["source_type"] == "external_skill_package"
+                and str(existing["source_path"] or "") == resolved_source_path
+                and existing["source_content_hash"] == content_hash
+                and existing["status"] == "active"
+                and active_version
+                and int(active_version["version_no"]) == 1
+                and active_version["version_kind"] == "imported"
+                and active_version["content"] == source_content
+                and active_version["content_hash"] == content_hash
+                and active_version["review_status"] == "not_required"
+            )
+            if not exact_match:
+                raise ClassCommentarySkillImportConflict("skill import conflicts with existing registry")
+            row = _get_class_commentary_skill_for_teacher_conn(
+                conn,
+                organization_id,
+                owner_teacher_user_id,
+                normalized_skill_id,
+            )
+            if not row:
+                raise ClassCommentarySkillImportConflict("existing skill registry is incomplete")
+            return _serialize_class_commentary_skill_row(row)
+
+        cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_skills (
+                organization_id, skill_id, owner_teacher_user_id, source_type,
+                source_path, source_content_hash, active_version_id, status
+            )
+            VALUES (?, ?, ?, 'external_skill_package', ?, ?, NULL, 'active')
+            """,
+            (
+                organization_id,
+                normalized_skill_id,
+                owner_teacher_user_id,
+                resolved_source_path,
+                content_hash,
+            ),
+        )
+        registry_id = int(cursor.lastrowid)
+        version_cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_skill_versions (
+                organization_id, skill_registry_id, version_no, version_kind,
+                content, content_hash, evaluation_snapshot_json, evaluation_hash,
+                review_status
+            )
+            VALUES (?, ?, 1, 'imported', ?, ?, '{}', '', 'not_required')
+            """,
+            (organization_id, registry_id, source_content, content_hash),
+        )
+        version_id = int(version_cursor.lastrowid)
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_skills
+            SET active_version_id=?, updated_at=datetime('now','localtime')
+            WHERE id=? AND active_version_id IS NULL
+            """,
+            (version_id, registry_id),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentarySkillImportConflict("skill active version initialization failed")
+        conn.execute(
+            """
+            INSERT INTO class_commentary_skill_activation_events (
+                organization_id, skill_registry_id, activation_request_id,
+                activation_payload_hash, from_version_id, to_version_id,
+                actor_user_id, reason, evaluation_snapshot_json
+            )
+            VALUES (?, ?, ?, ?, NULL, ?, ?, 'initial_import', '{}')
+            """,
+            (
+                organization_id,
+                registry_id,
+                activation_request_id,
+                activation_payload_hash,
+                version_id,
+                owner_teacher_user_id,
+            ),
+        )
+        row = _get_class_commentary_skill_for_teacher_conn(
+            conn,
+            organization_id,
+            owner_teacher_user_id,
+            normalized_skill_id,
+        )
+        if not row:
+            raise ClassCommentarySkillImportConflict("skill registry import did not produce an active skill")
+        return _serialize_class_commentary_skill_row(row)
+
+
+def list_class_commentary_skills_for_teacher(
+    organization_id: int,
+    owner_teacher_user_id: int,
+) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            {_class_commentary_skill_select_sql()}
+            WHERE registry.organization_id=?
+              AND registry.owner_teacher_user_id=?
+              AND registry.status='active'
+            ORDER BY registry.skill_id COLLATE NOCASE
+            """,
+            (organization_id, owner_teacher_user_id),
+        ).fetchall()
+    return [_serialize_class_commentary_skill_row(row) for row in rows]
+
+
+def get_class_commentary_skill_for_teacher(
+    organization_id: int,
+    owner_teacher_user_id: int,
+    skill_id: str,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        row = _get_class_commentary_skill_for_teacher_conn(
+            conn,
+            organization_id,
+            owner_teacher_user_id,
+            skill_id,
+        )
+    return _serialize_class_commentary_skill_row(row) if row else None
+
+
+def _class_commentary_requested_roster_ids(attending_roster: object) -> list[int]:
+    if not isinstance(attending_roster, list):
+        raise ValueError("attending_roster must be a list")
+    requested_ids: list[int] = []
+    for item in attending_roster:
+        if not isinstance(item, dict):
+            raise ValueError("attending_roster items must be objects")
+        try:
+            student_id = int(item.get("student_id") or item.get("id") or 0)
+        except (TypeError, ValueError):
+            student_id = 0
+        if student_id <= 0 or student_id in requested_ids:
+            raise ValueError("attending_roster contains an invalid student")
+        requested_ids.append(student_id)
+    return sorted(requested_ids)
+
+
+def _normalize_class_commentary_attending_roster(
+    conn: sqlite3.Connection,
+    class_id: int,
+    organization_id: int,
+    attending_roster: object,
+) -> list[dict]:
+    requested_ids = _class_commentary_requested_roster_ids(attending_roster)
+    if not requested_ids:
+        return []
+    placeholders = ",".join("?" for _ in requested_ids)
+    rows = conn.execute(
+        f"""
+        SELECT student.id, student.name
+        FROM class_students AS membership
+        JOIN students AS student ON student.id = membership.student_id
+        WHERE membership.class_id=?
+          AND student.organization_id=?
+          AND student.status='active'
+          AND student.id IN ({placeholders})
+        """,
+        (class_id, organization_id, *requested_ids),
+    ).fetchall()
+    students_by_id = {int(row["id"]): str(row["name"] or "") for row in rows}
+    if set(students_by_id) != set(requested_ids):
+        raise ValueError("attending_roster contains a student outside the class")
+    return [
+        {"student_id": student_id, "student_name": students_by_id[student_id]}
+        for student_id in sorted(requested_ids)
+    ]
+
+
+def _serialize_class_commentary_generation_row(row: sqlite3.Row) -> dict:
+    return dict(row)
+
+
+def get_class_commentary_generation(generation_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+    return _serialize_class_commentary_generation_row(row) if row else None
+
+
+def get_class_commentary_generation_by_request(
+    task_id: int,
+    generation_request_id: str,
+) -> Optional[dict]:
+    normalized_request_id = str(generation_request_id or "").strip()
+    if not normalized_request_id:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_generations
+            WHERE task_id=? AND generation_request_id=?
+            """,
+            (task_id, normalized_request_id),
+        ).fetchone()
+    return _serialize_class_commentary_generation_row(row) if row else None
+
+
+def list_class_commentary_generations(task_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT generation.*,
+                   CASE WHEN task.latest_generation_id = generation.id THEN 1 ELSE 0 END AS is_latest,
+                   draft.id AS draft_id,
+                   draft.draft_version,
+                   draft.updated_at AS draft_updated_at,
+                   (
+                       SELECT revision.id
+                       FROM class_commentary_revisions AS revision
+                       WHERE revision.generation_id = generation.id
+                       ORDER BY revision.revision_no DESC
+                       LIMIT 1
+                   ) AS latest_revision_id
+            FROM class_commentary_generations AS generation
+            JOIN class_commentary_tasks AS task ON task.id = generation.task_id
+            LEFT JOIN class_commentary_feedback_drafts AS draft
+              ON draft.task_id = generation.task_id
+             AND draft.generation_id = generation.id
+             AND draft.teacher_user_id = generation.teacher_user_id
+            WHERE generation.task_id=?
+            ORDER BY generation.generation_no DESC
+            """,
+            (task_id,),
+        ).fetchall()
+    return [_serialize_class_commentary_generation_row(row) for row in rows]
+
+
+def reserve_class_commentary_generation(
+    *,
+    task_id: int,
+    generation_request_id: str,
+    skill_registry_id: int,
+    attending_roster: list[dict],
+    model_provider: str,
+    model_name: str,
+    model_parameters: object,
+    prompt_version: str,
+    prompt_payload: object = None,
+    memory_context: object = None,
+    attending_roster_explicit: bool = True,
+) -> dict:
+    normalized_request_id = str(generation_request_id or "").strip()
+    normalized_provider = str(model_provider or "").strip()
+    normalized_model = str(model_name or "").strip()
+    normalized_prompt_version = str(prompt_version or "").strip()
+    if not normalized_request_id:
+        raise ValueError("generation_request_id is required")
+    if not normalized_provider or not normalized_model or not normalized_prompt_version:
+        raise ValueError("model_provider, model_name, and prompt_version are required")
+    if not isinstance(attending_roster_explicit, bool):
+        raise ValueError("attending_roster_explicit must be a boolean")
+    requested_roster_ids = _class_commentary_requested_roster_ids(attending_roster)
+    model_parameters_json = _class_commentary_canonical_json(model_parameters)
+    execution_snapshot_status = (
+        "ready" if prompt_payload is not None and memory_context is not None else "pending"
+    )
+    prompt_payload_json = _class_commentary_canonical_json(
+        prompt_payload if prompt_payload is not None else {}
+    )
+    prompt_payload_hash = _class_commentary_content_hash(prompt_payload_json)
+    memory_context_json = _class_commentary_canonical_json(
+        memory_context if memory_context is not None else {}
+    )
+    memory_context_hash = _class_commentary_content_hash(memory_context_json)
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_generations
+            WHERE task_id=? AND generation_request_id=?
+            """,
+            (task_id, normalized_request_id),
+        ).fetchone()
+        if existing:
+            try:
+                saved_roster = json.loads(str(existing["attending_roster_snapshot_json"] or "[]"))
+            except (TypeError, json.JSONDecodeError):
+                saved_roster = []
+            saved_roster_ids = sorted(
+                int(item.get("student_id") or 0)
+                for item in saved_roster
+                if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
+            )
+            if (
+                int(existing["skill_registry_id"] or 0) != int(skill_registry_id)
+                or saved_roster_ids != requested_roster_ids
+                or bool(existing["attending_roster_explicit"]) != attending_roster_explicit
+            ):
+                raise ClassCommentaryGenerationRequestConflict(
+                    "generation request_id was already used with a different payload"
+                )
+            item = _serialize_class_commentary_generation_row(existing)
+            item["is_idempotent"] = True
+            return item
+
+        task = conn.execute(
+            """
+            SELECT task.*, class.organization_id AS class_organization_id,
+                   class.subject_key
+            FROM class_commentary_tasks AS task
+            JOIN classes AS class ON class.id = task.class_id
+            WHERE task.id=?
+            """,
+            (task_id,),
+        ).fetchone()
+        if not task:
+            raise ValueError("class commentary task not found")
+        organization_id = int(task["organization_id"])
+        teacher_user_id = int(task["teacher_user_id"])
+        class_id = int(task["class_id"])
+        if int(task["class_organization_id"]) != organization_id:
+            raise ValueError("task organization does not match class")
+        transcript_snapshot = str(task["confirmed_transcript_text"] or "").strip()
+        transcript_version = int(task["confirmed_transcript_version"] or 0)
+        if not transcript_snapshot or transcript_version <= 0:
+            raise ValueError("confirmed transcript is required")
+        transcript_hash = _class_commentary_content_hash(transcript_snapshot)
+
+        registry = conn.execute(
+            "SELECT skill_id FROM class_commentary_skills WHERE id=?",
+            (skill_registry_id,),
+        ).fetchone()
+        skill = _get_class_commentary_skill_for_teacher_conn(
+            conn,
+            organization_id,
+            teacher_user_id,
+            str(registry["skill_id"]) if registry else "",
+        )
+        if not skill or int(skill["registry_id"]) != int(skill_registry_id):
+            raise ValueError("skill registry is not active or is not owned by task teacher")
+        skill_content = str(skill["content"])
+        skill_content_hash = _class_commentary_content_hash(skill_content)
+        if skill_content_hash != str(skill["content_hash"]):
+            raise ValueError("skill content hash mismatch")
+
+        roster_snapshot = _normalize_class_commentary_attending_roster(
+            conn,
+            class_id,
+            organization_id,
+            attending_roster,
+        )
+        roster_snapshot_json = _class_commentary_canonical_json(roster_snapshot)
+        roster_hash = _class_commentary_content_hash(roster_snapshot_json)
+        request_payload = {
+            "attending_student_ids": [item["student_id"] for item in roster_snapshot],
+            "attending_roster_explicit": attending_roster_explicit,
+            "confirmed_transcript_hash": transcript_hash,
+            "confirmed_transcript_version": transcript_version,
+            "model_name": normalized_model,
+            "model_parameters": model_parameters,
+            "model_provider": normalized_provider,
+            "prompt_version": normalized_prompt_version,
+            "skill_registry_id": int(skill["registry_id"]),
+            "skill_version_id": int(skill["version_id"]),
+            "subject_key": task["subject_key"],
+            "task_id": int(task_id),
+        }
+        request_payload_hash = _class_commentary_content_hash(
+            _class_commentary_canonical_json(request_payload)
+        )
+        generation_no = int(task["generation_seq"] or 0) + 1
+        cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_generations (
+                organization_id, task_id, generation_no, generation_request_id,
+                generation_request_payload_hash, teacher_user_id, class_id, subject_key,
+                confirmed_transcript_version, confirmed_transcript_snapshot,
+                confirmed_transcript_hash, attending_roster_snapshot_json,
+                attending_roster_hash, attending_roster_explicit,
+                skill_registry_id, skill_id, skill_version_id,
+                skill_content_snapshot, skill_content_hash, model_provider, model_name,
+                model_parameters_json, prompt_version, prompt_payload_snapshot_json,
+                prompt_payload_hash, memory_context_snapshot_json, memory_context_hash,
+                execution_snapshot_status, execution_snapshot_finalized_at,
+                generated_feedback_text, origin, snapshot_completeness,
+                missing_snapshot_fields_json, status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'runtime', 'complete', '[]', 'generating')
+            """,
+            (
+                organization_id,
+                task_id,
+                generation_no,
+                normalized_request_id,
+                request_payload_hash,
+                teacher_user_id,
+                class_id,
+                task["subject_key"],
+                transcript_version,
+                transcript_snapshot,
+                transcript_hash,
+                roster_snapshot_json,
+                roster_hash,
+                1 if attending_roster_explicit else 0,
+                int(skill["registry_id"]),
+                str(skill["skill_id"]),
+                int(skill["version_id"]),
+                skill_content,
+                skill_content_hash,
+                normalized_provider,
+                normalized_model,
+                model_parameters_json,
+                normalized_prompt_version,
+                prompt_payload_json,
+                prompt_payload_hash,
+                memory_context_json,
+                memory_context_hash,
+                execution_snapshot_status,
+                (
+                    conn.execute(
+                        "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now') AS value"
+                    ).fetchone()["value"]
+                    if execution_snapshot_status == "ready"
+                    else None
+                ),
+            ),
+        )
+        generation_id = int(cursor.lastrowid)
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET generation_seq=?, latest_generation_id=?, status='generating',
+                failure_stage='', skill_id=?, skill_name=?, skill_path=?,
+                skill_content_snapshot=?, feedback_text='', generation_error='',
+                transcription_error='',
+                generation_request_key=?, chat_provider=?, chat_model=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND generation_seq=?
+            """,
+            (
+                generation_no,
+                generation_id,
+                str(skill["skill_id"]),
+                _class_commentary_skill_display_name(
+                    str(skill["skill_id"]),
+                    str(skill["source_path"] or ""),
+                ),
+                str(skill["source_path"]),
+                skill_content,
+                normalized_request_id,
+                normalized_provider,
+                normalized_model,
+                task_id,
+                int(task["generation_seq"] or 0),
+            ),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict("task generation sequence changed")
+        row = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+        item = _serialize_class_commentary_generation_row(row)
+        item["is_idempotent"] = False
+        return item
+
+
+def finalize_class_commentary_generation_execution_snapshot(
+    generation_id: int,
+    *,
+    prompt_payload: object,
+    memory_context: object,
+) -> dict:
+    prompt_payload_json = _class_commentary_canonical_json(prompt_payload)
+    prompt_payload_hash = _class_commentary_content_hash(prompt_payload_json)
+    memory_context_json = _class_commentary_canonical_json(memory_context)
+    memory_context_hash = _class_commentary_content_hash(memory_context_json)
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if str(generation["execution_snapshot_status"] or "ready") == "ready":
+            if (
+                str(generation["prompt_payload_hash"] or "") != prompt_payload_hash
+                or str(generation["memory_context_hash"] or "") != memory_context_hash
+            ):
+                raise ClassCommentaryGenerationRequestConflict(
+                    "generation execution snapshot is already finalized"
+                )
+            return _serialize_class_commentary_generation_row(generation)
+        if str(generation["status"]) != "generating":
+            raise ValueError("generation is no longer generating")
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET prompt_payload_snapshot_json=?, prompt_payload_hash=?,
+                memory_context_snapshot_json=?, memory_context_hash=?,
+                execution_snapshot_status='ready',
+                execution_snapshot_finalized_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND status='generating' AND execution_snapshot_status='pending'
+            """,
+            (
+                prompt_payload_json,
+                prompt_payload_hash,
+                memory_context_json,
+                memory_context_hash,
+                generation_id,
+            ),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "generation execution snapshot changed"
+            )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(row)
+
+
+def complete_class_commentary_generation(generation_id: int, feedback_text: str) -> dict:
+    normalized_feedback = str(feedback_text or "")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if generation["status"] != "generating":
+            return _serialize_class_commentary_generation_row(generation)
+        if str(generation["execution_snapshot_status"] or "ready") != "ready":
+            raise ValueError("generation execution snapshot is not finalized")
+        conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET status='succeeded', generated_feedback_text=?, error_code=NULL,
+                completed_at=datetime('now','localtime')
+            WHERE id=? AND status='generating'
+            """,
+            (normalized_feedback, generation_id),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='ready', failure_stage='', feedback_text=?, generation_error='',
+                transcription_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND latest_generation_id=? AND confirmed_transcript_version=?
+            """,
+            (
+                normalized_feedback,
+                generation["task_id"],
+                generation_id,
+                generation["confirmed_transcript_version"],
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(row)
+
+
+def fail_class_commentary_generation(generation_id: int, error_code: str) -> dict:
+    normalized_error = str(error_code or "generation_failed").strip() or "generation_failed"
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if generation["status"] != "generating":
+            return _serialize_class_commentary_generation_row(generation)
+        conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET status='failed', error_code=?, completed_at=datetime('now','localtime')
+            WHERE id=? AND status='generating'
+            """,
+            (normalized_error, generation_id),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='failed', failure_stage='generation', generation_error=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND latest_generation_id=? AND confirmed_transcript_version=?
+            """,
+            (
+                normalized_error,
+                generation["task_id"],
+                generation_id,
+                generation["confirmed_transcript_version"],
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (generation_id,),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(row)
+
+
+def _serialize_class_commentary_feedback_draft_row(row: sqlite3.Row) -> dict:
+    return dict(row)
+
+
+def _get_class_commentary_feedback_draft_conn(
+    conn: sqlite3.Connection,
+    task_id: int,
+    generation_id: int,
+    teacher_user_id: int,
+):
+    return conn.execute(
+        """
+        SELECT *
+        FROM class_commentary_feedback_drafts
+        WHERE task_id=? AND generation_id=? AND teacher_user_id=?
+        """,
+        (task_id, generation_id, teacher_user_id),
+    ).fetchone()
+
+
+def _validate_class_commentary_draft_scope(
+    conn: sqlite3.Connection,
+    task_id: int,
+    generation_id: int,
+    teacher_user_id: int,
+    based_on_revision_id: Optional[int],
+) -> sqlite3.Row:
+    generation = conn.execute(
+        """
+        SELECT generation.*, task.teacher_user_id AS task_teacher_user_id,
+               task.organization_id AS task_organization_id,
+               task.class_id AS task_class_id
+        FROM class_commentary_generations AS generation
+        JOIN class_commentary_tasks AS task ON task.id = generation.task_id
+        WHERE generation.id=? AND task.id=?
+        """,
+        (generation_id, task_id),
+    ).fetchone()
+    if not generation:
+        raise ValueError("generation does not belong to task")
+    if int(generation["teacher_user_id"]) != int(teacher_user_id):
+        raise ValueError("generation is not owned by teacher")
+    if int(generation["task_teacher_user_id"]) != int(teacher_user_id):
+        raise ValueError("task is not owned by teacher")
+    if int(generation["organization_id"]) != int(generation["task_organization_id"]):
+        raise ValueError("generation organization does not match task")
+    if int(generation["class_id"]) != int(generation["task_class_id"]):
+        raise ValueError("generation class does not match task")
+    if based_on_revision_id is not None:
+        revision = conn.execute(
+            """
+            SELECT id
+            FROM class_commentary_revisions
+            WHERE id=? AND task_id=? AND generation_id=? AND teacher_user_id=?
+            """,
+            (based_on_revision_id, task_id, generation_id, teacher_user_id),
+        ).fetchone()
+        if not revision:
+            raise ValueError("based_on_revision_id does not match draft scope")
+    return generation
+
+
+def get_class_commentary_feedback_draft(
+    task_id: int,
+    generation_id: int,
+    teacher_user_id: int,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        _validate_class_commentary_draft_scope(
+            conn,
+            task_id,
+            generation_id,
+            teacher_user_id,
+            None,
+        )
+        row = _get_class_commentary_feedback_draft_conn(
+            conn,
+            task_id,
+            generation_id,
+            teacher_user_id,
+        )
+    return _serialize_class_commentary_feedback_draft_row(row) if row else None
+
+
+def save_class_commentary_feedback_draft(
+    *,
+    task_id: int,
+    generation_id: int,
+    teacher_user_id: int,
+    feedback_text: str,
+    expected_draft_version: int,
+    based_on_revision_id: Optional[int] = None,
+) -> dict:
+    normalized_feedback = str(feedback_text or "")
+    try:
+        expected_version = int(expected_draft_version)
+    except (TypeError, ValueError):
+        raise ValueError("expected_draft_version must be an integer")
+    if expected_version < 0:
+        raise ValueError("expected_draft_version must be non-negative")
+    normalized_based_on_revision_id = (
+        int(based_on_revision_id) if based_on_revision_id is not None else None
+    )
+    content_hash = _class_commentary_content_hash(normalized_feedback)
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = _validate_class_commentary_draft_scope(
+            conn,
+            task_id,
+            generation_id,
+            teacher_user_id,
+            normalized_based_on_revision_id,
+        )
+        current = _get_class_commentary_feedback_draft_conn(
+            conn,
+            task_id,
+            generation_id,
+            teacher_user_id,
+        )
+        if current is None:
+            if expected_version != 0:
+                raise ClassCommentaryDraftVersionConflict(None)
+            cursor = conn.execute(
+                """
+                INSERT INTO class_commentary_feedback_drafts (
+                    organization_id, task_id, generation_id, teacher_user_id,
+                    based_on_revision_id, feedback_text, content_hash, draft_version
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    generation["organization_id"],
+                    task_id,
+                    generation_id,
+                    teacher_user_id,
+                    normalized_based_on_revision_id,
+                    normalized_feedback,
+                    content_hash,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM class_commentary_feedback_drafts WHERE id=?",
+                (cursor.lastrowid,),
+            ).fetchone()
+            return _serialize_class_commentary_feedback_draft_row(row)
+        if int(current["draft_version"]) != expected_version:
+            raise ClassCommentaryDraftVersionConflict(
+                _serialize_class_commentary_feedback_draft_row(current)
+            )
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_feedback_drafts
+            SET based_on_revision_id=?, feedback_text=?, content_hash=?,
+                draft_version=draft_version + 1,
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND draft_version=?
+            """,
+            (
+                normalized_based_on_revision_id,
+                normalized_feedback,
+                content_hash,
+                current["id"],
+                expected_version,
+            ),
+        )
+        if updated.rowcount != 1:
+            latest = _get_class_commentary_feedback_draft_conn(
+                conn,
+                task_id,
+                generation_id,
+                teacher_user_id,
+            )
+            raise ClassCommentaryDraftVersionConflict(
+                _serialize_class_commentary_feedback_draft_row(latest) if latest else None
+            )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_feedback_drafts WHERE id=?",
+            (current["id"],),
+        ).fetchone()
+        return _serialize_class_commentary_feedback_draft_row(row)
+
+
+def _class_commentary_feedback_diff(before_text: str, after_text: str) -> str:
+    before = str(before_text or "")
+    after = str(after_text or "")
+    unified_diff = list(
+        difflib.unified_diff(
+            before.splitlines(),
+            after.splitlines(),
+            fromfile="before",
+            tofile="after",
+            lineterm="",
+        )
+    )
+    return _class_commentary_canonical_json(
+        {
+            "after_hash": _class_commentary_content_hash(after),
+            "before_hash": _class_commentary_content_hash(before),
+            "changed": before != after,
+            "unified_diff": unified_diff,
+        }
+    )
+
+
+def _serialize_class_commentary_revision_row(
+    row: sqlite3.Row,
+) -> dict:
+    item = dict(row)
+    confirmed_draft_version = int(item.get("confirmed_draft_version") or 0)
+    confirmed_draft = None
+    if confirmed_draft_version > 0:
+        try:
+            parsed = json.loads(str(item.get("confirmed_draft_snapshot_json") or "{}"))
+        except (TypeError, json.JSONDecodeError):
+            parsed = None
+        if isinstance(parsed, dict) and parsed:
+            confirmed_draft = parsed
+    item["draft_version"] = confirmed_draft_version
+    item["draft"] = confirmed_draft
+    return item
+
+
+def get_class_commentary_revision(revision_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM class_commentary_revisions WHERE id=?",
+            (revision_id,),
+        ).fetchone()
+    return _serialize_class_commentary_revision_row(row) if row else None
+
+
+def list_class_commentary_revisions(task_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_revisions
+            WHERE task_id=?
+            ORDER BY revision_no DESC
+            """,
+            (task_id,),
+        ).fetchall()
+    return [_serialize_class_commentary_revision_row(row) for row in rows]
+
+
+def confirm_class_commentary_feedback(
+    *,
+    task_id: int,
+    generation_id: int,
+    teacher_user_id: int,
+    feedback_text: str,
+    learn_requested: bool,
+    expected_draft_version: int,
+    confirmation_request_id: str,
+) -> dict:
+    normalized_request_id = str(confirmation_request_id or "").strip()
+    normalized_feedback = str(feedback_text or "")
+    if not normalized_request_id:
+        raise ValueError("confirmation_request_id is required")
+    try:
+        expected_version = int(expected_draft_version)
+    except (TypeError, ValueError):
+        raise ValueError("expected_draft_version must be an integer")
+    if expected_version < 0:
+        raise ValueError("expected_draft_version must be non-negative")
+    if not isinstance(learn_requested, bool):
+        raise ValueError("learn_requested must be a boolean")
+    confirmation_payload = {
+        "expected_draft_version": expected_version,
+        "feedback_text": normalized_feedback,
+        "generation_id": int(generation_id),
+        "learn_requested": learn_requested,
+        "task_id": int(task_id),
+    }
+    confirmation_payload_hash = _class_commentary_content_hash(
+        _class_commentary_canonical_json(confirmation_payload)
+    )
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = _validate_class_commentary_draft_scope(
+            conn,
+            task_id,
+            generation_id,
+            teacher_user_id,
+            None,
+        )
+        existing = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_revisions
+            WHERE task_id=? AND confirmation_request_id=?
+            """,
+            (task_id, normalized_request_id),
+        ).fetchone()
+        if existing:
+            if str(existing["confirmation_payload_hash"]) != confirmation_payload_hash:
+                raise ClassCommentaryConfirmationRequestConflict(
+                    "confirmation request_id was already used with a different payload"
+                )
+            return _serialize_class_commentary_revision_row(existing)
+        if learn_requested:
+            raise ClassCommentaryMemoryNotEnabled()
+        if str(generation["status"]) != "succeeded":
+            raise ValueError("generation must be succeeded before confirmation")
+
+        task = conn.execute(
+            "SELECT * FROM class_commentary_tasks WHERE id=?",
+            (task_id,),
+        ).fetchone()
+        if not task:
+            raise ValueError("class commentary task not found")
+        current_draft = _get_class_commentary_feedback_draft_conn(
+            conn,
+            task_id,
+            generation_id,
+            teacher_user_id,
+        )
+        if current_draft is None:
+            if expected_version != 0:
+                raise ClassCommentaryDraftVersionConflict(None)
+        elif int(current_draft["draft_version"]) != expected_version:
+            raise ClassCommentaryDraftVersionConflict(
+                _serialize_class_commentary_feedback_draft_row(current_draft)
+            )
+
+        previous_revision = None
+        if task["latest_revision_id"] is not None:
+            previous_revision = conn.execute(
+                """
+                SELECT *
+                FROM class_commentary_revisions
+                WHERE id=? AND task_id=?
+                """,
+                (task["latest_revision_id"], task_id),
+            ).fetchone()
+            if not previous_revision:
+                raise ValueError("task latest revision pointer is invalid")
+        revision_no = int(task["feedback_revision_no"] or 0) + 1
+        captured_at = conn.execute(
+            "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now') AS value"
+        ).fetchone()["value"]
+        evidence_snapshot: dict = {}
+        source_refs: list = []
+        missing_sources: list = []
+        evidence_schema_version = "1"
+        evidence_selector_version = "1"
+        evidence_envelope = {
+            "schema_version": evidence_schema_version,
+            "selector_version": evidence_selector_version,
+            "captured_at": captured_at,
+            "snapshot": evidence_snapshot,
+            "source_refs": source_refs,
+            "completeness": "empty",
+            "missing_sources": missing_sources,
+        }
+        evidence_hash = _class_commentary_content_hash(
+            _class_commentary_canonical_json(evidence_envelope)
+        )
+        generation_feedback = str(generation["generated_feedback_text"] or "")
+        previous_feedback = (
+            str(previous_revision["final_feedback_text"] or "")
+            if previous_revision
+            else ""
+        )
+        cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_revisions (
+                organization_id, task_id, generation_id, teacher_user_id,
+                revision_no, confirmation_request_id, confirmation_payload_hash,
+                previous_revision_id, final_feedback_text, generation_diff_json,
+                previous_revision_diff_json, learning_evidence_schema_version,
+                learning_evidence_selector_version, learning_evidence_snapshot_json,
+                learning_evidence_source_refs_json, learning_evidence_hash,
+                learning_evidence_captured_at, learning_evidence_completeness,
+                learning_evidence_missing_sources_json, learn_requested,
+                accepted_without_edit, unchanged_from_previous_revision, confirmed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'empty', ?, 0, ?, ?, ?)
+            """,
+            (
+                generation["organization_id"],
+                task_id,
+                generation_id,
+                teacher_user_id,
+                revision_no,
+                normalized_request_id,
+                confirmation_payload_hash,
+                previous_revision["id"] if previous_revision else None,
+                normalized_feedback,
+                _class_commentary_feedback_diff(generation_feedback, normalized_feedback),
+                (
+                    _class_commentary_feedback_diff(previous_feedback, normalized_feedback)
+                    if previous_revision
+                    else None
+                ),
+                evidence_schema_version,
+                evidence_selector_version,
+                _class_commentary_canonical_json(evidence_snapshot),
+                _class_commentary_canonical_json(source_refs),
+                evidence_hash,
+                captured_at,
+                _class_commentary_canonical_json(missing_sources),
+                1 if normalized_feedback == generation_feedback else 0,
+                1 if previous_revision and normalized_feedback == previous_feedback else 0,
+                captured_at,
+            ),
+        )
+        revision_id = int(cursor.lastrowid)
+        content_hash = _class_commentary_content_hash(normalized_feedback)
+        if current_draft is None:
+            draft_cursor = conn.execute(
+                """
+                INSERT INTO class_commentary_feedback_drafts (
+                    organization_id, task_id, generation_id, teacher_user_id,
+                    based_on_revision_id, feedback_text, content_hash, draft_version
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    generation["organization_id"],
+                    task_id,
+                    generation_id,
+                    teacher_user_id,
+                    revision_id,
+                    normalized_feedback,
+                    content_hash,
+                ),
+            )
+            draft_id = int(draft_cursor.lastrowid)
+        else:
+            updated = conn.execute(
+                """
+                UPDATE class_commentary_feedback_drafts
+                SET based_on_revision_id=?, feedback_text=?, content_hash=?,
+                    draft_version=draft_version + 1,
+                    updated_at=datetime('now','localtime')
+                WHERE id=? AND draft_version=?
+                """,
+                (
+                    revision_id,
+                    normalized_feedback,
+                    content_hash,
+                    current_draft["id"],
+                    expected_version,
+                ),
+            )
+            if updated.rowcount != 1:
+                latest = _get_class_commentary_feedback_draft_conn(
+                    conn,
+                    task_id,
+                    generation_id,
+                    teacher_user_id,
+                )
+                raise ClassCommentaryDraftVersionConflict(
+                    _serialize_class_commentary_feedback_draft_row(latest) if latest else None
+                )
+            draft_id = int(current_draft["id"])
+        updated_task = conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET feedback_revision_no=?, latest_revision_id=?,
+                final_feedback_text=?, feedback_text=?, feedback_confirmed_at=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND feedback_revision_no=?
+            """,
+            (
+                revision_no,
+                revision_id,
+                normalized_feedback,
+                normalized_feedback,
+                captured_at,
+                task_id,
+                int(task["feedback_revision_no"] or 0),
+            ),
+        )
+        if updated_task.rowcount != 1:
+            raise ClassCommentaryConfirmationRequestConflict("task revision sequence changed")
+        revision = conn.execute(
+            "SELECT * FROM class_commentary_revisions WHERE id=?",
+            (revision_id,),
+        ).fetchone()
+        draft = conn.execute(
+            "SELECT * FROM class_commentary_feedback_drafts WHERE id=?",
+            (draft_id,),
+        ).fetchone()
+        confirmed_draft = _serialize_class_commentary_feedback_draft_row(draft)
+        revision_snapshot_updated = conn.execute(
+            """
+            UPDATE class_commentary_revisions
+            SET confirmed_draft_version=?, confirmed_draft_snapshot_json=?
+            WHERE id=? AND confirmed_draft_version=0
+            """,
+            (
+                int(draft["draft_version"]),
+                _class_commentary_canonical_json(confirmed_draft),
+                revision_id,
+            ),
+        )
+        if revision_snapshot_updated.rowcount != 1:
+            raise ClassCommentaryConfirmationRequestConflict(
+                "revision draft snapshot changed"
+            )
+        revision = conn.execute(
+            "SELECT * FROM class_commentary_revisions WHERE id=?",
+            (revision_id,),
+        ).fetchone()
+        return _serialize_class_commentary_revision_row(revision)
+
+
 def _class_commentary_task_select_sql() -> str:
     return """
         SELECT t.*, c.name AS class_name
@@ -7728,6 +9475,7 @@ def mark_class_commentary_raw_transcription_succeeded(task_id: int, raw_transcri
                 roster_snapshot=?,
                 transcript_text='',
                 confirmed_transcript_text='',
+                confirmed_transcript_version=0,
                 transcript_polish_error='',
                 transcript_polished_at='',
                 transcription_error='',
@@ -7748,6 +9496,7 @@ def mark_class_commentary_transcript_polish_succeeded(task_id: int, polished_tra
                 failure_stage='',
                 transcript_text=?,
                 confirmed_transcript_text=?,
+                confirmed_transcript_version=1,
                 transcribed_at=datetime('now','localtime'),
                 transcript_polish_error='',
                 transcript_polished_at=datetime('now','localtime'),
@@ -7769,6 +9518,7 @@ def mark_class_commentary_transcript_polish_failed(task_id: int, raw_transcript_
                 failure_stage='',
                 transcript_text=?,
                 confirmed_transcript_text=?,
+                confirmed_transcript_version=1,
                 transcribed_at=datetime('now','localtime'),
                 transcript_polish_error=?,
                 transcript_polished_at='',
@@ -7794,74 +9544,13 @@ def save_class_commentary_transcript(task_id: int, confirmed_transcript_text: st
             SET status='transcribed',
                 failure_stage='',
                 confirmed_transcript_text=?,
+                confirmed_transcript_version=confirmed_transcript_version + 1,
                 transcription_error='',
                 generation_error='',
                 updated_at=datetime('now','localtime')
             WHERE id=?
             """,
             (confirmed_transcript_text or "", task_id),
-        )
-    return get_class_commentary_task(task_id)
-
-
-def save_class_commentary_generation_started(
-    task_id: int,
-    *,
-    skill_id: str,
-    skill_name: str,
-    skill_path: str,
-    skill_content_snapshot: str,
-    generation_request_key: str,
-    chat_provider: str,
-    chat_model: str,
-):
-    with get_conn() as conn:
-        conn.execute(
-            """
-            UPDATE class_commentary_tasks
-            SET status='generating',
-                failure_stage='',
-                skill_id=?,
-                skill_name=?,
-                skill_path=?,
-                skill_content_snapshot=?,
-                feedback_text='',
-                transcription_error='',
-                generation_error='',
-                generation_request_key=?,
-                chat_provider=?,
-                chat_model=?,
-                updated_at=datetime('now','localtime')
-            WHERE id=?
-            """,
-            (
-                skill_id or "",
-                skill_name or "",
-                skill_path or "",
-                skill_content_snapshot or "",
-                generation_request_key or "",
-                chat_provider or "",
-                chat_model or "",
-                task_id,
-            ),
-        )
-    return get_class_commentary_task(task_id)
-
-
-def save_class_commentary_generation_succeeded(task_id: int, feedback_text: str):
-    with get_conn() as conn:
-        conn.execute(
-            """
-            UPDATE class_commentary_tasks
-            SET status='ready',
-                failure_stage='',
-                feedback_text=?,
-                transcription_error='',
-                generation_error='',
-                updated_at=datetime('now','localtime')
-            WHERE id=?
-            """,
-            (feedback_text or "", task_id),
         )
     return get_class_commentary_task(task_id)
 
