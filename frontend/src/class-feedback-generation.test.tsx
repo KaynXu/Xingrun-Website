@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const source = readFileSync(new URL('./features/class-feedback/ClassFeedbackGenerationPage.tsx', import.meta.url), 'utf8');
+const alertDialogSource = readFileSync(new URL('../components/ui/alert-dialog.tsx', import.meta.url), 'utf8');
 
 function cardSource(title: string): string {
   const start = source.indexOf(`<CardTitle>${title}</CardTitle>`);
@@ -55,6 +56,7 @@ test('class feedback generation page uses shadcn components for visible controls
   assert.match(source, /@\/components\/ui\/separator/);
   assert.match(source, /@\/components\/ui\/scroll-area/);
   assert.match(source, /@\/components\/ui\/skeleton/);
+  assert.match(source, /@\/components\/ui\/table/);
   assert.match(source, /@\/components\/ui\/textarea/);
   assert.match(source, /@\/components\/ui\/alert/);
   assert.doesNotMatch(source, /workspaceCardClass/);
@@ -153,6 +155,7 @@ test('class feedback result actions use shadcn buttons and gate learning from se
   assertSourceMatches(source, /fetchClassCommentaryCapabilities/, 'capability client is not imported');
   assertSourceMatches(source, /const \[capabilities, setCapabilities\] = useState/, 'server capability state is missing');
   assertSourceMatches(source, /fetchClassCommentaryCapabilities\(\)/, 'server capabilities are not fetched');
+  assertSourceMatches(source, /fetchClassCommentaryCapabilities\(\)\.catch\(\(\) => disabledClassCommentaryCapabilities\)/, 'memory capability failure must not block the core feedback page');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{handleSaveFeedbackDraft\} disabled=\{!canSaveFeedbackDraft\}>\s*保存草稿\s*<\/Button>/, 'save draft must be a shadcn Button');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{\(\) => handleConfirmFeedback\(false\)\} disabled=\{!canConfirmFeedback\}>\s*确认但不学习\s*<\/Button>/, 'confirm without learning must be a shadcn Button independent of memory capability');
   assertSourceMatches(feedbackCard, /<Button type="button" onClick=\{\(\) => handleConfirmFeedback\(true\)\} disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}>\s*确认并学习\s*<\/Button>/, 'confirm and learn must be disabled when the server capability is off');
@@ -160,8 +163,138 @@ test('class feedback result actions use shadcn buttons and gate learning from se
   assertSourceMatches(source, /confirmClassCommentaryFeedback\(/, 'confirmation client is not used');
 });
 
+test('memory learning stays inside the feedback card and reuses shadcn actions', () => {
+  const feedbackCard = cardSource('反馈结果');
+
+  assertSourceMatches(source, /@\/components\/ui\/alert-dialog/, 'memory revoke must import the official shadcn AlertDialog');
+  assertSourceMatches(source, /fetchClassCommentaryRevisionMemories/, 'memory status client is not used');
+  assertSourceMatches(source, /retryClassCommentaryRevisionMemory/, 'memory retry client is not used');
+  assertSourceMatches(source, /revokeClassCommentaryMemoryEvidence/, 'memory revoke client is not used');
+  assertSourceMatches(feedbackCard, /本次学到的内容/, 'memory results must remain inside the current feedback result Card');
+  assertSourceMatches(feedbackCard, /<Badge variant=\{revisionMemorySummary\.status === 'failed'/, 'memory status must use the existing shadcn Badge');
+  assertSourceMatches(feedbackCard, /<Button[\s\S]*onClick=\{handleRetryRevisionMemory\}[\s\S]*重试学习[\s\S]*<\/Button>/, 'memory retry must use a shadcn Button');
+  assertSourceMatches(feedbackCard, /<AlertDialogTrigger asChild>[\s\S]*<Button[\s\S]*撤销我的来源[\s\S]*<\/Button>[\s\S]*<\/AlertDialogTrigger>/, 'evidence revoke must use a shadcn Button as the AlertDialog trigger');
+  assertSourceMatches(feedbackCard, /<AlertDialogTitle>撤销这条学习来源\?<\/AlertDialogTitle>/, 'evidence revoke confirmation title is missing');
+  assertSourceMatches(feedbackCard, /<AlertDialogDescription>[\s\S]*撤销后,[\s\S]*<\/AlertDialogDescription>/, 'evidence revoke confirmation description is missing');
+  assertSourceMatches(feedbackCard, /<AlertDialogAction[\s\S]*variant="destructive"[\s\S]*onClick=\{\(\) => handleRevokeMemoryEvidence\(memory\.evidence_id\)\}[\s\S]*确认撤销[\s\S]*<\/AlertDialogAction>/, 'evidence revoke must require the destructive AlertDialog action');
+  assertSourceMatches(alertDialogSource, /AlertDialogPrimitive\.Root/, 'the official shadcn AlertDialog component is missing');
+  assertSourceMatches(alertDialogSource, /AlertDialogPrimitive\.Action/, 'the official shadcn AlertDialog action is missing');
+  assertSourceExcludes(source, /<CardTitle>记忆学习<\/CardTitle>/, 'memory learning must not add a new page-level Card');
+  assertSourceExcludes(source, /<DialogTitle>记忆学习<\/DialogTitle>/, 'memory learning must not add a custom workflow Dialog');
+});
+
+test('confirmation retry and revoke keep idempotency keys after unknown network outcomes', () => {
+  const requestHelpers = source.slice(
+    source.indexOf('type PendingClassCommentaryRequest'),
+    source.indexOf('function canUseTranscriptState'),
+  );
+  const confirmationHandler = functionSource('handleConfirmFeedback', 'handleRetryRevisionMemory');
+  const retryHandler = functionSource('handleRetryRevisionMemory', 'handleRevokeMemoryEvidence');
+  const revokeHandler = functionSource('handleRevokeMemoryEvidence', 'handleDraftConflictOpenChange');
+
+  assertSourceMatches(requestHelpers, /if \(currentRequest\?\.scopeKey === scopeKey\) \{\s*return currentRequest;/, 'the same mutation payload must reuse its pending request id');
+  assertSourceMatches(requestHelpers, /if \(!serverResponded \|\| currentRequest\?\.requestId !== requestId\) \{\s*return currentRequest;/, 'unknown network outcomes must preserve the pending request id');
+  assertSourceMatches(source, /const confirmationRequestRef = useRef<PendingClassCommentaryRequest \| null>\(null\);/, 'confirmation request identity must survive renders');
+  assertSourceMatches(source, /const memoryRetryRequestRef = useRef<PendingClassCommentaryRequest \| null>\(null\);/, 'memory retry request identity must survive renders');
+  assertSourceMatches(source, /const memoryRevokeRequestRef = useRef<PendingClassCommentaryRequest \| null>\(null\);/, 'memory revoke request identity must survive renders');
+
+  assertSourceMatches(confirmationHandler, /const confirmationRequest = claimClassCommentaryRequest\([\s\S]*'confirmation',[\s\S]*confirmationRequestRef\.current = confirmationRequest;/, 'confirmation must claim one request id for its exact payload');
+  assertSourceMatches(confirmationHandler, /confirmClassCommentaryFeedback\([\s\S]*confirmationRequest\.requestId,[\s\S]*\);/, 'confirmation must send the claimed request id');
+  assertSourceMatches(confirmationHandler, /settleClassCommentaryRequest\([\s\S]*confirmationRequest\.requestId,[\s\S]*true,[\s\S]*\);/, 'confirmation success must rotate its request id');
+  assertSourceMatches(confirmationHandler, /catch \(error\) \{[\s\S]*settleClassCommentaryRequest\([\s\S]*error instanceof ApiFetchError,[\s\S]*\);/, 'confirmation may rotate after an explicit server error but not an unknown network error');
+
+  assertSourceMatches(retryHandler, /const retryRequest = claimClassCommentaryRequest\([\s\S]*'memory-retry',[\s\S]*memoryRetryRequestRef\.current = retryRequest;/, 'memory retry must claim a stable request id');
+  assertSourceMatches(retryHandler, /retryClassCommentaryRevisionMemory\([\s\S]*retryRequest\.requestId,[\s\S]*\);/, 'memory retry must send the claimed request id');
+  assertSourceMatches(retryHandler, /catch \(error\) \{[\s\S]*settleClassCommentaryRequest\([\s\S]*error instanceof ApiFetchError,[\s\S]*\);/, 'memory retry may rotate only after a known server result');
+
+  assertSourceMatches(revokeHandler, /const revokeRequest = claimClassCommentaryRequest\([\s\S]*'memory-revoke',[\s\S]*memoryRevokeRequestRef\.current = revokeRequest;/, 'memory revoke must claim a stable request id');
+  assertSourceMatches(revokeHandler, /revokeClassCommentaryMemoryEvidence\([\s\S]*revokeRequest\.requestId,[\s\S]*\);/, 'memory revoke must send the claimed request id');
+  assertSourceMatches(revokeHandler, /catch \(error\) \{[\s\S]*settleClassCommentaryRequest\([\s\S]*error instanceof ApiFetchError,[\s\S]*\);/, 'memory revoke may rotate only after a known server result');
+});
+
+test('memory polling and actions use independent request tokens', () => {
+  const generationChangeHandler = functionSource('handleGenerationChange', 'handleSaveFeedbackDraft');
+  const retryHandler = functionSource('handleRetryRevisionMemory', 'handleRevokeMemoryEvidence');
+  const revokeHandler = functionSource('handleRevokeMemoryEvidence', 'handleDraftConflictOpenChange');
+
+  assertSourceMatches(source, /const memoryLoadRequestTokenRef = useRef\(0\);\s*const memoryActionRequestTokenRef = useRef\(0\);/, 'memory load and action request tokens must be separate refs');
+  assertSourceMatches(generationChangeHandler, /selectedGenerationIdRef\.current = nextGenerationId;\s*memoryLoadRequestTokenRef\.current \+= 1;\s*setRevisionMemorySummary\(null\);/, 'generation switching must invalidate the prior revision load immediately');
+  assertSourceExcludes(generationChangeHandler, /memoryActionRequestTokenRef\.current \+= 1/, 'generation switching must leave the in-flight action token responsible for releasing its own lock');
+  for (const handler of [retryHandler, revokeHandler]) {
+    assertSourceMatches(handler, /const loadRequestToken = memoryLoadRequestTokenRef\.current;/, 'memory actions must snapshot the current load scope without taking it over');
+    assertSourceMatches(handler, /const actionRequestToken = \+\+memoryActionRequestTokenRef\.current;/, 'memory actions must claim their own action token');
+    assertSourceExcludes(handler, /\+\+memoryLoadRequestTokenRef\.current/, 'memory actions must not invalidate the revision load token');
+    assertSourceMatches(handler, /finally \{\s*if \(actionRequestToken === memoryActionRequestTokenRef\.current\) \{\s*setMemoryActionKey\(''\);/, 'the action token must always release its own button lock after a revision switch');
+  }
+});
+
+test('memory polling treats read failures as transient and retries with backoff', () => {
+  const effectStart = source.indexOf('  useEffect(() => {', source.indexOf('const attendanceListHeight'));
+  const memoryPollingEffect = source.slice(effectStart, source.indexOf('  async function handleCreateTask', effectStart));
+
+  assertSourceMatches(memoryPollingEffect, /setMemoryLoadError\('学习状态暂时不可用, 正在重试'\);/, 'poll failures must show a temporary unavailable message');
+  assertSourceMatches(memoryPollingEffect, /pollingDelayMs = Math\.min\(pollingDelayMs \* 2, 30000\);\s*pollTimer = window\.setTimeout\(loadMemorySummary, pollingDelayMs\);/, 'poll failures must continue with bounded exponential backoff');
+  assertSourceExcludes(memoryPollingEffect, /status:\s*'failed'/, 'a read failure must not fabricate a terminal failed summary');
+  assertSourceMatches(source, /memoryLoadError \? \(\s*<Badge variant="outline">暂不可用<\/Badge>/, 'the feedback card must distinguish transient unavailability from a server failed status');
+});
+
+test('skill evolution is capability-gated and stays inside the existing feedback card', () => {
+  const feedbackCard = cardSource('反馈结果');
+
+  assertSourceMatches(
+    feedbackCard,
+    /\{capabilities\.skill_evolution_enabled && selectedSkill \? \(/,
+    'skill evolution must be hidden unless the server enables the capability',
+  );
+  assertSourceMatches(feedbackCard, /反馈风格版本/, 'the version entry must remain in the feedback result Card');
+  assertSourceMatches(feedbackCard, /<Dialog open=\{skillEvolutionDialogOpen\} onOpenChange=\{handleSkillEvolutionOpenChange\}>/, 'version review must reuse the shadcn Dialog');
+  assertSourceMatches(feedbackCard, /<DialogTrigger asChild>\s*<Button type="button" size="xs" variant="outline">查看版本<\/Button>/, 'the version entry must use a shadcn Button');
+  assertSourceMatches(feedbackCard, /<DialogTitle>\{selectedSkill\.name\}的反馈风格版本<\/DialogTitle>/, 'the version dialog needs an accessible shadcn title');
+  assertSourceMatches(feedbackCard, /候选版本不会自动替换当前风格\. 只有老师查看差异和评测并手动激活后才会生效\./, 'the no-auto-activation rule must be explicit in the UI');
+  assertSourceExcludes(source, /<CardTitle>反馈风格版本<\/CardTitle>/, 'skill evolution must not add another page-level Card');
+});
+
+test('skill evolution reviews diff and evaluation before manual activation or rollback', () => {
+  const feedbackCard = cardSource('反馈结果');
+
+  assertSourceMatches(feedbackCard, /<Select value=\{selectedSkillVersionId \|\| undefined\} onValueChange=\{setSelectedSkillVersionId\}>/, 'version selection must use the shadcn Select');
+  assertSourceMatches(feedbackCard, /selectedSkillVersion\.content_diff/, 'candidate review must expose the immutable version diff');
+  assertSourceMatches(feedbackCard, /<Textarea\s+aria-label="版本差异"[\s\S]*readOnly/, 'the diff must use the shadcn read-only Textarea');
+  assertSourceMatches(feedbackCard, /selectedSkillEvaluationRows\.map\(\(row\) => \(/, 'candidate evaluation rows are missing');
+  assertSourceMatches(feedbackCard, /<Table>[\s\S]*<TableHeader>[\s\S]*<TableBody>/, 'evaluation comparison must use the official shadcn Table');
+  assertSourceMatches(source, /confirmed_style_rule_coverage_rate/, 'the UI must recognize the worker style coverage metric');
+  assertSourceMatches(source, /student_fact_contamination_count/, 'the UI must recognize the worker student fact safety metric');
+  assertSourceMatches(source, /output_constraint_pass_rate/, 'the UI must recognize the worker output constraint metric');
+  assertSourceMatches(feedbackCard, /有效任务 \{skillEvolution\.eligibility\.effective_task_count\}\/\{skillEvolution\.eligibility\.min_effective_tasks\}/, 'eligibility must count effective tasks');
+  assertSourceMatches(feedbackCard, /支持任务 \{skillEvolution\.eligibility\.supporting_task_count\}\/\{skillEvolution\.eligibility\.min_supporting_tasks\}/, 'eligibility must count distinct supporting tasks');
+  assertSourceMatches(feedbackCard, /<AlertDialogTitle>激活这个候选版本\?<\/AlertDialogTitle>/, 'manual activation must require the shadcn AlertDialog');
+  assertSourceMatches(feedbackCard, /onClick=\{\(\) => handleChangeSkillVersion\('activate'\)\}/, 'the activation action is missing');
+  assertSourceMatches(feedbackCard, /<AlertDialogTitle>回滚到这个历史版本\?<\/AlertDialogTitle>/, 'rollback must require the shadcn AlertDialog');
+  assertSourceMatches(feedbackCard, /onClick=\{\(\) => handleChangeSkillVersion\('rollback'\)\}/, 'the rollback action is missing');
+});
+
+test('skill evolution polls builds and keeps mutation request ids after unknown outcomes', () => {
+  const candidateHandler = functionSource('handleCreateSkillCandidate', 'handleChangeSkillVersion');
+  const versionHandler = functionSource('handleChangeSkillVersion', 'handleDraftConflictOpenChange');
+  const pollingStart = source.indexOf('const requestToken = ++skillEvolutionLoadRequestTokenRef.current;');
+  const pollingEffect = source.slice(pollingStart, source.indexOf('async function handleCreateTask', pollingStart));
+
+  assertSourceMatches(source, /const skillCandidateRequestRef = useRef<PendingClassCommentaryRequest \| null>\(null\);/, 'candidate request identity must survive renders');
+  assertSourceMatches(source, /const skillActivateRequestRef = useRef<PendingClassCommentaryRequest \| null>\(null\);/, 'activation request identity must survive renders');
+  assertSourceMatches(source, /const skillRollbackRequestRef = useRef<PendingClassCommentaryRequest \| null>\(null\);/, 'rollback request identity must survive renders');
+  assertSourceMatches(candidateHandler, /const candidateRequest = claimClassCommentaryRequest\([\s\S]*'skill-candidate',[\s\S]*skillCandidateRequestRef\.current = candidateRequest;/, 'candidate creation must claim a stable request id');
+  assertSourceMatches(candidateHandler, /createClassCommentarySkillCandidate\([\s\S]*candidateRequest\.requestId,[\s\S]*\);/, 'candidate creation must send the stable request id');
+  assertSourceMatches(candidateHandler, /catch \(error\) \{[\s\S]*settleClassCommentaryRequest\([\s\S]*error instanceof ApiFetchError,[\s\S]*\);/, 'candidate creation must retain its id after an unknown network result');
+  assertSourceMatches(versionHandler, /const versionRequest = claimClassCommentaryRequest\([\s\S]*`skill-\$\{action\}`,[\s\S]*requestRef\.current = versionRequest;/, 'activate and rollback must claim payload-scoped request ids');
+  assertSourceMatches(versionHandler, /expectedActiveVersionId,[\s\S]*versionRequest\.requestId/, 'version changes must send the active-version CAS pointer and request id');
+  assertSourceMatches(versionHandler, /catch \(error\) \{[\s\S]*settleClassCommentaryRequest\([\s\S]*error instanceof ApiFetchError,[\s\S]*\);/, 'version changes must retain ids after unknown network results');
+  assertSourceMatches(pollingEffect, /fetchClassCommentarySkillEvolution\(selectedSkillId\)/, 'the dialog must load the current server version state');
+  assertSourceMatches(pollingEffect, /candidate_builds\.some\(\(build\) => !build\.is_terminal\)/, 'non-terminal candidate builds must keep polling');
+  assertSourceMatches(pollingEffect, /pollingDelayMs = Math\.min\(pollingDelayMs \* 2, 30000\);/, 'temporary polling failures must retry with bounded backoff');
+});
+
 test('confirmation consumes the transaction-bound draft without a second draft read', () => {
-  const confirmationHandler = functionSource('handleConfirmFeedback', 'handleDraftConflictOpenChange');
+  const confirmationHandler = functionSource('handleConfirmFeedback', 'handleRetryRevisionMemory');
 
   assert.ok(confirmationHandler, 'confirmation handler is missing');
   assertSourceMatches(
@@ -264,7 +397,7 @@ test('task switching clears version state and invalidates in-flight work immedia
 
 test('draft and confirmation mutations are scoped to their captured task and generation', () => {
   const saveHandler = functionSource('handleSaveFeedbackDraft', 'handleConfirmFeedback');
-  const confirmationHandler = functionSource('handleConfirmFeedback', 'handleDraftConflictOpenChange');
+  const confirmationHandler = functionSource('handleConfirmFeedback', 'handleRetryRevisionMemory');
 
   for (const handler of [saveHandler, confirmationHandler]) {
     assertSourceMatches(handler, /const mutationTaskId = task\.id;/, 'mutation must capture its task');

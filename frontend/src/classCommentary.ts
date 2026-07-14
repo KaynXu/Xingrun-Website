@@ -11,6 +11,7 @@ export type ClassCommentaryFailureStage = '' | 'transcription' | 'generation';
 export type ClassCommentarySkill = {
   id: string;
   registry_id?: number;
+  active_version_id?: number | null;
   name: string;
   filename: string;
   updated_at: string;
@@ -121,6 +122,140 @@ export type ClassCommentaryConfirmationResult = {
   draft: ClassCommentaryFeedbackDraft;
 };
 
+export type ClassCommentaryMemoryStatus =
+  | 'not_requested'
+  | 'queued'
+  | 'extracting'
+  | 'syncing'
+  | 'complete'
+  | 'partial'
+  | 'failed'
+  | 'obsolete';
+
+export type ClassCommentaryLearnedMemory = {
+  id: number;
+  evidence_id: number;
+  memory_type: 'teacher_style' | 'student_fact';
+  memory_text: string;
+  student_id: number | null;
+  student_name: string;
+  confidence: number;
+  evidence_status: 'active' | 'revoked' | 'superseded';
+  active_evidence_count: number;
+  operation_status: string;
+  can_revoke: boolean;
+};
+
+export type ClassCommentaryMemorySummary = {
+  revision_id: number;
+  status: ClassCommentaryMemoryStatus;
+  retryable: boolean;
+  extraction_status: string;
+  error: string;
+  memories: ClassCommentaryLearnedMemory[];
+};
+
+export type ClassCommentarySkillCandidateBuildStatus =
+  | 'queued'
+  | 'running'
+  | 'retry_wait'
+  | 'succeeded'
+  | 'failed'
+  | 'obsolete';
+
+export type ClassCommentarySkillCandidateBuild = {
+  id: number;
+  expected_active_version_id: number;
+  base_version_id: number;
+  candidate_version_id: number | null;
+  effective_task_count: number;
+  supporting_task_count: number;
+  min_effective_tasks: number;
+  min_supporting_tasks: number;
+  status: ClassCommentarySkillCandidateBuildStatus;
+  error_message: string;
+  can_retry: boolean;
+  is_terminal: boolean;
+  is_stale: boolean;
+  stale_reason: string;
+  source_cutoff_at: string;
+  selection_policy_version: string;
+  frozen_task_ids: number[];
+  frozen_revision_ids: number[];
+  frozen_evidence_ids: number[];
+  frozen_memory_record_ids: number[];
+  frozen_revision_count: number;
+  frozen_evidence_count: number;
+  created_at: string;
+  started_at: string;
+  completed_at: string;
+};
+
+export type ClassCommentarySkillEvaluation = {
+  current_metrics: Record<string, unknown>;
+  candidate_metrics: Record<string, unknown>;
+  known_risks: string[];
+  failed_samples: string[];
+};
+
+export type ClassCommentarySkillVersion = {
+  id: number;
+  version_no: number;
+  version_kind: 'imported' | 'candidate';
+  candidate_build_id: number | null;
+  content: string;
+  content_hash: string;
+  content_diff: string;
+  base_version_id: number | null;
+  base_content: string;
+  review_status: 'not_required' | 'pending' | 'approved' | 'rejected';
+  is_active: boolean;
+  is_stale: boolean;
+  stale_reason: string;
+  effective_task_count: number;
+  supporting_task_count: number;
+  frozen_revision_count: number;
+  frozen_evidence_count: number;
+  frozen_revision_ids: number[];
+  frozen_evidence_ids: number[];
+  evaluation: ClassCommentarySkillEvaluation;
+  candidate_build: ClassCommentarySkillCandidateBuild | null;
+  created_at: string;
+  reviewed_at: string;
+};
+
+export type ClassCommentarySkillEligibility = {
+  eligible: boolean;
+  reason: string;
+  effective_task_count: number;
+  supporting_task_count: number;
+  min_effective_tasks: number;
+  min_supporting_tasks: number;
+};
+
+export type ClassCommentarySkillEvolution = {
+  skill: ClassCommentarySkill & { active_version_id: number | null };
+  versions: ClassCommentarySkillVersion[];
+  candidate_builds: ClassCommentarySkillCandidateBuild[];
+  eligibility: ClassCommentarySkillEligibility;
+};
+
+export type ClassCommentarySkillActivationEvent = {
+  id: number;
+  from_version_id: number | null;
+  to_version_id: number;
+  active_version_id: number | null;
+  current_active_version_id: number | null;
+  reason: 'initial_import' | 'candidate_approved' | 'rollback';
+  created_at: string;
+};
+
+export type ClassCommentarySkillActivationResult = {
+  skill: (ClassCommentarySkill & { active_version_id: number | null }) | null;
+  version: ClassCommentarySkillVersion | null;
+  activation_event: ClassCommentarySkillActivationEvent;
+};
+
 type ClassCommentaryFeedbackScopeRecord = {
   task_id: number;
   generation_id: number;
@@ -164,6 +299,10 @@ function recordValue(value: unknown): Record<string, unknown> {
 
 function stringArrayValue(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => stringValue(item)).filter(Boolean) : [];
+}
+
+function numberArrayValue(value: unknown): number[] {
+  return Array.isArray(value) ? value.map((item) => numberValue(item)).filter((item) => item > 0) : [];
 }
 
 function storageKeyPart(value: unknown, fallback: string): string {
@@ -278,8 +417,9 @@ export function resolveClassCommentaryCopyText(
 function normalizeClassCommentarySkill(item: unknown): ClassCommentarySkill {
   const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
   return {
-    id: stringValue(record.id),
+    id: stringValue(record.id || record.skill_id),
     registry_id: numberValue(record.registry_id),
+    active_version_id: nullableNumberValue(record.active_version_id),
     name: stringValue(record.name),
     filename: stringValue(record.filename),
     updated_at: stringValue(record.updated_at),
@@ -362,6 +502,212 @@ function normalizeClassCommentaryFeedbackRevision(source: Record<string, unknown
       : recordValue(source.previous_revision_diff),
     confirmed_at: stringValue(source.confirmed_at),
     draft_version: numberValue(source.draft_version),
+  };
+}
+
+function normalizeClassCommentaryMemorySummary(source: Record<string, unknown>): ClassCommentaryMemorySummary {
+  const rawStatus = stringValue(source.status);
+  const validMemoryStatuses = new Set<ClassCommentaryMemoryStatus>([
+    'not_requested',
+    'queued',
+    'extracting',
+    'syncing',
+    'complete',
+    'partial',
+    'failed',
+    'obsolete',
+  ]);
+  return {
+    revision_id: numberValue(source.revision_id),
+    status: validMemoryStatuses.has(rawStatus as ClassCommentaryMemoryStatus)
+      ? rawStatus as ClassCommentaryMemoryStatus
+      : 'not_requested',
+    retryable: booleanValue(source.retryable),
+    extraction_status: stringValue(source.extraction_status),
+    error: stringValue(source.error),
+    memories: (Array.isArray(source.memories) ? source.memories : []).map((item) => {
+      const record = recordValue(item);
+      return {
+        id: numberValue(record.id || record.memory_record_id),
+        evidence_id: numberValue(record.evidence_id),
+        memory_type: stringValue(record.memory_type) === 'student_fact' ? 'student_fact' : 'teacher_style',
+        memory_text: stringValue(record.memory_text),
+        student_id: nullableNumberValue(record.student_id),
+        student_name: stringValue(record.student_name),
+        confidence: Number(record.confidence || 0),
+        evidence_status: stringValue(record.evidence_status) === 'revoked'
+          ? 'revoked'
+          : stringValue(record.evidence_status) === 'superseded'
+            ? 'superseded'
+            : 'active',
+        active_evidence_count: numberValue(record.active_evidence_count),
+        operation_status: stringValue(record.operation_status),
+        can_revoke: booleanValue(record.can_revoke),
+      };
+    }),
+  };
+}
+
+function normalizeClassCommentarySkillCandidateBuild(source: Record<string, unknown>): ClassCommentarySkillCandidateBuild {
+  const rawStatus = stringValue(source.status);
+  const validStatuses = new Set<ClassCommentarySkillCandidateBuildStatus>([
+    'queued',
+    'running',
+    'retry_wait',
+    'succeeded',
+    'failed',
+    'obsolete',
+  ]);
+  const status = validStatuses.has(rawStatus as ClassCommentarySkillCandidateBuildStatus)
+    ? rawStatus as ClassCommentarySkillCandidateBuildStatus
+    : 'failed';
+  const terminalStatus = status === 'succeeded' || status === 'failed' || status === 'obsolete';
+  return {
+    id: numberValue(source.id),
+    expected_active_version_id: numberValue(source.expected_active_version_id),
+    base_version_id: numberValue(source.base_version_id),
+    candidate_version_id: nullableNumberValue(source.candidate_version_id),
+    effective_task_count: numberValue(source.effective_task_count),
+    supporting_task_count: numberValue(source.supporting_task_count),
+    min_effective_tasks: numberValue(source.min_effective_tasks),
+    min_supporting_tasks: numberValue(source.min_supporting_tasks || source.min_support_tasks),
+    status,
+    error_message: stringValue(source.error_message || source.last_error),
+    can_retry: source.can_retry === undefined ? status === 'failed' : booleanValue(source.can_retry),
+    is_terminal: source.is_terminal === undefined ? terminalStatus : booleanValue(source.is_terminal),
+    is_stale: booleanValue(source.is_stale),
+    stale_reason: stringValue(source.stale_reason),
+    source_cutoff_at: stringValue(source.source_cutoff_at),
+    selection_policy_version: stringValue(source.selection_policy_version),
+    frozen_task_ids: numberArrayValue(source.frozen_task_ids),
+    frozen_revision_ids: numberArrayValue(source.frozen_revision_ids),
+    frozen_evidence_ids: numberArrayValue(source.frozen_evidence_ids),
+    frozen_memory_record_ids: numberArrayValue(source.frozen_memory_record_ids),
+    frozen_revision_count: numberValue(source.frozen_revision_count),
+    frozen_evidence_count: numberValue(source.frozen_evidence_count),
+    created_at: stringValue(source.created_at),
+    started_at: stringValue(source.started_at),
+    completed_at: stringValue(source.completed_at),
+  };
+}
+
+function normalizeClassCommentarySkillEvaluation(source: Record<string, unknown>): ClassCommentarySkillEvaluation {
+  const metrics = recordValue(source.metrics);
+  return {
+    current_metrics: recordValue(source.current_metrics || source.current || metrics.current),
+    candidate_metrics: recordValue(
+      source.candidate_metrics || source.candidate || metrics.candidate || source.metrics || source,
+    ),
+    known_risks: stringArrayValue(source.known_risks || source.risks),
+    failed_samples: stringArrayValue(source.failed_samples || source.failures),
+  };
+}
+
+function normalizeClassCommentarySkillVersion(
+  source: Record<string, unknown>,
+  activeVersionId = 0,
+): ClassCommentarySkillVersion {
+  const rawReviewStatus = stringValue(source.review_status);
+  const reviewStatus = rawReviewStatus === 'pending'
+    || rawReviewStatus === 'approved'
+    || rawReviewStatus === 'rejected'
+    ? rawReviewStatus
+    : 'not_required';
+  const candidateBuildSource = recordValue(source.candidate_build);
+  const candidateBuild = numberValue(candidateBuildSource.id) > 0
+    ? normalizeClassCommentarySkillCandidateBuild(candidateBuildSource)
+    : null;
+  const evaluationSource = recordValue(source.evaluation_snapshot || source.evaluation);
+  const diffSource = recordValue(source.content_diff || source.diff);
+  return {
+    id: numberValue(source.id),
+    version_no: numberValue(source.version_no),
+    version_kind: stringValue(source.version_kind) === 'candidate' ? 'candidate' : 'imported',
+    candidate_build_id: nullableNumberValue(source.candidate_build_id),
+    content: stringValue(source.content),
+    content_hash: stringValue(source.content_hash),
+    content_diff: stringValue(source.content_diff || source.unified_diff || diffSource.unified_diff || diffSource.text),
+    base_version_id: nullableNumberValue(source.base_version_id),
+    base_content: stringValue(source.base_content),
+    review_status: reviewStatus,
+    is_active: source.is_active === undefined
+      ? numberValue(source.id) === activeVersionId
+      : booleanValue(source.is_active),
+    is_stale: booleanValue(source.is_stale),
+    stale_reason: stringValue(source.stale_reason),
+    effective_task_count: numberValue(source.effective_task_count || candidateBuild?.effective_task_count),
+    supporting_task_count: numberValue(source.supporting_task_count || candidateBuild?.supporting_task_count),
+    frozen_revision_count: numberValue(source.frozen_revision_count),
+    frozen_evidence_count: numberValue(source.frozen_evidence_count),
+    frozen_revision_ids: numberArrayValue(source.frozen_revision_ids),
+    frozen_evidence_ids: numberArrayValue(source.frozen_evidence_ids),
+    evaluation: normalizeClassCommentarySkillEvaluation(evaluationSource),
+    candidate_build: candidateBuild,
+    created_at: stringValue(source.created_at),
+    reviewed_at: stringValue(source.reviewed_at),
+  };
+}
+
+function normalizeClassCommentarySkillEligibility(source: Record<string, unknown>): ClassCommentarySkillEligibility {
+  return {
+    eligible: booleanValue(source.eligible),
+    reason: stringValue(source.reason),
+    effective_task_count: numberValue(source.effective_task_count),
+    supporting_task_count: numberValue(source.supporting_task_count),
+    min_effective_tasks: numberValue(source.min_effective_tasks),
+    min_supporting_tasks: numberValue(source.min_supporting_tasks || source.min_support_tasks),
+  };
+}
+
+function normalizeClassCommentarySkillEvolution(payload: unknown, skillId: string): ClassCommentarySkillEvolution {
+  const payloadRecord = recordValue(payload);
+  const source = recordValue(payloadRecord.evolution || payload);
+  const skillSource = recordValue(source.skill);
+  const activeVersionId = numberValue(skillSource.active_version_id || source.active_version_id);
+  const rawVersions = Array.isArray(payload)
+    ? payload
+    : Array.isArray(source.versions)
+      ? source.versions
+      : [];
+  const rawBuilds = Array.isArray(source.candidate_builds)
+    ? source.candidate_builds
+    : Array.isArray(source.builds)
+      ? source.builds
+      : [];
+  const versions = rawVersions
+    .map((item) => normalizeClassCommentarySkillVersion(recordValue(item), activeVersionId))
+    .sort((left, right) => right.version_no - left.version_no);
+  const candidateBuilds = rawBuilds
+    .map((item) => normalizeClassCommentarySkillCandidateBuild(recordValue(item)))
+    .sort((left, right) => right.id - left.id);
+  const normalizedSkill = normalizeClassCommentarySkill({
+    ...skillSource,
+    id: stringValue(skillSource.id || skillSource.skill_id) || skillId,
+    active_version_id: activeVersionId,
+  });
+  return {
+    skill: {
+      ...normalizedSkill,
+      active_version_id: activeVersionId > 0 ? activeVersionId : null,
+    },
+    versions,
+    candidate_builds: candidateBuilds,
+    eligibility: normalizeClassCommentarySkillEligibility(recordValue(source.eligibility)),
+  };
+}
+
+function normalizeClassCommentarySkillActivationEvent(source: Record<string, unknown>): ClassCommentarySkillActivationEvent {
+  const rawReason = stringValue(source.reason);
+  return {
+    id: numberValue(source.id),
+    from_version_id: nullableNumberValue(source.from_version_id),
+    to_version_id: numberValue(source.to_version_id),
+    active_version_id: nullableNumberValue(source.active_version_id || source.to_version_id),
+    current_active_version_id: nullableNumberValue(
+      source.current_active_version_id || source.active_version_id || source.to_version_id,
+    ),
+    reason: rawReason === 'rollback' || rawReason === 'initial_import' ? rawReason : 'candidate_approved',
+    created_at: stringValue(source.created_at),
   };
 }
 
@@ -522,4 +868,137 @@ export async function fetchClassCommentaryFeedbackRevisions(
   );
   return (Array.isArray(payload.revisions) ? payload.revisions : [])
     .map((item) => normalizeClassCommentaryFeedbackRevision(recordValue(item)));
+}
+
+export async function fetchClassCommentaryRevisionMemories(
+  revisionId: number,
+): Promise<ClassCommentaryMemorySummary> {
+  const payload = await apiFetch<Record<string, unknown>>(
+    `/api/class-commentary/revisions/${encodeURIComponent(String(revisionId))}/memories`,
+  );
+  return normalizeClassCommentaryMemorySummary(payload);
+}
+
+export async function retryClassCommentaryRevisionMemory(
+  revisionId: number,
+  requestId: string,
+): Promise<ClassCommentaryMemorySummary> {
+  const payload = await apiFetch<Record<string, unknown>>(
+    `/api/class-commentary/revisions/${encodeURIComponent(String(revisionId))}/memory-retry`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ request_id: requestId }),
+    },
+  );
+  return normalizeClassCommentaryMemorySummary(recordValue(payload.memory || payload));
+}
+
+export async function revokeClassCommentaryMemoryEvidence(
+  evidenceId: number,
+  requestId: string,
+): Promise<ClassCommentaryMemorySummary> {
+  const payload = await apiFetch<Record<string, unknown>>(
+    `/api/class-commentary/memory-evidence/${encodeURIComponent(String(evidenceId))}/revoke`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ request_id: requestId }),
+    },
+  );
+  return normalizeClassCommentaryMemorySummary(recordValue(payload.memory || payload));
+}
+
+function buildClassCommentarySkillPath(skillId: string): string {
+  return `/api/class-commentary/skills/${encodeURIComponent(skillId)}`;
+}
+
+export async function fetchClassCommentarySkillEvolution(skillId: string): Promise<ClassCommentarySkillEvolution> {
+  const payload = await apiFetch<unknown>(`${buildClassCommentarySkillPath(skillId)}/versions`);
+  return normalizeClassCommentarySkillEvolution(payload, skillId);
+}
+
+export async function createClassCommentarySkillCandidate(
+  skillId: string,
+  expectedActiveVersionId: number,
+  requestId: string,
+): Promise<ClassCommentarySkillCandidateBuild> {
+  const payload = await apiFetch<unknown>(`${buildClassCommentarySkillPath(skillId)}/candidates`, {
+    method: 'POST',
+    body: JSON.stringify({
+      request_id: requestId,
+      expected_active_version_id: expectedActiveVersionId,
+    }),
+  });
+  const payloadRecord = recordValue(payload);
+  return normalizeClassCommentarySkillCandidateBuild(recordValue(
+    payloadRecord.build || payloadRecord.candidate || payload,
+  ));
+}
+
+async function changeClassCommentarySkillVersion(
+  action: 'activate' | 'rollback',
+  skillId: string,
+  versionId: number,
+  expectedActiveVersionId: number,
+  requestId: string,
+): Promise<ClassCommentarySkillActivationResult> {
+  const payload = await apiFetch<unknown>(
+    `${buildClassCommentarySkillPath(skillId)}/versions/${encodeURIComponent(String(versionId))}/${action}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        request_id: requestId,
+        expected_active_version_id: expectedActiveVersionId,
+      }),
+    },
+  );
+  const payloadRecord = recordValue(payload);
+  const eventSource = recordValue(payloadRecord.activation_event || payloadRecord.event || payload);
+  const activationEvent = normalizeClassCommentarySkillActivationEvent(eventSource);
+  const skillSource = recordValue(payloadRecord.skill);
+  const versionSource = recordValue(payloadRecord.version);
+  const skill = Object.keys(skillSource).length
+    ? normalizeClassCommentarySkill(skillSource)
+    : null;
+  return {
+    skill: skill ? {
+      ...skill,
+      active_version_id: nullableNumberValue(
+        skillSource.active_version_id || activationEvent.current_active_version_id,
+      ),
+    } : null,
+    version: Object.keys(versionSource).length
+      ? normalizeClassCommentarySkillVersion(versionSource, activationEvent.current_active_version_id || 0)
+      : null,
+    activation_event: activationEvent,
+  };
+}
+
+export async function activateClassCommentarySkillVersion(
+  skillId: string,
+  versionId: number,
+  expectedActiveVersionId: number,
+  requestId: string,
+): Promise<ClassCommentarySkillActivationResult> {
+  return changeClassCommentarySkillVersion(
+    'activate',
+    skillId,
+    versionId,
+    expectedActiveVersionId,
+    requestId,
+  );
+}
+
+export async function rollbackClassCommentarySkillVersion(
+  skillId: string,
+  versionId: number,
+  expectedActiveVersionId: number,
+  requestId: string,
+): Promise<ClassCommentarySkillActivationResult> {
+  return changeClassCommentarySkillVersion(
+    'rollback',
+    skillId,
+    versionId,
+    expectedActiveVersionId,
+    requestId,
+  );
 }
