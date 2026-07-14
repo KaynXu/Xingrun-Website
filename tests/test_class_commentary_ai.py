@@ -91,6 +91,87 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("小王今天计算有进步", payload["transcript"])
         self.assertIn("warm concise style", payload["skill"]["content"])
 
+    def test_build_class_commentary_chat_request_returns_complete_prompt_snapshot(self):
+        teacher_style_memories = [
+            {"memory_id": 11, "content": "Start with one concrete strength."},
+        ]
+        student_history_memories = [
+            {
+                "memory_id": 22,
+                "student_id": 1,
+                "content": "Previously needed slower arithmetic checks.",
+            },
+        ]
+        request_payload = class_commentary.build_class_commentary_chat_request(
+            class_record={"id": 7, "name": "Math Grade 7 Class 4"},
+            students=[{"id": 1, "name": "Student Wang"}, {"id": 2, "name": "Student Li"}],
+            transcript_text="Student Wang improved at arithmetic today.",
+            skill={"id": "teacher-a", "name": "Teacher A", "content": "warm concise style"},
+            teacher_style_memories=teacher_style_memories,
+            student_history_memories=student_history_memories,
+        )
+        generation_payload = class_commentary.build_class_commentary_generation_payload(
+            class_record={"id": 7, "name": "Math Grade 7 Class 4"},
+            students=[{"id": 1, "name": "Student Wang"}, {"id": 2, "name": "Student Li"}],
+            transcript_text="Student Wang improved at arithmetic today.",
+            skill={"id": "teacher-a", "name": "Teacher A", "content": "warm concise style"},
+        )
+        current_task_facts = {
+            "class": generation_payload["class"],
+            "students": generation_payload["students"],
+            "transcript": generation_payload["transcript"],
+        }
+        expected_user_prompt = "\n\n".join(
+            [
+                "[CURRENT_TASK_FACTS]\n" + class_commentary.payload_to_json(current_task_facts),
+                "[ACTIVE_SKILL]\n" + class_commentary.payload_to_json(generation_payload["skill"]),
+                "[TEACHER_STYLE_MEMORIES]\n" + class_commentary.payload_to_json(teacher_style_memories),
+                "[STUDENT_HISTORY_MEMORIES]\n"
+                + class_commentary.payload_to_json(student_history_memories),
+                "[OUTPUT_RULES]\n"
+                + "\n".join(f"- {rule}" for rule in generation_payload["output_rules"]),
+            ]
+        )
+
+        self.assertEqual(
+            set(request_payload),
+            {"prompt_version", "messages", "temperature"},
+        )
+        self.assertEqual(
+            request_payload["prompt_version"],
+            class_commentary.CLASS_COMMENTARY_PROMPT_VERSION,
+        )
+        self.assertEqual(request_payload["temperature"], 0.55)
+        self.assertEqual(
+            [message["role"] for message in request_payload["messages"]],
+            ["system", "user"],
+        )
+        self.assertIn(
+            "CURRENT_TASK_FACTS is the only source",
+            request_payload["messages"][0]["content"],
+        )
+        self.assertEqual(request_payload["messages"][1]["content"], expected_user_prompt)
+
+    def test_build_class_commentary_chat_request_keeps_empty_memory_sections(self):
+        request_payload = class_commentary.build_class_commentary_chat_request(
+            class_record={"id": 7, "name": "Math Grade 7 Class 4"},
+            students=[{"id": 1, "name": "Student Wang"}],
+            transcript_text="Student Wang improved at arithmetic today.",
+            skill={"id": "teacher-a", "name": "Teacher A", "content": "warm concise style"},
+        )
+
+        user_prompt = request_payload["messages"][1]["content"]
+        self.assertIn("[TEACHER_STYLE_MEMORIES]\n[]", user_prompt)
+        self.assertIn("[STUDENT_HISTORY_MEMORIES]\n[]", user_prompt)
+        for section in [
+            "CURRENT_TASK_FACTS",
+            "ACTIVE_SKILL",
+            "TEACHER_STYLE_MEMORIES",
+            "STUDENT_HISTORY_MEMORIES",
+            "OUTPUT_RULES",
+        ]:
+            self.assertEqual(user_prompt.count(f"[{section}]"), 1)
+
     def test_sanitize_class_commentary_roster_keeps_only_id_and_name(self):
         roster = class_commentary.sanitize_class_commentary_roster([
             {
@@ -190,6 +271,65 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertNotIn("[破涕为笑]", messages[1]["content"])
         self.assertNotIn("only as expression style and feedback framing", messages[1]["content"])
         self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 0.55)
+
+    def test_generate_class_commentary_feedback_sends_prebuilt_chat_request_unchanged(self):
+        class FakeMessage:
+            content = "Student Wang:\nArithmetic checks improved."
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                self.kwargs = kwargs
+                return FakeResponse()
+
+        class FakeChat:
+            def __init__(self):
+                self.completions = FakeCompletions()
+
+        class FakeClient:
+            def __init__(self):
+                self.chat = FakeChat()
+
+        chat_request = {
+            "prompt_version": "saved-prompt-v42",
+            "messages": [
+                {"role": "system", "content": "Saved system prompt."},
+                {"role": "user", "content": "Saved user prompt with memory snapshot."},
+            ],
+            "temperature": 0.23,
+        }
+        fake_client = FakeClient()
+        with patch.object(ai_processor, "_get_client", return_value=fake_client), patch.object(
+            ai_processor,
+            "build_class_commentary_chat_request",
+            side_effect=AssertionError("prebuilt request must not be rebuilt"),
+        ):
+            text = ai_processor.generate_class_commentary_feedback(
+                class_record={"id": 7, "name": "ignored class"},
+                students=[{"id": 99, "name": "ignored student"}],
+                transcript_text="ignored transcript",
+                skill={"id": "ignored-skill", "name": "Ignored", "content": "ignored"},
+                chat_request=chat_request,
+            )
+
+        call_payload = fake_client.chat.completions.kwargs
+        self.assertEqual(text, "Student Wang:\nArithmetic checks improved.")
+        self.assertIs(call_payload["messages"], chat_request["messages"])
+        self.assertEqual(call_payload["temperature"], chat_request["temperature"])
+        self.assertEqual(
+            {
+                "prompt_version": chat_request["prompt_version"],
+                "messages": call_payload["messages"],
+                "temperature": call_payload["temperature"],
+            },
+            chat_request,
+        )
 
     def test_generate_class_commentary_feedback_uses_class_commentary_openai_override(self):
         class FakeMessage:

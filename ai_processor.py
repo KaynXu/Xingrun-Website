@@ -26,7 +26,7 @@ import urllib.request
 import wave
 from pathlib import Path
 from class_commentary import (
-    build_class_commentary_generation_payload,
+    build_class_commentary_chat_request,
     build_class_commentary_transcript_polish_payload,
     normalize_class_commentary_feedback_text,
     payload_to_json,
@@ -2393,37 +2393,175 @@ def generate_class_commentary_feedback(
     openai_api_key: str = "",
     openai_base_url: str = "",
     openai_headers: str = "",
+    chat_request: dict | None = None,
     include_usage: bool = False,
 ):
     provider = normalize_chat_provider(provider or _provider_name())
     model = _get_chat_model(provider, model)
     client = _get_class_commentary_client(provider, openai_api_key, openai_base_url, openai_headers)
-    payload = build_class_commentary_generation_payload(
+    request_payload = chat_request or build_class_commentary_chat_request(
         class_record=class_record,
         students=students,
         transcript_text=transcript_text,
         skill=skill,
     )
-    system_prompt = (
-        "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
-        "Do not invent facts. Do not include roster students who are not clearly mentioned. "
-        "Treat the supplied colleague skill as the primary working instructions for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
-        "Infer the selected skill's emoji system from its examples, including tokens, density, placement, and meaning; match it when appropriate, and do not force emojis for low-emoji skills. "
-        "Use the transcript and roster as the only source of student facts. "
-        "Return plain text only. Do not flatten every student into one long paragraph."
-    )
     response = client.chat.completions.create(
         model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": payload_to_json(payload)},
-        ],
-        temperature=0.55,
+        messages=request_payload["messages"],
+        temperature=float(request_payload["temperature"]),
     )
     text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
     if include_usage:
         return text, _usage_dict(response, provider=provider, model_fallback=model)
     return text
+
+
+def extract_class_commentary_memory_signals(
+    *,
+    extraction_input: dict,
+    provider: str = "",
+    model: str = "",
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: str = "",
+    include_usage: bool = False,
+):
+    from class_commentary_memory import parse_class_commentary_memory_extraction
+
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_class_commentary_client(
+        provider,
+        openai_api_key,
+        openai_base_url,
+        openai_headers,
+    )
+    system_prompt = (
+        "You extract durable memory candidates from one teacher-confirmed class commentary revision. "
+        "Return one JSON object with an items array. Every item must have exactly one memory_type: "
+        "teacher_style, student_fact, or evaluation_only. Teacher style describes a reusable writing "
+        "preference supported by the teacher's edit, never a student or lesson fact. Student facts must "
+        "refer to exactly one student in the frozen attending roster and must not contain contact details, "
+        "addresses, or unrelated personal data. One-off arrangements, punctuation changes, uncertain "
+        "inferences, and unsupported claims are evaluation_only. Use concise memory_text, confidence from "
+        "0 to 1, and short support strings grounded only in the supplied immutable input. Every item requires "
+        "memory_text, confidence, and a non-empty support array. student_fact additionally requires exactly "
+        "one student_name or student_id_hint from the frozen roster. evaluation_only additionally requires "
+        "a non-empty reason. Do not choose or "
+        "invent organization, skill, subject, or student scope."
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": json.dumps(extraction_input, ensure_ascii=False, sort_keys=True),
+            },
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    parsed = parse_class_commentary_memory_extraction(
+        _loads_model_json(response.choices[0].message.content)
+    )
+    payload = parsed.model_dump(mode="json")
+    if include_usage:
+        return payload, _usage_dict(response, provider=provider, model_fallback=model)
+    return payload
+
+
+def generate_class_commentary_skill_candidate(
+    *,
+    candidate_input: dict,
+    provider: str = "",
+    model: str = "",
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: str = "",
+    include_usage: bool = False,
+):
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_class_commentary_client(
+        provider,
+        openai_api_key,
+        openai_base_url,
+        openai_headers,
+    )
+    system_prompt = (
+        "You revise one teacher-owned class-commentary SKILL.md from frozen, repeated teacher edits. "
+        "Make the smallest reusable change supported by the supplied teacher_style rules and revision diffs. "
+        "Preserve the existing skill structure and every rule that is not contradicted by repeated evidence. "
+        "Never add student names, student facts, lesson facts, contact details, or claims inferred from one case. "
+        "Return one JSON object with candidate_content, change_summary, incorporated_memory_record_ids, and "
+        "known_risks. candidate_content must be the complete replacement SKILL.md. change_summary and known_risks "
+        "must be arrays of concise strings. incorporated_memory_record_ids must contain only IDs supplied in "
+        "style_rules. Do not emit markdown fences around the JSON."
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": json.dumps(candidate_input, ensure_ascii=False, sort_keys=True),
+            },
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    payload = _loads_model_json(response.choices[0].message.content)
+    if include_usage:
+        return payload, _usage_dict(response, provider=provider, model_fallback=model)
+    return payload
+
+
+def evaluate_class_commentary_skill_candidate_replays(
+    *,
+    evaluation_input: dict,
+    provider: str = "",
+    model: str = "",
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: str = "",
+    include_usage: bool = False,
+):
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_class_commentary_client(
+        provider,
+        openai_api_key,
+        openai_base_url,
+        openai_headers,
+    )
+    system_prompt = (
+        "You are a strict replay evaluator. For every supplied sample compare base_output and candidate_output "
+        "only against that sample's frozen transcript, roster, teacher_final, and supplied teacher_style rules. "
+        "Do not use outside knowledge. Return one JSON object with a samples array. Return exactly one item for "
+        "every task_id and revision_id, plus candidate_skill_student_fact_count for the number of student-specific "
+        "facts embedded in candidate_skill_content. Each sample item must contain task_id, revision_id, base_roster_consistent, "
+        "candidate_roster_consistent, base_unsupported_fact_count, candidate_unsupported_fact_count, "
+        "base_plain_text_valid, candidate_plain_text_valid, base_structure_valid, candidate_structure_valid, "
+        "and candidate_style_memory_record_ids. Counts are non-negative integers. Style IDs must come only from "
+        "the supplied style_rules."
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": json.dumps(evaluation_input, ensure_ascii=False, sort_keys=True),
+            },
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    payload = _loads_model_json(response.choices[0].message.content)
+    if include_usage:
+        return payload, _usage_dict(response, provider=provider, model_fallback=model)
+    return payload
 
 
 def polish_class_commentary_transcript(

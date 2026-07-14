@@ -48,6 +48,8 @@ npm run dev
 
 ### 3.1 后端
 
+后端要求使用 Python 3.12.x. 仓库根目录的 `.python-version` 已固定为 3.12.13; 创建虚拟环境前先确认 `python3 --version` 指向 Python 3.12. 也可以用 `XR_PYTHON_BIN=/path/to/python3.12` 显式指定解释器.
+
 ```bash
 cd /Users/ark.mini/Desktop/Xingrun-Website
 python3 -m venv .venv
@@ -58,6 +60,8 @@ pip install -r requirements.txt
 
 说明：
 - `scripts/run_backend.sh` 会读取 `.env.runtime`（如果存在）
+- `start.command`, `scripts/deploy_backend.sh` 和课堂反馈记忆 worker 会在启动前校验实际解释器. 现有 `.venv` 不是 Python 3.12.x 时会直接退出, 不会静默复用旧环境
+- `mem0ai` 与 `qdrant-client` 已锁定经过验证的版本, 安装时不要单独升级其中一个
 - 这个脚本只启动后端 API，不启动前端
 - 服务启动后默认监听 `127.0.0.1:5001`
 - `5001` 是后端/API 地址；本地开发时不要把它当成页面入口
@@ -133,10 +137,40 @@ start.bat
 - `XR_OPEN_BROWSER`
 - `XR_WRONG_QUESTION_SERVICE_URL`
 - `XR_WRONG_QUESTION_SERVICE_TOKEN`
+- `XR_CLASS_COMMENTARY_MEMORY_ENABLED`
+- `XR_REDIS_URL`
+- `XR_CLASS_COMMENTARY_MEMORY_QUEUE`
+- `XR_MEM0_QDRANT_URL`
+- `XR_MEM0_QDRANT_API_KEY`
+- `XR_MEM0_COLLECTION_NAME`
+- `XR_MEM0_EMBEDDER_PROVIDER`
+- `XR_MEM0_EMBEDDER_MODEL`
+- `XR_MEM0_EMBEDDING_DIMS`
 
 说明：
 - 默认数据库真相源固定为 `data/xingrun.db`
 - 只有显式设置 `XR_DB_PATH` 或 `config.json` 里的 `db_path` 时，才会改用其他 SQLite 文件
+
+### 4.1 课堂反馈记忆的 Qdrant 运行方式
+
+- Qdrant embedded `path` 模式只用于单进程本地测试, 同一路径不能同时被后端 API 和异步 worker 打开
+- 生产环境必须运行独立的 Qdrant server, 让后端 API 和异步 worker 通过服务地址访问
+- 不要把 embedded Qdrant 数据目录作为生产环境的共享存储
+
+启用前需要同时运行 Redis, Qdrant 和专用 worker:
+
+```bash
+./scripts/run_class_commentary_memory_worker.sh
+```
+
+现有 skill 必须先用显式 owner manifest 登记, 不会按文件名或首次使用者自动认领. Manifest 每项只接受 `organization_id`, `skill_id`, `owner_teacher_user_id`, `source_path`:
+
+```bash
+.venv/bin/python scripts/import_class_commentary_skills.py /path/to/manifest.json --check
+.venv/bin/python scripts/import_class_commentary_skills.py /path/to/manifest.json
+```
+
+`确认并学习`只会在 Mem0 写入, 检索, 删除探针和 Redis worker 均健康时开放. 服务端仍以 SQLite 为事实源, Mem0 或队列短时故障不会回滚已经确认的老师终稿.
 
 ## 5. 测试与构建
 

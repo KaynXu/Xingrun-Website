@@ -1,7 +1,18 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { AlertCircle, CheckCheck, Copy, FileAudio, History, Sparkles, Upload } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +21,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -35,24 +47,51 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import type { ClassItem, CurrentUser } from '../../appTypes';
 import {
+  activateClassCommentarySkillVersion,
   classCommentaryStatusLabel,
+  createClassCommentarySkillCandidate,
   createClassCommentaryTask,
   createClassCommentaryTextTask,
+  confirmClassCommentaryFeedback,
+  fetchClassCommentaryCapabilities,
+  fetchClassCommentaryFeedbackDraft,
+  fetchClassCommentaryFeedbackRevisions,
+  fetchClassCommentaryGeneration,
+  fetchClassCommentaryGenerations,
+  fetchClassCommentaryRevisionMemories,
+  fetchClassCommentarySkillEvolution,
   fetchClassCommentarySkills,
   fetchClassCommentaryTasks,
   fetchClassCommentaryTask,
   generateClassCommentaryFeedback,
+  isClassCommentaryFeedbackRecordInScope,
   readClassCommentarySkillPreference,
+  rollbackClassCommentarySkillVersion,
+  retryClassCommentaryRevisionMemory,
+  resolveClassCommentaryCopyText,
+  revokeClassCommentaryMemoryEvidence,
+  saveClassCommentaryFeedbackDraft,
   saveClassCommentaryTranscript,
   shouldPollClassCommentaryTask,
   type ClassCommentarySkill,
+  type ClassCommentarySkillCandidateBuildStatus,
+  type ClassCommentaryCapabilities,
+  type ClassCommentaryFeedbackDraft,
+  type ClassCommentaryFeedbackRevision,
+  type ClassCommentaryGeneration,
+  type ClassCommentaryMemorySummary,
+  type ClassCommentarySkillEligibility,
+  type ClassCommentarySkillEvaluation,
+  type ClassCommentarySkillEvolution,
+  type ClassCommentarySkillVersion,
   type ClassCommentaryTask,
   writeClassCommentarySkillPreference,
 } from '../../classCommentary';
-import { apiFetch } from '../../workspaceShared';
+import { ApiFetchError, apiFetch } from '../../workspaceShared';
 
 type ClassFeedbackGenerationPageProps = {
   currentUser: CurrentUser;
@@ -62,6 +101,52 @@ type ClassFeedbackStudent = {
   id: number;
   name: string;
 };
+
+type GenerationEditorState = {
+  feedbackText: string;
+  savedFeedbackText: string;
+  draft: ClassCommentaryFeedbackDraft | null;
+};
+
+type PendingClassCommentaryRequest = {
+  scopeKey: string;
+  requestId: string;
+};
+
+const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
+  memory_learning_enabled: false,
+  skill_evolution_enabled: false,
+};
+
+function createClassCommentaryRequestId(prefix: string): string {
+  const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${randomId}`;
+}
+
+function claimClassCommentaryRequest(
+  currentRequest: PendingClassCommentaryRequest | null,
+  scopeKey: string,
+  prefix: string,
+): PendingClassCommentaryRequest {
+  if (currentRequest?.scopeKey === scopeKey) {
+    return currentRequest;
+  }
+  return {
+    scopeKey,
+    requestId: createClassCommentaryRequestId(prefix),
+  };
+}
+
+function settleClassCommentaryRequest(
+  currentRequest: PendingClassCommentaryRequest | null,
+  requestId: string,
+  serverResponded: boolean,
+): PendingClassCommentaryRequest | null {
+  if (!serverResponded || currentRequest?.requestId !== requestId) {
+    return currentRequest;
+  }
+  return null;
+}
 
 function canUseTranscriptState(task: ClassCommentaryTask | null): boolean {
   if (!task) {
@@ -122,6 +207,121 @@ function formatClassCommentaryTime(value: string): string {
   });
 }
 
+function classCommentaryMemoryStatusLabel(status: ClassCommentaryMemorySummary['status']): string {
+  return {
+    not_requested: '未请求学习',
+    queued: '等待学习',
+    extracting: '提取中',
+    syncing: '写入记忆中',
+    complete: '学习完成',
+    partial: '部分完成',
+    failed: '学习失败',
+    obsolete: '已被新版取代',
+  }[status];
+}
+
+function classCommentarySkillCandidateStatusLabel(status: ClassCommentarySkillCandidateBuildStatus): string {
+  return {
+    queued: '等待生成',
+    running: '生成中',
+    retry_wait: '等待重试',
+    succeeded: '候选已生成',
+    failed: '生成失败',
+    obsolete: '依据已失效',
+  }[status];
+}
+
+function classCommentarySkillEligibilityMessage(eligibility: ClassCommentarySkillEligibility): string {
+  if (eligibility.eligible) {
+    return '样本已满足要求, 可以生成一个待审核候选.';
+  }
+  if (eligibility.reason === 'insufficient_effective_tasks' || eligibility.reason === 'not_enough_effective_tasks') {
+    return `还需要有效评测任务: ${eligibility.effective_task_count}/${eligibility.min_effective_tasks}.`;
+  }
+  if (eligibility.reason === 'insufficient_supporting_tasks' || eligibility.reason === 'not_enough_supporting_tasks') {
+    return `还需要支持同一风格规律的任务: ${eligibility.supporting_task_count}/${eligibility.min_supporting_tasks}.`;
+  }
+  if (eligibility.reason === 'candidate_in_progress' || eligibility.reason === 'build_in_progress') {
+    return '已有候选正在生成, 完成前无需重复创建.';
+  }
+  if (eligibility.reason === 'active_version_missing') {
+    return '当前风格版本不可用, 暂时不能生成候选.';
+  }
+  return '继续积累确认样本后, 才能生成候选版本.';
+}
+
+function classCommentarySkillStaleMessage(reason: string): string {
+  return {
+    base_version_changed: '当前生效版本已经变化, 请基于最新版本重新生成候选.',
+    revision_not_effective: '候选使用的反馈样本已有新版, 请重新生成候选.',
+    supporting_evidence_not_active: '支持候选的学习依据已撤销或被取代, 请重新生成候选.',
+    source_snapshot_mismatch: '候选依据校验失败, 请重新生成候选.',
+  }[reason] || '候选依据已经变化, 不能直接激活. 请重新生成候选.';
+}
+
+const classCommentarySkillEvaluationMetrics = [
+  { key: 'normalized_edit_distance', label: '终稿修改距离', aliases: ['normalized_edit_distance'], ratio: true },
+  { key: 'accepted_without_edit_rate', label: '无修改接受率', aliases: ['accepted_without_edit_rate', 'unchanged_acceptance_rate', 'no_edit_acceptance_rate', 'exact_acceptance_rate'], ratio: true },
+  { key: 'style_rule_coverage', label: '风格规则覆盖率', aliases: ['style_rule_coverage', 'style_rule_coverage_rate', 'confirmed_style_rule_coverage_rate'], ratio: true },
+  { key: 'roster_consistency_rate', label: '学生名单一致率', aliases: ['roster_consistency_rate', 'student_roster_consistency'], ratio: true },
+  { key: 'unsupported_fact_count', label: '无证据事实数', aliases: ['unsupported_fact_count'], ratio: false },
+  { key: 'student_fact_pollution_count', label: '学生事实污染数', aliases: ['student_fact_pollution_count', 'student_fact_contamination_count'], ratio: false },
+  { key: 'output_contract_pass_rate', label: '输出约束通过率', aliases: ['output_contract_pass_rate', 'output_constraint_pass_rate'], ratio: true },
+] as const;
+
+function readClassCommentarySkillMetric(metrics: Record<string, unknown>, aliases: readonly string[]): unknown {
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(metrics, alias)) {
+      return metrics[alias];
+    }
+  }
+  return undefined;
+}
+
+function formatClassCommentarySkillMetric(value: unknown, ratio: boolean): string {
+  if (typeof value === 'boolean') {
+    return value ? '通过' : '未通过';
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (ratio && value >= 0 && value <= 1) {
+      return `${Math.round(value * 1000) / 10}%`;
+    }
+    return String(Math.round(value * 1000) / 1000);
+  }
+  return typeof value === 'string' && value.trim() ? value : '-';
+}
+
+function classCommentarySkillEvaluationRows(evaluation: ClassCommentarySkillEvaluation) {
+  return classCommentarySkillEvaluationMetrics.flatMap((metric) => {
+    const currentValue = readClassCommentarySkillMetric(evaluation.current_metrics, metric.aliases);
+    const candidateValue = readClassCommentarySkillMetric(evaluation.candidate_metrics, metric.aliases);
+    if (currentValue === undefined && candidateValue === undefined) {
+      return [];
+    }
+    return [{
+      key: metric.key,
+      label: metric.label,
+      current: formatClassCommentarySkillMetric(currentValue, metric.ratio),
+      candidate: formatClassCommentarySkillMetric(candidateValue, metric.ratio),
+    }];
+  });
+}
+
+function classCommentarySkillActionError(error: unknown, fallback: string): string {
+  if (error instanceof ApiFetchError) {
+    if (error.payload?.error === 'candidate_stale') {
+      return '候选依据已经变化, 请重新生成候选.';
+    }
+    if (error.payload?.error === 'skill_version_conflict' || error.payload?.error === 'active_version_conflict') {
+      return '当前生效版本已经变化, 请刷新后重试.';
+    }
+    if (error.payload?.error === 'candidate_not_ready') {
+      return '当前样本还不足以生成候选.';
+    }
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 function mergeHistoryTask(historyTasks: ClassCommentaryTask[], nextTask: ClassCommentaryTask): ClassCommentaryTask[] {
   return [nextTask, ...historyTasks.filter((item) => item.id !== nextTask.id)].slice(0, 30);
 }
@@ -144,6 +344,78 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copied, setCopied] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [generations, setGenerations] = useState<ClassCommentaryGeneration[]>([]);
+  const [selectedGenerationId, setSelectedGenerationId] = useState('');
+  const [feedbackEditorText, setFeedbackEditorText] = useState('');
+  const [feedbackDraft, setFeedbackDraft] = useState<ClassCommentaryFeedbackDraft | null>(null);
+  const [generationEditors, setGenerationEditors] = useState<Record<number, GenerationEditorState>>({});
+  const [feedbackRevisions, setFeedbackRevisions] = useState<ClassCommentaryFeedbackRevision[]>([]);
+  const [revisionMemorySummary, setRevisionMemorySummary] = useState<ClassCommentaryMemorySummary | null>(null);
+  const [memoryLoadError, setMemoryLoadError] = useState('');
+  const [memoryRefreshVersion, setMemoryRefreshVersion] = useState(0);
+  const [memoryActionKey, setMemoryActionKey] = useState('');
+  const [skillEvolutionDialogOpen, setSkillEvolutionDialogOpen] = useState(false);
+  const [skillEvolution, setSkillEvolution] = useState<ClassCommentarySkillEvolution | null>(null);
+  const [selectedSkillVersionId, setSelectedSkillVersionId] = useState('');
+  const [skillEvolutionLoadError, setSkillEvolutionLoadError] = useState('');
+  const [skillEvolutionActionError, setSkillEvolutionActionError] = useState('');
+  const [skillEvolutionActionKey, setSkillEvolutionActionKey] = useState('');
+  const [skillEvolutionRefreshVersion, setSkillEvolutionRefreshVersion] = useState(0);
+  const [loadingGenerationId, setLoadingGenerationId] = useState<number | null>(null);
+  const [capabilities, setCapabilities] = useState<ClassCommentaryCapabilities>(disabledClassCommentaryCapabilities);
+  const [draftConflict, setDraftConflict] = useState<{
+    localText: string;
+    serverDraft: ClassCommentaryFeedbackDraft;
+  } | null>(null);
+  const generationLoadRequestTokenRef = useRef(0);
+  const feedbackMutationActiveRef = useRef(false);
+  const feedbackMutationTokenRef = useRef(0);
+  const currentTaskIdRef = useRef<number | null>(null);
+  const selectedGenerationIdRef = useRef('');
+  const memoryLoadRequestTokenRef = useRef(0);
+  const memoryActionRequestTokenRef = useRef(0);
+  const skillEvolutionLoadRequestTokenRef = useRef(0);
+  const skillEvolutionActionRequestTokenRef = useRef(0);
+  const confirmationRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const memoryRetryRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const memoryRevokeRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const skillCandidateRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const skillActivateRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const skillRollbackRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+
+  function resetFeedbackVersionState(nextTaskId: number | null, releaseBusy = false) {
+    generationLoadRequestTokenRef.current += 1;
+    feedbackMutationActiveRef.current = false;
+    feedbackMutationTokenRef.current += 1;
+    currentTaskIdRef.current = nextTaskId;
+    selectedGenerationIdRef.current = '';
+    setGenerations([]);
+    setSelectedGenerationId('');
+    setFeedbackEditorText('');
+    setFeedbackDraft(null);
+    setFeedbackRevisions([]);
+    memoryLoadRequestTokenRef.current += 1;
+    memoryActionRequestTokenRef.current += 1;
+    setRevisionMemorySummary(null);
+    setMemoryLoadError('');
+    setMemoryRefreshVersion(0);
+    setMemoryActionKey('');
+    confirmationRequestRef.current = null;
+    memoryRetryRequestRef.current = null;
+    memoryRevokeRequestRef.current = null;
+    setGenerationEditors({});
+    setLoadingGenerationId(null);
+    setDraftConflict(null);
+    if (releaseBusy) {
+      setBusy(false);
+    }
+  }
+
+  function isCurrentFeedbackMutation(taskId: number, generationId: number, mutationToken: number): boolean {
+    return feedbackMutationTokenRef.current === mutationToken
+      && currentTaskIdRef.current === taskId
+      && selectedGenerationIdRef.current === String(generationId);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -152,14 +424,16 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       apiFetch<ClassItem[]>('/api/classes'),
       fetchClassCommentarySkills(),
       fetchClassCommentaryTasks(),
+      fetchClassCommentaryCapabilities().catch(() => disabledClassCommentaryCapabilities),
     ])
-      .then(([nextClasses, nextSkills, nextHistoryTasks]) => {
+      .then(([nextClasses, nextSkills, nextHistoryTasks, nextCapabilities]) => {
         if (cancelled) {
           return;
         }
         setClasses(nextClasses);
         setSkills(nextSkills);
         setHistoryTasks(nextHistoryTasks);
+        setCapabilities(nextCapabilities);
         setSelectedClassId((currentValue) => currentValue || (nextClasses[0] ? String(nextClasses[0].id) : ''));
         setSelectedSkillId((currentValue) => currentValue || readClassCommentarySkillPreference(currentUser, nextSkills) || (nextSkills[0]?.id || ''));
       })
@@ -177,6 +451,21 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       cancelled = true;
     };
   }, [currentUser.id, currentUser.organization_id]);
+
+  useEffect(() => {
+    skillEvolutionLoadRequestTokenRef.current += 1;
+    skillEvolutionActionRequestTokenRef.current += 1;
+    setSkillEvolutionDialogOpen(false);
+    setSkillEvolution(null);
+    setSelectedSkillVersionId('');
+    setSkillEvolutionLoadError('');
+    setSkillEvolutionActionError('');
+    setSkillEvolutionActionKey('');
+    setSkillEvolutionRefreshVersion(0);
+    skillCandidateRequestRef.current = null;
+    skillActivateRequestRef.current = null;
+    skillRollbackRequestRef.current = null;
+  }, [capabilities.skill_evolution_enabled, selectedSkillId]);
 
   useEffect(() => {
     if (!selectedClassId) {
@@ -216,22 +505,173 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     if (!task || !shouldPollClassCommentaryTask(task.status)) {
       return;
     }
+    const polledTaskId = task.id;
     const timer = window.setInterval(() => {
-      fetchClassCommentaryTask(task.id)
+      fetchClassCommentaryTask(polledTaskId)
         .then((nextTask) => {
+          if (currentTaskIdRef.current !== polledTaskId) {
+            return;
+          }
           setTask(nextTask);
           setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
           setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
         })
         .catch((error) => {
-          setErrorMessage(error instanceof Error ? error.message : '刷新任务状态失败');
+          if (currentTaskIdRef.current === polledTaskId) {
+            setErrorMessage(error instanceof Error ? error.message : '刷新任务状态失败');
+          }
         });
     }, 2000);
     return () => window.clearInterval(timer);
   }, [task?.id, task?.status]);
 
+  useEffect(() => {
+    if (!task) {
+      resetFeedbackVersionState(null);
+      return;
+    }
+    if (currentTaskIdRef.current !== task.id) {
+      resetFeedbackVersionState(task.id);
+    }
+    let cancelled = false;
+    const taskId = task.id;
+    const requestToken = ++generationLoadRequestTokenRef.current;
+    let targetGenerationId: number | null = null;
+    setLoadingGenerationId(null);
+    Promise.all([
+      fetchClassCommentaryGenerations(taskId),
+      fetchClassCommentaryFeedbackRevisions(taskId),
+    ])
+      .then(async ([nextGenerations, nextRevisions]) => {
+        if (
+          cancelled
+          || requestToken !== generationLoadRequestTokenRef.current
+          || currentTaskIdRef.current !== taskId
+        ) {
+          return;
+        }
+        if (
+          nextGenerations.some((item) => !isClassCommentaryFeedbackRecordInScope(item, taskId, item.id))
+          || nextRevisions.some((item) => !isClassCommentaryFeedbackRecordInScope(
+            item,
+            taskId,
+            item.generation_id,
+          ))
+        ) {
+          throw new Error('反馈版本响应范围不一致');
+        }
+        setGenerations(nextGenerations);
+        setFeedbackRevisions(nextRevisions);
+        const targetGeneration = nextGenerations.find((item) => item.id === task.latest_generation_id)
+          || nextGenerations[0]
+          || null;
+        if (!targetGeneration) {
+          selectedGenerationIdRef.current = '';
+          setSelectedGenerationId('');
+          setFeedbackEditorText(task.final_feedback_text || task.feedback_text || '');
+          setFeedbackDraft(null);
+          setGenerationEditors({});
+          return;
+        }
+        const cachedTarget = generationEditors[targetGeneration.id];
+        if (
+          selectedGenerationIdRef.current === String(targetGeneration.id)
+          && cachedTarget
+          && (!cachedTarget.draft || isClassCommentaryFeedbackRecordInScope(
+            cachedTarget.draft,
+            taskId,
+            targetGeneration.id,
+          ))
+        ) {
+          setLoadingGenerationId(null);
+          return;
+        }
+        if (feedbackMutationActiveRef.current) {
+          return;
+        }
+        targetGenerationId = targetGeneration.id;
+        feedbackMutationTokenRef.current += 1;
+        selectedGenerationIdRef.current = String(targetGenerationId);
+        setSelectedGenerationId(String(targetGenerationId));
+        setFeedbackEditorText('');
+        setFeedbackDraft(null);
+        setGenerationEditors({});
+        setLoadingGenerationId(targetGenerationId);
+        const [generationDetail, nextDraft] = await Promise.all([
+          fetchClassCommentaryGeneration(taskId, targetGenerationId),
+          fetchClassCommentaryFeedbackDraft(taskId, targetGenerationId),
+        ]);
+        if (
+          cancelled
+          || requestToken !== generationLoadRequestTokenRef.current
+          || currentTaskIdRef.current !== taskId
+          || selectedGenerationIdRef.current !== String(targetGenerationId)
+        ) {
+          return;
+        }
+        if (
+          !isClassCommentaryFeedbackRecordInScope(generationDetail, taskId, targetGenerationId)
+          || (nextDraft && !isClassCommentaryFeedbackRecordInScope(nextDraft, taskId, targetGenerationId))
+        ) {
+          throw new Error('生成版本响应范围不一致');
+        }
+        const latestRevision = nextRevisions.find((item) => item.generation_id === targetGenerationId) || null;
+        const nextText = resolveClassCommentaryCopyText(nextDraft, latestRevision, generationDetail)
+          || task.feedback_text
+          || '';
+        setFeedbackEditorText(nextText);
+        setFeedbackDraft(nextDraft);
+        setGenerationEditors({
+          [targetGenerationId]: {
+            feedbackText: nextText,
+            savedFeedbackText: nextDraft?.feedback_text || nextText,
+            draft: nextDraft,
+          },
+        });
+      })
+      .catch((error) => {
+        if (
+          !cancelled
+          && requestToken === generationLoadRequestTokenRef.current
+          && currentTaskIdRef.current === taskId
+        ) {
+          if (targetGenerationId === null || selectedGenerationIdRef.current === String(targetGenerationId)) {
+            selectedGenerationIdRef.current = '';
+            setSelectedGenerationId('');
+            setFeedbackEditorText('');
+            setFeedbackDraft(null);
+            setGenerationEditors({});
+          }
+          setErrorMessage(error instanceof Error ? error.message : '加载反馈版本失败');
+        }
+      })
+      .finally(() => {
+        if (
+          !cancelled
+          && requestToken === generationLoadRequestTokenRef.current
+          && currentTaskIdRef.current === taskId
+        ) {
+          setLoadingGenerationId(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task?.id, task?.latest_generation_id]);
+
   const selectedClass = classes.find((item) => String(item.id) === selectedClassId) || null;
   const selectedSkill = skills.find((item) => item.id === selectedSkillId) || null;
+  const selectedGeneration = generations.find((item) => String(item.id) === selectedGenerationId) || null;
+  const selectedRevision = feedbackRevisions.find((item) => item.id === task?.latest_revision_id
+    && item.generation_id === selectedGeneration?.id) || null;
+  const selectedEditorState = selectedGeneration ? generationEditors[selectedGeneration.id] : undefined;
+  const generationLoading = loadingGenerationId !== null;
+  const copyText = resolveClassCommentaryCopyText(
+    feedbackDraft,
+    selectedRevision,
+    selectedGeneration,
+    generationLoading,
+  );
   const taskErrorMessage = getTaskErrorMessage(task, errorMessage);
   const taskProgress = getTaskProgress(task, uploadProgress);
   const trimmedConfirmedTranscript = confirmedTranscript.trim();
@@ -240,10 +680,186 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const transcriptDirty = Boolean(task) && trimmedConfirmedTranscript !== persistedTranscript;
   const canUseTranscript = canUseTranscriptState(task);
   const canCreateManualTextTask = !task || task.status === 'uploaded' || task.status === 'transcribing';
-  const canCreateTask = !loadingInitial && !busy && Boolean(selectedClassId && audioFile);
-  const canSaveTranscript = !busy && canUseTranscript && hasTranscriptText;
-  const canGenerate = !busy && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
+  const canCreateTask = !loadingInitial && !busy && !generationLoading && Boolean(selectedClassId && audioFile);
+  const canSaveTranscript = !busy && !generationLoading && canUseTranscript && hasTranscriptText;
+  const canGenerate = !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
+  const canSaveFeedbackDraft = !busy
+    && !generationLoading
+    && selectedGeneration?.status === 'succeeded'
+    && Boolean(feedbackEditorText.trim())
+    && feedbackEditorText !== (selectedEditorState?.savedFeedbackText || '');
+  const canConfirmFeedback = !busy
+    && !generationLoading
+    && selectedGeneration?.status === 'succeeded'
+    && Boolean(feedbackEditorText.trim());
   const attendanceListHeight = Math.min(224, Math.max(32, classStudents.length * 40 - 8));
+  const activeSkillVersion = skillEvolution?.versions.find((version) => version.is_active)
+    || skillEvolution?.versions.find((version) => version.id === skillEvolution.skill.active_version_id)
+    || null;
+  const selectedSkillVersion = skillEvolution?.versions.find(
+    (version) => String(version.id) === selectedSkillVersionId,
+  ) || null;
+  const selectedSkillBaseVersion = selectedSkillVersion
+    ? skillEvolution?.versions.find((version) => version.id === selectedSkillVersion.base_version_id)
+      || activeSkillVersion
+    : null;
+  const latestSkillCandidateBuild = skillEvolution?.candidate_builds[0] || null;
+  const skillCandidateBuildInProgress = Boolean(
+    skillEvolution?.candidate_builds.some((build) => !build.is_terminal),
+  );
+  const expectedActiveSkillVersionId = skillEvolution?.skill.active_version_id
+    || activeSkillVersion?.id
+    || 0;
+  const selectedSkillEvaluationRows = selectedSkillVersion
+    ? classCommentarySkillEvaluationRows(selectedSkillVersion.evaluation)
+    : [];
+  const canCreateSkillCandidate = Boolean(
+    skillEvolution?.eligibility.eligible
+    && expectedActiveSkillVersionId > 0
+    && !skillCandidateBuildInProgress
+    && !skillEvolutionActionKey,
+  );
+  const canActivateSkillVersion = Boolean(
+    selectedSkillVersion
+    && selectedSkillVersion.version_kind === 'candidate'
+    && selectedSkillVersion.review_status === 'pending'
+    && !selectedSkillVersion.is_active
+    && !selectedSkillVersion.is_stale
+    && expectedActiveSkillVersionId > 0
+    && !skillEvolutionActionKey,
+  );
+  const canRollbackSkillVersion = Boolean(
+    selectedSkillVersion
+    && !selectedSkillVersion.is_active
+    && (selectedSkillVersion.review_status === 'approved' || selectedSkillVersion.review_status === 'not_required')
+    && expectedActiveSkillVersionId > 0
+    && !skillEvolutionActionKey,
+  );
+
+  useEffect(() => {
+    const revisionId = selectedRevision?.id || 0;
+    const requestToken = ++memoryLoadRequestTokenRef.current;
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    let pollingDelayMs = 2000;
+    if (!capabilities.memory_learning_enabled || !selectedRevision?.learn_requested || revisionId <= 0) {
+      setRevisionMemorySummary(null);
+      setMemoryLoadError('');
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setRevisionMemorySummary((current) => current?.revision_id === revisionId ? current : null);
+    setMemoryLoadError('');
+
+    const loadMemorySummary = async () => {
+      try {
+        const summary = await fetchClassCommentaryRevisionMemories(revisionId);
+        if (cancelled || requestToken !== memoryLoadRequestTokenRef.current) {
+          return;
+        }
+        setRevisionMemorySummary(summary);
+        setMemoryLoadError('');
+        pollingDelayMs = 2000;
+        if (['queued', 'extracting', 'syncing'].includes(summary.status)) {
+          pollTimer = window.setTimeout(loadMemorySummary, pollingDelayMs);
+        }
+      } catch {
+        if (!cancelled && requestToken === memoryLoadRequestTokenRef.current) {
+          setMemoryLoadError('学习状态暂时不可用, 正在重试');
+          pollingDelayMs = Math.min(pollingDelayMs * 2, 30000);
+          pollTimer = window.setTimeout(loadMemorySummary, pollingDelayMs);
+        }
+      }
+    };
+
+    void loadMemorySummary();
+    return () => {
+      cancelled = true;
+      if (pollTimer !== undefined) {
+        window.clearTimeout(pollTimer);
+      }
+    };
+  }, [
+    capabilities.memory_learning_enabled,
+    memoryRefreshVersion,
+    selectedRevision?.id,
+    selectedRevision?.learn_requested,
+  ]);
+
+  useEffect(() => {
+    const requestToken = ++skillEvolutionLoadRequestTokenRef.current;
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    let pollingDelayMs = 2000;
+    if (!capabilities.skill_evolution_enabled || !skillEvolutionDialogOpen || !selectedSkillId) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSkillEvolutionLoadError('');
+
+    const loadSkillEvolution = async () => {
+      try {
+        const nextEvolution = await fetchClassCommentarySkillEvolution(selectedSkillId);
+        if (cancelled || requestToken !== skillEvolutionLoadRequestTokenRef.current) {
+          return;
+        }
+        setSkillEvolution(nextEvolution);
+        setSkillEvolutionLoadError('');
+        setSelectedSkillVersionId((currentValue) => {
+          const currentVersion = nextEvolution.versions.find((version) => String(version.id) === currentValue);
+          const pendingCandidate = nextEvolution.versions.find((version) => (
+            version.version_kind === 'candidate'
+            && version.review_status === 'pending'
+            && !version.is_stale
+          ));
+          const latestBuild = nextEvolution.candidate_builds[0] || null;
+          if (
+            pendingCandidate
+            && (!currentVersion || (
+              currentVersion.is_active
+              && latestBuild?.candidate_version_id === pendingCandidate.id
+            ))
+          ) {
+            return String(pendingCandidate.id);
+          }
+          if (currentVersion) {
+            return currentValue;
+          }
+          const activeVersion = nextEvolution.versions.find((version) => version.is_active)
+            || nextEvolution.versions.find((version) => version.id === nextEvolution.skill.active_version_id)
+            || nextEvolution.versions[0];
+          return activeVersion ? String(activeVersion.id) : '';
+        });
+        pollingDelayMs = 2000;
+        if (nextEvolution.candidate_builds.some((build) => !build.is_terminal)) {
+          pollTimer = window.setTimeout(loadSkillEvolution, pollingDelayMs);
+        }
+      } catch {
+        if (!cancelled && requestToken === skillEvolutionLoadRequestTokenRef.current) {
+          setSkillEvolutionLoadError('风格版本暂时不可用, 正在重试');
+          pollingDelayMs = Math.min(pollingDelayMs * 2, 30000);
+          pollTimer = window.setTimeout(loadSkillEvolution, pollingDelayMs);
+        }
+      }
+    };
+
+    void loadSkillEvolution();
+    return () => {
+      cancelled = true;
+      if (pollTimer !== undefined) {
+        window.clearTimeout(pollTimer);
+      }
+    };
+  }, [
+    capabilities.skill_evolution_enabled,
+    selectedSkillId,
+    skillEvolutionDialogOpen,
+    skillEvolutionRefreshVersion,
+  ]);
 
   async function handleCreateTask() {
     if (!selectedClassId || !audioFile) {
@@ -256,6 +872,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setCopied(false);
     try {
       const nextTask = await createClassCommentaryTask(Number(selectedClassId), audioFile, setUploadProgress);
+      resetFeedbackVersionState(nextTask.id);
       setTask(nextTask);
       setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
       setConfirmedTranscript(nextTask.confirmed_transcript_text || nextTask.transcript_text || '');
@@ -307,12 +924,44 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       const savedTask = task && canUseTranscript
         ? (transcriptDirty ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript) : task)
         : await createClassCommentaryTextTask(Number(selectedClassId), trimmedConfirmedTranscript);
+      if (currentTaskIdRef.current !== savedTask.id) {
+        resetFeedbackVersionState(savedTask.id);
+      }
       setTask(savedTask);
       setHistoryTasks((current) => mergeHistoryTask(current, savedTask));
       setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text || '');
-      const nextTask = await generateClassCommentaryFeedback(savedTask.id, selectedSkillId, attendingStudentIds);
+      const result = await generateClassCommentaryFeedback(
+        savedTask.id,
+        selectedSkillId,
+        attendingStudentIds,
+        createClassCommentaryRequestId('generation'),
+      );
+      const nextTask = result.task;
+      const nextGeneration = result.generation;
+      if (
+        nextTask.id !== savedTask.id
+        || !isClassCommentaryFeedbackRecordInScope(nextGeneration, savedTask.id, nextGeneration.id)
+      ) {
+        throw new Error('生成响应范围不一致');
+      }
       setTask(nextTask);
       setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
+      setGenerations((current) => [nextGeneration, ...current.filter((item) => item.id !== nextGeneration.id)]);
+      generationLoadRequestTokenRef.current += 1;
+      feedbackMutationTokenRef.current += 1;
+      selectedGenerationIdRef.current = String(nextGeneration.id);
+      setSelectedGenerationId(String(nextGeneration.id));
+      setFeedbackDraft(null);
+      setLoadingGenerationId(null);
+      setFeedbackEditorText(nextGeneration.generated_feedback_text);
+      setGenerationEditors((current) => ({
+        ...current,
+        [nextGeneration.id]: {
+          feedbackText: nextGeneration.generated_feedback_text,
+          savedFeedbackText: nextGeneration.generated_feedback_text,
+          draft: null,
+        },
+      }));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '生成失败');
     } finally {
@@ -321,10 +970,572 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   }
 
   async function handleCopy() {
-    if (!task?.feedback_text) {
+    if (generationLoading || !copyText) {
       return;
     }
-    await navigator.clipboard.writeText(task.feedback_text);
+    await navigator.clipboard.writeText(copyText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  async function handleGenerationChange(nextGenerationId: string) {
+    if (!task || busy || generationLoading) {
+      return;
+    }
+    const taskId = task.id;
+    const numericGenerationId = Number(nextGenerationId);
+    const generationSummary = generations.find((item) => item.id === numericGenerationId) || null;
+    if (
+      !generationSummary
+      || !isClassCommentaryFeedbackRecordInScope(generationSummary, taskId, numericGenerationId)
+    ) {
+      setErrorMessage('生成版本范围不一致');
+      return;
+    }
+    const previousGenerationId = selectedGenerationId;
+    const previousEditorText = feedbackEditorText;
+    const previousDraft = feedbackDraft;
+    const requestToken = ++generationLoadRequestTokenRef.current;
+    feedbackMutationTokenRef.current += 1;
+    selectedGenerationIdRef.current = nextGenerationId;
+    memoryLoadRequestTokenRef.current += 1;
+    setRevisionMemorySummary(null);
+    setMemoryLoadError('');
+    const numericPreviousGenerationId = Number(previousGenerationId);
+    if (numericPreviousGenerationId > 0) {
+      setGenerationEditors((current) => ({
+        ...current,
+        [numericPreviousGenerationId]: {
+          feedbackText: feedbackEditorText,
+          savedFeedbackText: current[numericPreviousGenerationId]?.savedFeedbackText || feedbackEditorText,
+          draft: feedbackDraft,
+        },
+      }));
+    }
+    setSelectedGenerationId(nextGenerationId);
+    const cached = generationEditors[numericGenerationId];
+    if (cached) {
+      setFeedbackEditorText(cached.feedbackText);
+      setFeedbackDraft(cached.draft);
+      setLoadingGenerationId(null);
+      return;
+    }
+    setFeedbackEditorText('');
+    setFeedbackDraft(null);
+    setLoadingGenerationId(numericGenerationId);
+    setErrorMessage('');
+    try {
+      const [generation, draft] = await Promise.all([
+        fetchClassCommentaryGeneration(taskId, numericGenerationId),
+        fetchClassCommentaryFeedbackDraft(taskId, numericGenerationId),
+      ]);
+      if (
+        requestToken !== generationLoadRequestTokenRef.current
+        || currentTaskIdRef.current !== taskId
+        || selectedGenerationIdRef.current !== nextGenerationId
+      ) {
+        return;
+      }
+      if (
+        !isClassCommentaryFeedbackRecordInScope(generation, taskId, numericGenerationId)
+        || (draft && !isClassCommentaryFeedbackRecordInScope(draft, taskId, numericGenerationId))
+      ) {
+        throw new Error('生成版本响应范围不一致');
+      }
+      const revision = feedbackRevisions.find((item) => item.generation_id === numericGenerationId) || null;
+      const nextText = resolveClassCommentaryCopyText(draft, revision, generation);
+      setFeedbackEditorText(nextText);
+      setFeedbackDraft(draft);
+      setGenerationEditors((current) => ({
+        ...current,
+        [numericGenerationId]: {
+          feedbackText: nextText,
+          savedFeedbackText: draft?.feedback_text || nextText,
+          draft,
+        },
+      }));
+    } catch (error) {
+      if (
+        requestToken === generationLoadRequestTokenRef.current
+        && currentTaskIdRef.current === taskId
+        && selectedGenerationIdRef.current === nextGenerationId
+      ) {
+        selectedGenerationIdRef.current = previousGenerationId;
+        setSelectedGenerationId(previousGenerationId);
+        setFeedbackEditorText(previousEditorText);
+        setFeedbackDraft(previousDraft);
+        setErrorMessage(error instanceof Error ? error.message : '加载生成版本失败');
+      }
+    } finally {
+      if (
+        requestToken === generationLoadRequestTokenRef.current
+        && currentTaskIdRef.current === taskId
+      ) {
+        setLoadingGenerationId(null);
+      }
+    }
+  }
+
+  async function handleSaveFeedbackDraft() {
+    if (!task || !selectedGeneration) {
+      return;
+    }
+    const mutationTaskId = task.id;
+    const mutationGenerationId = selectedGeneration.id;
+    const mutationFeedbackText = feedbackEditorText;
+    const mutationToken = ++feedbackMutationTokenRef.current;
+    feedbackMutationActiveRef.current = true;
+    setBusy(true);
+    setErrorMessage('');
+    try {
+      const nextDraft = await saveClassCommentaryFeedbackDraft(
+        mutationTaskId,
+        mutationGenerationId,
+        mutationFeedbackText,
+        feedbackDraft?.draft_version || 0,
+        feedbackDraft?.based_on_revision_id || null,
+      );
+      if (!isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
+        return;
+      }
+      if (!isClassCommentaryFeedbackRecordInScope(nextDraft, mutationTaskId, mutationGenerationId)) {
+        throw new Error('草稿响应范围不一致');
+      }
+      setFeedbackDraft(nextDraft);
+      setGenerationEditors((current) => ({
+        ...current,
+        [mutationGenerationId]: {
+          feedbackText: mutationFeedbackText,
+          savedFeedbackText: mutationFeedbackText,
+          draft: nextDraft,
+        },
+      }));
+      setGenerations((current) => current.map((item) => item.id === mutationGenerationId
+        ? { ...item, has_draft: true, draft_version: nextDraft.draft_version }
+        : item));
+    } catch (error) {
+      if (!isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
+        return;
+      }
+      if (error instanceof ApiFetchError && error.status === 409 && error.payload?.error === 'draft_version_conflict') {
+        const currentDraft = error.payload.current_draft as ClassCommentaryFeedbackDraft | undefined;
+        if (currentDraft && isClassCommentaryFeedbackRecordInScope(currentDraft, mutationTaskId, mutationGenerationId)) {
+          setDraftConflict({
+            localText: mutationFeedbackText,
+            serverDraft: currentDraft,
+          });
+        } else {
+          setErrorMessage('服务器草稿范围不一致');
+        }
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : '保存草稿失败');
+      }
+    } finally {
+      if (isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
+        feedbackMutationActiveRef.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  async function handleConfirmFeedback(learn: boolean) {
+    if (!task || !selectedGeneration) {
+      return;
+    }
+    const mutationTaskId = task.id;
+    const mutationGenerationId = selectedGeneration.id;
+    const mutationFeedbackText = feedbackEditorText;
+    const expectedDraftVersion = feedbackDraft?.draft_version || 0;
+    const confirmationRequest = claimClassCommentaryRequest(
+      confirmationRequestRef.current,
+      JSON.stringify({
+        taskId: mutationTaskId,
+        generationId: mutationGenerationId,
+        feedbackText: mutationFeedbackText,
+        learn,
+        expectedDraftVersion,
+      }),
+      'confirmation',
+    );
+    confirmationRequestRef.current = confirmationRequest;
+    const mutationToken = ++feedbackMutationTokenRef.current;
+    feedbackMutationActiveRef.current = true;
+    setBusy(true);
+    setErrorMessage('');
+    try {
+      const { revision, draft: nextDraft } = await confirmClassCommentaryFeedback(
+        mutationTaskId,
+        mutationGenerationId,
+        mutationFeedbackText,
+        learn,
+        expectedDraftVersion,
+        confirmationRequest.requestId,
+      );
+      confirmationRequestRef.current = settleClassCommentaryRequest(
+        confirmationRequestRef.current,
+        confirmationRequest.requestId,
+        true,
+      );
+      if (!isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
+        return;
+      }
+      if (
+        !isClassCommentaryFeedbackRecordInScope(revision, mutationTaskId, mutationGenerationId)
+        || !isClassCommentaryFeedbackRecordInScope(nextDraft, mutationTaskId, mutationGenerationId)
+      ) {
+        throw new Error('确认响应范围不一致');
+      }
+      setFeedbackRevisions((current) => [revision, ...current.filter((item) => item.id !== revision.id)]);
+      setFeedbackEditorText(nextDraft.feedback_text);
+      setFeedbackDraft(nextDraft);
+      setGenerationEditors((current) => ({
+        ...current,
+        [mutationGenerationId]: {
+          feedbackText: nextDraft.feedback_text,
+          savedFeedbackText: revision.final_feedback_text,
+          draft: nextDraft,
+        },
+      }));
+      setGenerations((current) => current.map((item) => item.id === mutationGenerationId
+        ? {
+          ...item,
+          has_draft: true,
+          draft_version: nextDraft.draft_version,
+          latest_revision_id: revision.id,
+        }
+        : item));
+      setTask((current) => current?.id === mutationTaskId ? {
+        ...current,
+        feedback_text: revision.final_feedback_text,
+        final_feedback_text: revision.final_feedback_text,
+        latest_revision_id: revision.id,
+        feedback_revision_no: revision.revision_no,
+        feedback_confirmed_at: revision.confirmed_at,
+      } : current);
+    } catch (error) {
+      confirmationRequestRef.current = settleClassCommentaryRequest(
+        confirmationRequestRef.current,
+        confirmationRequest.requestId,
+        error instanceof ApiFetchError,
+      );
+      if (!isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
+        return;
+      }
+      if (error instanceof ApiFetchError && error.status === 409 && error.payload?.error === 'draft_version_conflict') {
+        const currentDraft = error.payload.current_draft as ClassCommentaryFeedbackDraft | undefined;
+        if (currentDraft && isClassCommentaryFeedbackRecordInScope(currentDraft, mutationTaskId, mutationGenerationId)) {
+          setDraftConflict({
+            localText: mutationFeedbackText,
+            serverDraft: currentDraft,
+          });
+        } else {
+          setErrorMessage('服务器草稿范围不一致');
+        }
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : '确认终稿失败');
+      }
+    } finally {
+      if (isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
+        feedbackMutationActiveRef.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  async function handleRetryRevisionMemory() {
+    if (!selectedRevision || memoryActionKey) {
+      return;
+    }
+    const revisionId = selectedRevision.id;
+    const loadRequestToken = memoryLoadRequestTokenRef.current;
+    const actionRequestToken = ++memoryActionRequestTokenRef.current;
+    const retryRequest = claimClassCommentaryRequest(
+      memoryRetryRequestRef.current,
+      String(revisionId),
+      'memory-retry',
+    );
+    memoryRetryRequestRef.current = retryRequest;
+    setMemoryActionKey('retry');
+    setErrorMessage('');
+    try {
+      const summary = await retryClassCommentaryRevisionMemory(
+        revisionId,
+        retryRequest.requestId,
+      );
+      memoryRetryRequestRef.current = settleClassCommentaryRequest(
+        memoryRetryRequestRef.current,
+        retryRequest.requestId,
+        true,
+      );
+      if (
+        actionRequestToken === memoryActionRequestTokenRef.current
+        && loadRequestToken === memoryLoadRequestTokenRef.current
+      ) {
+        setRevisionMemorySummary(summary);
+        setMemoryRefreshVersion((current) => current + 1);
+      }
+    } catch (error) {
+      memoryRetryRequestRef.current = settleClassCommentaryRequest(
+        memoryRetryRequestRef.current,
+        retryRequest.requestId,
+        error instanceof ApiFetchError,
+      );
+      if (actionRequestToken === memoryActionRequestTokenRef.current) {
+        setErrorMessage(error instanceof Error ? error.message : '重试学习失败');
+      }
+    } finally {
+      if (actionRequestToken === memoryActionRequestTokenRef.current) {
+        setMemoryActionKey('');
+      }
+    }
+  }
+
+  async function handleRevokeMemoryEvidence(evidenceId: number) {
+    if (evidenceId <= 0 || memoryActionKey) {
+      return;
+    }
+    const loadRequestToken = memoryLoadRequestTokenRef.current;
+    const actionRequestToken = ++memoryActionRequestTokenRef.current;
+    const revokeRequest = claimClassCommentaryRequest(
+      memoryRevokeRequestRef.current,
+      String(evidenceId),
+      'memory-revoke',
+    );
+    memoryRevokeRequestRef.current = revokeRequest;
+    setMemoryActionKey(`revoke-${evidenceId}`);
+    setErrorMessage('');
+    try {
+      const summary = await revokeClassCommentaryMemoryEvidence(
+        evidenceId,
+        revokeRequest.requestId,
+      );
+      memoryRevokeRequestRef.current = settleClassCommentaryRequest(
+        memoryRevokeRequestRef.current,
+        revokeRequest.requestId,
+        true,
+      );
+      if (
+        actionRequestToken === memoryActionRequestTokenRef.current
+        && loadRequestToken === memoryLoadRequestTokenRef.current
+      ) {
+        setRevisionMemorySummary(summary);
+        setMemoryRefreshVersion((current) => current + 1);
+      }
+    } catch (error) {
+      memoryRevokeRequestRef.current = settleClassCommentaryRequest(
+        memoryRevokeRequestRef.current,
+        revokeRequest.requestId,
+        error instanceof ApiFetchError,
+      );
+      if (actionRequestToken === memoryActionRequestTokenRef.current) {
+        setErrorMessage(error instanceof Error ? error.message : '撤销学习来源失败');
+      }
+    } finally {
+      if (actionRequestToken === memoryActionRequestTokenRef.current) {
+        setMemoryActionKey('');
+      }
+    }
+  }
+
+  function handleSkillEvolutionOpenChange(open: boolean) {
+    setSkillEvolutionDialogOpen(open);
+    setSkillEvolutionLoadError('');
+    setSkillEvolutionActionError('');
+    if (open) {
+      setSkillEvolutionRefreshVersion((current) => current + 1);
+      return;
+    }
+    skillEvolutionLoadRequestTokenRef.current += 1;
+    skillEvolutionActionRequestTokenRef.current += 1;
+    setSkillEvolutionActionKey('');
+  }
+
+  async function handleCreateSkillCandidate() {
+    if (!selectedSkill || !skillEvolution || !canCreateSkillCandidate) {
+      return;
+    }
+    const skillId = selectedSkill.id;
+    const expectedActiveVersionId = expectedActiveSkillVersionId;
+    const candidateRequest = claimClassCommentaryRequest(
+      skillCandidateRequestRef.current,
+      JSON.stringify({ skillId, expectedActiveVersionId }),
+      'skill-candidate',
+    );
+    skillCandidateRequestRef.current = candidateRequest;
+    const actionRequestToken = ++skillEvolutionActionRequestTokenRef.current;
+    setSkillEvolutionActionKey('candidate');
+    setSkillEvolutionActionError('');
+    try {
+      const build = await createClassCommentarySkillCandidate(
+        skillId,
+        expectedActiveVersionId,
+        candidateRequest.requestId,
+      );
+      skillCandidateRequestRef.current = settleClassCommentaryRequest(
+        skillCandidateRequestRef.current,
+        candidateRequest.requestId,
+        true,
+      );
+      if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
+        setSkillEvolution((current) => current?.skill.id === skillId ? {
+          ...current,
+          candidate_builds: [build, ...current.candidate_builds.filter((item) => item.id !== build.id)],
+        } : current);
+        if (build.candidate_version_id) {
+          setSelectedSkillVersionId(String(build.candidate_version_id));
+        }
+        setSkillEvolutionRefreshVersion((current) => current + 1);
+      }
+    } catch (error) {
+      skillCandidateRequestRef.current = settleClassCommentaryRequest(
+        skillCandidateRequestRef.current,
+        candidateRequest.requestId,
+        error instanceof ApiFetchError,
+      );
+      if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
+        setSkillEvolutionActionError(classCommentarySkillActionError(error, '生成候选失败'));
+      }
+    } finally {
+      if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
+        setSkillEvolutionActionKey('');
+      }
+    }
+  }
+
+  async function handleChangeSkillVersion(action: 'activate' | 'rollback') {
+    if (
+      !selectedSkill
+      || !selectedSkillVersion
+      || (action === 'activate' ? !canActivateSkillVersion : !canRollbackSkillVersion)
+    ) {
+      return;
+    }
+    const skillId = selectedSkill.id;
+    const versionId = selectedSkillVersion.id;
+    const expectedActiveVersionId = expectedActiveSkillVersionId;
+    const requestRef = action === 'activate' ? skillActivateRequestRef : skillRollbackRequestRef;
+    const versionRequest = claimClassCommentaryRequest(
+      requestRef.current,
+      JSON.stringify({ action, skillId, versionId, expectedActiveVersionId }),
+      `skill-${action}`,
+    );
+    requestRef.current = versionRequest;
+    const actionRequestToken = ++skillEvolutionActionRequestTokenRef.current;
+    setSkillEvolutionActionKey(`${action}-${versionId}`);
+    setSkillEvolutionActionError('');
+    try {
+      const result = action === 'activate'
+        ? await activateClassCommentarySkillVersion(
+          skillId,
+          versionId,
+          expectedActiveVersionId,
+          versionRequest.requestId,
+        )
+        : await rollbackClassCommentarySkillVersion(
+          skillId,
+          versionId,
+          expectedActiveVersionId,
+          versionRequest.requestId,
+        );
+      requestRef.current = settleClassCommentaryRequest(
+        requestRef.current,
+        versionRequest.requestId,
+        true,
+      );
+      if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
+        const nextActiveVersionId = result.skill?.active_version_id
+          || result.activation_event.current_active_version_id
+          || 0;
+        setSkillEvolution((current) => current?.skill.id === skillId ? {
+          ...current,
+          skill: {
+            ...current.skill,
+            active_version_id: nextActiveVersionId || current.skill.active_version_id,
+          },
+          versions: current.versions.map((version) => ({
+            ...version,
+            is_active: nextActiveVersionId > 0
+              ? version.id === nextActiveVersionId
+              : version.is_active,
+            review_status: action === 'activate' && version.id === versionId
+              ? 'approved'
+              : version.review_status,
+          })),
+        } : current);
+        setSkillEvolutionRefreshVersion((current) => current + 1);
+      }
+    } catch (error) {
+      requestRef.current = settleClassCommentaryRequest(
+        requestRef.current,
+        versionRequest.requestId,
+        error instanceof ApiFetchError,
+      );
+      if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
+        setSkillEvolutionActionError(classCommentarySkillActionError(
+          error,
+          action === 'activate' ? '激活候选失败' : '回滚版本失败',
+        ));
+        if (error instanceof ApiFetchError) {
+          setSkillEvolutionRefreshVersion((current) => current + 1);
+        }
+      }
+    } finally {
+      if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
+        setSkillEvolutionActionKey('');
+      }
+    }
+  }
+
+  function handleDraftConflictOpenChange(open: boolean) {
+    if (!open) {
+      setDraftConflict(null);
+    }
+  }
+
+  function handleLoadServerDraft() {
+    if (!draftConflict) {
+      return;
+    }
+    const conflictGenerationId = draftConflict.serverDraft.generation_id;
+    if (
+      currentTaskIdRef.current !== draftConflict.serverDraft.task_id
+      || !isClassCommentaryFeedbackRecordInScope(
+        draftConflict.serverDraft,
+        draftConflict.serverDraft.task_id,
+        conflictGenerationId,
+      )
+    ) {
+      setDraftConflict(null);
+      setErrorMessage('服务器草稿范围不一致');
+      return;
+    }
+    setGenerationEditors((current) => ({
+      ...current,
+      [conflictGenerationId]: {
+        feedbackText: draftConflict.serverDraft.feedback_text,
+        savedFeedbackText: draftConflict.serverDraft.feedback_text,
+        draft: draftConflict.serverDraft,
+      },
+    }));
+    setGenerations((current) => current.map((item) => item.id === conflictGenerationId
+      ? {
+        ...item,
+        has_draft: true,
+        draft_version: draftConflict.serverDraft.draft_version,
+      }
+      : item));
+    if (selectedGenerationIdRef.current === String(conflictGenerationId)) {
+      setFeedbackEditorText(draftConflict.serverDraft.feedback_text);
+      setFeedbackDraft(draftConflict.serverDraft);
+    }
+    setDraftConflict(null);
+  }
+
+  async function handleCopyLocalDraft() {
+    if (!draftConflict) {
+      return;
+    }
+    await navigator.clipboard.writeText(draftConflict.localText);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
   }
@@ -339,6 +1550,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
 
   function handleSelectHistoryTask(nextTask: ClassCommentaryTask) {
     const nextSkillId = nextTask.skill_id || selectedSkillId;
+    resetFeedbackVersionState(nextTask.id, true);
     setTask(nextTask);
     setSelectedClassId(String(nextTask.class_id));
     setSelectedSkillId(nextSkillId);
@@ -379,8 +1591,8 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         </div>
         <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
           <DialogTrigger asChild>
-            <Button type="button" variant="outline">
-              <History className="size-4" />
+            <Button type="button" variant="outline" disabled={busy || generationLoading}>
+              <History data-icon="inline-start" />
               生成历史
             </Button>
           </DialogTrigger>
@@ -400,10 +1612,12 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                 <div className="flex flex-col">
                   {historyTasks.map((historyTask, index) => (
                     <div key={historyTask.id}>
-                      <button
+                      <Button
                         type="button"
-                        className="flex w-full flex-col gap-2 px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        variant="ghost"
+                        className="h-auto w-full flex-col items-stretch gap-2 whitespace-normal rounded-none px-3 py-3 text-left"
                         onClick={() => handleSelectHistoryTask(historyTask)}
+                        disabled={busy || generationLoading}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex min-w-0 items-center gap-2">
@@ -418,7 +1632,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                           <span className="truncate">{historyTask.skill_name || '未选择风格'}</span>
                           <span>{historyTask.audio_filename || '未记录文件名'}</span>
                         </div>
-                      </button>
+                      </Button>
                       {index < historyTasks.length - 1 ? <Separator /> : null}
                     </div>
                   ))}
@@ -574,7 +1788,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     {selectedSkill ? <Badge variant="outline">{selectedSkill.name}</Badge> : null}
                   </div>
                   <Button type="button" onClick={handleCreateTask} disabled={!canCreateTask}>
-                    <Upload className="size-4" />
+                    <Upload data-icon="inline-start" />
                     上传并转写
                   </Button>
                 </div>
@@ -627,23 +1841,478 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   </div>
                 </div>
                 <Separator />
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm font-medium text-foreground">生成版本</p>
+                  <Select value={selectedGenerationId || undefined} onValueChange={handleGenerationChange} disabled={busy || generationLoading}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="请选择生成版本" />
+                    </SelectTrigger>
+                    <SelectContent position="popper" className="max-h-72">
+                      <SelectGroup>
+                        {generations.map((generation) => (
+                          <SelectItem key={generation.id} value={String(generation.id)}>
+                            第 {generation.generation_no} 次 · {formatClassCommentaryTime(generation.completed_at || generation.created_at)}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={task?.status === 'failed' ? 'destructive' : 'outline'}>
-                      {task ? classCommentaryStatusLabel(task.status) : '未创建任务'}
+                    <Badge variant={selectedGeneration?.status === 'failed' ? 'destructive' : 'outline'}>
+                      {selectedGeneration?.status === 'succeeded' ? '已生成' : selectedGeneration?.status === 'failed' ? '失败' : selectedGeneration ? '生成中' : '未创建任务'}
                     </Badge>
-                    {task?.feedback_text ? <Badge variant="secondary">可复制</Badge> : null}
+                    {feedbackDraft ? <Badge variant="secondary">草稿 v{feedbackDraft.draft_version}</Badge> : null}
+                    {selectedRevision ? <Badge variant="secondary">已确认第 {selectedRevision.revision_no} 版</Badge> : null}
                   </div>
-                  <Button type="button" variant="outline" onClick={handleCopy} disabled={!task?.feedback_text}>
-                    {copied ? <CheckCheck className="size-4" /> : <Copy className="size-4" />}
+                  <Button type="button" variant="outline" onClick={handleCopy} disabled={generationLoading || !copyText}>
+                    {copied ? <CheckCheck data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
                     复制结果
                   </Button>
                 </div>
-                <ScrollArea className="h-64 rounded-lg border border-border/70">
-                  <pre className="min-h-full whitespace-pre-wrap px-3 py-3 text-sm leading-6 text-foreground">
-                    {task?.feedback_text || '生成完成后, 这里会显示可直接复制发送的反馈文本。'}
-                  </pre>
-                </ScrollArea>
+                <Textarea
+                  value={feedbackEditorText}
+                  onChange={(event) => setFeedbackEditorText(event.target.value)}
+                  placeholder="生成完成后, 这里会显示可修改并确认的反馈文本."
+                  className="min-h-64"
+                  disabled={busy || generationLoading || !selectedGeneration || selectedGeneration.status !== 'succeeded'}
+                />
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={handleSaveFeedbackDraft} disabled={!canSaveFeedbackDraft}>
+                    保存草稿
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => handleConfirmFeedback(false)} disabled={!canConfirmFeedback}>
+                    确认但不学习
+                  </Button>
+                  <Button type="button" onClick={() => handleConfirmFeedback(true)} disabled={!canConfirmFeedback || !capabilities.memory_learning_enabled}>
+                    确认并学习
+                  </Button>
+                </div>
+                {!capabilities.memory_learning_enabled ? (
+                  <p className="text-xs text-muted-foreground">记忆学习功能尚未启用, 仍可正常保存草稿或确认终稿.</p>
+                ) : null}
+                {capabilities.memory_learning_enabled && selectedRevision?.learn_requested ? (
+                  <>
+                    <Separator />
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-foreground">本次学到的内容</p>
+                        {revisionMemorySummary ? (
+                          <Badge variant={revisionMemorySummary.status === 'failed' ? 'destructive' : revisionMemorySummary.status === 'complete' ? 'secondary' : 'outline'}>
+                            {classCommentaryMemoryStatusLabel(revisionMemorySummary.status)}
+                          </Badge>
+                        ) : memoryLoadError ? (
+                          <Badge variant="outline">暂不可用</Badge>
+                        ) : (
+                          <Badge variant="outline">读取中</Badge>
+                        )}
+                      </div>
+                      {memoryLoadError || revisionMemorySummary?.error ? (
+                        <p className="text-xs text-muted-foreground">{memoryLoadError || revisionMemorySummary?.error}</p>
+                      ) : null}
+                      {revisionMemorySummary?.memories.length ? (
+                        <div className="flex flex-col gap-2">
+                          {revisionMemorySummary.memories.map((memory) => (
+                            <div key={memory.evidence_id} className="flex items-start justify-between gap-3 rounded-lg border border-border/70 px-3 py-2">
+                              <div className="flex min-w-0 flex-col gap-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">
+                                    {memory.memory_type === 'teacher_style' ? '老师风格' : '学生历史'}
+                                  </Badge>
+                                  {memory.student_name ? <span className="text-xs text-muted-foreground">{memory.student_name}</span> : null}
+                                  {memory.evidence_status !== 'active' ? <Badge variant="secondary">已撤销来源</Badge> : null}
+                                </div>
+                                <p className="text-sm text-foreground">{memory.memory_text}</p>
+                                <p className="text-xs text-muted-foreground">当前有效来源 {memory.active_evidence_count} 条</p>
+                              </div>
+                              {memory.can_revoke && memory.evidence_status === 'active' ? (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      size="xs"
+                                      variant="outline"
+                                      disabled={Boolean(memoryActionKey)}
+                                    >
+                                      {memoryActionKey === `revoke-${memory.evidence_id}` ? '撤销中' : '撤销我的来源'}
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>撤销这条学习来源?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        撤销后, 这次修改将不再作为后续反馈的学习依据.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>取消</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        variant="destructive"
+                                        onClick={() => handleRevokeMemoryEvidence(memory.evidence_id)}
+                                      >
+                                        确认撤销
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : revisionMemorySummary && !['queued', 'extracting', 'syncing'].includes(revisionMemorySummary.status) ? (
+                        <p className="text-xs text-muted-foreground">本次没有形成可复用记忆.</p>
+                      ) : null}
+                      {revisionMemorySummary?.retryable ? (
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            disabled={Boolean(memoryActionKey)}
+                            onClick={handleRetryRevisionMemory}
+                          >
+                            {memoryActionKey === 'retry' ? '重试中' : '重试学习'}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
+                {capabilities.skill_evolution_enabled && selectedSkill ? (
+                  <>
+                    <Separator />
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-sm font-medium text-foreground">反馈风格版本</p>
+                        <p className="text-xs text-muted-foreground">查看候选差异和评测, 决定是否手动激活.</p>
+                      </div>
+                      <Dialog open={skillEvolutionDialogOpen} onOpenChange={handleSkillEvolutionOpenChange}>
+                        <DialogTrigger asChild>
+                          <Button type="button" size="xs" variant="outline">查看版本</Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-h-[90vh] sm:max-w-3xl">
+                          <DialogHeader>
+                            <DialogTitle>{selectedSkill.name}的反馈风格版本</DialogTitle>
+                            <DialogDescription>
+                              比较候选和当前版本的内容与评测结果, 再决定是否激活或回滚.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <ScrollArea className="h-[70vh] overflow-hidden">
+                            <div className="flex flex-col gap-4 pr-3">
+                              <Alert>
+                                <Sparkles />
+                                <AlertTitle>候选不会自动生效</AlertTitle>
+                                <AlertDescription>
+                                  候选版本不会自动替换当前风格. 只有老师查看差异和评测并手动激活后才会生效.
+                                </AlertDescription>
+                              </Alert>
+                              {skillEvolutionLoadError ? (
+                                <Alert>
+                                  <AlertCircle />
+                                  <AlertTitle>读取暂时不可用</AlertTitle>
+                                  <AlertDescription>{skillEvolutionLoadError}</AlertDescription>
+                                </Alert>
+                              ) : null}
+                              {skillEvolutionActionError ? (
+                                <Alert variant="destructive">
+                                  <AlertCircle />
+                                  <AlertTitle>操作未完成</AlertTitle>
+                                  <AlertDescription>{skillEvolutionActionError}</AlertDescription>
+                                </Alert>
+                              ) : null}
+                              {!skillEvolution ? (
+                                <div className="flex flex-col gap-3">
+                                  <Skeleton className="h-20 w-full" />
+                                  <Skeleton className="h-9 w-full" />
+                                  <Skeleton className="h-48 w-full" />
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex flex-col gap-3 rounded-lg border border-border/70 p-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant={skillEvolution.eligibility.eligible ? 'secondary' : 'outline'}>
+                                          {skillEvolution.eligibility.eligible ? '可生成候选' : '继续积累样本'}
+                                        </Badge>
+                                        <Badge variant="outline">
+                                          有效任务 {skillEvolution.eligibility.effective_task_count}/{skillEvolution.eligibility.min_effective_tasks}
+                                        </Badge>
+                                        <Badge variant="outline">
+                                          支持任务 {skillEvolution.eligibility.supporting_task_count}/{skillEvolution.eligibility.min_supporting_tasks}
+                                        </Badge>
+                                      </div>
+                                      <Button
+                                        type="button"
+                                        size="xs"
+                                        onClick={handleCreateSkillCandidate}
+                                        disabled={!canCreateSkillCandidate}
+                                      >
+                                        {skillEvolutionActionKey === 'candidate'
+                                          ? '提交中'
+                                          : latestSkillCandidateBuild?.status === 'failed' && latestSkillCandidateBuild.can_retry
+                                            ? '重新生成候选'
+                                            : '生成候选'}
+                                      </Button>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      {classCommentarySkillEligibilityMessage(skillEvolution.eligibility)}
+                                    </p>
+                                  </div>
+
+                                  {latestSkillCandidateBuild ? (
+                                    <div className="flex flex-col gap-2 rounded-lg border border-border/70 p-3">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-medium text-foreground">最近一次候选生成</span>
+                                        <Badge variant={latestSkillCandidateBuild.status === 'failed' ? 'destructive' : 'outline'}>
+                                          {classCommentarySkillCandidateStatusLabel(latestSkillCandidateBuild.status)}
+                                        </Badge>
+                                        {latestSkillCandidateBuild.is_stale ? <Badge variant="secondary">依据已变化</Badge> : null}
+                                      </div>
+                                      <p className="text-xs text-muted-foreground">
+                                        有效任务 {latestSkillCandidateBuild.effective_task_count}, 支持任务 {latestSkillCandidateBuild.supporting_task_count}
+                                      </p>
+                                      {latestSkillCandidateBuild.error_message ? (
+                                        <p className="text-xs text-muted-foreground">{latestSkillCandidateBuild.error_message}</p>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+
+                                  {skillEvolution.versions.length ? (
+                                    <>
+                                      <div className="flex flex-col gap-2">
+                                        <p className="text-sm font-medium text-foreground">选择版本</p>
+                                        <Select value={selectedSkillVersionId || undefined} onValueChange={setSelectedSkillVersionId}>
+                                          <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="请选择风格版本" />
+                                          </SelectTrigger>
+                                          <SelectContent position="popper" className="max-h-72">
+                                            <SelectGroup>
+                                              {skillEvolution.versions.map((version) => (
+                                                <SelectItem key={version.id} value={String(version.id)}>
+                                                  v{version.version_no} - {version.is_active
+                                                    ? '当前生效'
+                                                    : version.review_status === 'pending'
+                                                      ? '待审核候选'
+                                                      : version.version_kind === 'candidate'
+                                                        ? '历史候选'
+                                                        : '初始版本'}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectGroup>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+
+                                      {selectedSkillVersion ? (
+                                        <div className="flex flex-col gap-4">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <Badge variant="outline">v{selectedSkillVersion.version_no}</Badge>
+                                            {selectedSkillVersion.is_active ? <Badge variant="secondary">当前生效</Badge> : null}
+                                            {selectedSkillVersion.review_status === 'pending' ? <Badge variant="outline">待老师审核</Badge> : null}
+                                            {selectedSkillVersion.is_stale ? <Badge variant="destructive">不能激活</Badge> : null}
+                                          </div>
+
+                                          {selectedSkillVersion.is_stale ? (
+                                            <Alert variant="destructive">
+                                              <AlertCircle />
+                                              <AlertTitle>候选依据已变化</AlertTitle>
+                                              <AlertDescription>
+                                                {classCommentarySkillStaleMessage(selectedSkillVersion.stale_reason)}
+                                              </AlertDescription>
+                                            </Alert>
+                                          ) : null}
+
+                                          <div className="grid gap-2 sm:grid-cols-2">
+                                            <div className="rounded-lg border border-border/70 px-3 py-2">
+                                              <p className="text-xs text-muted-foreground">有效评测任务</p>
+                                              <p className="mt-1 text-sm font-medium text-foreground">{selectedSkillVersion.effective_task_count}</p>
+                                            </div>
+                                            <div className="rounded-lg border border-border/70 px-3 py-2">
+                                              <p className="text-xs text-muted-foreground">支持风格规律的任务</p>
+                                              <p className="mt-1 text-sm font-medium text-foreground">{selectedSkillVersion.supporting_task_count}</p>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex flex-col gap-2">
+                                            <p className="text-sm font-medium text-foreground">版本差异</p>
+                                            {selectedSkillVersion.content_diff ? (
+                                              <Textarea
+                                                aria-label="版本差异"
+                                                value={selectedSkillVersion.content_diff}
+                                                readOnly
+                                                className="min-h-48 max-h-72 font-mono text-xs"
+                                              />
+                                            ) : selectedSkillVersion.is_active ? (
+                                              <Textarea
+                                                aria-label="当前风格内容"
+                                                value={selectedSkillVersion.content}
+                                                readOnly
+                                                className="min-h-48 max-h-72"
+                                              />
+                                            ) : (
+                                              <div className="grid gap-3 sm:grid-cols-2">
+                                                <div className="flex flex-col gap-2">
+                                                  <p className="text-xs text-muted-foreground">当前版本</p>
+                                                  <Textarea
+                                                    aria-label="当前风格内容"
+                                                    value={selectedSkillVersion.base_content || selectedSkillBaseVersion?.content || ''}
+                                                    readOnly
+                                                    className="min-h-48 max-h-72"
+                                                  />
+                                                </div>
+                                                <div className="flex flex-col gap-2">
+                                                  <p className="text-xs text-muted-foreground">所选版本</p>
+                                                  <Textarea
+                                                    aria-label="所选风格内容"
+                                                    value={selectedSkillVersion.content}
+                                                    readOnly
+                                                    className="min-h-48 max-h-72"
+                                                  />
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div className="flex flex-col gap-2">
+                                            <p className="text-sm font-medium text-foreground">评测对比</p>
+                                            {selectedSkillEvaluationRows.length ? (
+                                              <Table>
+                                                <TableHeader>
+                                                  <TableRow>
+                                                    <TableHead>指标</TableHead>
+                                                    <TableHead className="text-right">当前</TableHead>
+                                                    <TableHead className="text-right">候选</TableHead>
+                                                  </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                  {selectedSkillEvaluationRows.map((row) => (
+                                                    <TableRow key={row.key}>
+                                                      <TableCell>{row.label}</TableCell>
+                                                      <TableCell className="text-right">
+                                                        <Badge variant="outline">{row.current}</Badge>
+                                                      </TableCell>
+                                                      <TableCell className="text-right">
+                                                        <Badge variant="secondary">{row.candidate}</Badge>
+                                                      </TableCell>
+                                                    </TableRow>
+                                                  ))}
+                                                </TableBody>
+                                              </Table>
+                                            ) : (
+                                              <p className="text-xs text-muted-foreground">这个版本没有可展示的对比评测.</p>
+                                            )}
+                                          </div>
+
+                                          {selectedSkillVersion.evaluation.known_risks.length
+                                            || selectedSkillVersion.evaluation.failed_samples.length ? (
+                                              <Alert variant="destructive">
+                                                <AlertCircle />
+                                                <AlertTitle>评测中需要留意</AlertTitle>
+                                                <AlertDescription>
+                                                  <div className="flex flex-col gap-1">
+                                                    {selectedSkillVersion.evaluation.known_risks.map((risk) => (
+                                                      <p key={`risk-${risk}`}>{risk}</p>
+                                                    ))}
+                                                    {selectedSkillVersion.evaluation.failed_samples.map((sample) => (
+                                                      <p key={`sample-${sample}`}>失败样本: {sample}</p>
+                                                    ))}
+                                                  </div>
+                                                </AlertDescription>
+                                              </Alert>
+                                            ) : null}
+
+                                          <div className="flex flex-wrap justify-end gap-2">
+                                            {selectedSkillVersion.version_kind === 'candidate'
+                                              && selectedSkillVersion.review_status === 'pending'
+                                              && !selectedSkillVersion.is_active
+                                              && !selectedSkillVersion.is_stale ? (
+                                                <AlertDialog>
+                                                  <AlertDialogTrigger asChild>
+                                                    <Button type="button" disabled={!canActivateSkillVersion}>
+                                                      {skillEvolutionActionKey === `activate-${selectedSkillVersion.id}`
+                                                        ? '激活中'
+                                                        : `手动激活 v${selectedSkillVersion.version_no}`}
+                                                    </Button>
+                                                  </AlertDialogTrigger>
+                                                  <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                      <AlertDialogTitle>激活这个候选版本?</AlertDialogTitle>
+                                                      <AlertDialogDescription>
+                                                        激活后, 新生成的课堂反馈会使用 v{selectedSkillVersion.version_no}. 已有反馈不会被改写.
+                                                      </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                      <AlertDialogCancel>取消</AlertDialogCancel>
+                                                      <AlertDialogAction onClick={() => handleChangeSkillVersion('activate')}>
+                                                        确认激活
+                                                      </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                  </AlertDialogContent>
+                                                </AlertDialog>
+                                              ) : null}
+                                            {!selectedSkillVersion.is_active
+                                              && (selectedSkillVersion.review_status === 'approved'
+                                                || selectedSkillVersion.review_status === 'not_required') ? (
+                                                  <AlertDialog>
+                                                    <AlertDialogTrigger asChild>
+                                                      <Button type="button" variant="outline" disabled={!canRollbackSkillVersion}>
+                                                        {skillEvolutionActionKey === `rollback-${selectedSkillVersion.id}`
+                                                          ? '回滚中'
+                                                          : `回滚到 v${selectedSkillVersion.version_no}`}
+                                                      </Button>
+                                                    </AlertDialogTrigger>
+                                                    <AlertDialogContent>
+                                                      <AlertDialogHeader>
+                                                        <AlertDialogTitle>回滚到这个历史版本?</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                          回滚后, 新生成的课堂反馈会重新使用 v{selectedSkillVersion.version_no}. 已有反馈不会被改写.
+                                                        </AlertDialogDescription>
+                                                      </AlertDialogHeader>
+                                                      <AlertDialogFooter>
+                                                        <AlertDialogCancel>取消</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => handleChangeSkillVersion('rollback')}>
+                                                          确认回滚
+                                                        </AlertDialogAction>
+                                                      </AlertDialogFooter>
+                                                    </AlertDialogContent>
+                                                  </AlertDialog>
+                                                ) : null}
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">当前还没有可查看的风格版本.</p>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </ScrollArea>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </>
+                ) : null}
+                <Separator />
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-foreground">修订记录</p>
+                  <Badge variant="outline">{feedbackRevisions.length} 条</Badge>
+                </div>
+                {feedbackRevisions.length ? (
+                  <ScrollArea className="h-32 overflow-hidden">
+                    <div className="flex flex-col gap-2 pr-2">
+                      {feedbackRevisions.map((revision) => (
+                        <div key={revision.id} className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                          <span>第 {revision.revision_no} 版 · {revision.learn_requested ? '已请求学习' : '未学习'}</span>
+                          <span>{formatClassCommentaryTime(revision.confirmed_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <p className="text-xs text-muted-foreground">确认终稿后会在这里留下记录.</p>
+                )}
               </>
             )}
           </CardContent>
@@ -677,6 +2346,25 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(draftConflict)} onOpenChange={handleDraftConflictOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>草稿版本冲突</DialogTitle>
+            <DialogDescription>
+              服务器上已有更新的草稿. 你可以加载服务器版本, 或先复制当前页面中的本地内容.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleCopyLocalDraft}>
+              复制本地内容
+            </Button>
+            <Button type="button" onClick={handleLoadServerDraft}>
+              加载服务器版本
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

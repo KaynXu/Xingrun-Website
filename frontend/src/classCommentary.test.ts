@@ -5,21 +5,65 @@ import {
   buildClassCommentarySkillPreferenceKey,
   buildClassCommentaryTaskPath,
   classCommentaryStatusLabel,
+  activateClassCommentarySkillVersion,
+  confirmClassCommentaryFeedback,
+  createClassCommentarySkillCandidate,
   fetchClassCommentaryTasks,
+  fetchClassCommentaryFeedbackDraft,
+  fetchClassCommentaryFeedbackRevisions,
+  fetchClassCommentaryRevisionMemories,
+  fetchClassCommentarySkillEvolution,
+  fetchClassCommentaryGeneration,
+  fetchClassCommentaryGenerations,
   createClassCommentaryTextTask,
+  generateClassCommentaryFeedback,
+  isClassCommentaryFeedbackRecordInScope,
   normalizeClassCommentaryTask,
   readClassCommentarySkillPreference,
+  rollbackClassCommentarySkillVersion,
+  retryClassCommentaryRevisionMemory,
+  revokeClassCommentaryMemoryEvidence,
+  resolveClassCommentaryCopyText,
+  saveClassCommentaryFeedbackDraft,
   shouldPollClassCommentaryTask,
   writeClassCommentarySkillPreference,
 } from './classCommentary';
+import { ApiFetchError } from './workspaceShared';
 
 const source = readFileSync(new URL('./classCommentary.ts', import.meta.url), 'utf8');
 const originalLocalStorage = globalThis.localStorage;
+const originalFetch = globalThis.fetch;
+
+type MockFetchCall = {
+  path: string;
+  options: RequestInit | undefined;
+};
+
+function mockJsonFetch(payload: unknown, status = 200): MockFetchCall[] {
+  const calls: MockFetchCall[] = [];
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    value: async (input: string | URL | Request, options?: RequestInit) => {
+      calls.push({ path: String(input), options });
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText: status === 409 ? 'Conflict' : 'OK',
+        json: async () => payload,
+      } as Response;
+    },
+  });
+  return calls;
+}
 
 afterEach(() => {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: originalLocalStorage,
+  });
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    value: originalFetch,
   });
 });
 
@@ -51,6 +95,27 @@ test('polling is limited to async task states', () => {
 
 test('uses class-commentary api namespace', () => {
   assert.equal(buildClassCommentaryTaskPath(9), '/api/class-commentary/tasks/9');
+});
+
+test('feedback records must match both task and generation scope', () => {
+  const record = { task_id: 9, generation_id: 31 };
+
+  assert.equal(isClassCommentaryFeedbackRecordInScope(record, 9, 31), true);
+  assert.equal(isClassCommentaryFeedbackRecordInScope(record, 10, 31), false);
+  assert.equal(isClassCommentaryFeedbackRecordInScope(record, 9, 32), false);
+  assert.equal(isClassCommentaryFeedbackRecordInScope({ task_id: 9, generation_id: 0 }, 9, 0), false);
+  assert.equal(isClassCommentaryFeedbackRecordInScope(null, 9, 31), false);
+});
+
+test('copy text uses persisted precedence and is empty while generation data is blocked', () => {
+  const draft = { feedback_text: '已保存草稿' };
+  const revision = { final_feedback_text: '有效终稿' };
+  const generation = { generated_feedback_text: 'AI 原稿' };
+
+  assert.equal(resolveClassCommentaryCopyText(draft, revision, generation), '已保存草稿');
+  assert.equal(resolveClassCommentaryCopyText(null, revision, generation), '有效终稿');
+  assert.equal(resolveClassCommentaryCopyText(null, null, generation), 'AI 原稿');
+  assert.equal(resolveClassCommentaryCopyText(draft, revision, generation, true), '');
 });
 
 test('status labels are user-facing and stable', () => {
@@ -115,7 +180,495 @@ test('class commentary skill preference is stored per organization teacher', () 
   assert.equal(readClassCommentarySkillPreference(teacherA, skills.slice(0, 1)), '');
 });
 
-test('generateClassCommentaryFeedback sends attending student ids to generation api', () => {
-  assert.match(source, /export async function generateClassCommentaryFeedback\(taskId: number, skillId: string, attendingStudentIds: number\[]/);
-  assert.match(source, /body: JSON\.stringify\(\{ skill_id: skillId, attending_student_ids: attendingStudentIds \}\)/);
+test('generateClassCommentaryFeedback sends request id and normalizes nested task and generation', async () => {
+  const calls = mockJsonFetch({
+    task: {
+      id: 9,
+      organization_id: 2,
+      class_id: 3,
+      teacher_user_id: 4,
+      status: 'ready',
+      feedback_text: '兼容结果',
+    },
+    generation: {
+      id: 27,
+      task_id: 9,
+      generation_no: 2,
+      generation_request_id: 'generation-request-27',
+      status: 'succeeded',
+      generated_feedback_text: '第二版反馈',
+      draft_version: 0,
+    },
+  });
+
+  const result = await generateClassCommentaryFeedback(
+    9,
+    'teacher-style',
+    [11, 12],
+    'generation-request-27',
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/generate');
+  assert.equal(calls[0].options?.method, 'POST');
+  assert.deepEqual(JSON.parse(String(calls[0].options?.body)), {
+    skill_id: 'teacher-style',
+    attending_student_ids: [11, 12],
+    request_id: 'generation-request-27',
+  });
+  assert.equal(result.task.id, 9);
+  assert.equal(result.task.status, 'ready');
+  assert.equal(result.task.class_name, '');
+  assert.equal(result.generation.id, 27);
+  assert.equal(result.generation.task_id, 9);
+  assert.equal(result.generation.status, 'succeeded');
+  assert.equal(result.generation.generated_feedback_text, '第二版反馈');
+});
+
+test('fetchClassCommentaryGenerations normalizes the generation list', async () => {
+  const calls = mockJsonFetch({
+    generations: [{
+      id: 31,
+      task_id: 9,
+      generation_no: 3,
+      status: 'succeeded',
+      generated_feedback_text: '第三版反馈',
+      is_latest: true,
+      has_draft: true,
+      draft_version: 2,
+    }],
+  });
+
+  const generations = await fetchClassCommentaryGenerations(9);
+
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/generations');
+  assert.equal(generations.length, 1);
+  assert.equal(generations[0].id, 31);
+  assert.equal(generations[0].generation_no, 3);
+  assert.equal(generations[0].is_latest, true);
+  assert.equal(generations[0].has_draft, true);
+  assert.equal(generations[0].draft_version, 2);
+  assert.equal(generations[0].error_code, '');
+});
+
+test('fetchClassCommentaryGeneration normalizes the generation detail', async () => {
+  const calls = mockJsonFetch({
+    id: '31',
+    task_id: '9',
+    generation_no: '3',
+    status: 'succeeded',
+    origin: 'runtime',
+    snapshot_completeness: 'complete',
+    skill_id: 'teacher-style',
+    generated_feedback_text: '第三版反馈',
+  });
+
+  const generation = await fetchClassCommentaryGeneration(9, 31);
+
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/generations/31');
+  assert.equal(generation.id, 31);
+  assert.equal(generation.task_id, 9);
+  assert.equal(generation.generation_no, 3);
+  assert.equal(generation.status, 'succeeded');
+  assert.equal(generation.skill_id, 'teacher-style');
+  assert.equal(generation.generated_feedback_text, '第三版反馈');
+});
+
+test('fetchClassCommentaryFeedbackDraft unwraps and normalizes the saved draft', async () => {
+  const calls = mockJsonFetch({
+    draft: {
+      id: 41,
+      task_id: 9,
+      generation_id: 31,
+      teacher_user_id: 4,
+      based_on_revision_id: null,
+      feedback_text: '老师草稿',
+      draft_version: 2,
+    },
+    draft_version: 2,
+  });
+
+  const draft = await fetchClassCommentaryFeedbackDraft(9, 31);
+
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/generations/31/feedback-draft');
+  assert.ok(draft);
+  assert.equal(draft.id, 41);
+  assert.equal(draft.feedback_text, '老师草稿');
+  assert.equal(draft.draft_version, 2);
+  assert.equal(draft.created_at, '');
+});
+
+test('fetchClassCommentaryFeedbackDraft returns null when no draft exists', async () => {
+  mockJsonFetch({ draft: null, draft_version: 0 });
+
+  assert.equal(await fetchClassCommentaryFeedbackDraft(9, 31), null);
+});
+
+test('saveClassCommentaryFeedbackDraft sends CAS version and unwraps the draft', async () => {
+  const calls = mockJsonFetch({
+    draft: {
+      id: 42,
+      task_id: 9,
+      generation_id: 31,
+      teacher_user_id: 4,
+      feedback_text: '保存后的草稿',
+      draft_version: 3,
+    },
+  });
+
+  const draft = await saveClassCommentaryFeedbackDraft(9, 31, '保存后的草稿', 2);
+
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/generations/31/feedback-draft');
+  assert.equal(calls[0].options?.method, 'PUT');
+  assert.deepEqual(JSON.parse(String(calls[0].options?.body)), {
+    feedback_text: '保存后的草稿',
+    expected_draft_version: 2,
+  });
+  assert.equal(draft.feedback_text, '保存后的草稿');
+  assert.equal(draft.draft_version, 3);
+});
+
+test('confirmClassCommentaryFeedback returns the revision with its transaction-bound draft', async () => {
+  const calls = mockJsonFetch({
+    revision: {
+      id: 51,
+      task_id: 9,
+      generation_id: 31,
+      revision_no: 1,
+      final_feedback_text: '老师终稿',
+      learn_requested: false,
+      draft_version: 3,
+    },
+    draft: {
+      id: 42,
+      task_id: 9,
+      generation_id: 31,
+      teacher_user_id: 4,
+      based_on_revision_id: 51,
+      feedback_text: '老师终稿',
+      content_hash: 'confirmed-content-hash',
+      draft_version: 3,
+      created_at: '2026-07-14T11:00:00Z',
+      updated_at: '2026-07-14T12:00:00Z',
+    },
+  });
+
+  const result = await confirmClassCommentaryFeedback(
+    9,
+    31,
+    '老师终稿',
+    false,
+    2,
+    'confirmation-request-51',
+  );
+
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/feedback-confirmations');
+  assert.equal(calls[0].options?.method, 'POST');
+  assert.deepEqual(JSON.parse(String(calls[0].options?.body)), {
+    generation_id: 31,
+    feedback_text: '老师终稿',
+    learn: false,
+    expected_draft_version: 2,
+    request_id: 'confirmation-request-51',
+  });
+  assert.equal(result.revision.id, 51);
+  assert.equal(result.revision.generation_id, 31);
+  assert.equal(result.revision.final_feedback_text, '老师终稿');
+  assert.equal(result.revision.learn_requested, false);
+  assert.equal(result.revision.draft_version, 3);
+  assert.equal(result.draft.id, 42);
+  assert.equal(result.draft.generation_id, 31);
+  assert.equal(result.draft.based_on_revision_id, 51);
+  assert.equal(result.draft.feedback_text, '老师终稿');
+  assert.equal(result.draft.draft_version, 3);
+});
+
+test('fetchClassCommentaryFeedbackRevisions normalizes revision history', async () => {
+  const calls = mockJsonFetch({
+    revisions: [{
+      id: 52,
+      task_id: 9,
+      generation_id: 31,
+      revision_no: 2,
+      previous_revision_id: 51,
+      final_feedback_text: '再次确认的终稿',
+      learn_requested: false,
+      accepted_without_edit: false,
+      unchanged_from_previous_revision: false,
+      confirmed_at: '2026-07-14T12:00:00Z',
+      draft_version: 4,
+    }],
+  });
+
+  const revisions = await fetchClassCommentaryFeedbackRevisions(9);
+
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/feedback-revisions');
+  assert.equal(revisions.length, 1);
+  assert.equal(revisions[0].id, 52);
+  assert.equal(revisions[0].revision_no, 2);
+  assert.equal(revisions[0].previous_revision_id, 51);
+  assert.equal(revisions[0].confirmed_at, '2026-07-14T12:00:00Z');
+});
+
+test('memory helpers normalize status and preserve item-level evidence actions', async () => {
+  const calls = mockJsonFetch({
+    revision_id: 52,
+    status: 'partial',
+    retryable: true,
+    extraction_status: 'extracted',
+    error: 'one projection failed',
+    memories: [{
+      memory_record_id: 71,
+      evidence_id: 81,
+      memory_type: 'student_fact',
+      memory_text: '绝对值分类讨论仍会遗漏边界条件.',
+      student_id: 11,
+      student_name: '小林',
+      confidence: 0.87,
+      evidence_status: 'active',
+      active_evidence_count: 2,
+      operation_status: 'failed',
+      can_revoke: true,
+    }],
+  });
+
+  const result = await fetchClassCommentaryRevisionMemories(52);
+
+  assert.equal(calls[0].path, '/api/class-commentary/revisions/52/memories');
+  assert.equal(result.status, 'partial');
+  assert.equal(result.retryable, true);
+  assert.equal(result.memories[0].id, 71);
+  assert.equal(result.memories[0].evidence_id, 81);
+  assert.equal(result.memories[0].memory_type, 'student_fact');
+  assert.equal(result.memories[0].active_evidence_count, 2);
+  assert.equal(result.memories[0].can_revoke, true);
+});
+
+test('memory retry and evidence revoke send stable request ids', async () => {
+  const retryCalls = mockJsonFetch({
+    memory: { revision_id: 52, status: 'queued', memories: [] },
+  });
+  const retried = await retryClassCommentaryRevisionMemory(52, 'memory-retry-52');
+
+  assert.equal(retryCalls[0].path, '/api/class-commentary/revisions/52/memory-retry');
+  assert.deepEqual(JSON.parse(String(retryCalls[0].options?.body)), {
+    request_id: 'memory-retry-52',
+  });
+  assert.equal(retried.status, 'queued');
+
+  const revokeCalls = mockJsonFetch({
+    memory: { revision_id: 52, status: 'complete', memories: [] },
+  });
+  const revoked = await revokeClassCommentaryMemoryEvidence(81, 'memory-revoke-81');
+
+  assert.equal(revokeCalls[0].path, '/api/class-commentary/memory-evidence/81/revoke');
+  assert.deepEqual(JSON.parse(String(revokeCalls[0].options?.body)), {
+    request_id: 'memory-revoke-81',
+  });
+  assert.equal(revoked.status, 'complete');
+});
+
+test('skill evolution versions normalize build status diff evaluation and eligibility', async () => {
+  const calls = mockJsonFetch({
+    skill: {
+      id: 'teacher-style',
+      registry_id: 7,
+      active_version_id: 101,
+      name: '我的风格',
+    },
+    versions: [{
+      id: 102,
+      version_no: 2,
+      version_kind: 'candidate',
+      candidate_build_id: 201,
+      base_version_id: 101,
+      base_content: '当前规则',
+      content: '新版规则',
+      content_diff: '@@ -1 +1 @@',
+      review_status: 'pending',
+      is_active: false,
+      frozen_revision_count: 1,
+      frozen_evidence_count: 1,
+      frozen_revision_ids: [51],
+      frozen_evidence_ids: [81],
+      evaluation_snapshot: {
+        current_metrics: { normalized_edit_distance: 0.4 },
+        candidate_metrics: { normalized_edit_distance: 0.2 },
+        known_risks: ['一条风险'],
+        failed_samples: ['样本 9'],
+      },
+      candidate_build: {
+        id: 201,
+        base_version_id: 101,
+        expected_active_version_id: 101,
+        candidate_version_id: 102,
+        status: 'succeeded',
+        effective_task_count: 6,
+        supporting_task_count: 3,
+      },
+    }, {
+      id: 101,
+      version_no: 1,
+      version_kind: 'imported',
+      content: '当前规则',
+      review_status: 'not_required',
+      is_active: true,
+    }],
+    candidate_builds: [{
+      id: 201,
+      base_version_id: 101,
+      expected_active_version_id: 101,
+      candidate_version_id: 102,
+      status: 'succeeded',
+      effective_task_count: 6,
+      supporting_task_count: 3,
+      is_terminal: true,
+      frozen_task_ids: [9],
+      frozen_revision_ids: [51],
+      frozen_evidence_ids: [81],
+      frozen_memory_record_ids: [71],
+      frozen_revision_count: 1,
+      frozen_evidence_count: 1,
+    }],
+    eligibility: {
+      eligible: true,
+      reason: 'ready',
+      effective_task_count: 6,
+      supporting_task_count: 3,
+      min_effective_tasks: 5,
+      min_support_tasks: 3,
+    },
+  });
+
+  const evolution = await fetchClassCommentarySkillEvolution('teacher-style');
+
+  assert.equal(calls[0].path, '/api/class-commentary/skills/teacher-style/versions');
+  assert.equal(evolution.skill.active_version_id, 101);
+  assert.equal(evolution.versions[0].id, 102);
+  assert.equal(evolution.versions[0].base_content, '当前规则');
+  assert.equal(evolution.versions[0].content_diff, '@@ -1 +1 @@');
+  assert.equal(evolution.versions[0].candidate_build?.status, 'succeeded');
+  assert.equal(evolution.versions[0].effective_task_count, 6);
+  assert.deepEqual(evolution.versions[0].frozen_revision_ids, [51]);
+  assert.equal(evolution.versions[0].evaluation.current_metrics.normalized_edit_distance, 0.4);
+  assert.deepEqual(evolution.versions[0].evaluation.known_risks, ['一条风险']);
+  assert.equal(evolution.candidate_builds[0].is_terminal, true);
+  assert.deepEqual(evolution.candidate_builds[0].frozen_revision_ids, [51]);
+  assert.deepEqual(evolution.candidate_builds[0].frozen_evidence_ids, [81]);
+  assert.equal(evolution.eligibility.min_supporting_tasks, 3);
+});
+
+test('skill candidate request sends expected active version and accepts a bare build', async () => {
+  const calls = mockJsonFetch({
+    id: 202,
+    expected_active_version_id: 101,
+    base_version_id: 101,
+    status: 'queued',
+    effective_task_count: 6,
+    supporting_task_count: 3,
+  });
+
+  const build = await createClassCommentarySkillCandidate(
+    'teacher/style',
+    101,
+    'skill-candidate-202',
+  );
+
+  assert.equal(calls[0].path, '/api/class-commentary/skills/teacher%2Fstyle/candidates');
+  assert.equal(calls[0].options?.method, 'POST');
+  assert.deepEqual(JSON.parse(String(calls[0].options?.body)), {
+    request_id: 'skill-candidate-202',
+    expected_active_version_id: 101,
+  });
+  assert.equal(build.id, 202);
+  assert.equal(build.status, 'queued');
+  assert.equal(build.is_terminal, false);
+});
+
+test('skill activate and rollback requests use CAS pointer and normalize envelopes', async () => {
+  const activateCalls = mockJsonFetch({
+    skill: { id: 'teacher-style', active_version_id: 102 },
+    version: {
+      id: 102,
+      version_no: 2,
+      version_kind: 'candidate',
+      review_status: 'approved',
+      is_active: true,
+    },
+    activation_event: {
+      id: 301,
+      from_version_id: 101,
+      to_version_id: 102,
+      active_version_id: 102,
+      current_active_version_id: 102,
+      reason: 'candidate_approved',
+    },
+  });
+
+  const activated = await activateClassCommentarySkillVersion(
+    'teacher-style',
+    102,
+    101,
+    'skill-activate-301',
+  );
+
+  assert.equal(activateCalls[0].path, '/api/class-commentary/skills/teacher-style/versions/102/activate');
+  assert.deepEqual(JSON.parse(String(activateCalls[0].options?.body)), {
+    request_id: 'skill-activate-301',
+    expected_active_version_id: 101,
+  });
+  assert.equal(activated.skill?.active_version_id, 102);
+  assert.equal(activated.version?.is_active, true);
+  assert.equal(activated.activation_event.reason, 'candidate_approved');
+  assert.equal(activated.activation_event.current_active_version_id, 102);
+
+  const rollbackCalls = mockJsonFetch({
+    id: 302,
+    from_version_id: 102,
+    to_version_id: 101,
+    active_version_id: 101,
+    current_active_version_id: 102,
+    reason: 'rollback',
+  });
+  const rolledBack = await rollbackClassCommentarySkillVersion(
+    'teacher-style',
+    101,
+    102,
+    'skill-rollback-302',
+  );
+
+  assert.equal(rollbackCalls[0].path, '/api/class-commentary/skills/teacher-style/versions/101/rollback');
+  assert.deepEqual(JSON.parse(String(rollbackCalls[0].options?.body)), {
+    request_id: 'skill-rollback-302',
+    expected_active_version_id: 102,
+  });
+  assert.equal(rolledBack.activation_event.to_version_id, 101);
+  assert.equal(rolledBack.activation_event.active_version_id, 101);
+  assert.equal(rolledBack.activation_event.current_active_version_id, 102);
+  assert.equal(rolledBack.activation_event.reason, 'rollback');
+});
+
+test('api fetch preserves 409 status and payload for draft conflict recovery', async () => {
+  const payload = {
+    error: 'draft_version_conflict',
+    current_draft: {
+      id: 42,
+      task_id: 9,
+      generation_id: 31,
+      feedback_text: '服务器上的较新草稿',
+      draft_version: 3,
+    },
+  };
+  mockJsonFetch(payload, 409);
+
+  await assert.rejects(
+    () => saveClassCommentaryFeedbackDraft(9, 31, '旧标签页草稿', 2),
+    (error: unknown) => {
+      assert.ok(error instanceof ApiFetchError);
+      assert.equal(error.status, 409);
+      assert.deepEqual(error.payload, payload);
+      assert.equal(error.message, 'draft_version_conflict');
+      return true;
+    },
+  );
 });
