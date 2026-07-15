@@ -38,13 +38,13 @@ class ClassCommentarySkillImportCliTest(unittest.TestCase):
                 {
                     "organization_id": 1,
                     "skill_id": "relative",
-                    "owner_teacher_user_id": 11,
+                    "actor_user_id": 11,
                     "source_path": "skills/relative.skill",
                 },
                 {
                     "organization_id": 2,
                     "skill_id": "absolute",
-                    "owner_teacher_user_id": 22,
+                    "actor_user_id": 22,
                     "source_path": absolute_path,
                 },
             ]
@@ -70,13 +70,13 @@ class ClassCommentarySkillImportCliTest(unittest.TestCase):
                 mock.call(
                     organization_id=1,
                     skill_id="relative",
-                    owner_teacher_user_id=11,
+                    actor_user_id=11,
                     source_path=str((self.root / "skills/relative.skill").resolve()),
                 ),
                 mock.call(
                     organization_id=2,
                     skill_id="absolute",
-                    owner_teacher_user_id=22,
+                    actor_user_id=22,
                     source_path=absolute_path,
                 ),
             ],
@@ -90,14 +90,14 @@ class ClassCommentarySkillImportCliTest(unittest.TestCase):
                     {
                         "organization_id": 1,
                         "skill_id": "relative",
-                        "owner_teacher_user_id": 11,
+                        "actor_user_id": 11,
                         "registry_id": 101,
                         "active_version_id": 201,
                     },
                     {
                         "organization_id": 2,
                         "skill_id": "absolute",
-                        "owner_teacher_user_id": 22,
+                        "actor_user_id": 22,
                         "registry_id": 102,
                         "active_version_id": 202,
                     },
@@ -135,7 +135,7 @@ class ClassCommentarySkillImportCliTest(unittest.TestCase):
                         {
                             "organization_id": organization_id,
                             "skill_id": "teacher-style",
-                            "owner_teacher_user_id": teacher_id,
+                            "actor_user_id": teacher_id,
                             "source_path": "skills/teacher.skill",
                         }
                     ]
@@ -143,9 +143,8 @@ class ClassCommentarySkillImportCliTest(unittest.TestCase):
             )
 
             status, stdout, stderr = self._run_main(manifest_path)
-            stored = lesson_manager.get_class_commentary_skill_for_teacher(
+            stored = lesson_manager.get_class_commentary_skill_for_organization(
                 organization_id,
-                teacher_id,
                 "teacher-style",
             )
         finally:
@@ -163,13 +162,13 @@ class ClassCommentarySkillImportCliTest(unittest.TestCase):
                 {
                     "organization_id": 1,
                     "skill_id": "valid",
-                    "owner_teacher_user_id": 11,
+                    "actor_user_id": 11,
                     "source_path": "valid.skill",
                 },
                 {
                     "organization_id": 1,
                     "skill_id": "missing-source",
-                    "owner_teacher_user_id": 11,
+                    "actor_user_id": 11,
                 },
             ]
         )
@@ -194,7 +193,7 @@ class ClassCommentarySkillImportCliTest(unittest.TestCase):
                     {
                         "organization_id": 1,
                         "skill_id": "conflict",
-                        "owner_teacher_user_id": 11,
+                        "actor_user_id": 11,
                         "source_path": "conflict.skill",
                     }
                 ]

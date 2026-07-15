@@ -46,7 +46,7 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
         imported = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.teacher["organization_id"],
             skill_id="generation-store-teacher",
-            owner_teacher_user_id=self.teacher["id"],
+            actor_user_id=self.teacher["id"],
             source_path="/skills/generation-store-teacher/SKILL.md",
             content=self.skill_content,
         )

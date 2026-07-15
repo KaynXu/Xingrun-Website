@@ -36,7 +36,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         self.skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.teacher["organization_id"],
             skill_id="skill-evolution-store",
-            owner_teacher_user_id=self.teacher["id"],
+            actor_user_id=self.teacher["id"],
             source_path="/skills/skill-evolution-store/SKILL.md",
             content="Write the classroom result first, then one concrete action.",
         )
@@ -69,11 +69,13 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         learn_requested=False,
         style_text=None,
         accepted_without_edit=False,
+        teacher_user_id=None,
     ):
+        teacher_user_id = int(teacher_user_id or self.teacher["id"])
         task = lesson_manager.create_class_commentary_task(
             organization_id=self.teacher["organization_id"],
             class_id=self.class_id,
-            teacher_user_id=self.teacher["id"],
+            teacher_user_id=teacher_user_id,
             audio_path=f"/tmp/skill-evolution-{suffix}.m4a",
             audio_filename=f"skill-evolution-{suffix}.m4a",
         )
@@ -113,7 +115,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         revision = lesson_manager.confirm_class_commentary_feedback(
             task_id=task["id"],
             generation_id=generation["id"],
-            teacher_user_id=self.teacher["id"],
+            teacher_user_id=teacher_user_id,
             feedback_text=final_text,
             learn_requested=learn_requested,
             expected_draft_version=0,
@@ -148,7 +150,10 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         style = "End with exactly one concrete next action."
         samples = [
             self._create_sample(
-                f"support-{index}", learn_requested=True, style_text=style
+                f"support-{index}",
+                learn_requested=True,
+                style_text=style,
+                teacher_user_id=(self.other_teacher_id if index == 2 else None),
             )
             for index in range(3)
         ]
@@ -256,6 +261,24 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         self.assertEqual(len(build["frozen_revisions"]), 5)
         self.assertEqual(len(build["frozen_evidence"]), 3)
         self.assertEqual(len(build["source_snapshot_hash"]), 64)
+        with lesson_manager.get_conn() as conn:
+            source_teacher_ids = {
+                int(row["teacher_user_id"])
+                for row in conn.execute(
+                    """
+                    SELECT revision.teacher_user_id
+                    FROM class_commentary_skill_candidate_revisions AS source
+                    JOIN class_commentary_revisions AS revision
+                      ON revision.id=source.revision_id
+                    WHERE source.candidate_build_id=?
+                    """,
+                    (build["id"],),
+                ).fetchall()
+            }
+        self.assertEqual(
+            source_teacher_ids,
+            {self.teacher["id"], self.other_teacher_id},
+        )
 
         repeated = self._create_build()
         self.assertEqual(repeated["id"], build["id"])
@@ -271,14 +294,93 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
                 min_effective_tasks=5,
                 min_support_tasks=3,
             )
-        with self.assertRaises(PermissionError):
-            lesson_manager.get_class_commentary_skill_candidate_eligibility(
-                organization_id=self.teacher["organization_id"],
-                skill_id=self.skill["skill_id"],
-                actor_user_id=self.other_teacher_id,
-                min_effective_tasks=5,
-                min_support_tasks=3,
+        same_org_eligibility = lesson_manager.get_class_commentary_skill_candidate_eligibility(
+            organization_id=self.teacher["organization_id"],
+            skill_id=self.skill["skill_id"],
+            actor_user_id=self.other_teacher_id,
+            min_effective_tasks=5,
+            min_support_tasks=3,
+        )
+        self.assertEqual(same_org_eligibility, eligibility)
+
+    def test_import_actor_and_feedback_actor_share_one_skill_evolution_scope(self):
+        sample = self._create_sample(
+            "cross-actor",
+            learn_requested=True,
+            style_text="End with exactly one concrete next action.",
+            teacher_user_id=self.other_teacher_id,
+        )
+        eligibility = lesson_manager.get_class_commentary_skill_candidate_eligibility(
+            organization_id=self.teacher["organization_id"],
+            skill_id=self.skill["skill_id"],
+            actor_user_id=self.other_teacher_id,
+            min_effective_tasks=1,
+            min_support_tasks=1,
+        )
+        build = lesson_manager.create_class_commentary_skill_candidate_build(
+            organization_id=self.teacher["organization_id"],
+            skill_id=self.skill["skill_id"],
+            actor_user_id=self.other_teacher_id,
+            candidate_request_id="cross-actor-candidate",
+            expected_active_version_id=self.skill["active_version_id"],
+            min_effective_tasks=1,
+            min_support_tasks=1,
+        )
+
+        self.assertTrue(eligibility["eligible"])
+        self.assertEqual(build["requested_by_user_id"], self.other_teacher_id)
+        self.assertEqual(
+            [item["revision_id"] for item in build["frozen_revisions"]],
+            [sample["revision"]["id"]],
+        )
+        with lesson_manager.get_conn() as conn:
+            registry = conn.execute(
+                "SELECT imported_by_user_id FROM class_commentary_skills WHERE id=?",
+                (self.skill["registry_id"],),
+            ).fetchone()
+            generation_actor = conn.execute(
+                "SELECT teacher_user_id FROM class_commentary_generations WHERE id=?",
+                (sample["generation"]["id"],),
+            ).fetchone()
+            revision_actor = conn.execute(
+                "SELECT teacher_user_id FROM class_commentary_revisions WHERE id=?",
+                (sample["revision"]["id"],),
+            ).fetchone()
+        self.assertEqual(registry["imported_by_user_id"], self.teacher["id"])
+        self.assertEqual(generation_actor["teacher_user_id"], self.other_teacher_id)
+        self.assertEqual(revision_actor["teacher_user_id"], self.other_teacher_id)
+
+    def test_init_db_rejects_pending_candidate_from_old_selection_policy(self):
+        self._supported_samples()
+        build = self._create_build("old-policy-candidate")
+        completed = self._complete_build(build)
+        with lesson_manager.get_conn() as conn:
+            conn.execute("DROP TRIGGER trg_class_commentary_candidate_build_source_immutable")
+            conn.execute(
+                """
+                UPDATE class_commentary_skill_candidate_builds
+                SET selection_policy_version='class-commentary-skill-selection-v1'
+                WHERE id=?
+                """,
+                (build["id"],),
             )
+
+        lesson_manager.init_db()
+
+        migrated_build = lesson_manager.get_class_commentary_skill_candidate_build(
+            build["id"]
+        )
+        versions = lesson_manager.list_class_commentary_skill_versions(
+            organization_id=self.teacher["organization_id"],
+            skill_id=self.skill["skill_id"],
+            actor_user_id=self.teacher["id"],
+        )
+        candidate = next(
+            item for item in versions if item["id"] == completed["candidate_version_id"]
+        )
+        self.assertEqual(migrated_build["status"], "obsolete")
+        self.assertEqual(migrated_build["last_error"], "selection_policy_changed")
+        self.assertEqual(candidate["review_status"], "rejected")
 
     def test_latest_no_learning_revision_blocks_fallback_to_old_style_evidence(self):
         sample = self._create_sample(
@@ -412,7 +514,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         )
         self.assertEqual(completed["status"], "succeeded")
         self.assertIsNotNone(completed["candidate_version_id"])
-        versions = lesson_manager.list_class_commentary_skill_versions_for_teacher(
+        versions = lesson_manager.list_class_commentary_skill_versions(
             organization_id=self.teacher["organization_id"],
             skill_id=self.skill["skill_id"],
             actor_user_id=self.teacher["id"],
@@ -608,7 +710,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         self.assertEqual(
             rolled_back["active_version_id"], self.skill["active_version_id"]
         )
-        versions = lesson_manager.list_class_commentary_skill_versions_for_teacher(
+        versions = lesson_manager.list_class_commentary_skill_versions(
             organization_id=self.teacher["organization_id"],
             skill_id=self.skill["skill_id"],
             actor_user_id=self.teacher["id"],
@@ -646,7 +748,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
             self.skill["active_version_id"],
         )
 
-    def test_stale_candidate_cannot_activate_or_use_other_owner(self):
+    def test_stale_candidate_cannot_activate_and_same_org_actor_can_inspect(self):
         samples = self._supported_samples()
         build = self._create_build()
         completed = self._complete_build(build)
@@ -670,16 +772,10 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
                 activation_request_id="stale-candidate-activation",
                 expected_active_version_id=self.skill["active_version_id"],
             )
-        with self.assertRaises(PermissionError):
-            lesson_manager.list_class_commentary_skill_versions_for_teacher(
-                organization_id=self.teacher["organization_id"],
-                skill_id=self.skill["skill_id"],
-                actor_user_id=self.other_teacher_id,
-            )
-        versions = lesson_manager.list_class_commentary_skill_versions_for_teacher(
+        versions = lesson_manager.list_class_commentary_skill_versions(
             organization_id=self.teacher["organization_id"],
             skill_id=self.skill["skill_id"],
-            actor_user_id=self.teacher["id"],
+            actor_user_id=self.other_teacher_id,
         )
         candidate = next(
             item for item in versions if item["id"] == candidate_version_id
@@ -687,9 +783,8 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         self.assertTrue(candidate["is_stale"])
         self.assertEqual(candidate["stale_reason"], "revision_not_effective")
         self.assertEqual(candidate["review_status"], "pending")
-        active = lesson_manager.get_class_commentary_skill_for_teacher(
+        active = lesson_manager.get_class_commentary_skill_for_organization(
             self.teacher["organization_id"],
-            self.teacher["id"],
             self.skill["skill_id"],
         )
         self.assertEqual(active["active_version_id"], self.skill["active_version_id"])

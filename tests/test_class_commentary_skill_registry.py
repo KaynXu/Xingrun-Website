@@ -86,13 +86,12 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         imported = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.org_one_id,
             skill_id="teacher-one",
-            owner_teacher_user_id=self.teacher_one_id,
+            actor_user_id=self.teacher_one_id,
             source_path=str(source_path),
         )
         source_path.write_text("changed after import", encoding="utf-8")
-        fetched = lesson_manager.get_class_commentary_skill_for_teacher(
+        fetched = lesson_manager.get_class_commentary_skill_for_organization(
             self.org_one_id,
-            self.teacher_one_id,
             "teacher-one",
         )
 
@@ -116,7 +115,7 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         self.assertEqual(imported["skill_id"], "teacher-one")
         self.assertEqual(imported["content"], content)
         self.assertEqual(fetched["content"], content)
-        self.assertEqual(registry["owner_teacher_user_id"], self.teacher_one_id)
+        self.assertEqual(registry["imported_by_user_id"], self.teacher_one_id)
         self.assertEqual(registry["source_type"], "external_skill_package")
         self.assertEqual(registry["source_path"], str(source_path))
         self.assertEqual(registry["source_content_hash"], content_hash)
@@ -140,7 +139,7 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         manifest = {
             "organization_id": self.org_one_id,
             "skill_id": "teacher-one",
-            "owner_teacher_user_id": self.teacher_one_id,
+            "actor_user_id": self.teacher_one_id,
             "source_path": str(source_path),
             "content": content,
         }
@@ -163,7 +162,7 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         manifest = {
             "organization_id": self.org_one_id,
             "skill_id": "teacher-one",
-            "owner_teacher_user_id": self.teacher_one_id,
+            "actor_user_id": self.teacher_one_id,
             "source_path": str(source_path),
             "content": content,
         }
@@ -197,7 +196,7 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         self.assertEqual(repeated["content"], evolved_content)
         self.assertEqual(self._row_counts(), counts_before_repeat)
 
-    def test_cross_organization_owner_is_rejected_and_teacher_lists_are_isolated(self):
+    def test_import_actor_must_share_organization_and_skill_lists_are_organization_scoped(self):
         source_one = self._source_path("teacher-one.skill", "Teacher one style")
         source_two = self._source_path("teacher-two.skill", "Teacher two style")
         source_other = self._source_path("teacher-other.skill", "Other organization style")
@@ -206,43 +205,43 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
             lesson_manager.import_class_commentary_skill_manifest(
                 organization_id=self.org_one_id,
                 skill_id="wrong-owner",
-                owner_teacher_user_id=self.teacher_other_org_id,
+                actor_user_id=self.teacher_other_org_id,
                 source_path=str(source_other),
             )
         lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.org_one_id,
             skill_id="teacher-one",
-            owner_teacher_user_id=self.teacher_one_id,
+            actor_user_id=self.teacher_one_id,
             source_path=str(source_one),
         )
         lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.org_one_id,
             skill_id="teacher-two",
-            owner_teacher_user_id=self.teacher_two_id,
+            actor_user_id=self.teacher_two_id,
             source_path=str(source_two),
         )
         lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.org_two_id,
             skill_id="teacher-other",
-            owner_teacher_user_id=self.teacher_other_org_id,
+            actor_user_id=self.teacher_other_org_id,
             source_path=str(source_other),
         )
 
-        teacher_one_skills = lesson_manager.list_class_commentary_skills_for_teacher(
+        teacher_one_skills = lesson_manager.list_class_commentary_skills_for_organization(
             self.org_one_id,
-            self.teacher_one_id,
         )
-        teacher_two_skills = lesson_manager.list_class_commentary_skills_for_teacher(
+        teacher_two_skills = lesson_manager.list_class_commentary_skills_for_organization(
             self.org_one_id,
-            self.teacher_two_id,
         )
-        other_org_skills = lesson_manager.list_class_commentary_skills_for_teacher(
+        other_org_skills = lesson_manager.list_class_commentary_skills_for_organization(
             self.org_two_id,
-            self.teacher_other_org_id,
         )
 
-        self.assertEqual([item["skill_id"] for item in teacher_one_skills], ["teacher-one"])
-        self.assertEqual([item["skill_id"] for item in teacher_two_skills], ["teacher-two"])
+        self.assertEqual(
+            [item["skill_id"] for item in teacher_one_skills],
+            ["teacher-one", "teacher-two"],
+        )
+        self.assertEqual(teacher_two_skills, teacher_one_skills)
         self.assertEqual([item["skill_id"] for item in other_org_skills], ["teacher-other"])
 
 

@@ -2490,9 +2490,10 @@ def generate_class_commentary_skill_candidate(
         openai_headers,
     )
     system_prompt = (
-        "You revise one teacher-owned class-commentary SKILL.md from frozen, repeated teacher edits. "
+        "You revise one colleague's distilled class-commentary skill from frozen, repeated edits made by its users. "
         "Make the smallest reusable change supported by the supplied teacher_style rules and revision diffs. "
-        "Preserve the existing skill structure and every rule that is not contradicted by repeated evidence. "
+        "Preserve the named colleague's identity, the existing skill structure, and every persona, work, and "
+        "assessment rule that is not contradicted by repeated evidence. "
         "Never add student names, student facts, lesson facts, contact details, or claims inferred from one case. "
         "Return one JSON object with candidate_content, change_summary, incorporated_memory_record_ids, and "
         "known_risks. candidate_content must be the complete replacement SKILL.md. change_summary and known_risks "

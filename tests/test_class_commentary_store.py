@@ -81,7 +81,7 @@ class ClassCommentaryStoreTest(unittest.TestCase):
         skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=int(task["organization_id"]),
             skill_id=skill_id,
-            owner_teacher_user_id=int(task["teacher_user_id"]),
+            actor_user_id=int(task["teacher_user_id"]),
             source_path=f"/tmp/{skill_id}.skill",
             content=content,
         )
@@ -104,7 +104,7 @@ class ClassCommentaryStoreTest(unittest.TestCase):
                 "id",
                 "organization_id",
                 "skill_id",
-                "owner_teacher_user_id",
+                "imported_by_user_id",
                 "source_type",
                 "source_path",
                 "source_content_hash",
@@ -259,11 +259,11 @@ class ClassCommentaryStoreTest(unittest.TestCase):
             with self.subTest(table=table_name):
                 self.assertTrue(expected.issubset(self._unique_column_sets(table_name)))
 
-    def test_phase_one_v3_schema_has_ownership_and_version_foreign_keys(self):
+    def test_phase_one_v3_schema_has_registry_and_version_foreign_keys(self):
         expected_foreign_keys = {
             "class_commentary_skills": {
                 ("organization_id", "organizations", "id"),
-                ("owner_teacher_user_id", "users", "id"),
+                ("imported_by_user_id", "users", "id"),
                 ("active_version_id", "class_commentary_skill_versions", "id"),
             },
             "class_commentary_skill_versions": {
@@ -431,6 +431,100 @@ class ClassCommentaryStoreTest(unittest.TestCase):
         self.assertEqual(self._table_names(), table_names)
         self.assertEqual(self._column_names("classes"), class_columns)
         self.assertEqual(self._column_names("class_commentary_tasks"), task_columns)
+
+    def test_init_db_renames_legacy_skill_owner_without_rewriting_history(self):
+        class_id = lesson_manager.save_class(
+            "Skill owner migration class",
+            subject="数学",
+            organization_id=1,
+            teacher_user_id=1,
+        )
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=1,
+            class_id=class_id,
+            teacher_user_id=1,
+            audio_path="/tmp/skill-owner-migration.m4a",
+            audio_filename="skill-owner-migration.m4a",
+        )
+        task = lesson_manager.mark_class_commentary_transcription_succeeded(
+            task["id"],
+            "Migration transcript snapshot",
+        )
+        generation = self._reserve_runtime_generation(
+            task,
+            "skill-owner-migration",
+            "Preserve one concrete next action.",
+        )
+        lesson_manager.complete_class_commentary_generation(
+            generation["id"],
+            "Migration AI draft",
+        )
+        revision = lesson_manager.confirm_class_commentary_feedback(
+            task_id=task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=1,
+            feedback_text="Migration teacher final",
+            learn_requested=False,
+            expected_draft_version=0,
+            confirmation_request_id="skill-owner-migration-confirm",
+        )
+
+        def history_snapshot():
+            with lesson_manager.get_conn() as conn:
+                return {
+                    "registry": dict(conn.execute(
+                        """
+                        SELECT id, organization_id, skill_id, source_type, source_path,
+                               source_content_hash, active_version_id, status, created_at, updated_at
+                        FROM class_commentary_skills WHERE id=?
+                        """,
+                        (generation["skill_registry_id"],),
+                    ).fetchone()),
+                    "version": dict(conn.execute(
+                        "SELECT * FROM class_commentary_skill_versions WHERE id=?",
+                        (generation["skill_version_id"],),
+                    ).fetchone()),
+                    "generation": dict(conn.execute(
+                        "SELECT * FROM class_commentary_generations WHERE id=?",
+                        (generation["id"],),
+                    ).fetchone()),
+                    "revision": dict(conn.execute(
+                        "SELECT * FROM class_commentary_revisions WHERE id=?",
+                        (revision["id"],),
+                    ).fetchone()),
+                }
+
+        before = history_snapshot()
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "ALTER TABLE class_commentary_skills "
+                "RENAME COLUMN imported_by_user_id TO owner_teacher_user_id"
+            )
+            conn.execute(
+                """
+                CREATE INDEX idx_class_commentary_skills_owner
+                ON class_commentary_skills (organization_id, owner_teacher_user_id, status)
+                """
+            )
+
+        lesson_manager.init_db()
+        lesson_manager.init_db()
+
+        self.assertIn("imported_by_user_id", self._column_names("class_commentary_skills"))
+        self.assertNotIn("owner_teacher_user_id", self._column_names("class_commentary_skills"))
+        self.assertEqual(history_snapshot(), before)
+        with lesson_manager.get_conn() as conn:
+            registry = conn.execute(
+                "SELECT imported_by_user_id FROM class_commentary_skills WHERE id=?",
+                (generation["skill_registry_id"],),
+            ).fetchone()
+            owner_index = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_class_commentary_skills_owner'"
+            ).fetchone()
+            foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        self.assertEqual(registry["imported_by_user_id"], 1)
+        self.assertIsNone(owner_index)
+        self.assertEqual(foreign_key_errors, [])
 
     def test_init_db_adds_confirmation_snapshot_columns_without_faking_legacy_draft(self):
         class_id = lesson_manager.save_class(

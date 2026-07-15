@@ -53,7 +53,7 @@ class ClassCommentaryMemoryLifecycleDeleteTest(unittest.TestCase):
         skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=teacher["organization_id"],
             skill_id=skill_id,
-            owner_teacher_user_id=teacher["id"],
+            actor_user_id=teacher["id"],
             source_path=f"/skills/{skill_id}/SKILL.md",
             content="Start with progress and end with one concrete next step.",
         )
@@ -222,12 +222,12 @@ class ClassCommentaryMemoryLifecycleDeleteTest(unittest.TestCase):
         self.assertEqual(delayed["job"]["status"], "obsolete")
         self.assertEqual(delayed["records"], [])
 
-    def test_user_with_owned_skill_is_deactivated_without_breaking_audit_fks(self):
+    def test_skill_import_actor_is_deactivated_without_disabling_shared_skill(self):
         teacher = self._create_teacher(self.actor["organization_id"], "memory-delete-user")
         skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=teacher["organization_id"],
             skill_id="user-lifecycle-delete",
-            owner_teacher_user_id=teacher["id"],
+            actor_user_id=teacher["id"],
             source_path="/skills/user-lifecycle-delete/SKILL.md",
             content="Use concise feedback.",
         )
@@ -247,7 +247,7 @@ class ClassCommentaryMemoryLifecycleDeleteTest(unittest.TestCase):
                 "SELECT status FROM class_commentary_skills WHERE id=?",
                 (skill["registry_id"],),
             ).fetchone()
-        self.assertEqual(registry["status"], "disabled")
+        self.assertEqual(registry["status"], "active")
 
     def test_user_with_only_generation_revision_history_is_deactivated(self):
         teacher = self._create_teacher(self.actor["organization_id"], "legacy-audit-user")
@@ -258,7 +258,7 @@ class ClassCommentaryMemoryLifecycleDeleteTest(unittest.TestCase):
         with lesson_manager.get_conn() as conn:
             self.assertEqual(
                 conn.execute(
-                    "SELECT COUNT(*) FROM class_commentary_skills WHERE owner_teacher_user_id=?",
+                    "SELECT COUNT(*) FROM class_commentary_skills WHERE imported_by_user_id=?",
                     (teacher["id"],),
                 ).fetchone()[0],
                 0,

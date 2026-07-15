@@ -70,7 +70,7 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
         skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.owner["organization_id"],
             skill_id="memory-api",
-            owner_teacher_user_id=self.owner["id"],
+            actor_user_id=self.owner["id"],
             source_path=str(source_path),
         )
         generation = lesson_manager.reserve_class_commentary_generation(

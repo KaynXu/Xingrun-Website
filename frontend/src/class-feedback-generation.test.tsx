@@ -56,9 +56,9 @@ test('class feedback generation page uses shadcn components for visible controls
   assert.match(source, /@\/components\/ui\/separator/);
   assert.match(source, /@\/components\/ui\/scroll-area/);
   assert.match(source, /@\/components\/ui\/skeleton/);
-  assert.match(source, /@\/components\/ui\/table/);
   assert.match(source, /@\/components\/ui\/textarea/);
   assert.match(source, /@\/components\/ui\/alert/);
+  assert.doesNotMatch(source, /@\/components\/ui\/table/);
   assert.doesNotMatch(source, /workspaceCardClass/);
   assert.doesNotMatch(source, /workspacePrimaryButtonClass/);
   assert.doesNotMatch(source, /workspaceSecondaryButtonClass/);
@@ -128,6 +128,9 @@ test('class feedback generation page remembers selected coworker style for the c
   assert.match(source, /setSelectedSkillId\(\(currentValue\) => currentValue \|\| readClassCommentarySkillPreference\(currentUser, nextSkills\) \|\| \(nextSkills\[0\]\?\.id \|\| ''\)\);/);
   assert.match(source, /function handleSkillChange\(nextSkillId: string\) \{\s*setSelectedSkillId\(nextSkillId\);\s*writeClassCommentarySkillPreference\(currentUser, nextSkillId\);/);
   assert.match(source, /<Select value=\{selectedSkillId \|\| undefined\} onValueChange=\{handleSkillChange\}>/);
+  assert.match(source, /<p className="text-sm font-medium text-foreground">同事测评风格<\/p>/);
+  assert.match(source, /<SelectValue placeholder="请选择同事" \/>/);
+  assert.match(source, /\{skills\.map\(\(item\) => \([\s\S]*\{item\.name\}[\s\S]*\)\)\}/);
 });
 
 test('class feedback generation class select uses popper content for stable scrolling', () => {
@@ -158,7 +161,7 @@ test('class feedback result actions use shadcn buttons and gate learning from se
   assertSourceMatches(source, /fetchClassCommentaryCapabilities\(\)\.catch\(\(\) => disabledClassCommentaryCapabilities\)/, 'memory capability failure must not block the core feedback page');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{handleSaveFeedbackDraft\} disabled=\{!canSaveFeedbackDraft\}>\s*保存草稿\s*<\/Button>/, 'save draft must be a shadcn Button');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{\(\) => handleConfirmFeedback\(false\)\} disabled=\{!canConfirmFeedback\}>\s*确认但不学习\s*<\/Button>/, 'confirm without learning must be a shadcn Button independent of memory capability');
-  assertSourceMatches(feedbackCard, /<Button type="button" onClick=\{\(\) => handleConfirmFeedback\(true\)\} disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}>\s*确认并学习\s*<\/Button>/, 'confirm and learn must be disabled when the server capability is off');
+  assertSourceMatches(feedbackCard, /<Button type="button" onClick=\{\(\) => handleConfirmFeedback\(true\)\} disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}>\s*确认并让 AI 学习修改\s*<\/Button>/, 'confirm and learn must be disabled when the server capability is off');
   assertSourceMatches(source, /saveClassCommentaryFeedbackDraft\(/, 'save draft client is not used');
   assertSourceMatches(source, /confirmClassCommentaryFeedback\(/, 'confirmation client is not used');
 });
@@ -171,6 +174,8 @@ test('memory learning stays inside the feedback card and reuses shadcn actions',
   assertSourceMatches(source, /retryClassCommentaryRevisionMemory/, 'memory retry client is not used');
   assertSourceMatches(source, /revokeClassCommentaryMemoryEvidence/, 'memory revoke client is not used');
   assertSourceMatches(feedbackCard, /本次学到的内容/, 'memory results must remain inside the current feedback result Card');
+  assertSourceMatches(feedbackCard, /`对 \$\{selectedSkill\?\.name \|\| '该同事'\}测评风格的调整`/, 'teacher-style memory must name the selected distilled colleague skill');
+  assertSourceMatches(feedbackCard, /: '学生情况'/, 'student memory must use product language');
   assertSourceMatches(feedbackCard, /<Badge variant=\{revisionMemorySummary\.status === 'failed'/, 'memory status must use the existing shadcn Badge');
   assertSourceMatches(feedbackCard, /<Button[\s\S]*onClick=\{handleRetryRevisionMemory\}[\s\S]*重试学习[\s\S]*<\/Button>/, 'memory retry must use a shadcn Button');
   assertSourceMatches(feedbackCard, /<AlertDialogTrigger asChild>[\s\S]*<Button[\s\S]*撤销我的来源[\s\S]*<\/Button>[\s\S]*<\/AlertDialogTrigger>/, 'evidence revoke must use a shadcn Button as the AlertDialog trigger');
@@ -246,30 +251,29 @@ test('skill evolution is capability-gated and stays inside the existing feedback
     /\{capabilities\.skill_evolution_enabled && selectedSkill \? \(/,
     'skill evolution must be hidden unless the server enables the capability',
   );
-  assertSourceMatches(feedbackCard, /反馈风格版本/, 'the version entry must remain in the feedback result Card');
+  assertSourceMatches(feedbackCard, /\{selectedSkill\.name\}的测评风格/, 'the version entry must show the real colleague name');
   assertSourceMatches(feedbackCard, /<Dialog open=\{skillEvolutionDialogOpen\} onOpenChange=\{handleSkillEvolutionOpenChange\}>/, 'version review must reuse the shadcn Dialog');
-  assertSourceMatches(feedbackCard, /<DialogTrigger asChild>\s*<Button type="button" size="xs" variant="outline">查看版本<\/Button>/, 'the version entry must use a shadcn Button');
-  assertSourceMatches(feedbackCard, /<DialogTitle>\{selectedSkill\.name\}的反馈风格版本<\/DialogTitle>/, 'the version dialog needs an accessible shadcn title');
-  assertSourceMatches(feedbackCard, /候选版本不会自动替换当前风格\. 只有老师查看差异和评测并手动激活后才会生效\./, 'the no-auto-activation rule must be explicit in the UI');
+  assertSourceMatches(feedbackCard, /<DialogTrigger asChild>\s*<Button type="button" size="xs" variant="outline">查看风格更新<\/Button>/, 'the version entry must use a shadcn Button');
+  assertSourceMatches(feedbackCard, /<DialogTitle>\{selectedSkill\.name\}的测评风格<\/DialogTitle>/, 'the version dialog needs an accessible shadcn title');
+  assertSourceMatches(feedbackCard, /AI 会从大家使用这个同事测评风格时确认的修改中整理可复用的调整\./, 'the shared distilled-skill learning scope must be explicit');
+  assertSourceMatches(feedbackCard, /更新不会自动使用/, 'the no-auto-use rule must be explicit in the UI');
   assertSourceExcludes(source, /<CardTitle>反馈风格版本<\/CardTitle>/, 'skill evolution must not add another page-level Card');
 });
 
-test('skill evolution reviews diff and evaluation before manual activation or rollback', () => {
+test('skill evolution shows human-readable changes before using or restoring a version', () => {
   const feedbackCard = cardSource('反馈结果');
 
   assertSourceMatches(feedbackCard, /<Select value=\{selectedSkillVersionId \|\| undefined\} onValueChange=\{setSelectedSkillVersionId\}>/, 'version selection must use the shadcn Select');
-  assertSourceMatches(feedbackCard, /selectedSkillVersion\.content_diff/, 'candidate review must expose the immutable version diff');
-  assertSourceMatches(feedbackCard, /<Textarea\s+aria-label="版本差异"[\s\S]*readOnly/, 'the diff must use the shadcn read-only Textarea');
-  assertSourceMatches(feedbackCard, /selectedSkillEvaluationRows\.map\(\(row\) => \(/, 'candidate evaluation rows are missing');
-  assertSourceMatches(feedbackCard, /<Table>[\s\S]*<TableHeader>[\s\S]*<TableBody>/, 'evaluation comparison must use the official shadcn Table');
-  assertSourceMatches(source, /confirmed_style_rule_coverage_rate/, 'the UI must recognize the worker style coverage metric');
-  assertSourceMatches(source, /student_fact_contamination_count/, 'the UI must recognize the worker student fact safety metric');
-  assertSourceMatches(source, /output_constraint_pass_rate/, 'the UI must recognize the worker output constraint metric');
-  assertSourceMatches(feedbackCard, /有效任务 \{skillEvolution\.eligibility\.effective_task_count\}\/\{skillEvolution\.eligibility\.min_effective_tasks\}/, 'eligibility must count effective tasks');
-  assertSourceMatches(feedbackCard, /支持任务 \{skillEvolution\.eligibility\.supporting_task_count\}\/\{skillEvolution\.eligibility\.min_supporting_tasks\}/, 'eligibility must count distinct supporting tasks');
-  assertSourceMatches(feedbackCard, /<AlertDialogTitle>激活这个候选版本\?<\/AlertDialogTitle>/, 'manual activation must require the shadcn AlertDialog');
+  assertSourceMatches(feedbackCard, /selectedSkillVersion\.evaluation\.change_summary\.map\(\(change\) => \(/, 'candidate review must show the worker change summary');
+  assertSourceMatches(feedbackCard, /本次建议的调整/, 'candidate changes need a human-readable heading');
+  assertSourceMatches(feedbackCard, /有 \{selectedSkillVersion\.evaluation\.failed_sample_count\} 条历史反馈检查未通过/, 'failed checks must be summarized without exposing sample ids');
+  assertSourceExcludes(feedbackCard, /selectedSkillVersion\.content_diff/, 'raw diffs must not be exposed in the teacher workflow');
+  assertSourceExcludes(feedbackCard, /selectedSkillEvaluationRows/, 'technical evaluation rows must not be exposed in the teacher workflow');
+  assertSourceExcludes(feedbackCard, /<Table>/, 'technical metric tables must not be exposed in the teacher workflow');
+  assertSourceExcludes(feedbackCard, /有效任务|支持任务|评测|激活|回滚/, 'technical evolution terms must not be visible to teachers');
+  assertSourceMatches(feedbackCard, /<AlertDialogTitle>使用这次风格更新\?<\/AlertDialogTitle>/, 'using an update must require the shadcn AlertDialog');
   assertSourceMatches(feedbackCard, /onClick=\{\(\) => handleChangeSkillVersion\('activate'\)\}/, 'the activation action is missing');
-  assertSourceMatches(feedbackCard, /<AlertDialogTitle>回滚到这个历史版本\?<\/AlertDialogTitle>/, 'rollback must require the shadcn AlertDialog');
+  assertSourceMatches(feedbackCard, /<AlertDialogTitle>恢复使用这个历史版本\?<\/AlertDialogTitle>/, 'restoring a version must require the shadcn AlertDialog');
   assertSourceMatches(feedbackCard, /onClick=\{\(\) => handleChangeSkillVersion\('rollback'\)\}/, 'the rollback action is missing');
 });
 

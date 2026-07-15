@@ -89,6 +89,7 @@ from lesson_manager import (
     ClassCommentarySkillCandidateNotReady,
     ClassCommentarySkillCandidateRequestConflict,
     ClassCommentarySkillCandidateStale,
+    ClassCommentarySkillImportConflict,
     ClassCommentarySkillVersionConflict,
     activate_class_commentary_skill_candidate_version,
     actor_can_manage_user,
@@ -155,7 +156,7 @@ from lesson_manager import (
     get_class_commentary_revision,
     get_class_commentary_skill_candidate_build,
     get_class_commentary_skill_candidate_eligibility,
-    get_class_commentary_skill_for_teacher,
+    get_class_commentary_skill_for_organization,
     get_class_teacher_user_id,
     get_conn,
     get_consultation,
@@ -194,8 +195,9 @@ from lesson_manager import (
     list_class_commentary_generations,
     list_class_commentary_revision_memories,
     list_class_commentary_revisions,
-    list_class_commentary_skill_versions_for_teacher,
-    list_class_commentary_skills_for_teacher,
+    list_class_commentary_skill_versions,
+    list_class_commentary_skills_for_organization,
+    import_class_commentary_skill_manifest,
     list_class_teacher_bindings,
     list_classes,
     list_classes_for_actor,
@@ -313,6 +315,8 @@ from class_commentary import (
     CLASS_COMMENTARY_PROMPT_VERSION,
     CLASS_COMMENTARY_TEMPERATURE,
     build_class_commentary_chat_request,
+    list_colleague_skills,
+    load_colleague_skill,
     payload_to_json,
     sanitize_class_commentary_roster,
 )
@@ -3508,7 +3512,7 @@ def _serialize_class_commentary_skill_for_evolution(skill: dict) -> dict:
         "skill_id": str(skill.get("skill_id") or skill.get("id") or ""),
         "name": str(skill.get("name") or skill.get("skill_id") or ""),
         "organization_id": int(skill.get("organization_id") or 0),
-        "owner_teacher_user_id": int(skill.get("owner_teacher_user_id") or 0),
+        "can_manage_evolution": True,
         "status": str(skill.get("status") or ""),
         "active_version_id": int(skill.get("active_version_id") or 0) or None,
         "version_id": int(skill.get("version_id") or 0) or None,
@@ -3647,6 +3651,11 @@ def _serialize_class_commentary_skill_evaluation_for_response(
         for item in evaluation.get("known_risks", [])
         if str(item).strip()
     ]
+    change_summary = [
+        str(item).strip()
+        for item in evaluation.get("change_summary", [])
+        if str(item).strip()
+    ]
     failed_samples = [
         str(item).strip()
         for item in evaluation.get("failed_samples", [])
@@ -3669,8 +3678,10 @@ def _serialize_class_commentary_skill_evaluation_for_response(
     return {
         "current_metrics": current_metrics,
         "candidate_metrics": candidate_metrics,
+        "change_summary": change_summary,
         "known_risks": known_risks,
         "failed_samples": failed_samples,
+        "failed_sample_count": len(failed_samples),
     }
 
 
@@ -4733,10 +4744,45 @@ def _get_owned_class_commentary_revision_or_error(user: dict, revision_id: int):
     return revision, task, None
 
 
-def _get_owned_class_commentary_skill_or_error(user: dict, skill_id: str):
-    skill = get_class_commentary_skill_for_teacher(
+def _sync_configured_class_commentary_skills(user: dict) -> list[dict]:
+    organization_id = int(user.get("organization_id") or 0)
+    actor_user_id = int(user.get("id") or 0)
+    skill_dir = str(get_runtime_config().get("colleague_skill_dir") or "").strip()
+    if not skill_dir:
+        return list_class_commentary_skills_for_organization(organization_id)
+    registered_ids = {
+        str(item["skill_id"])
+        for item in list_class_commentary_skills_for_organization(organization_id)
+    }
+    with get_conn() as conn:
+        registered_ids.update(
+            str(row["skill_id"])
+            for row in conn.execute(
+                "SELECT skill_id FROM class_commentary_skills WHERE organization_id=?",
+                (organization_id,),
+            ).fetchall()
+        )
+    for item in list_colleague_skills(skill_dir):
+        skill_id = str(item.get("id") or "").strip()
+        if not skill_id or skill_id in registered_ids:
+            continue
+        package = load_colleague_skill(skill_dir, skill_id)
+        try:
+            import_class_commentary_skill_manifest(
+                organization_id=organization_id,
+                skill_id=skill_id,
+                actor_user_id=actor_user_id,
+                source_path=str(package["path"]),
+            )
+        except ClassCommentarySkillImportConflict:
+            pass
+        registered_ids.add(skill_id)
+    return list_class_commentary_skills_for_organization(organization_id)
+
+
+def _get_accessible_class_commentary_skill_or_error(user: dict, skill_id: str):
+    skill = get_class_commentary_skill_for_organization(
         int(user.get("organization_id") or 0),
-        int(user.get("id") or 0),
         str(skill_id or "").strip(),
     )
     if not skill:
@@ -4777,7 +4823,7 @@ def _class_commentary_skill_evolution_envelope(
     skill: dict,
     user: dict,
 ) -> dict:
-    versions = list_class_commentary_skill_versions_for_teacher(
+    versions = list_class_commentary_skill_versions(
         organization_id=int(user["organization_id"]),
         skill_id=str(skill["skill_id"]),
         actor_user_id=int(user["id"]),
@@ -4833,14 +4879,13 @@ def _class_commentary_skill_activation_envelope(
     activation_event: dict,
     user: dict,
 ) -> dict:
-    skill = get_class_commentary_skill_for_teacher(
+    skill = get_class_commentary_skill_for_organization(
         int(user["organization_id"]),
-        int(user["id"]),
         skill_id,
     )
     if not skill:
         raise LookupError("class commentary skill not found")
-    versions = list_class_commentary_skill_versions_for_teacher(
+    versions = list_class_commentary_skill_versions(
         organization_id=int(user["organization_id"]),
         skill_id=skill_id,
         actor_user_id=int(user["id"]),
@@ -9453,10 +9498,7 @@ def api_class_commentary_skills():
     user, error = _require_auth()
     if error:
         return error
-    skills = list_class_commentary_skills_for_teacher(
-        int(user["organization_id"]),
-        int(user["id"]),
-    )
+    skills = _sync_configured_class_commentary_skills(user)
     capabilities = _class_commentary_memory_capabilities()
     return jsonify({
         "skills": skills,
@@ -9473,7 +9515,7 @@ def api_class_commentary_skill_versions(skill_id: str):
     user, error = _require_auth()
     if error:
         return error
-    skill, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    skill, skill_error = _get_accessible_class_commentary_skill_or_error(user, skill_id)
     if skill_error:
         return skill_error
     try:
@@ -9506,7 +9548,7 @@ def api_class_commentary_skill_candidates(skill_id: str):
     user, error = _require_auth()
     if error:
         return error
-    _, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    _, skill_error = _get_accessible_class_commentary_skill_or_error(user, skill_id)
     if skill_error:
         return skill_error
     capability_error = _require_class_commentary_skill_evolution_capability()
@@ -9557,7 +9599,7 @@ def api_class_commentary_skill_version_activate(skill_id: str, version_id: int):
     user, error = _require_auth()
     if error:
         return error
-    _, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    _, skill_error = _get_accessible_class_commentary_skill_or_error(user, skill_id)
     if skill_error:
         return skill_error
     capability_error = _require_class_commentary_skill_evolution_capability()
@@ -9608,7 +9650,7 @@ def api_class_commentary_skill_version_rollback(skill_id: str, version_id: int):
     user, error = _require_auth()
     if error:
         return error
-    _, skill_error = _get_owned_class_commentary_skill_or_error(user, skill_id)
+    _, skill_error = _get_accessible_class_commentary_skill_or_error(user, skill_id)
     if skill_error:
         return skill_error
     capability_error = _require_class_commentary_skill_evolution_capability()
@@ -10197,9 +10239,9 @@ def api_class_commentary_task_generate(task_id: int):
     )
     if attendance_error:
         return attendance_error
-    skill = get_class_commentary_skill_for_teacher(
+    _sync_configured_class_commentary_skills(user)
+    skill = get_class_commentary_skill_for_organization(
         int(user["organization_id"]),
-        int(user["id"]),
         skill_id,
     )
     if not skill:
