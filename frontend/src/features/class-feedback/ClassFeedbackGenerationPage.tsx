@@ -628,11 +628,21 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const persistedTranscript = (task?.confirmed_transcript_text || task?.transcript_text || '').trim();
   const hasTranscriptText = Boolean(trimmedConfirmedTranscript);
   const transcriptDirty = Boolean(task) && trimmedConfirmedTranscript !== persistedTranscript;
+  const transcriptStatusLabel = task?.status === 'uploaded' || task?.status === 'transcribing'
+    ? '转写中'
+    : transcriptDirty
+      ? '未保存'
+      : persistedTranscript
+        ? '已保存'
+        : hasTranscriptText
+          ? '可生成'
+          : '待输入';
   const canUseTranscript = canUseTranscriptState(task);
   const canCreateManualTextTask = !task || task.status === 'uploaded' || task.status === 'transcribing';
   const canCreateTask = !loadingInitial && !busy && !generationLoading && Boolean(selectedClassId && audioFile);
   const canSaveTranscript = !busy && !generationLoading && canUseTranscript && hasTranscriptText;
   const canGenerate = !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
+  const hasSucceededGeneration = selectedGeneration?.status === 'succeeded';
   const canSaveFeedbackDraft = !busy
     && !generationLoading
     && selectedGeneration?.status === 'succeeded'
@@ -1616,7 +1626,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           <CardHeader>
             <CardTitle>上传与任务</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent className="flex flex-1 flex-col gap-4">
             {loadingInitial ? (
               <div className="flex flex-col gap-3">
                 <Skeleton className="h-4 w-24" />
@@ -1754,8 +1764,48 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   <Progress value={taskProgress} />
                   <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
                     <div className="rounded-lg border border-border/70 px-3 py-2">上传 {Math.max(uploadProgress, task ? 100 : 0)}%</div>
-                    <div className="rounded-lg border border-border/70 px-3 py-2">转写 {task?.status === 'transcribing' || task?.status === 'transcribed' || task?.status === 'generating' || task?.status === 'ready' ? '进行中' : '未开始'}</div>
-                    <div className="rounded-lg border border-border/70 px-3 py-2">生成 {task?.status === 'generating' || task?.status === 'ready' ? '进行中' : '未开始'}</div>
+                    <div className="rounded-lg border border-border/70 px-3 py-2">
+                      转写 {task?.status === 'transcribing' ? '进行中' : task?.status === 'transcribed' || task?.status === 'generating' || task?.status === 'ready' ? '已完成' : '未开始'}
+                    </div>
+                    <div className="rounded-lg border border-border/70 px-3 py-2">
+                      生成 {task?.status === 'generating' ? '进行中' : task?.status === 'ready' ? '已完成' : '未开始'}
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="flex flex-1 flex-col gap-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-foreground">转写确认</p>
+                    <Badge variant="outline">{transcriptStatusLabel}</Badge>
+                  </div>
+                  <Textarea
+                    value={confirmedTranscript}
+                    onChange={(event) => setConfirmedTranscript(event.target.value)}
+                    placeholder="可直接输入课堂记录, 也可以上传并转写后在这里确认或修订文本."
+                    className="min-h-56 flex-1 resize-none field-sizing-fixed"
+                    disabled={loadingInitial}
+                  />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      {hasSucceededGeneration && !transcriptDirty
+                        ? '转写已保存, 修改后可重新生成反馈包.'
+                        : '可直接输入文本生成反馈包; 已有录音任务时也可以先保存确认文本.'}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" onClick={handleSaveTranscript} disabled={!canSaveTranscript}>
+                        保存转写
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={hasSucceededGeneration ? 'outline' : 'default'}
+                        onClick={handleGenerate}
+                        disabled={!canGenerate}
+                      >
+                        {hasSucceededGeneration ? '重新生成' : '生成反馈包'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </>
@@ -2200,34 +2250,6 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>转写确认</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <Textarea
-            value={confirmedTranscript}
-            onChange={(event) => setConfirmedTranscript(event.target.value)}
-            placeholder="可直接输入课堂记录, 也可以上传并转写后在这里确认或修订文本。"
-            className="min-h-56"
-            disabled={loadingInitial}
-          />
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              可直接输入文本生成反馈包; 已有录音任务时也可以先保存确认文本。
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" onClick={handleSaveTranscript} disabled={!canSaveTranscript}>
-                保存转写
-              </Button>
-              <Button type="button" onClick={handleGenerate} disabled={!canGenerate}>
-                生成反馈包
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       <Dialog open={Boolean(draftConflict)} onOpenChange={handleDraftConflictOpenChange}>
         <DialogContent>
