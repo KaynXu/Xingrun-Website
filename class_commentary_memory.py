@@ -348,9 +348,15 @@ class ClassCommentaryMemoryService:
         embedder_api_key = ""
         embedder_base_url = ""
         if self.settings.embedder_provider == "openai":
-            embedder_api_key = str(self._runtime_config.get("openai_api_key") or "").strip()
+            embedder_api_key = str(
+                self._runtime_config.get("mem0_embedder_api_key")
+                or self._runtime_config.get("openai_api_key")
+                or ""
+            ).strip()
             embedder_base_url = str(
-                self._runtime_config.get("openai_base_url") or ""
+                self._runtime_config.get("mem0_embedder_base_url")
+                or self._runtime_config.get("openai_base_url")
+                or ""
             ).strip()
             if not embedder_api_key and commentary_provider == "openai":
                 embedder_api_key = str(
@@ -361,7 +367,9 @@ class ClassCommentaryMemoryService:
                         self._runtime_config.get("class_commentary_openai_base_url") or ""
                     ).strip()
             if not embedder_api_key:
-                missing.append("OPENAI_API_KEY for the Mem0 embedder")
+                missing.append(
+                    "XR_MEM0_EMBEDDER_API_KEY or OPENAI_API_KEY for the Mem0 embedder"
+                )
         if missing:
             raise ClassCommentaryMemoryConfigError(
                 "Missing class commentary memory settings: " + ", ".join(missing)
