@@ -375,6 +375,8 @@ class ClassCommentaryMemoryServiceTests(unittest.TestCase):
             "class_commentary_openai_base_url": "https://class.example/v1",
             "openai_api_key": "embedding-secret",
             "openai_base_url": "https://embedding.example/v1",
+            "mem0_embedder_api_key": "dedicated-embedding-secret",
+            "mem0_embedder_base_url": "https://dedicated-embedding.example/v1",
             "mem0_qdrant_url": "http://qdrant:6333",
             "mem0_qdrant_api_key": "qdrant-key",
             "mem0_embedder_provider": "openai",
@@ -394,10 +396,13 @@ class ClassCommentaryMemoryServiceTests(unittest.TestCase):
             config["llm"]["config"]["openai_base_url"],
             "https://class.example/v1",
         )
-        self.assertEqual(config["embedder"]["config"]["api_key"], "embedding-secret")
+        self.assertEqual(
+            config["embedder"]["config"]["api_key"],
+            "dedicated-embedding-secret",
+        )
         self.assertEqual(
             config["embedder"]["config"]["openai_base_url"],
-            "https://embedding.example/v1",
+            "https://dedicated-embedding.example/v1",
         )
 
     def test_enabled_service_fails_closed_before_mem0_init_when_llm_key_is_missing(self):

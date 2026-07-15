@@ -39,6 +39,8 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
             "XR_MEM0_COLLECTION_NAME": "commentary-test",
             "XR_MEM0_EMBEDDER_PROVIDER": "openai",
             "XR_MEM0_EMBEDDER_MODEL": "text-embedding-3-small",
+            "XR_MEM0_EMBEDDER_API_KEY": "embedding-secret",
+            "XR_MEM0_EMBEDDER_BASE_URL": "https://embedding.test/v1",
             "XR_MEM0_EMBEDDING_DIMS": "1536",
             "XR_MEM0_STYLE_LIMIT": "9",
             "XR_MEM0_STUDENT_LIMIT": "6",
@@ -65,6 +67,8 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
         self.assertEqual(cfg["mem0_collection_name"], "commentary-test")
         self.assertEqual(cfg["mem0_embedder_provider"], "openai")
         self.assertEqual(cfg["mem0_embedder_model"], "text-embedding-3-small")
+        self.assertEqual(cfg["mem0_embedder_api_key"], "embedding-secret")
+        self.assertEqual(cfg["mem0_embedder_base_url"], "https://embedding.test/v1")
         self.assertEqual(cfg["mem0_embedding_dims"], 1536)
         self.assertEqual(cfg["mem0_style_limit"], 9)
         self.assertEqual(cfg["mem0_student_limit"], 6)
