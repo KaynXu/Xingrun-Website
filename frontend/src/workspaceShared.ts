@@ -60,6 +60,20 @@ export interface ApiFetchOptions extends RequestInit {
   reloadOnUnauthorized?: boolean;
 }
 
+export class ApiFetchError extends Error {
+  readonly status: number;
+  readonly payload: Record<string, unknown> & { error?: string; current_draft?: unknown };
+
+  constructor(status: number, payload: unknown, message: string) {
+    super(message);
+    this.name = 'ApiFetchError';
+    this.status = status;
+    this.payload = payload && typeof payload === 'object'
+      ? payload as Record<string, unknown> & { error?: string; current_draft?: unknown }
+      : {};
+  }
+}
+
 export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOptions): Promise<T> {
   const { reloadOnUnauthorized = true, ...fetchOptions } = options ?? {};
   const isFormData = fetchOptions.body instanceof FormData;
@@ -80,7 +94,11 @@ export async function apiFetch<T = unknown>(path: string, options?: ApiFetchOpti
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error || res.statusText);
+    throw new ApiFetchError(
+      res.status,
+      err,
+      (err as { error?: string }).error || res.statusText,
+    );
   }
   return res.json() as Promise<T>;
 }

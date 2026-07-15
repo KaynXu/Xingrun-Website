@@ -23,7 +23,7 @@ required_components:
   - band_gap_analysis
   - skill_drill
   - vocabulary_review
-  - timed_practice
+  - active_recall
   - mock_test
   - feedback
   - rewrite_or_retake

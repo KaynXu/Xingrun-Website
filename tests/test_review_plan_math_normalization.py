@@ -116,6 +116,18 @@ class ReviewPlanMathNormalizationTestCase(unittest.TestCase):
         self.assertFalse(bare_math_contract_violations(normalized))
         self.assertEqual(normalize_bare_math_text("alphabet"), "alphabet")
 
+    def test_math_contract_normalizes_standalone_and_numbered_greek_names(self):
+        text = "比较 alpha>beta，2alpha 和 2beta 对应的三角形，beta三角形也要说明。"
+
+        normalized = normalize_bare_math_text(text)
+
+        self.assertIn(r"$\alpha$>$\beta$", normalized)
+        self.assertIn(r"$2\alpha$", normalized)
+        self.assertIn(r"$2\beta$", normalized)
+        self.assertIn(r"$\beta$三角形", normalized)
+        self.assertFalse(bare_math_contract_violations(normalized))
+        self.assertEqual(normalize_bare_math_text("alphabet"), "alphabet")
+
     def test_choice_options_with_formulas_use_full_width_layout(self):
         self.assertTrue(choice_options_need_full_width(["A. 1,2,3", r"D. $\sqrt{2},\sqrt{3},\sqrt{5}$"], True))
         self.assertTrue(choice_options_need_full_width(["A. 1,2,3", "D. √(2),√(3),√(5)"], True))

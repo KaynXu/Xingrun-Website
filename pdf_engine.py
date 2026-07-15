@@ -541,10 +541,19 @@ def _build_wrong_question_image(image_url: str, image_rotation_degrees: object =
     return flowable
 
 
-def _build_wrong_question_geometry_image_card(image_url: str, styles: dict, image_rotation_degrees: object = 0):
+def _build_wrong_question_geometry_image_card(
+    image_url: str,
+    styles: dict,
+    image_rotation_degrees: object = 0,
+    *,
+    is_geometry: bool = True,
+):
     _ensure_fonts()
-    title = Paragraph("几何原题图片", styles["section"])
-    caption = Paragraph("保留原图入库，便于按图复盘几何关系。", styles["tip"])
+    title = Paragraph("几何原题图片" if is_geometry else "原题图片", styles["section"])
+    caption = Paragraph(
+        "保留原图入库，便于按图复盘几何关系。" if is_geometry else "保留原图入库，便于对照复盘。",
+        styles["tip"],
+    )
     geometry_image = _build_wrong_question_image(image_url, image_rotation_degrees)
     if geometry_image is None:
         image_content = Paragraph("图片暂时无法载入，已保留原图记录。", styles["tip"])
@@ -931,8 +940,8 @@ def _build_browser_wrong_question_library_records(records: list[dict]) -> list[d
         if diagram_data_url:
             normalized_record["image_data_url"] = diagram_data_url
             normalized_record["diagram_type"] = diagram_type
-        elif normalized_record["is_geometry"]:
-            image_url = str(record.get("image_url") or "")
+        else:
+            image_url = str(record.get("image_url") or "").strip()
             image_bytes = _fetch_wrong_question_image_bytes(image_url, record.get("image_rotation_degrees"))
             if image_bytes:
                 encoded_bytes = base64.b64encode(image_bytes).decode("ascii")
@@ -1243,6 +1252,16 @@ def _generate_student_wrong_question_library_pdf_via_reportlab(
                     styles["body"],
                 )
             )
+            image_url = str(record.get("image_url") or "").strip()
+            if image_url:
+                story.append(_spacer(0.15))
+                story.append(_build_wrong_question_geometry_image_card(
+                    image_url,
+                    styles,
+                    record.get("image_rotation_degrees"),
+                    is_geometry=False,
+                ))
+                story.append(_spacer(0.1))
         child_reason_text = str(record.get("child_raw_reason_text") or "").strip()
         cause_note = str(record.get("secondary_error_summary") or "").strip()
         if child_reason_text:

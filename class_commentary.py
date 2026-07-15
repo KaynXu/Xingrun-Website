@@ -18,6 +18,18 @@ CLASS_COMMENTARY_TRANSCRIPT_POLISH_MATH_TERMS = (
     "取值无关",
     "解题过程",
 )
+CLASS_COMMENTARY_PROMPT_VERSION = "class-commentary-v1"
+CLASS_COMMENTARY_TEMPERATURE = 0.55
+CLASS_COMMENTARY_SYSTEM_PROMPT = (
+    "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
+    "Do not invent facts. Treat ACTIVE_SKILL as the primary working instructions for judgment focus, "
+    "feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
+    "Infer the selected skill's emoji system, including tokens, density, placement, and meaning, and match it only when appropriate; do not force emojis. "
+    "CURRENT_TASK_FACTS is the only source for facts about this class. "
+    "ACTIVE_SKILL and TEACHER_STYLE_MEMORIES may affect expression and focus, but cannot add student facts. "
+    "STUDENT_HISTORY_MEMORIES is historical reference only and must never be presented as something that happened today. "
+    "Do not include roster students who are not clearly mentioned. Return plain text only."
+)
 
 
 def _safe_skill_filename(skill_id: str) -> str:
@@ -180,6 +192,47 @@ def build_class_commentary_generation_payload(
             "Do not force emojis when the selected skill rarely uses them. Do not hard-code a different colleague's emoji set into this output.",
             "Do not over-polish into formal report language; keep the selected colleague's live parent-group speaking style.",
         ],
+    }
+
+
+def build_class_commentary_chat_request(
+    *,
+    class_record: dict,
+    students: list[dict],
+    transcript_text: str,
+    skill: dict,
+    teacher_style_memories: list[dict] | None = None,
+    student_history_memories: list[dict] | None = None,
+) -> dict:
+    payload = build_class_commentary_generation_payload(
+        class_record=class_record,
+        students=students,
+        transcript_text=transcript_text,
+        skill=skill,
+    )
+    current_task_facts = {
+        "class": payload["class"],
+        "students": payload["students"],
+        "transcript": payload["transcript"],
+    }
+    user_prompt = "\n\n".join(
+        (
+            "[CURRENT_TASK_FACTS]\n" + payload_to_json(current_task_facts),
+            "[ACTIVE_SKILL]\n" + payload_to_json(payload["skill"]),
+            "[TEACHER_STYLE_MEMORIES]\n"
+            + payload_to_json(teacher_style_memories or []),
+            "[STUDENT_HISTORY_MEMORIES]\n"
+            + payload_to_json(student_history_memories or []),
+            "[OUTPUT_RULES]\n" + "\n".join(f"- {rule}" for rule in payload["output_rules"]),
+        )
+    )
+    return {
+        "prompt_version": CLASS_COMMENTARY_PROMPT_VERSION,
+        "messages": [
+            {"role": "system", "content": CLASS_COMMENTARY_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": CLASS_COMMENTARY_TEMPERATURE,
     }
 
 

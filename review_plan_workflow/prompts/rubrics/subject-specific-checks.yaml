@@ -1,11 +1,10 @@
 math:
   must_include:
-    - error_log
-    - question_type
-    - topic_review
-    - skill_practice
-    - spiral_review
-    - timed_practice
+    - full_review_topics
+    - blanks
+    - choices
+    - active_recall
+    - completion_standard
 physics:
   must_include:
     - formula_conditions

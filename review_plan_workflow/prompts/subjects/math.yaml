@@ -50,13 +50,11 @@ oral_card_rules:
   - 第7天、第14天老师追问口述卡片总数不要超过3问
   - 空题干、只剩标题、只问抽象模型理由的卡片必须重写
 required_components:
-  - topic_review
-  - worked_example
-  - targeted_practice
-  - error_log
-  - timed_practice
-  - spiral_review
-  - checkpoint_quiz
+  - full_review_topics
+  - blanks
+  - choices
+  - active_recall
+  - completion_standard
 avoid:
   - 只写刷题
   - 只按章节罗列
