@@ -29,7 +29,7 @@ class ClassCommentaryMemoryStoreTest(unittest.TestCase):
         self.skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.teacher["organization_id"],
             skill_id="memory-store-teacher",
-            owner_teacher_user_id=self.teacher["id"],
+            actor_user_id=self.teacher["id"],
             source_path="/skills/memory-store-teacher/SKILL.md",
             content="先写课堂表现, 再给一条具体建议.",
         )

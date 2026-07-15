@@ -108,7 +108,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         return lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.owner["organization_id"],
             skill_id=skill_id,
-            owner_teacher_user_id=teacher_user_id,
+            actor_user_id=teacher_user_id,
             source_path=str(source_path),
         )
 
@@ -512,7 +512,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(polish_charge["usage"]["provider"], "deepseek")
         self.assertEqual(polish_charge["usage"]["model"], "deepseek-v4-pro")
 
-    def test_skill_list_only_returns_registry_skills_owned_by_current_user(self):
+    def test_skill_list_syncs_configured_packages_and_is_shared_within_organization(self):
         owner_skill = self._register_skill(
             "owner-registry-style",
             "owner registry content",
@@ -523,14 +523,23 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
             "member registry content",
             owner_user_id=member_id,
         )
-        (self.skill_dir / "filesystem-only.skill").write_text(
-            "not imported into the registry",
+        package_dir = self.skill_dir / "filesystem-only"
+        package_dir.mkdir()
+        (package_dir / "SKILL.md").write_text("Package instructions", encoding="utf-8")
+        (package_dir / "work.md").write_text("Assessment workflow", encoding="utf-8")
+        (package_dir / "persona.md").write_text("Colleague persona", encoding="utf-8")
+        (package_dir / "meta.json").write_text(
+            json.dumps({"name": "曹曦临"}, ensure_ascii=False),
             encoding="utf-8",
         )
 
         owner_response = self.client.get(
             "/api/class-commentary/skills",
             headers=self.headers,
+        )
+        (package_dir / "work.md").write_text(
+            "Changed after registry import",
+            encoding="utf-8",
         )
         member_response = self.client.get(
             "/api/class-commentary/skills",
@@ -541,11 +550,81 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(member_response.status_code, 200)
         owner_skills = owner_response.get_json()["skills"]
         member_skills = member_response.get_json()["skills"]
-        self.assertEqual([item["id"] for item in owner_skills], ["owner-registry-style"])
-        self.assertEqual(owner_skills[0]["registry_id"], owner_skill["registry_id"])
-        self.assertEqual([item["id"] for item in member_skills], ["member-registry-style"])
-        self.assertNotIn("filesystem-only", str(owner_response.get_json()))
-        self.assertNotIn("filesystem-only", str(member_response.get_json()))
+        expected_ids = [
+            "filesystem-only",
+            "member-registry-style",
+            "owner-registry-style",
+        ]
+        self.assertEqual([item["id"] for item in owner_skills], expected_ids)
+        self.assertEqual(member_skills, owner_skills)
+        imported_owner = next(
+            item for item in owner_skills if item["id"] == "owner-registry-style"
+        )
+        self.assertEqual(imported_owner["registry_id"], owner_skill["registry_id"])
+        filesystem_skill = next(
+            item for item in owner_skills if item["id"] == "filesystem-only"
+        )
+        self.assertGreater(filesystem_skill["registry_id"], 0)
+        self.assertEqual(filesystem_skill["name"], "曹曦临")
+        self.assertIn("Package instructions", filesystem_skill["content"])
+        self.assertIn("Assessment workflow", filesystem_skill["content"])
+        self.assertIn("Colleague persona", filesystem_skill["content"])
+        self.assertNotIn("Changed after registry import", filesystem_skill["content"])
+
+    def test_member_can_generate_with_colleague_skill_imported_by_another_user(self):
+        skill = self._register_skill(
+            "colleague-cao-xi-lin",
+            "Use Cao Xi Lin's distilled assessment structure.",
+        )
+        member_id, member_token = self._create_member("colleague_skill_user")
+        class_id = lesson_manager.save_class(
+            "Shared colleague skill class",
+            subject="数学",
+            grade="七年级",
+            organization_id=self.owner["organization_id"],
+            teacher_user_id=member_id,
+        )
+        student = lesson_manager.create_student_for_class(class_id, "小王")
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=member_id,
+            audio_path=str(self.base / "member-audio.m4a"),
+            audio_filename="member-audio.m4a",
+        )
+        task = lesson_manager.mark_class_commentary_transcription_succeeded(
+            task["id"],
+            "小王今天计算更稳定",
+        )
+
+        def fake_charge(**kwargs):
+            result = kwargs["producer"]()
+            return result[0] if isinstance(result, tuple) else result
+
+        with patch.object(self.app_module, "has_class_commentary_api_key", return_value=True), \
+             patch.object(self.app_module, "_run_ai_feature_with_charge", side_effect=fake_charge), \
+             patch.object(
+                 self.app_module,
+                 "generate_class_commentary_feedback",
+                 return_value=("小王: 今天计算更稳定.", {"input_tokens": 3, "output_tokens": 2}),
+             ):
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{task['id']}/generate",
+                headers={"X-Auth-Token": member_token},
+                json={
+                    "request_id": "member-uses-colleague-skill",
+                    "skill_id": skill["skill_id"],
+                    "attending_student_ids": [student["id"]],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        generation = lesson_manager.get_class_commentary_generation(
+            response.get_json()["generation_id"]
+        )
+        self.assertEqual(skill["imported_by_user_id"], self.owner["id"])
+        self.assertEqual(generation["teacher_user_id"], member_id)
+        self.assertEqual(generation["skill_registry_id"], skill["registry_id"])
 
     def test_generate_requires_request_id_and_is_idempotent_from_registry_snapshot(self):
         class_id = self._create_class_with_student()

@@ -163,7 +163,7 @@ start.bat
 ./scripts/run_class_commentary_memory_worker.sh
 ```
 
-现有 skill 必须先用显式 owner manifest 登记, 不会按文件名或首次使用者自动认领. Manifest 每项只接受 `organization_id`, `skill_id`, `owner_teacher_user_id`, `source_path`:
+配置目录中的同事 Skill 会在当前 organization 首次打开列表或生成前登记为 version 1, 已存在的进化版本不会被目录文件覆盖. 如需显式批量登记, Manifest 每项只接受 `organization_id`, `skill_id`, `actor_user_id`, `source_path`; actor 仅用于导入审计, 不表示 Skill 所有权:
 
 ```bash
 .venv/bin/python scripts/import_class_commentary_skills.py /path/to/manifest.json --check

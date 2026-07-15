@@ -19,7 +19,7 @@ import lesson_manager
 _REQUIRED_FIELDS = {
     "organization_id",
     "skill_id",
-    "owner_teacher_user_id",
+    "actor_user_id",
     "source_path",
 }
 
@@ -70,9 +70,9 @@ def load_skill_manifest(manifest_path: Path) -> list[dict]:
             organization_id = _positive_int(
                 raw_item["organization_id"], f"skills[{index}].organization_id"
             )
-            owner_teacher_user_id = _positive_int(
-                raw_item["owner_teacher_user_id"],
-                f"skills[{index}].owner_teacher_user_id",
+            actor_user_id = _positive_int(
+                raw_item["actor_user_id"],
+                f"skills[{index}].actor_user_id",
             )
         except ValueError as exc:
             raise ManifestValidationError(str(exc)) from exc
@@ -100,14 +100,14 @@ def load_skill_manifest(manifest_path: Path) -> list[dict]:
             {
                 "organization_id": organization_id,
                 "skill_id": skill_id,
-                "owner_teacher_user_id": owner_teacher_user_id,
+                "actor_user_id": actor_user_id,
                 "source_path": normalized_source_path,
             }
         )
     return items
 
 
-def validate_skill_owners(items: list[dict]) -> None:
+def validate_skill_actors(items: list[dict]) -> None:
     with lesson_manager.get_conn() as connection:
         for item in items:
             source_path = Path(item["source_path"])
@@ -120,54 +120,55 @@ def validate_skill_owners(items: list[dict]) -> None:
                 "SELECT id FROM organizations WHERE id=?",
                 (item["organization_id"],),
             ).fetchone()
-            owner = connection.execute(
+            actor = connection.execute(
                 "SELECT organization_id, status FROM users WHERE id=?",
-                (item["owner_teacher_user_id"],),
+                (item["actor_user_id"],),
             ).fetchone()
             if not organization:
                 raise ValueError(
                     f"organization not found: {item['organization_id']}"
                 )
             if (
-                not owner
-                or int(owner["organization_id"] or 0) != item["organization_id"]
-                or str(owner["status"] or "") != "active"
+                not actor
+                or int(actor["organization_id"] or 0) != item["organization_id"]
+                or str(actor["status"] or "") != "active"
             ):
                 raise ValueError(
-                    "skill owner must be active and belong to organization: "
-                    f"{item['owner_teacher_user_id']}"
+                    "skill import actor must be active and belong to organization: "
+                    f"{item['actor_user_id']}"
                 )
 
 
 def import_skill_manifest(manifest_path: Path, *, check_only: bool = False) -> dict:
     items = load_skill_manifest(manifest_path)
-    validate_skill_owners(items)
+    validate_skill_actors(items)
     if check_only:
         return {"checked": len(items), "imported": 0, "skills": []}
     imported = [
-        lesson_manager.import_class_commentary_skill_manifest(**item) for item in items
+        (item, lesson_manager.import_class_commentary_skill_manifest(**item))
+        for item in items
     ]
     return {
         "checked": len(items),
         "imported": len(imported),
         "skills": [
             {
-                "registry_id": item["registry_id"],
-                "organization_id": item["organization_id"],
-                "skill_id": item["skill_id"],
-                "owner_teacher_user_id": item["owner_teacher_user_id"],
-                "active_version_id": item["active_version_id"],
+                "registry_id": result["registry_id"],
+                "organization_id": manifest["organization_id"],
+                "skill_id": manifest["skill_id"],
+                "actor_user_id": manifest["actor_user_id"],
+                "active_version_id": result["active_version_id"],
             }
-            for item in imported
+            for manifest, result in imported
         ],
     }
 
 
-def _legacy_result_item(item: dict, imported: dict) -> dict:
+def _result_item(item: dict, imported: dict) -> dict:
     return {
         "organization_id": item["organization_id"],
         "skill_id": item["skill_id"],
-        "owner_teacher_user_id": item["owner_teacher_user_id"],
+        "actor_user_id": item["actor_user_id"],
         "registry_id": imported["registry_id"],
         "active_version_id": imported["active_version_id"],
     }
@@ -175,13 +176,13 @@ def _legacy_result_item(item: dict, imported: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Import explicit class commentary skill ownership mappings."
+        description="Import class commentary skill packages with an audit actor."
     )
     parser.add_argument("manifest", type=Path)
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Validate files, organizations, and owners without writing.",
+        help="Validate files, organizations, and actors without writing.",
     )
     args = parser.parse_args(argv)
     try:
@@ -199,11 +200,11 @@ def main(argv: list[str] | None = None) -> int:
         with contextlib.redirect_stdout(io.StringIO()):
             lesson_manager.init_db()
         if args.check:
-            validate_skill_owners(items)
+            validate_skill_actors(items)
             result = {"ok": True, "checked": len(items), "imported": 0, "skills": []}
         else:
             imported = [
-                _legacy_result_item(
+                _result_item(
                     item,
                     lesson_manager.import_class_commentary_skill_manifest(**item),
                 )

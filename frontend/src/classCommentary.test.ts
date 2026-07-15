@@ -474,7 +474,8 @@ test('skill evolution versions normalize build status diff evaluation and eligib
       id: 'teacher-style',
       registry_id: 7,
       active_version_id: 101,
-      name: '我的风格',
+      can_manage_evolution: true,
+      name: '曹曦临',
     },
     versions: [{
       id: 102,
@@ -494,8 +495,10 @@ test('skill evolution versions normalize build status diff evaluation and eligib
       evaluation_snapshot: {
         current_metrics: { normalized_edit_distance: 0.4 },
         candidate_metrics: { normalized_edit_distance: 0.2 },
+        change_summary: ['减少重复表述', '先说课堂表现'],
         known_risks: ['一条风险'],
         failed_samples: ['样本 9'],
+        failed_sample_count: 1,
       },
       candidate_build: {
         id: 201,
@@ -544,6 +547,8 @@ test('skill evolution versions normalize build status diff evaluation and eligib
 
   assert.equal(calls[0].path, '/api/class-commentary/skills/teacher-style/versions');
   assert.equal(evolution.skill.active_version_id, 101);
+  assert.equal(evolution.skill.can_manage_evolution, true);
+  assert.equal(evolution.skill.name, '曹曦临');
   assert.equal(evolution.versions[0].id, 102);
   assert.equal(evolution.versions[0].base_content, '当前规则');
   assert.equal(evolution.versions[0].content_diff, '@@ -1 +1 @@');
@@ -551,7 +556,9 @@ test('skill evolution versions normalize build status diff evaluation and eligib
   assert.equal(evolution.versions[0].effective_task_count, 6);
   assert.deepEqual(evolution.versions[0].frozen_revision_ids, [51]);
   assert.equal(evolution.versions[0].evaluation.current_metrics.normalized_edit_distance, 0.4);
+  assert.deepEqual(evolution.versions[0].evaluation.change_summary, ['减少重复表述', '先说课堂表现']);
   assert.deepEqual(evolution.versions[0].evaluation.known_risks, ['一条风险']);
+  assert.equal(evolution.versions[0].evaluation.failed_sample_count, 1);
   assert.equal(evolution.candidate_builds[0].is_terminal, true);
   assert.deepEqual(evolution.candidate_builds[0].frozen_revision_ids, [51]);
   assert.deepEqual(evolution.candidate_builds[0].frozen_evidence_ids, [81]);

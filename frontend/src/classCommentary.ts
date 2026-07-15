@@ -12,6 +12,7 @@ export type ClassCommentarySkill = {
   id: string;
   registry_id?: number;
   active_version_id?: number | null;
+  can_manage_evolution?: boolean;
   name: string;
   filename: string;
   updated_at: string;
@@ -194,8 +195,10 @@ export type ClassCommentarySkillCandidateBuild = {
 export type ClassCommentarySkillEvaluation = {
   current_metrics: Record<string, unknown>;
   candidate_metrics: Record<string, unknown>;
+  change_summary: string[];
   known_risks: string[];
   failed_samples: string[];
+  failed_sample_count: number;
 };
 
 export type ClassCommentarySkillVersion = {
@@ -420,6 +423,9 @@ function normalizeClassCommentarySkill(item: unknown): ClassCommentarySkill {
     id: stringValue(record.id || record.skill_id),
     registry_id: numberValue(record.registry_id),
     active_version_id: nullableNumberValue(record.active_version_id),
+    can_manage_evolution: record.can_manage_evolution === undefined
+      ? undefined
+      : booleanValue(record.can_manage_evolution),
     name: stringValue(record.name),
     filename: stringValue(record.filename),
     updated_at: stringValue(record.updated_at),
@@ -593,13 +599,17 @@ function normalizeClassCommentarySkillCandidateBuild(source: Record<string, unkn
 
 function normalizeClassCommentarySkillEvaluation(source: Record<string, unknown>): ClassCommentarySkillEvaluation {
   const metrics = recordValue(source.metrics);
+  const failedSamples = stringArrayValue(source.failed_samples || source.failures);
   return {
     current_metrics: recordValue(source.current_metrics || source.current || metrics.current),
     candidate_metrics: recordValue(
       source.candidate_metrics || source.candidate || metrics.candidate || source.metrics || source,
     ),
+    change_summary: stringArrayValue(source.change_summary || source.changes),
     known_risks: stringArrayValue(source.known_risks || source.risks),
-    failed_samples: stringArrayValue(source.failed_samples || source.failures),
+    failed_samples: failedSamples,
+    failed_sample_count: numberValue(source.failed_sample_count || source.failed_samples_count)
+      || failedSamples.length,
   };
 }
 

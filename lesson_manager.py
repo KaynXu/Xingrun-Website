@@ -87,7 +87,7 @@ CLASS_COMMENTARY_LEARNING_EVIDENCE_SELECTOR_VERSION = "class-commentary-learning
 CLASS_COMMENTARY_MEMORY_EXTRACTOR_VERSION = "class-commentary-memory-extractor-v1"
 CLASS_COMMENTARY_MEMORY_SCHEMA_VERSION = "class-commentary-memory-v1"
 CLASS_COMMENTARY_MEMORY_NORMALIZATION_VERSION = "class-commentary-memory-normalization-v1"
-CLASS_COMMENTARY_SKILL_SELECTION_POLICY_VERSION = "class-commentary-skill-selection-v1"
+CLASS_COMMENTARY_SKILL_SELECTION_POLICY_VERSION = "class-commentary-skill-selection-v2"
 WECHAT_CHILD_REASON_INPUT_MODES = {"text", "voice"}
 PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED = "未分类"
 PRIMARY_WRONG_QUESTION_TOPIC_PRESETS = (
@@ -2377,13 +2377,24 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
+    skill_columns = {
+        str(row["name"])
+        for row in conn.execute("PRAGMA table_info(class_commentary_skills)").fetchall()
+    }
+    if "owner_teacher_user_id" in skill_columns and "imported_by_user_id" not in skill_columns:
+        conn.execute("DROP INDEX IF EXISTS idx_class_commentary_skills_owner")
+        conn.execute(
+            "ALTER TABLE class_commentary_skills "
+            "RENAME COLUMN owner_teacher_user_id TO imported_by_user_id"
+        )
+
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS class_commentary_skills (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             skill_id TEXT NOT NULL,
-            owner_teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+            imported_by_user_id INTEGER NOT NULL REFERENCES users(id),
             source_type TEXT NOT NULL,
             source_path TEXT,
             source_content_hash TEXT NOT NULL,
@@ -2422,6 +2433,7 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
             skill_registry_id INTEGER NOT NULL REFERENCES class_commentary_skills(id) ON DELETE CASCADE,
+            requested_by_user_id INTEGER REFERENCES users(id),
             candidate_request_id TEXT NOT NULL,
             candidate_payload_hash TEXT NOT NULL,
             expected_active_version_id INTEGER NOT NULL REFERENCES class_commentary_skill_versions(id),
@@ -2859,8 +2871,8 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_class_commentary_revisions_task_confirmed
         ON class_commentary_revisions (task_id, revision_no DESC);
 
-        CREATE INDEX IF NOT EXISTS idx_class_commentary_skills_owner
-        ON class_commentary_skills (organization_id, owner_teacher_user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_skills_organization_status
+        ON class_commentary_skills (organization_id, status, skill_id);
 
         CREATE INDEX IF NOT EXISTS idx_class_commentary_skill_candidate_dispatch
         ON class_commentary_skill_candidate_builds (status, next_attempt_at, created_at);
@@ -2875,18 +2887,6 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
         BEFORE UPDATE ON class_commentary_skill_candidate_revisions
         BEGIN
             SELECT RAISE(ABORT, 'candidate revision snapshot is immutable');
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS trg_class_commentary_candidate_build_source_immutable
-        BEFORE UPDATE OF organization_id, skill_registry_id, candidate_request_id,
-                         candidate_payload_hash, expected_active_version_id,
-                         base_version_id, source_cutoff_at, selection_policy_version,
-                         min_effective_tasks, min_support_tasks,
-                         source_snapshot_hash, effective_task_count,
-                         supporting_task_count
-        ON class_commentary_skill_candidate_builds
-        BEGIN
-            SELECT RAISE(ABORT, 'candidate build source snapshot is immutable');
         END;
 
         CREATE TRIGGER IF NOT EXISTS trg_class_commentary_candidate_evidence_immutable
@@ -2942,6 +2942,65 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
         "class_commentary_generations",
         "execution_snapshot_finalized_at",
         "TEXT",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_skill_candidate_builds",
+        "requested_by_user_id",
+        "INTEGER REFERENCES users(id)",
+    )
+    conn.executescript(
+        """
+        DROP TRIGGER IF EXISTS trg_class_commentary_candidate_build_source_immutable;
+        CREATE TRIGGER trg_class_commentary_candidate_build_source_immutable
+        BEFORE UPDATE OF organization_id, skill_registry_id, requested_by_user_id,
+                         candidate_request_id, candidate_payload_hash,
+                         expected_active_version_id, base_version_id,
+                         source_cutoff_at, selection_policy_version,
+                         min_effective_tasks, min_support_tasks,
+                         source_snapshot_hash, effective_task_count,
+                         supporting_task_count
+        ON class_commentary_skill_candidate_builds
+        BEGIN
+            SELECT RAISE(ABORT, 'candidate build source snapshot is immutable');
+        END;
+        """
+    )
+    conn.execute(
+        """
+        UPDATE class_commentary_skill_candidate_builds
+        SET status='obsolete', claim_token=NULL, claim_owner=NULL,
+            next_attempt_at=NULL, last_error='selection_policy_changed',
+            completed_at=COALESCE(completed_at, datetime('now','localtime'))
+        WHERE selection_policy_version<>?
+          AND (
+              status IN ('queued','running','retry_wait')
+              OR (
+                  status='succeeded'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM class_commentary_skill_versions AS version
+                      WHERE version.id=class_commentary_skill_candidate_builds.candidate_version_id
+                        AND version.review_status='pending'
+                  )
+              )
+          )
+        """,
+        (CLASS_COMMENTARY_SKILL_SELECTION_POLICY_VERSION,),
+    )
+    conn.execute(
+        """
+        UPDATE class_commentary_skill_versions
+        SET review_status='rejected',
+            reviewed_at=COALESCE(reviewed_at, datetime('now','localtime'))
+        WHERE review_status='pending'
+          AND candidate_build_id IN (
+              SELECT id
+              FROM class_commentary_skill_candidate_builds
+              WHERE selection_policy_version<>?
+          )
+        """,
+        (CLASS_COMMENTARY_SKILL_SELECTION_POLICY_VERSION,),
     )
     _ensure_column(
         conn,
@@ -8537,7 +8596,7 @@ def _serialize_class_commentary_skill_row(row: sqlite3.Row) -> dict:
         "skill_id": skill_id,
         "name": _class_commentary_skill_display_name(skill_id, source_path),
         "organization_id": int(item["organization_id"]),
-        "owner_teacher_user_id": int(item["owner_teacher_user_id"]),
+        "imported_by_user_id": int(item["imported_by_user_id"]),
         "source_type": str(item["source_type"]),
         "source_path": source_path,
         "filename": Path(source_path).name if source_path else "",
@@ -8558,7 +8617,7 @@ def _class_commentary_skill_select_sql() -> str:
         SELECT registry.id AS registry_id,
                registry.organization_id,
                registry.skill_id,
-               registry.owner_teacher_user_id,
+               registry.imported_by_user_id,
                registry.source_type,
                registry.source_path,
                registry.source_content_hash,
@@ -8578,21 +8637,19 @@ def _class_commentary_skill_select_sql() -> str:
     """
 
 
-def _get_class_commentary_skill_for_teacher_conn(
+def _get_class_commentary_skill_for_organization_conn(
     conn: sqlite3.Connection,
     organization_id: int,
-    owner_teacher_user_id: int,
     skill_id: str,
 ):
     return conn.execute(
         f"""
         {_class_commentary_skill_select_sql()}
         WHERE registry.organization_id=?
-          AND registry.owner_teacher_user_id=?
           AND registry.skill_id=?
           AND registry.status='active'
         """,
-        (organization_id, owner_teacher_user_id, str(skill_id or "").strip()),
+        (organization_id, str(skill_id or "").strip()),
     ).fetchone()
 
 
@@ -8600,7 +8657,7 @@ def import_class_commentary_skill_manifest(
     *,
     organization_id: int,
     skill_id: str,
-    owner_teacher_user_id: int,
+    actor_user_id: int,
     source_path: str,
     content: Optional[str] = None,
 ) -> dict:
@@ -8615,7 +8672,6 @@ def import_class_commentary_skill_manifest(
     activation_request_id = f"initial-import:{organization_id}:{normalized_skill_id}"
     activation_payload = {
         "organization_id": int(organization_id),
-        "owner_teacher_user_id": int(owner_teacher_user_id),
         "skill_id": normalized_skill_id,
         "source_content_hash": content_hash,
         "source_path": resolved_source_path,
@@ -8632,18 +8688,18 @@ def import_class_commentary_skill_manifest(
         ).fetchone()
         if not organization:
             raise ValueError("organization not found")
-        owner = conn.execute(
+        actor = conn.execute(
             "SELECT organization_id, status FROM users WHERE id=?",
-            (owner_teacher_user_id,),
+            (actor_user_id,),
         ).fetchone()
-        if not owner or int(owner["organization_id"] or 0) != int(organization_id):
-            raise ValueError("skill owner must belong to organization")
-        if str(owner["status"] or "") != "active":
-            raise ValueError("skill owner must be active")
+        if not actor or int(actor["organization_id"] or 0) != int(organization_id):
+            raise ValueError("skill import actor must belong to organization")
+        if str(actor["status"] or "") != "active":
+            raise ValueError("skill import actor must be active")
 
         existing = conn.execute(
             """
-            SELECT id, owner_teacher_user_id, source_type, source_path,
+            SELECT id, imported_by_user_id, source_type, source_path,
                    source_content_hash, active_version_id, status
             FROM class_commentary_skills
             WHERE organization_id=? AND skill_id=?
@@ -8660,8 +8716,7 @@ def import_class_commentary_skill_manifest(
                 (existing["id"], organization_id),
             ).fetchone()
             exact_match = bool(
-                int(existing["owner_teacher_user_id"]) == int(owner_teacher_user_id)
-                and existing["source_type"] == "external_skill_package"
+                existing["source_type"] == "external_skill_package"
                 and str(existing["source_path"] or "") == resolved_source_path
                 and existing["source_content_hash"] == content_hash
                 and existing["status"] == "active"
@@ -8673,10 +8728,9 @@ def import_class_commentary_skill_manifest(
             )
             if not exact_match:
                 raise ClassCommentarySkillImportConflict("skill import conflicts with existing registry")
-            row = _get_class_commentary_skill_for_teacher_conn(
+            row = _get_class_commentary_skill_for_organization_conn(
                 conn,
                 organization_id,
-                owner_teacher_user_id,
                 normalized_skill_id,
             )
             if not row:
@@ -8686,7 +8740,7 @@ def import_class_commentary_skill_manifest(
         cursor = conn.execute(
             """
             INSERT INTO class_commentary_skills (
-                organization_id, skill_id, owner_teacher_user_id, source_type,
+                organization_id, skill_id, imported_by_user_id, source_type,
                 source_path, source_content_hash, active_version_id, status
             )
             VALUES (?, ?, ?, 'external_skill_package', ?, ?, NULL, 'active')
@@ -8694,7 +8748,7 @@ def import_class_commentary_skill_manifest(
             (
                 organization_id,
                 normalized_skill_id,
-                owner_teacher_user_id,
+                actor_user_id,
                 resolved_source_path,
                 content_hash,
             ),
@@ -8737,13 +8791,12 @@ def import_class_commentary_skill_manifest(
                 activation_request_id,
                 activation_payload_hash,
                 version_id,
-                owner_teacher_user_id,
+                actor_user_id,
             ),
         )
-        row = _get_class_commentary_skill_for_teacher_conn(
+        row = _get_class_commentary_skill_for_organization_conn(
             conn,
             organization_id,
-            owner_teacher_user_id,
             normalized_skill_id,
         )
         if not row:
@@ -8751,40 +8804,34 @@ def import_class_commentary_skill_manifest(
         return _serialize_class_commentary_skill_row(row)
 
 
-def list_class_commentary_skills_for_teacher(
-    organization_id: int,
-    owner_teacher_user_id: int,
-) -> list[dict]:
+def list_class_commentary_skills_for_organization(organization_id: int) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             f"""
             {_class_commentary_skill_select_sql()}
             WHERE registry.organization_id=?
-              AND registry.owner_teacher_user_id=?
               AND registry.status='active'
             ORDER BY registry.skill_id COLLATE NOCASE
             """,
-            (organization_id, owner_teacher_user_id),
+            (organization_id,),
         ).fetchall()
     return [_serialize_class_commentary_skill_row(row) for row in rows]
 
 
-def get_class_commentary_skill_for_teacher(
+def get_class_commentary_skill_for_organization(
     organization_id: int,
-    owner_teacher_user_id: int,
     skill_id: str,
 ) -> Optional[dict]:
     with get_conn() as conn:
-        row = _get_class_commentary_skill_for_teacher_conn(
+        row = _get_class_commentary_skill_for_organization_conn(
             conn,
             organization_id,
-            owner_teacher_user_id,
             skill_id,
         )
     return _serialize_class_commentary_skill_row(row) if row else None
 
 
-def _get_class_commentary_skill_registry_for_owner_conn(
+def _get_class_commentary_skill_registry_for_actor_conn(
     conn: sqlite3.Connection,
     *,
     organization_id: int,
@@ -8796,21 +8843,19 @@ def _get_class_commentary_skill_registry_for_owner_conn(
         raise ValueError("skill_id is required")
     registry = conn.execute(
         """
-        SELECT registry.*, owner.organization_id AS owner_organization_id,
-               owner.status AS owner_status
+        SELECT registry.*, actor.organization_id AS actor_organization_id,
+               actor.status AS actor_status
         FROM class_commentary_skills AS registry
-        JOIN users AS owner ON owner.id=registry.owner_teacher_user_id
+        JOIN users AS actor ON actor.id=?
         WHERE registry.organization_id=? AND registry.skill_id=?
         """,
-        (organization_id, normalized_skill_id),
+        (actor_user_id, organization_id, normalized_skill_id),
     ).fetchone()
     if not registry:
         raise LookupError("class commentary skill not found")
-    if int(registry["owner_teacher_user_id"]) != int(actor_user_id):
-        raise PermissionError("class commentary skill owner required")
     if (
-        int(registry["owner_organization_id"] or 0) != int(organization_id)
-        or str(registry["owner_status"] or "") != "active"
+        int(registry["actor_organization_id"] or 0) != int(organization_id)
+        or str(registry["actor_status"] or "") != "active"
         or str(registry["status"] or "") != "active"
     ):
         raise PermissionError("class commentary skill is not available")
@@ -8869,7 +8914,6 @@ def _class_commentary_candidate_effective_revision_rows_conn(
     *,
     organization_id: int,
     skill_registry_id: int,
-    owner_teacher_user_id: int,
 ) -> list[sqlite3.Row]:
     return conn.execute(
         """
@@ -8913,7 +8957,6 @@ def _class_commentary_candidate_effective_revision_rows_conn(
           ON generation.id=revision.generation_id
          AND generation.task_id=task.id
         WHERE task.organization_id=?
-          AND task.teacher_user_id=?
           AND revision.organization_id=task.organization_id
           AND revision.teacher_user_id=task.teacher_user_id
           AND generation.organization_id=task.organization_id
@@ -8925,7 +8968,7 @@ def _class_commentary_candidate_effective_revision_rows_conn(
           AND generation.status='succeeded'
         ORDER BY task.id
         """,
-        (organization_id, owner_teacher_user_id, skill_registry_id),
+        (organization_id, skill_registry_id),
     ).fetchall()
 
 
@@ -8934,7 +8977,6 @@ def _class_commentary_candidate_evidence_rows_conn(
     *,
     organization_id: int,
     skill_registry_id: int,
-    owner_teacher_user_id: int,
     revision_ids: list[int],
 ) -> list[sqlite3.Row]:
     if not revision_ids:
@@ -8959,8 +9001,8 @@ def _class_commentary_candidate_evidence_rows_conn(
           ON revision.id=evidence.revision_id
         WHERE evidence.organization_id=?
           AND evidence.revision_id IN ({placeholders})
-          AND evidence.source_teacher_user_id=?
           AND evidence.source_skill_registry_id=?
+          AND evidence.source_teacher_user_id=revision.teacher_user_id
           AND evidence.status='active'
           AND revision.learn_requested=1
           AND revision.accepted_without_edit=0
@@ -8972,7 +9014,6 @@ def _class_commentary_candidate_evidence_rows_conn(
         [
             organization_id,
             *revision_ids,
-            owner_teacher_user_id,
             skill_registry_id,
             skill_registry_id,
         ],
@@ -9039,6 +9080,8 @@ def _serialize_class_commentary_skill_candidate_build_row(row: sqlite3.Row) -> d
         "attempt_count",
     ):
         item[field] = int(item[field])
+    if item.get("requested_by_user_id") is not None:
+        item["requested_by_user_id"] = int(item["requested_by_user_id"])
     if item.get("candidate_version_id") is not None:
         item["candidate_version_id"] = int(item["candidate_version_id"])
     return item
@@ -9066,18 +9109,12 @@ def _class_commentary_candidate_source_status_conn(
     ).fetchone()
     if not registry or int(registry["organization_id"]) != int(build["organization_id"]):
         return False, "registry_scope_mismatch"
-    owner = conn.execute(
-        "SELECT organization_id, status FROM users WHERE id=?",
-        (registry["owner_teacher_user_id"],),
-    ).fetchone()
+    if str(build["selection_policy_version"] or "") != (
+        CLASS_COMMENTARY_SKILL_SELECTION_POLICY_VERSION
+    ):
+        return False, "selection_policy_mismatch"
     if str(registry["status"] or "") != "active":
         return False, "registry_not_active"
-    if (
-        not owner
-        or int(owner["organization_id"] or 0) != int(build["organization_id"])
-        or str(owner["status"] or "") != "active"
-    ):
-        return False, "skill_owner_not_active"
     active_version_id = int(registry["active_version_id"] or 0)
     allowed_active_version_ids = {int(build["base_version_id"])}
     if allow_candidate_active and build["candidate_version_id"] is not None:
@@ -9155,9 +9192,7 @@ def _class_commentary_candidate_source_status_conn(
         if (
             int(row["generation_organization_id"] or 0) != int(build["organization_id"])
             or int(row["revision_teacher_user_id"] or 0)
-            != int(registry["owner_teacher_user_id"])
-            or int(row["generation_teacher_user_id"] or 0)
-            != int(registry["owner_teacher_user_id"])
+            != int(row["generation_teacher_user_id"] or 0)
             or int(row["skill_registry_id"] or 0) != int(build["skill_registry_id"])
             or str(row["origin"] or "") != "runtime"
             or str(row["snapshot_completeness"] or "") != "complete"
@@ -9233,7 +9268,7 @@ def _class_commentary_candidate_source_status_conn(
             or int(row["source_skill_registry_id"] or 0)
             != int(build["skill_registry_id"])
             or int(row["source_teacher_user_id"] or 0)
-            != int(registry["owner_teacher_user_id"])
+            != int(candidate_revision["revision_teacher_user_id"] or 0)
         ):
             return False, "supporting_evidence_scope_mismatch"
         memory_record_id = int(row["memory_record_id"])
@@ -9332,7 +9367,7 @@ def get_class_commentary_skill_candidate_eligibility(
     if effective_threshold < 1 or support_threshold < 1:
         raise ValueError("skill candidate thresholds must be positive")
     with get_conn() as conn:
-        registry = _get_class_commentary_skill_registry_for_owner_conn(
+        registry = _get_class_commentary_skill_registry_for_actor_conn(
             conn,
             organization_id=organization_id,
             actor_user_id=actor_user_id,
@@ -9342,13 +9377,11 @@ def get_class_commentary_skill_candidate_eligibility(
             conn,
             organization_id=organization_id,
             skill_registry_id=int(registry["id"]),
-            owner_teacher_user_id=actor_user_id,
         )
         evidence_rows = _class_commentary_candidate_evidence_rows_conn(
             conn,
             organization_id=organization_id,
             skill_registry_id=int(registry["id"]),
-            owner_teacher_user_id=actor_user_id,
             revision_ids=[int(row["revision_id"]) for row in revision_rows],
         )
     task_id_by_revision_id = {
@@ -9416,7 +9449,7 @@ def create_class_commentary_skill_candidate_build(
         raise ValueError("selection_policy_version is required")
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        registry = _get_class_commentary_skill_registry_for_owner_conn(
+        registry = _get_class_commentary_skill_registry_for_actor_conn(
             conn,
             organization_id=organization_id,
             actor_user_id=actor_user_id,
@@ -9461,14 +9494,12 @@ def create_class_commentary_skill_candidate_build(
             conn,
             organization_id=organization_id,
             skill_registry_id=int(registry["id"]),
-            owner_teacher_user_id=actor_user_id,
         )
         revision_ids = [int(row["revision_id"]) for row in revision_rows]
         evidence_rows = _class_commentary_candidate_evidence_rows_conn(
             conn,
             organization_id=organization_id,
             skill_registry_id=int(registry["id"]),
-            owner_teacher_user_id=actor_user_id,
             revision_ids=revision_ids,
         )
         task_id_by_revision_id = {
@@ -9539,17 +9570,19 @@ def create_class_commentary_skill_candidate_build(
         cursor = conn.execute(
             """
             INSERT INTO class_commentary_skill_candidate_builds (
-                organization_id, skill_registry_id, candidate_request_id,
+                organization_id, skill_registry_id, requested_by_user_id,
+                candidate_request_id,
                 candidate_payload_hash, expected_active_version_id,
                 base_version_id, source_cutoff_at, selection_policy_version,
                 min_effective_tasks, min_support_tasks, source_snapshot_hash,
                 effective_task_count, supporting_task_count, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')
             """,
             (
                 organization_id,
                 registry["id"],
+                actor_user_id,
                 normalized_request_id,
                 payload_hash,
                 expected_version_id,
@@ -9626,14 +9659,16 @@ def get_class_commentary_skill_candidate_build(
         ):
             return None
         if actor_user_id is not None:
-            registry = conn.execute(
-                "SELECT owner_teacher_user_id FROM class_commentary_skills WHERE id=?",
-                (build["skill_registry_id"],),
+            actor = conn.execute(
+                "SELECT organization_id, status FROM users WHERE id=?",
+                (actor_user_id,),
             ).fetchone()
-            if not registry or int(registry["owner_teacher_user_id"]) != int(
-                actor_user_id
+            if (
+                not actor
+                or int(actor["organization_id"] or 0) != int(build["organization_id"])
+                or str(actor["status"] or "") != "active"
             ):
-                raise PermissionError("class commentary skill owner required")
+                raise PermissionError("class commentary skill is not available")
         return _serialize_class_commentary_skill_candidate_build_conn(conn, build)
 
 
@@ -9731,6 +9766,14 @@ def get_class_commentary_skill_candidate_build_input(
                 build["skill_registry_id"],
             ),
         ).fetchone()
+        registry = conn.execute(
+            """
+            SELECT skill_id, source_path
+            FROM class_commentary_skills
+            WHERE id=? AND organization_id=?
+            """,
+            (build["skill_registry_id"], build["organization_id"]),
+        ).fetchone()
         revision_rows = conn.execute(
             """
             SELECT candidate_revision.id AS candidate_revision_id,
@@ -9805,6 +9848,15 @@ def get_class_commentary_skill_candidate_build_input(
         revision_samples.append(sample)
     return {
         "build": _serialize_class_commentary_skill_candidate_build_row(build),
+        "skill": {
+            "skill_id": str(registry["skill_id"]),
+            "name": _class_commentary_skill_display_name(
+                str(registry["skill_id"]),
+                str(registry["source_path"] or ""),
+            ),
+        }
+        if registry
+        else None,
         "base_version": dict(base_version) if base_version else None,
         "revision_samples": revision_samples,
         "style_evidence": [dict(row) for row in evidence_rows],
@@ -10085,14 +10137,14 @@ def _serialize_class_commentary_skill_version_conn(
     return item
 
 
-def list_class_commentary_skill_versions_for_teacher(
+def list_class_commentary_skill_versions(
     *,
     organization_id: int,
     skill_id: str,
     actor_user_id: int,
 ) -> list[dict]:
     with get_conn() as conn:
-        registry = _get_class_commentary_skill_registry_for_owner_conn(
+        registry = _get_class_commentary_skill_registry_for_actor_conn(
             conn,
             organization_id=organization_id,
             actor_user_id=actor_user_id,
@@ -10171,7 +10223,7 @@ def _change_class_commentary_skill_active_version(
         raise ValueError("rollback target must differ from the active version")
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        registry = _get_class_commentary_skill_registry_for_owner_conn(
+        registry = _get_class_commentary_skill_registry_for_actor_conn(
             conn,
             organization_id=organization_id,
             actor_user_id=actor_user_id,
@@ -10554,14 +10606,13 @@ def reserve_class_commentary_generation(
             "SELECT skill_id FROM class_commentary_skills WHERE id=?",
             (skill_registry_id,),
         ).fetchone()
-        skill = _get_class_commentary_skill_for_teacher_conn(
+        skill = _get_class_commentary_skill_for_organization_conn(
             conn,
             organization_id,
-            teacher_user_id,
             str(registry["skill_id"]) if registry else "",
         )
         if not skill or int(skill["registry_id"]) != int(skill_registry_id):
-            raise ValueError("skill registry is not active or is not owned by task teacher")
+            raise ValueError("skill registry is not active in the task organization")
         skill_content = str(skill["content"])
         skill_content_hash = _class_commentary_content_hash(skill_content)
         if skill_content_hash != str(skill["content_hash"]):
@@ -11335,7 +11386,7 @@ def _class_commentary_memory_learning_scope_status_conn(
         return False, "teacher_not_active"
     registry = conn.execute(
         """
-        SELECT organization_id, owner_teacher_user_id, status
+        SELECT organization_id, status
         FROM class_commentary_skills
         WHERE id=?
         """,
@@ -11344,8 +11395,6 @@ def _class_commentary_memory_learning_scope_status_conn(
     if (
         not registry
         or int(registry["organization_id"] or 0) != organization_id
-        or int(registry["owner_teacher_user_id"] or 0)
-        != int(generation["teacher_user_id"] or 0)
         or str(registry["status"] or "") != "active"
     ):
         return False, "skill_not_active"
@@ -13888,7 +13937,7 @@ def _prepare_class_commentary_memory_cleanup_for_scope_conn(
 
     candidate_scope_sql = {
         "organization": "1=1",
-        "teacher": "registry.owner_teacher_user_id=?",
+        "teacher": "revision.teacher_user_id=?",
         "task": "candidate_revision.task_id=?",
         "class": "generation.class_id=?",
         "student": """
@@ -13904,7 +13953,6 @@ def _prepare_class_commentary_memory_cleanup_for_scope_conn(
         f"""
         SELECT DISTINCT build.id
         FROM class_commentary_skill_candidate_builds AS build
-        JOIN class_commentary_skills AS registry ON registry.id=build.skill_registry_id
         LEFT JOIN class_commentary_skill_candidate_revisions AS candidate_revision
           ON candidate_revision.candidate_build_id=build.id
         LEFT JOIN class_commentary_revisions AS revision
@@ -15720,7 +15768,13 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> dict:
             SELECT 1
             WHERE EXISTS (
                 SELECT 1 FROM class_commentary_skills
-                WHERE owner_teacher_user_id=?
+                WHERE imported_by_user_id=?
+            ) OR EXISTS (
+                SELECT 1 FROM class_commentary_skill_activation_events
+                WHERE actor_user_id=?
+            ) OR EXISTS (
+                SELECT 1 FROM class_commentary_skill_candidate_builds
+                WHERE requested_by_user_id=?
             ) OR EXISTS (
                 SELECT 1 FROM class_commentary_memory_records
                 WHERE created_by_teacher_user_id=?
@@ -15747,6 +15801,8 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> dict:
             )
             """,
             (
+                target_user_id,
+                target_user_id,
                 target_user_id,
                 target_user_id,
                 target_user_id,
@@ -15787,14 +15843,6 @@ def delete_user_for_actor(actor_user: dict, target_user_id: int) -> dict:
         conn.execute("DELETE FROM monthly_plan_jobs WHERE user_id=?", (target_user_id,))
         conn.execute("DELETE FROM user_classes WHERE user_id=?", (target_user_id,))
         if has_commentary_history:
-            conn.execute(
-                """
-                UPDATE class_commentary_skills
-                SET status='disabled', updated_at=datetime('now','localtime')
-                WHERE owner_teacher_user_id=? AND status='active'
-                """,
-                (target_user_id,),
-            )
             conn.execute(
                 "UPDATE users SET status='inactive' WHERE id=?",
                 (target_user_id,),

@@ -2,7 +2,7 @@
 
 日期: 2026-07-14
 
-状态: 设计 v3, 待最终确认后进入实现
+状态: 已按生产 Skill 事实校正, 实现与验证中
 
 ## 1. 背景
 
@@ -17,7 +17,7 @@
 5. Mem0 从确认样本中提取老师表达偏好和学生历史事实.
 6. 后续生成通过 Mem0 检索相关记忆并注入上下文.
 7. 多次确认修改形成稳定规律后, 系统生成对应 skill 的候选新版本.
-8. 老师本人查看差异和评测结果, 决定启用或回滚.
+8. 同机构有权限的老师查看人话版更新摘要和自动检查结果, 决定使用或恢复历史版本.
 
 本设计只依据当前课堂点评实现, 2026-07-11 会议需求和本轮确认结论. 历史课堂反馈设计不作为本功能的需求来源.
 
@@ -35,21 +35,21 @@ Mem0 底层仍需要向量存储和 embedding 服务. 这些属于 Mem0 的运�
 
 现有错题知识标签和掌握度仍可作为学生记忆证据写入 Mem0. 将来如果建立统一知识点目录, 可以在不改变本设计事件模型的情况下增加知识图谱.
 
-### 2.3 不存在公共 skill
+### 2.3 不存在匿名公共 skill
 
-每个 `skill_id` 对应一个具体老师的蒸馏 skill. 不设计公共 skill, 个人 fork 或机构级共享升级.
+每个 `skill_id` 对应一个具体同事的蒸馏 skill, 显示身份来自同事 Skill package. 它不是匿名公共模板, 也不归当前登录老师所有.
 
-老师确认的修改只影响当前任务使用的 `skill_id`. 不同 skill 之间不共享风格记忆和进化证据.
+同一机构内的老师可以选择这些同事 Skill 生成反馈. 老师确认的修改只影响当前任务实际选择的 `skill_registry_id`. 使用同一个同事 Skill 的不同老师会共同形成该 Skill 的风格记忆和进化证据, 不同 Skill 之间不共享.
 
-### 2.4 老师本人是唯一确认人
+### 2.4 操作老师和 Skill 对应同事是两个身份
 
-编辑者和 skill 对应老师是同一人. 只有老师本人提交的确认结果可以进入学习和 skill 进化证据.
+当前任务老师只能编辑和确认自己的任务. Skill 对应同事只定义蒸馏风格身份, 不等于当前任务老师. 确认记录保存实际操作老师用于审计, 学习范围由该 generation 冻结的 `skill_registry_id`决定.
 
 ### 2.5 单次修改不直接改写 skill
 
 单次确认修改可以立即更新 Mem0 记忆, 让下一次生成受益. 只有多个独立任务反复支持同一规律时, 才生成 skill 候选版本.
 
-任何 skill 候选都不能自动激活. 激活和回滚均由老师本人操作.
+任何 skill 候选都不能自动使用. 使用新版或恢复历史版本均由同机构有权限的老师显式确认, actor 只作为审计记录.
 
 ### 2.6 学生记忆在机构内按权限共享
 
@@ -76,7 +76,7 @@ Mem0 底层仍需要向量存储和 embedding 服务. 这些属于 Mem0 的运�
 | AI 原稿会被重新生成覆盖 | 每次生成创建 immutable `class_commentary_generations`, revision 必须引用 `generation_id` |
 | 确认幂等缺少数据约束 | `confirmation_request_id`和 payload hash 入 revision, transaction 同时创建 revision, draft sync, task cache 和 extraction job |
 | SQLite 和 Mem0 无法原子双写 | SQLite desired state + item outbox operation + Mem0 worker + reconciliation |
-| Skill owner 无可信来源 | `class_commentary_skills`显式 registry 和一次性 owner manifest import |
+| 把 Skill 错当成当前用户私有 | Registry 身份为 `organization_id + skill_id`, 导入人只做审计, 任务老师与 Skill 身份分离 |
 | 学生记忆范围未决 | 采用 A, 机构内按学生和学科共享, 每次检索实时检查学生访问权 |
 | Active version 没有唯一事实 | Registry `active_version_id` + immutable activation event + CAS |
 | 旧 revision 延迟 job 可能重新学习 | Confirmation 终止旧 job + worker 写入前 latest revision 双门禁 + obsolete 禁止 retry |
@@ -91,9 +91,9 @@ Mem0 底层仍需要向量存储和 embedding 服务. 这些属于 Mem0 的运�
 - 允许老师修改课堂点评并保存草稿.
 - 允许老师显式选择`确认并学习`或`确认但不学习`.
 - 永久保留 AI 原稿, 老师终稿, diff, skill 快照, 课堂上下文和确认时 learning evidence 快照.
-- 从确认修改中学习老师的表达风格, 结构, 长度, 措辞和关注重点.
+- 从确认修改中学习对当前所选同事 Skill 的表达方式, 结构, 长度, 措辞和关注重点调整.
 - 记录与具体学生关联的可靠历史事实和后续关注点.
-- 在后续生成时通过 Mem0 检索老师风格记忆和学生历史记忆.
+- 在后续生成时通过 Mem0 检索当前同事 Skill 的风格记忆和学生历史记忆.
 - 从重复确认规律中生成可评测, 可确认, 可回滚的 skill 候选版本.
 - 保证组织和学生之间的事实隔离, 保证不同 skill 之间的风格隔离, 并只向当前有学生访问权限的老师共享学生事实.
 
@@ -103,7 +103,7 @@ Mem0 底层仍需要向量存储和 embedding 服务. 这些属于 Mem0 的运�
 - 不建设独立于 Mem0 的文档向量库.
 - 不做模型微调或自动训练基础模型.
 - 不把一次修改直接写回外部 `SKILL.md` 文件.
-- 不跨老师或跨 skill 共享风格记忆.
+- 不跨 skill 共享风格记忆. 同一个同事 Skill 下允许汇聚不同任务老师的已确认修改.
 - 不向当前无学生访问权限的老师共享学生记忆.
 - 不从未确认的草稿, 复制动作或输入过程学习.
 - 不使用旧课堂反馈表或恢复旧课堂反馈 API.
@@ -122,7 +122,7 @@ Mem0 保存经过提取的风格记忆和学生记忆, 并负责语义检索. �
 
 ### 4.3 风格和事实严格分离
 
-老师风格记忆只能描述表达方式, 结构, 语气, 长度, 反馈维度和措辞偏好. 其中不能包含学生姓名, 学情事实或一次性课堂内容.
+同事 Skill 风格记忆只能描述表达方式, 结构, 语气, 长度, 反馈维度和措辞偏好. 其中不能包含学生姓名, 学情事实或一次性课堂内容.
 
 学生记忆只能描述该学生的已确认表现, 问题, 改进, 后续动作和证据. 其中不能包含老师的通用表达规则.
 
@@ -510,7 +510,7 @@ Revision 不保存可变化的 memory job 状态或错误. 它通过 `generation
 确认接口必须使用 `BEGIN IMMEDIATE`并在同一个 SQLite transaction 内:
 
 1. 以 `confirmation_request_id + confirmation_payload_hash`检查幂等或冲突.
-2. 确认 generation 已 `succeeded`, 属于同一 task, organization 和 owner, `expected_draft_version`仍为当前 generation 草稿版本; `learn_requested=true`时 generation 还必须是 complete runtime.
+2. 确认 generation 已 `succeeded`, 属于同一 task, organization 和任务老师, `expected_draft_version`仍为当前 generation 草稿版本; `learn_requested=true`时 generation 还必须是 complete runtime.
 3. 按 generation organization, class, subject 和到课 roster 选择错题与掌握度来源, 冻结 deterministic safe summary, source refs 和 hash. `learn_requested=false`保存 canonical empty snapshot.
 4. 原子递增 task `feedback_revision_no`并创建 revision.
 5. 以步骤 2 校验的 expected version CAS upsert 当前 generation 草稿为终稿, 递增 `draft_version`并关联新 revision; 其他 generation 草稿不变. 将 CAS 后 draft version 和完整响应 snapshot 写入本 revision 的 immutable confirmation snapshot.
@@ -527,12 +527,12 @@ Learning snapshot 内保存提取器实际可读的安全摘要文本, 不只是
 
 ### 8.5 `class_commentary_skills`
 
-这是 skill 归属和 active 指针的唯一 registry:
+这是同事 skill 身份和 active 指针的唯一 registry:
 
 - `id`.
 - `organization_id`.
 - `skill_id`.
-- `owner_teacher_user_id`.
+- `imported_by_user_id`, 仅记录首次登记操作人, 不表达 Skill 所有权或访问范围.
 - `source_type`: `external_skill_package`或`database`.
 - `source_path` nullable.
 - `source_content_hash`.
@@ -547,13 +547,13 @@ Learning snapshot 内保存提取器实际可读的安全摘要文本, 不只是
 UNIQUE(organization_id, skill_id)
 ```
 
-不能从文件名, 前端参数或最近使用者推断 owner. 现有外部 skill 必须通过一次性 import 明确绑定 `organization_id` 和 `owner_teacher_user_id`, 并把文件内容登记为 version 1. 未登记或 owner 不明确的 skill 不出现在课堂点评 skill 列表, 也不能用于生成.
+Skill 身份由 `organization_id + skill_id`确定, 显示名和内容来自已校验的同事 Skill package. `imported_by_user_id`只记录谁执行首次登记. 当前任务老师, 最近使用者和导入人都不能改变 Skill 身份.
 
 Registry 先以 `active_version_id=NULL`插入, version 1, pointer 和初始 activation event 必须在同一个 SQLite transaction 完成. Transaction 对外提交后, `status=active`的 registry 不允许 NULL pointer.
 
-实现提供一次性 import command, 输入显式 manifest: `organization_id`, `skill_id`, `owner_teacher_user_id`, `source_path`. Command 校验 organization, 用户和文件内容后再登记, 不提供`首次使用者自动成为 owner`的兼容路径. 具体生产 owner mapping 是上线数据准备项, 不阻塞代码开发.
+实现提供 import command, 输入显式 manifest: `organization_id`, `skill_id`, `actor_user_id`, `source_path`. Command 校验 organization, 审计 actor 和文件内容后再登记.
 
-所有 skill 列表, 生成, 候选, 激活和回滚请求都先从 registry 解析并校验当前用户就是 owner. 外部 `SKILL.md`只保留为初始来源, 不由运行时自动覆盖.
+Skill 列表和生成前会从配置目录发现同事 package, 只为当前 organization 自动登记缺失的 registry 和 version 1. 已存在 registry, active pointer 和进化版本永远不被文件扫描覆盖. 所有列表, 生成, 候选, 使用新版和恢复历史版本请求都先校验当前用户是同 organization 的 active user, 跨 organization 一律拒绝.
 
 ### 8.6 `class_commentary_skill_versions`
 
@@ -562,6 +562,7 @@ Registry 先以 `active_version_id=NULL`插入, version 1, pointer 和初始 act
 - `id`.
 - `organization_id`.
 - `skill_registry_id`.
+- `requested_by_user_id`, 仅记录发起整理的操作人.
 - `version_no`.
 - `version_kind`: `imported`, `candidate`.
 - `candidate_build_id` nullable.
@@ -623,7 +624,7 @@ UNIQUE(skill_registry_id, candidate_request_id)
 
 创建 build 的 `BEGIN IMMEDIATE` transaction 必须:
 
-1. 校验 registry owner 和 `expected_active_version_id`.
+1. 校验 actor 与 registry 同 organization, registry active, 以及 `expected_active_version_id`.
 2. 选择目标 skill 每个 task 的 latest effective revision, 每个 task 最多一条.
 3. 只选择 effective revision 对应的 active `teacher_style` evidence.
 4. 使用 `COUNT(DISTINCT task_id)`校验有效任务和风格支持阈值.
@@ -656,7 +657,7 @@ Worker 使用 `BEGIN IMMEDIATE`和 conditional claim 防止重复 enqueue 并发
 UNIQUE(candidate_build_id, task_id)
 ```
 
-Revision 必须是 target registry owner, organization 和 skill 的 latest effective revision. 如果 task 最新 revision 使用另一个 skill, 该 task 不计入当前 skill, 不能回退使用更早 revision.
+Revision 必须来自 target registry organization 和 skill, 且是该 task 的 latest effective revision. Task, generation 和 revision 的实际操作老师必须彼此一致, 但不要求等于 Skill 导入人. 如果 task 最新 revision 使用另一个 skill, 该 task 不计入当前 skill, 不能回退使用更早 revision.
 
 ### 8.9 `class_commentary_skill_candidate_evidence`
 
@@ -704,7 +705,7 @@ UNIQUE(candidate_build_id, candidate_revision_id, memory_record_id)
 UNIQUE(skill_registry_id, activation_request_id)
 ```
 
-Handler 完成登录, organization 和 registry owner 授权后, 才按 registry + request ID 查 event. 已存在且 payload hash 相同时返回原成功结果, payload 不同时返回 `409 Conflict`. 只有 event 不存在的新请求才检查 expected pointer 并执行 CAS.
+Handler 完成登录和 organization registry 授权后, 才按 registry + request ID 查 event. 已存在且 payload hash 相同时返回原成功结果, payload 不同时返回 `409 Conflict`. 只有 event 不存在的新请求才检查 expected pointer 并执行 CAS.
 
 激活在一个 SQLite transaction 内写 event 并使用 compare-and-swap 移动指针:
 
@@ -949,10 +950,10 @@ Migration 必须用 foreign key, `CHECK`约束和 transaction assertion 保证:
 - Task latest generation 必须属于该 task. Latest/previous revision 必须属于同一 task, 且 previous revision 序号更小.
 - Revision 引用同一 task 下已 `succeeded`的 generation.
 - `learn_requested=true`的 revision 必须有 canonical learning evidence snapshot, source refs 和匹配 hash; `learn_requested=false`必须保存 canonical empty snapshot. Snapshot 只能包含 generation roster, organization 和 subject 范围内来源.
-- Generation 的 skill version 属于 skill registry, content hash 与 version 一致, generation teacher 是 registry owner.
-- Skill owner 属于同一 organization, active version 和 base version 属于同一 registry.
+- Generation 的 skill version 属于 skill registry, content hash 与 version 一致, generation teacher 与 task teacher 一致且属于 registry organization.
+- Skill registry, active version 和 base version 属于同一 organization, active version 和 base version 属于同一 registry.
 - Imported version 可以以 `not_required`初始激活. Candidate 只有在评测完成且老师本次确认后, 才能在同一 transaction 把 review status 改为 `approved`并移动 pointer. `pending`或`rejected`不能成为 active version.
-- Candidate build base version 属于同一 registry. Frozen candidate revision 每个 task 最多一条, 必须来自同一 organization, registry 和 owner; candidate evidence 必须关联 frozen revision 且选择时为 active teacher style evidence, 同一 candidate revision 和 memory record 最多一条.
+- Candidate build base version 属于同一 registry. Frozen candidate revision 每个 task 最多一条, 必须来自同一 organization 和 registry, 且每条 task/revision/generation actor 链一致; candidate evidence 必须关联 frozen revision 且选择时为 active teacher style evidence, 同一 candidate revision 和 memory record 最多一条.
 - Candidate version 的 `candidate_build_id`必须指向 succeeded build, source hash 与 build 一致.
 - Memory type 与 style scope 或 student scope 的必填和互斥关系正确.
 - Memory evidence 的 revision, source teacher 和 source skill 必须与 revision -> generation 证据链一致.
@@ -1053,7 +1054,7 @@ POST /api/class-commentary/skills/{skill_id}/versions/{version_id}/activate
 POST /api/class-commentary/skills/{skill_id}/versions/{version_id}/rollback
 ```
 
-Candidate 请求必须包含 `request_id`和`expected_active_version_id`, 并通过 candidate build unique constraint 幂等. 后端自行选择和冻结 revision/evidence, 不接受客户端 source IDs. 激活和回滚请求必须包含同样两个字段. 所有接口必须复用现有认证, 组织范围和班级访问校验. Skill API 和生成 API 都从 registry 解析 owner, 用户只能使用和修改本人 skill.
+Candidate 请求必须包含 `request_id`和`expected_active_version_id`, 并通过 candidate build unique constraint 幂等. 后端自行选择和冻结 revision/evidence, 不接受客户端 source IDs. 使用新版和恢复历史版本请求必须包含同样两个字段. 所有接口必须复用现有认证和 organization 范围校验. 同机构 active user 可以选择和进化已登记的同事 Skill, 跨机构访问返回 404.
 
 ## 10. 后台任务
 
@@ -1063,7 +1064,7 @@ Extraction job 流程:
 
 1. 使用 `revision_id`读取 revision 和其引用的 immutable generation.
 2. Claim 前校验 revision 仍是 task latest effective revision; 否则标记 job `obsolete`并退出.
-3. 校验组织, skill registry 和 owner 证据链完整.
+3. 校验 organization, skill registry 和 task/generation/revision actor 证据链完整.
 4. 读取 generation cumulative diff, previous revision incremental diff 和 immutable learning evidence snapshot, 并校验 extraction input hash.
 5. 调用结构化提取器分类学习信号. 禁止查询实时错题或掌握度表.
 6. 学生映射只能使用 generation 中确认的班级和到课 roster, 不信任 job 参数或前端 student ID.
@@ -1113,7 +1114,7 @@ Effective revision 的统一定义:
 
 老师手动触发后, 后端按 8.7 到 8.9 的规则冻结 candidate build. 候选生成器只能读取 frozen base version, candidate revisions, active style evidence snapshot 和评测规则. 不得重新查询 live revision list, 不得读取学生记忆或把学生事实写入 skill.
 
-版本详情返回 `effective_task_count`, `supporting_task_count`, frozen revision/evidence IDs, `source_cutoff_at`, `selection_policy_version`, `is_stale`和`stale_reason`. UI 使用`支持任务数`, 不显示会重复计权的`支持 revision 数`.
+版本详情返回 `effective_task_count`, `supporting_task_count`, frozen revision/evidence IDs, `source_cutoff_at`, `selection_policy_version`, `is_stale`和`stale_reason`. 这些字段用于后台审计和自动检查, 教师页面不直接展示技术指标.
 
 ## 11. Skill 评测和激活
 
@@ -1135,20 +1136,15 @@ Candidate 创建后的新 task/revision 不改写 evaluation snapshot. Frozen ta
 
 ### 11.3 激活
 
-页面展示:
+页面保持现有反馈结果 Card 和 shadcn 组件, 展示真实同事姓名, 人话版 `change_summary`, 已知风险和失败检查数量. 不展示 raw diff, frozen IDs, 技术指标表或`候选/激活/回滚`术语.
 
-- 当前版本和候选版本 diff.
-- 支持候选修改的 revision 证据.
-- 当前版本和候选版本评测对比.
-- 已知风险和失败样本.
+老师点击确认使用后, 后端先完成登录和 organization registry 授权, 再查 activation event 完成幂等返回或 payload 冲突判断. 对没有 event 的新请求, 校验候选评测已经完成, 每条 frozen revision 仍是对应 task 的 latest effective revision, 每条 frozen supporting evidence 仍 active, version 仍为 `pending`, 且当前 pointer 等于`expected_active_version_id`. 任一来源失效时返回 `409 candidate_stale`, 禁止临时用剩余 live evidence 重算旧候选. 来源仍有效时, 同一个 SQLite transaction 将 review status 改为 `approved`, 使用 CAS 移动 `class_commentary_skills.active_version_id`并创建 activation event. 使用新版不覆盖旧版本.
 
-老师点击确认后, 后端先完成登录, organization 和 registry owner 授权, 再查 activation event 完成幂等返回或 payload 冲突判断. 对没有 event 的新请求, 校验候选评测已经完成, 每条 frozen revision 仍是对应 task 的 latest effective revision, 每条 frozen supporting evidence 仍 active, version 仍为 `pending`, 且当前 pointer 等于`expected_active_version_id`. 任一来源失效时返回 `409 candidate_stale`, 禁止临时用剩余 live evidence 重算旧候选. 来源仍有效时, 同一个 SQLite transaction 将 review status 改为 `approved`, 使用 CAS 移动 `class_commentary_skills.active_version_id`并创建 activation event. 激活操作不覆盖旧版本.
-
-Active version 的 supporting evidence 后续被 supersede 时不自动移动 pointer. 页面把当前评测标记为 stale, 提示老师`基于最新证据重新生成`或回滚; 任何自动回滚都违反本人显式确认原则.
+Active version 的 supporting evidence 后续被 supersede 时不自动移动 pointer. 页面把当前检查标记为 stale, 提示老师重新整理或恢复历史版本; 任何自动恢复都违反显式确认原则.
 
 ### 11.4 回滚
 
-老师可以选择任意历史 active version 回滚. 回滚执行同样的 owner 校验, 幂等和 CAS, 创建新的 activation event, 不删除中间版本和评测记录.
+老师可以选择任意历史 active version 恢复使用. 恢复执行同样的 organization 授权, 幂等和 CAS, 创建新的 activation event, 不删除中间版本和评测记录.
 
 ## 12. Prompt 组装
 
@@ -1192,15 +1188,15 @@ Revision `learning_evidence_snapshot_json`只用于后台学习提取, 不直接
 | 查看 task summary 和最新公开终稿 | 当前班级访问权 |
 | 查看完整 generation prompt, skill snapshot, revision diff, evidence 和学习状态 | `current_user.id == task.teacher_user_id` |
 | 更新或重试转写 | `current_user.id == task.teacher_user_id`, 且当前仍有班级访问权 |
-| 生成或重新生成 | `current_user.id == task.teacher_user_id == skill.owner_teacher_user_id` |
-| 保存草稿或确认 | 当前用户是 task teacher, generation 属于该 task, generation skill owner 也是当前用户 |
+| 生成或重新生成 | 当前用户是 task teacher, 且所选 Skill registry active 并属于当前 organization |
+| 保存草稿或确认 | 当前用户是 task teacher, generation 属于该 task, generation Skill registry 属于当前 organization |
 | 撤销 evidence | 当前用户是 evidence source revision teacher, 且仍有 source task/class 访问权 |
 | 重试学习 | 当前用户是 revision teacher, 且仍有 task/class 访问权 |
-| 创建候选, 激活或回滚 | `current_user.id == skill.owner_teacher_user_id` |
+| 整理更新, 使用新版或恢复历史版本 | 当前用户 active 且与 Skill registry 属于同一 organization |
 
 以上每项还必须满足 resource organization 与当前明确 organization 上下文一致. 本阶段不提供管理员代老师修改, retry 或查看完整证据的例外 API.
 - 非 task owner 的 task summary 使用 public allowlist, 只返回 task, organization, class, teacher, workflow status, `final_feedback_text`, confirmation time 和基础时间戳. 不返回 transcript, 未确认 AI 原稿兼容缓存, audio, skill, generation/revision pointer 或错误详情. Generation 和 revision 列表也只允许 task owner 查看.
-- Skill 列表只返回当前用户在 registry 中拥有的 skill. 未登记 skill 和其他老师的 skill 均不可选择.
+- Skill 列表返回当前 organization 已登记的同事 Skill. 配置目录中缺失的 registry 会在列表或生成前登记, 已存在版本不会被覆盖.
 - Mem0 查询必须强制添加组织 metadata filter.
 - 学生 memory 查询必须同时限制 `organization_id`, `student_id`和 `subject_key`.
 - 学生 memory 检索前按角色实时校验: `member`必须通过当前 `user_classes -> class_students`关系; organization `owner/admin`使用同组织现行班级和学生访问规则; `super_owner`没有默认 memory 权限. 检索还必须确认学生属于本次 generation 的班级和到课 roster. 老师失去访问权后立即停止检索, 不删除其他有权老师仍需使用的共享事实.
@@ -1365,7 +1361,7 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 - Memory job, operation key 和 extractor/schema version 组合幂等.
 - Stale operation 在 version mismatch 时进入 terminal `obsolete`, 不重复重试.
 - Candidate build 每个 task 只能冻结一个 revision, candidate version 只能关联一个 build, frozen revision/evidence 关系约束正确.
-- Registry owner, version 归属, active pointer, activation event 和关系约束正确.
+- Registry organization, 导入审计人, version 归属, active pointer, activation event 和关系约束正确.
 - 并发激活 CAS 只有一个请求成功.
 
 ### 17.2 API
@@ -1376,8 +1372,8 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 - 生成和确认的重复请求不重复创建记录; request ID 相同但 payload 不同返回冲突.
 - In-flight generation 的同 request ID 重试返回原 generation 和 202, 不要求 live skill 仍 active 或原 roster 学生仍在班级, 不调用模型.
 - 不能确认失败 generation, 其他 task 的 generation 或已切换后未明确选择的 generation.
-- 不同组织, 班级和老师的越权请求被拒绝, 只读班级权限不能执行 owner 写操作, 查看 task 时也不能看到 transcript, 未确认 AI 原稿或 generation/revision 列表.
-- 未登记 skill, 非 owner skill 和 organization 不一致的 skill 不能生成或进化.
+- 不同 organization, 班级和任务老师的越权请求被拒绝, 查看他人 task 时不能看到 transcript, 未确认 AI 原稿或 generation/revision 列表.
+- 同 organization 的 active user 可以选择和进化同事 Skill, 未登记或 organization 不一致的 Skill 不能生成或进化.
 - 撤销 memory 和重试 job.
 - Superseded revision, `obsolete` job 和 `integrity_failed` job 的 memory retry 均被拒绝, 不创建 retry event; extraction 已完成但部分 operation 失败时只重试失败 item.
 - Evidence revoke event, Skill 候选, 激活和回滚请求均幂等, payload 冲突返回 409.
@@ -1430,7 +1426,7 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 - 学习状态轮询和失败重试.
 - 学习结果可查看和撤销.
 - 历史任务优先显示最新终稿.
-- Skill 候选 diff, 评测, 激活和回滚流程.
+- Skill 更新的人话摘要, 自动检查, 使用新版和恢复历史版本流程, 页面不暴露 raw diff 和技术指标.
 
 ### 17.7 Worker 和恢复
 
@@ -1462,7 +1458,7 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 - 同一 task 的 3 个 revision 或多条 evidence 不能满足 3 个不同 task 的支持阈值.
 - 3 个不同 task 的 effective revisions 和 active style evidence 可以满足支持阈值.
 - Superseded 或 revoked evidence 不计支持次数; `accepted_without_edit`每 task 只进入一次 evaluation, 不计 style support.
-- 不同 organization, owner 或 skill 的 revision/evidence 不能进入 frozen source set.
+- 不同 organization 或 skill 的 revision/evidence 不能进入 frozen source set; 同一 Skill 下不同 task teacher 的有效修改可以共同进入.
 - Candidate build 创建时永久冻结实际 revision/evidence IDs 和 hashes; 后续新 revision 不改写 snapshot.
 - Frozen task 产生新 revision, supporting evidence 失效或 base pointer 改变后 candidate 为 stale, 激活返回 `409 candidate_stale`.
 - Candidate stale 时不能用剩余 live evidence 临时重算并激活, 必须创建新 build.
@@ -1482,7 +1478,7 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 9. 老师可以查看候选差异和评测, 激活后可以回滚.
 10. 风格记忆不跨 skill; 学生事实按机构, 学生和学科共享, 不跨组织, 学生, 学科或当前访问权限泄漏.
 11. 不建设知识图谱, 不增加第二套独立 RAG.
-12. 每个 skill 有可信 registry owner, active pointer 是唯一事实来源, 未登记或非 owner skill 不能进入生成和进化链路.
+12. 每个 skill 有可信 organization registry 和同事身份, 导入人不拥有 Skill, active pointer 是唯一事实来源, 未登记或跨 organization Skill 不能进入生成和进化链路.
 13. 数据层, API, worker, adapter, 生成和前端测试全部通过.
 14. 任何 superseded revision 的延迟 execution, retry 或 reconciliation 都不能创建或重新激活 active evidence.
 15. 每条学习 evidence 都能还原到 confirmation 时冻结的错题和掌握度安全摘要; 后续源数据变化不改变 extraction, retry 或 rebuild 输入.
@@ -1495,7 +1491,7 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 
 - `classes.subject_key`, skill registry, initial version 和 activation event migration.
 - Generation, per-generation draft, revision 和 task cache migration, 包括把旧 `feedback_text`按真实可用字段回填为 partial legacy generation.
-- 现有 skill 的显式 organization 和 owner 绑定流程.
+- 现有同事 Skill 的 organization registry 登记和导入 actor 审计流程.
 - 生成幂等, immutable snapshot 和重新生成链路.
 - Generation scoped draft CAS API, confirmation draft sync 和 409 conflict contract.
 - 可编辑结果区, generation 切换恢复, 冲突保留本地文本和确认动作.
@@ -1516,7 +1512,7 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 
 - Candidate build, latest effective revision selection, immutable revision/evidence source set 和 distinct task threshold.
 - 候选生成, replay 评测, stale detection 和重新生成流程.
-- Version, activation event, CAS, diff, 激活和回滚 UI.
+- Version, activation event, CAS, 人话更新摘要, 使用新版和恢复历史版本 UI.
 - 激活前后指标对比.
 
 ### 阶段 4: 上线验证
@@ -1532,9 +1528,9 @@ Reconciliation 每 10 分钟通过 `enqueue_in`自排下一次任务. Worker 启
 
 ## 20. 开发 Goal
 
-在不覆盖任何历史生成和老师确认记录的前提下, 完成课堂点评的可编辑确认闭环, 通过 Mem0 提供可撤销, 可恢复, 有权限边界的风格和学生记忆, 并让每位老师自己的 skill 只能经过多样本证据, 评测和本人显式激活后进化.
+在不覆盖任何历史生成和老师确认记录的前提下, 完成课堂点评的可编辑确认闭环, 通过 Mem0 提供可撤销, 可恢复, 有权限边界的风格和学生记忆, 并让每个有明确同事身份的 Skill 只经过同 Skill 多任务证据, 自动评测和同机构老师显式确认后进化.
 
-Codex loop 必须按阶段 1 到阶段 4 顺序执行. 每一阶段完成 schema/API/worker/UI 中该阶段的完整垂直链路和对应测试后再进入下一阶段. 未经用户明确 `go`不得开始实现, 不自动部署, 不操作 `master`.
+Codex loop 必须按阶段 1 到阶段 4 顺序执行. 每一阶段完成 schema/API/worker/UI 中该阶段的完整垂直链路和对应测试后再进入下一阶段. 不自动部署, 不操作 `master`.
 
 ## 21. 设计依据
 

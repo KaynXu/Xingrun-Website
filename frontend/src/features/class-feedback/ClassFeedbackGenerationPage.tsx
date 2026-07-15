@@ -47,7 +47,6 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import type { ClassItem, CurrentUser } from '../../appTypes';
 import {
@@ -85,7 +84,6 @@ import {
   type ClassCommentaryGeneration,
   type ClassCommentaryMemorySummary,
   type ClassCommentarySkillEligibility,
-  type ClassCommentarySkillEvaluation,
   type ClassCommentarySkillEvolution,
   type ClassCommentarySkillVersion,
   type ClassCommentaryTask,
@@ -222,101 +220,53 @@ function classCommentaryMemoryStatusLabel(status: ClassCommentaryMemorySummary['
 
 function classCommentarySkillCandidateStatusLabel(status: ClassCommentarySkillCandidateBuildStatus): string {
   return {
-    queued: '等待生成',
-    running: '生成中',
-    retry_wait: '等待重试',
-    succeeded: '候选已生成',
-    failed: '生成失败',
-    obsolete: '依据已失效',
+    queued: '等待整理',
+    running: '整理中',
+    retry_wait: '稍后重试',
+    succeeded: '新调整已整理',
+    failed: '整理失败',
+    obsolete: '需要重新整理',
   }[status];
 }
 
 function classCommentarySkillEligibilityMessage(eligibility: ClassCommentarySkillEligibility): string {
   if (eligibility.eligible) {
-    return '样本已满足要求, 可以生成一个待审核候选.';
+    return '已经积累到足够的有效修改, 可以让 AI 整理一次更新.';
   }
   if (eligibility.reason === 'insufficient_effective_tasks' || eligibility.reason === 'not_enough_effective_tasks') {
-    return `还需要有效评测任务: ${eligibility.effective_task_count}/${eligibility.min_effective_tasks}.`;
+    return '继续确认并学习修改, AI 会在积累到更多不同课堂后开放整理.';
   }
   if (eligibility.reason === 'insufficient_supporting_tasks' || eligibility.reason === 'not_enough_supporting_tasks') {
-    return `还需要支持同一风格规律的任务: ${eligibility.supporting_task_count}/${eligibility.min_supporting_tasks}.`;
+    return '还需要在更多不同课堂里出现同一类修改, 才会写进同事测评风格.';
   }
   if (eligibility.reason === 'candidate_in_progress' || eligibility.reason === 'build_in_progress') {
-    return '已有候选正在生成, 完成前无需重复创建.';
+    return 'AI 正在整理这次更新, 完成前无需重复操作.';
   }
   if (eligibility.reason === 'active_version_missing') {
-    return '当前风格版本不可用, 暂时不能生成候选.';
+    return '当前同事测评风格暂时不可用.';
   }
-  return '继续积累确认样本后, 才能生成候选版本.';
+  return '继续确认并学习修改, AI 会在规律足够稳定后开放整理.';
 }
 
 function classCommentarySkillStaleMessage(reason: string): string {
   return {
-    base_version_changed: '当前生效版本已经变化, 请基于最新版本重新生成候选.',
-    revision_not_effective: '候选使用的反馈样本已有新版, 请重新生成候选.',
-    supporting_evidence_not_active: '支持候选的学习依据已撤销或被取代, 请重新生成候选.',
-    source_snapshot_mismatch: '候选依据校验失败, 请重新生成候选.',
-  }[reason] || '候选依据已经变化, 不能直接激活. 请重新生成候选.';
-}
-
-const classCommentarySkillEvaluationMetrics = [
-  { key: 'normalized_edit_distance', label: '终稿修改距离', aliases: ['normalized_edit_distance'], ratio: true },
-  { key: 'accepted_without_edit_rate', label: '无修改接受率', aliases: ['accepted_without_edit_rate', 'unchanged_acceptance_rate', 'no_edit_acceptance_rate', 'exact_acceptance_rate'], ratio: true },
-  { key: 'style_rule_coverage', label: '风格规则覆盖率', aliases: ['style_rule_coverage', 'style_rule_coverage_rate', 'confirmed_style_rule_coverage_rate'], ratio: true },
-  { key: 'roster_consistency_rate', label: '学生名单一致率', aliases: ['roster_consistency_rate', 'student_roster_consistency'], ratio: true },
-  { key: 'unsupported_fact_count', label: '无证据事实数', aliases: ['unsupported_fact_count'], ratio: false },
-  { key: 'student_fact_pollution_count', label: '学生事实污染数', aliases: ['student_fact_pollution_count', 'student_fact_contamination_count'], ratio: false },
-  { key: 'output_contract_pass_rate', label: '输出约束通过率', aliases: ['output_contract_pass_rate', 'output_constraint_pass_rate'], ratio: true },
-] as const;
-
-function readClassCommentarySkillMetric(metrics: Record<string, unknown>, aliases: readonly string[]): unknown {
-  for (const alias of aliases) {
-    if (Object.prototype.hasOwnProperty.call(metrics, alias)) {
-      return metrics[alias];
-    }
-  }
-  return undefined;
-}
-
-function formatClassCommentarySkillMetric(value: unknown, ratio: boolean): string {
-  if (typeof value === 'boolean') {
-    return value ? '通过' : '未通过';
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    if (ratio && value >= 0 && value <= 1) {
-      return `${Math.round(value * 1000) / 10}%`;
-    }
-    return String(Math.round(value * 1000) / 1000);
-  }
-  return typeof value === 'string' && value.trim() ? value : '-';
-}
-
-function classCommentarySkillEvaluationRows(evaluation: ClassCommentarySkillEvaluation) {
-  return classCommentarySkillEvaluationMetrics.flatMap((metric) => {
-    const currentValue = readClassCommentarySkillMetric(evaluation.current_metrics, metric.aliases);
-    const candidateValue = readClassCommentarySkillMetric(evaluation.candidate_metrics, metric.aliases);
-    if (currentValue === undefined && candidateValue === undefined) {
-      return [];
-    }
-    return [{
-      key: metric.key,
-      label: metric.label,
-      current: formatClassCommentarySkillMetric(currentValue, metric.ratio),
-      candidate: formatClassCommentarySkillMetric(candidateValue, metric.ratio),
-    }];
-  });
+    base_version_changed: '正在使用的版本已经变化, 请基于最新版本重新整理.',
+    revision_not_effective: '这次建议参考的反馈已有新版, 请重新整理.',
+    supporting_evidence_not_active: '这次建议参考的修改已被撤销或取代, 请重新整理.',
+    source_snapshot_mismatch: '这次建议的依据已变化, 请重新整理.',
+  }[reason] || '这次建议已经过期, 请重新整理后再使用.';
 }
 
 function classCommentarySkillActionError(error: unknown, fallback: string): string {
   if (error instanceof ApiFetchError) {
     if (error.payload?.error === 'candidate_stale') {
-      return '候选依据已经变化, 请重新生成候选.';
+      return '这次建议已经过期, 请重新整理.';
     }
     if (error.payload?.error === 'skill_version_conflict' || error.payload?.error === 'active_version_conflict') {
-      return '当前生效版本已经变化, 请刷新后重试.';
+      return '正在使用的版本已经变化, 请刷新后重试.';
     }
     if (error.payload?.error === 'candidate_not_ready') {
-      return '当前样本还不足以生成候选.';
+      return '目前积累的有效修改还不够, 暂时不能整理更新.';
     }
   }
   return error instanceof Error ? error.message : fallback;
@@ -699,10 +649,6 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const selectedSkillVersion = skillEvolution?.versions.find(
     (version) => String(version.id) === selectedSkillVersionId,
   ) || null;
-  const selectedSkillBaseVersion = selectedSkillVersion
-    ? skillEvolution?.versions.find((version) => version.id === selectedSkillVersion.base_version_id)
-      || activeSkillVersion
-    : null;
   const latestSkillCandidateBuild = skillEvolution?.candidate_builds[0] || null;
   const skillCandidateBuildInProgress = Boolean(
     skillEvolution?.candidate_builds.some((build) => !build.is_terminal),
@@ -710,11 +656,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const expectedActiveSkillVersionId = skillEvolution?.skill.active_version_id
     || activeSkillVersion?.id
     || 0;
-  const selectedSkillEvaluationRows = selectedSkillVersion
-    ? classCommentarySkillEvaluationRows(selectedSkillVersion.evaluation)
-    : [];
   const canCreateSkillCandidate = Boolean(
     skillEvolution?.eligibility.eligible
+    && skillEvolution?.skill.can_manage_evolution !== false
     && expectedActiveSkillVersionId > 0
     && !skillCandidateBuildInProgress
     && !skillEvolutionActionKey,
@@ -722,6 +666,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const canActivateSkillVersion = Boolean(
     selectedSkillVersion
     && selectedSkillVersion.version_kind === 'candidate'
+    && skillEvolution?.skill.can_manage_evolution !== false
     && selectedSkillVersion.review_status === 'pending'
     && !selectedSkillVersion.is_active
     && !selectedSkillVersion.is_stale
@@ -730,6 +675,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   );
   const canRollbackSkillVersion = Boolean(
     selectedSkillVersion
+    && skillEvolution?.skill.can_manage_evolution !== false
     && !selectedSkillVersion.is_active
     && (selectedSkillVersion.review_status === 'approved' || selectedSkillVersion.review_status === 'not_required')
     && expectedActiveSkillVersionId > 0
@@ -907,7 +853,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
 
   async function handleGenerate() {
     if (!selectedClassId || !selectedSkillId) {
-      setErrorMessage('请选择同事风格后再生成');
+      setErrorMessage('请选择同事测评风格后再生成');
       return;
     }
     if (!trimmedConfirmedTranscript) {
@@ -1393,7 +1339,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         error instanceof ApiFetchError,
       );
       if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
-        setSkillEvolutionActionError(classCommentarySkillActionError(error, '生成候选失败'));
+        setSkillEvolutionActionError(classCommentarySkillActionError(error, '整理更新失败'));
       }
     } finally {
       if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
@@ -1473,7 +1419,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       if (actionRequestToken === skillEvolutionActionRequestTokenRef.current) {
         setSkillEvolutionActionError(classCommentarySkillActionError(
           error,
-          action === 'activate' ? '激活候选失败' : '回滚版本失败',
+          action === 'activate' ? '使用更新失败' : '恢复版本失败',
         ));
         if (error instanceof ApiFetchError) {
           setSkillEvolutionRefreshVersion((current) => current + 1);
@@ -1586,7 +1532,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           </div>
           <div className="flex flex-col gap-1">
             <h2 className="text-xl font-semibold tracking-tight text-foreground">课堂录音反馈包</h2>
-            <p className="text-sm text-muted-foreground">上传录音, 确认转写, 选择同事风格后生成可复制反馈文本.</p>
+            <p className="text-sm text-muted-foreground">上传录音, 确认转写, 选择同事的测评风格后生成可复制反馈文本.</p>
           </div>
         </div>
         <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
@@ -1660,7 +1606,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           <AlertCircle className="size-4" />
           <AlertTitle>配置未完成</AlertTitle>
           <AlertDescription>
-            {!classes.length ? '当前没有可用班级。' : '当前没有可用同事风格。'}
+            {!classes.length ? '当前没有可用班级。' : '当前没有可用同事测评风格。'}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -1748,10 +1694,10 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <p className="text-sm font-medium text-foreground">同事风格</p>
+                    <p className="text-sm font-medium text-foreground">同事测评风格</p>
                     <Select value={selectedSkillId || undefined} onValueChange={handleSkillChange}>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="请选择风格" />
+                        <SelectValue placeholder="请选择同事" />
                       </SelectTrigger>
                       <SelectContent position="popper" className="max-h-72">
                         <SelectGroup>
@@ -1836,7 +1782,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     <p className="mt-1 text-sm font-medium text-foreground">{task?.class_name || selectedClass?.name || '-'}</p>
                   </div>
                   <div className="rounded-lg border border-border/70 px-3 py-2">
-                    <p className="text-xs text-muted-foreground">风格</p>
+                    <p className="text-xs text-muted-foreground">同事测评风格</p>
                     <p className="mt-1 text-sm font-medium text-foreground">{task?.skill_name || selectedSkill?.name || '-'}</p>
                   </div>
                 </div>
@@ -1886,7 +1832,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     确认但不学习
                   </Button>
                   <Button type="button" onClick={() => handleConfirmFeedback(true)} disabled={!canConfirmFeedback || !capabilities.memory_learning_enabled}>
-                    确认并学习
+                    确认并让 AI 学习修改
                   </Button>
                 </div>
                 {!capabilities.memory_learning_enabled ? (
@@ -1918,7 +1864,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                               <div className="flex min-w-0 flex-col gap-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Badge variant="outline">
-                                    {memory.memory_type === 'teacher_style' ? '老师风格' : '学生历史'}
+                                    {memory.memory_type === 'teacher_style'
+                                      ? `对 ${selectedSkill?.name || '该同事'}测评风格的调整`
+                                      : '学生情况'}
                                   </Badge>
                                   {memory.student_name ? <span className="text-xs text-muted-foreground">{memory.student_name}</span> : null}
                                   {memory.evidence_status !== 'active' ? <Badge variant="secondary">已撤销来源</Badge> : null}
@@ -1984,27 +1932,27 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     <Separator />
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex flex-col gap-1">
-                        <p className="text-sm font-medium text-foreground">反馈风格版本</p>
-                        <p className="text-xs text-muted-foreground">查看候选差异和评测, 决定是否手动激活.</p>
+                        <p className="text-sm font-medium text-foreground">{selectedSkill.name}的测评风格</p>
+                        <p className="text-xs text-muted-foreground">查看 AI 从大家的确认修改中整理出的风格更新.</p>
                       </div>
                       <Dialog open={skillEvolutionDialogOpen} onOpenChange={handleSkillEvolutionOpenChange}>
                         <DialogTrigger asChild>
-                          <Button type="button" size="xs" variant="outline">查看版本</Button>
+                          <Button type="button" size="xs" variant="outline">查看风格更新</Button>
                         </DialogTrigger>
                         <DialogContent className="max-h-[90vh] sm:max-w-3xl">
                           <DialogHeader>
-                            <DialogTitle>{selectedSkill.name}的反馈风格版本</DialogTitle>
+                            <DialogTitle>{selectedSkill.name}的测评风格</DialogTitle>
                             <DialogDescription>
-                              比较候选和当前版本的内容与评测结果, 再决定是否激活或回滚.
+                              AI 会从大家使用这个同事测评风格时确认的修改中整理可复用的调整.
                             </DialogDescription>
                           </DialogHeader>
                           <ScrollArea className="h-[70vh] overflow-hidden">
                             <div className="flex flex-col gap-4 pr-3">
                               <Alert>
                                 <Sparkles />
-                                <AlertTitle>候选不会自动生效</AlertTitle>
+                                <AlertTitle>更新不会自动使用</AlertTitle>
                                 <AlertDescription>
-                                  候选版本不会自动替换当前风格. 只有老师查看差异和评测并手动激活后才会生效.
+                                  你确认使用后, 新生成的课堂反馈才会采用这次调整. 已有反馈不会被改写.
                                 </AlertDescription>
                               </Alert>
                               {skillEvolutionLoadError ? (
@@ -2033,13 +1981,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <Badge variant={skillEvolution.eligibility.eligible ? 'secondary' : 'outline'}>
-                                          {skillEvolution.eligibility.eligible ? '可生成候选' : '继续积累样本'}
-                                        </Badge>
-                                        <Badge variant="outline">
-                                          有效任务 {skillEvolution.eligibility.effective_task_count}/{skillEvolution.eligibility.min_effective_tasks}
-                                        </Badge>
-                                        <Badge variant="outline">
-                                          支持任务 {skillEvolution.eligibility.supporting_task_count}/{skillEvolution.eligibility.min_supporting_tasks}
+                                          {skillEvolution.eligibility.eligible ? '可以整理更新' : '继续积累修改'}
                                         </Badge>
                                       </div>
                                       <Button
@@ -2049,10 +1991,10 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                         disabled={!canCreateSkillCandidate}
                                       >
                                         {skillEvolutionActionKey === 'candidate'
-                                          ? '提交中'
+                                          ? '整理中'
                                           : latestSkillCandidateBuild?.status === 'failed' && latestSkillCandidateBuild.can_retry
-                                            ? '重新生成候选'
-                                            : '生成候选'}
+                                            ? '重新整理'
+                                            : '整理一次更新'}
                                       </Button>
                                     </div>
                                     <p className="text-xs text-muted-foreground">
@@ -2063,15 +2005,12 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                   {latestSkillCandidateBuild ? (
                                     <div className="flex flex-col gap-2 rounded-lg border border-border/70 p-3">
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm font-medium text-foreground">最近一次候选生成</span>
+                                        <span className="text-sm font-medium text-foreground">最近一次整理</span>
                                         <Badge variant={latestSkillCandidateBuild.status === 'failed' ? 'destructive' : 'outline'}>
                                           {classCommentarySkillCandidateStatusLabel(latestSkillCandidateBuild.status)}
                                         </Badge>
-                                        {latestSkillCandidateBuild.is_stale ? <Badge variant="secondary">依据已变化</Badge> : null}
+                                        {latestSkillCandidateBuild.is_stale ? <Badge variant="secondary">需要重新整理</Badge> : null}
                                       </div>
-                                      <p className="text-xs text-muted-foreground">
-                                        有效任务 {latestSkillCandidateBuild.effective_task_count}, 支持任务 {latestSkillCandidateBuild.supporting_task_count}
-                                      </p>
                                       {latestSkillCandidateBuild.error_message ? (
                                         <p className="text-xs text-muted-foreground">{latestSkillCandidateBuild.error_message}</p>
                                       ) : null}
@@ -2081,22 +2020,22 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                   {skillEvolution.versions.length ? (
                                     <>
                                       <div className="flex flex-col gap-2">
-                                        <p className="text-sm font-medium text-foreground">选择版本</p>
+                                        <p className="text-sm font-medium text-foreground">选择风格版本</p>
                                         <Select value={selectedSkillVersionId || undefined} onValueChange={setSelectedSkillVersionId}>
                                           <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="请选择风格版本" />
+                                            <SelectValue placeholder="请选择要查看的版本" />
                                           </SelectTrigger>
                                           <SelectContent position="popper" className="max-h-72">
                                             <SelectGroup>
                                               {skillEvolution.versions.map((version) => (
                                                 <SelectItem key={version.id} value={String(version.id)}>
-                                                  v{version.version_no} - {version.is_active
-                                                    ? '当前生效'
+                                                  第 {version.version_no} 版 - {version.is_active
+                                                    ? '正在使用'
                                                     : version.review_status === 'pending'
-                                                      ? '待审核候选'
+                                                      ? '等待确认'
                                                       : version.version_kind === 'candidate'
-                                                        ? '历史候选'
-                                                        : '初始版本'}
+                                                        ? '历史更新'
+                                                        : '最初版本'}
                                                 </SelectItem>
                                               ))}
                                             </SelectGroup>
@@ -2107,116 +2046,59 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                       {selectedSkillVersion ? (
                                         <div className="flex flex-col gap-4">
                                           <div className="flex flex-wrap items-center gap-2">
-                                            <Badge variant="outline">v{selectedSkillVersion.version_no}</Badge>
-                                            {selectedSkillVersion.is_active ? <Badge variant="secondary">当前生效</Badge> : null}
-                                            {selectedSkillVersion.review_status === 'pending' ? <Badge variant="outline">待老师审核</Badge> : null}
-                                            {selectedSkillVersion.is_stale ? <Badge variant="destructive">不能激活</Badge> : null}
+                                            <Badge variant="outline">第 {selectedSkillVersion.version_no} 版</Badge>
+                                            {selectedSkillVersion.is_active ? <Badge variant="secondary">正在使用</Badge> : null}
+                                            {selectedSkillVersion.review_status === 'pending' ? <Badge variant="outline">等待确认</Badge> : null}
+                                            {selectedSkillVersion.is_stale ? <Badge variant="destructive">需要重新整理</Badge> : null}
                                           </div>
 
                                           {selectedSkillVersion.is_stale ? (
                                             <Alert variant="destructive">
                                               <AlertCircle />
-                                              <AlertTitle>候选依据已变化</AlertTitle>
+                                              <AlertTitle>这次建议已经过期</AlertTitle>
                                               <AlertDescription>
                                                 {classCommentarySkillStaleMessage(selectedSkillVersion.stale_reason)}
                                               </AlertDescription>
                                             </Alert>
                                           ) : null}
 
-                                          <div className="grid gap-2 sm:grid-cols-2">
-                                            <div className="rounded-lg border border-border/70 px-3 py-2">
-                                              <p className="text-xs text-muted-foreground">有效评测任务</p>
-                                              <p className="mt-1 text-sm font-medium text-foreground">{selectedSkillVersion.effective_task_count}</p>
-                                            </div>
-                                            <div className="rounded-lg border border-border/70 px-3 py-2">
-                                              <p className="text-xs text-muted-foreground">支持风格规律的任务</p>
-                                              <p className="mt-1 text-sm font-medium text-foreground">{selectedSkillVersion.supporting_task_count}</p>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex flex-col gap-2">
-                                            <p className="text-sm font-medium text-foreground">版本差异</p>
-                                            {selectedSkillVersion.content_diff ? (
-                                              <Textarea
-                                                aria-label="版本差异"
-                                                value={selectedSkillVersion.content_diff}
-                                                readOnly
-                                                className="min-h-48 max-h-72 font-mono text-xs"
-                                              />
-                                            ) : selectedSkillVersion.is_active ? (
-                                              <Textarea
-                                                aria-label="当前风格内容"
-                                                value={selectedSkillVersion.content}
-                                                readOnly
-                                                className="min-h-48 max-h-72"
-                                              />
-                                            ) : (
-                                              <div className="grid gap-3 sm:grid-cols-2">
-                                                <div className="flex flex-col gap-2">
-                                                  <p className="text-xs text-muted-foreground">当前版本</p>
-                                                  <Textarea
-                                                    aria-label="当前风格内容"
-                                                    value={selectedSkillVersion.base_content || selectedSkillBaseVersion?.content || ''}
-                                                    readOnly
-                                                    className="min-h-48 max-h-72"
-                                                  />
-                                                </div>
-                                                <div className="flex flex-col gap-2">
-                                                  <p className="text-xs text-muted-foreground">所选版本</p>
-                                                  <Textarea
-                                                    aria-label="所选风格内容"
-                                                    value={selectedSkillVersion.content}
-                                                    readOnly
-                                                    className="min-h-48 max-h-72"
-                                                  />
-                                                </div>
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          <div className="flex flex-col gap-2">
-                                            <p className="text-sm font-medium text-foreground">评测对比</p>
-                                            {selectedSkillEvaluationRows.length ? (
-                                              <Table>
-                                                <TableHeader>
-                                                  <TableRow>
-                                                    <TableHead>指标</TableHead>
-                                                    <TableHead className="text-right">当前</TableHead>
-                                                    <TableHead className="text-right">候选</TableHead>
-                                                  </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                  {selectedSkillEvaluationRows.map((row) => (
-                                                    <TableRow key={row.key}>
-                                                      <TableCell>{row.label}</TableCell>
-                                                      <TableCell className="text-right">
-                                                        <Badge variant="outline">{row.current}</Badge>
-                                                      </TableCell>
-                                                      <TableCell className="text-right">
-                                                        <Badge variant="secondary">{row.candidate}</Badge>
-                                                      </TableCell>
-                                                    </TableRow>
+                                          <Alert>
+                                            <Sparkles />
+                                            <AlertTitle>
+                                              {selectedSkillVersion.version_kind === 'candidate'
+                                                ? '本次建议的调整'
+                                                : '当前正在使用'}
+                                            </AlertTitle>
+                                            <AlertDescription>
+                                              {selectedSkillVersion.evaluation.change_summary.length ? (
+                                                <div className="flex flex-col gap-1">
+                                                  {selectedSkillVersion.evaluation.change_summary.map((change) => (
+                                                    <p key={change}>· {change}</p>
                                                   ))}
-                                                </TableBody>
-                                              </Table>
-                                            ) : (
-                                              <p className="text-xs text-muted-foreground">这个版本没有可展示的对比评测.</p>
-                                            )}
-                                          </div>
+                                                </div>
+                                              ) : (
+                                                <p>
+                                                  {selectedSkillVersion.version_kind === 'candidate'
+                                                    ? '这次更新暂无可展示的说明.'
+                                                    : `后续生成会继续使用${selectedSkill.name}的这版测评风格.`}
+                                                </p>
+                                              )}
+                                            </AlertDescription>
+                                          </Alert>
 
                                           {selectedSkillVersion.evaluation.known_risks.length
-                                            || selectedSkillVersion.evaluation.failed_samples.length ? (
+                                            || selectedSkillVersion.evaluation.failed_sample_count > 0 ? (
                                               <Alert variant="destructive">
                                                 <AlertCircle />
-                                                <AlertTitle>评测中需要留意</AlertTitle>
+                                                <AlertTitle>自动检查需要留意</AlertTitle>
                                                 <AlertDescription>
                                                   <div className="flex flex-col gap-1">
                                                     {selectedSkillVersion.evaluation.known_risks.map((risk) => (
                                                       <p key={`risk-${risk}`}>{risk}</p>
                                                     ))}
-                                                    {selectedSkillVersion.evaluation.failed_samples.map((sample) => (
-                                                      <p key={`sample-${sample}`}>失败样本: {sample}</p>
-                                                    ))}
+                                                    {selectedSkillVersion.evaluation.failed_sample_count > 0 ? (
+                                                      <p>有 {selectedSkillVersion.evaluation.failed_sample_count} 条历史反馈检查未通过.</p>
+                                                    ) : null}
                                                   </div>
                                                 </AlertDescription>
                                               </Alert>
@@ -2231,21 +2113,21 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                                   <AlertDialogTrigger asChild>
                                                     <Button type="button" disabled={!canActivateSkillVersion}>
                                                       {skillEvolutionActionKey === `activate-${selectedSkillVersion.id}`
-                                                        ? '激活中'
-                                                        : `手动激活 v${selectedSkillVersion.version_no}`}
+                                                        ? '使用中'
+                                                        : '使用这次更新'}
                                                     </Button>
                                                   </AlertDialogTrigger>
                                                   <AlertDialogContent>
                                                     <AlertDialogHeader>
-                                                      <AlertDialogTitle>激活这个候选版本?</AlertDialogTitle>
+                                                      <AlertDialogTitle>使用这次风格更新?</AlertDialogTitle>
                                                       <AlertDialogDescription>
-                                                        激活后, 新生成的课堂反馈会使用 v{selectedSkillVersion.version_no}. 已有反馈不会被改写.
+                                                        确认后, 新生成的课堂反馈会使用第 {selectedSkillVersion.version_no} 版. 已有反馈不会被改写.
                                                       </AlertDialogDescription>
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
                                                       <AlertDialogCancel>取消</AlertDialogCancel>
                                                       <AlertDialogAction onClick={() => handleChangeSkillVersion('activate')}>
-                                                        确认激活
+                                                        确认使用
                                                       </AlertDialogAction>
                                                     </AlertDialogFooter>
                                                   </AlertDialogContent>
@@ -2258,21 +2140,21 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                                     <AlertDialogTrigger asChild>
                                                       <Button type="button" variant="outline" disabled={!canRollbackSkillVersion}>
                                                         {skillEvolutionActionKey === `rollback-${selectedSkillVersion.id}`
-                                                          ? '回滚中'
-                                                          : `回滚到 v${selectedSkillVersion.version_no}`}
+                                                          ? '恢复中'
+                                                          : `恢复使用第 ${selectedSkillVersion.version_no} 版`}
                                                       </Button>
                                                     </AlertDialogTrigger>
                                                     <AlertDialogContent>
                                                       <AlertDialogHeader>
-                                                        <AlertDialogTitle>回滚到这个历史版本?</AlertDialogTitle>
+                                                        <AlertDialogTitle>恢复使用这个历史版本?</AlertDialogTitle>
                                                         <AlertDialogDescription>
-                                                          回滚后, 新生成的课堂反馈会重新使用 v{selectedSkillVersion.version_no}. 已有反馈不会被改写.
+                                                          确认后, 新生成的课堂反馈会重新使用第 {selectedSkillVersion.version_no} 版. 已有反馈不会被改写.
                                                         </AlertDialogDescription>
                                                       </AlertDialogHeader>
                                                       <AlertDialogFooter>
                                                         <AlertDialogCancel>取消</AlertDialogCancel>
                                                         <AlertDialogAction onClick={() => handleChangeSkillVersion('rollback')}>
-                                                          确认回滚
+                                                          确认恢复
                                                         </AlertDialogAction>
                                                       </AlertDialogFooter>
                                                     </AlertDialogContent>
@@ -2283,7 +2165,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                       ) : null}
                                     </>
                                   ) : (
-                                    <p className="text-xs text-muted-foreground">当前还没有可查看的风格版本.</p>
+                                    <p className="text-xs text-muted-foreground">当前还没有可查看的风格更新.</p>
                                   )}
                                 </>
                               )}

@@ -31,7 +31,7 @@ class ClassCommentaryDraftStoreTest(unittest.TestCase):
         imported = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.teacher["organization_id"],
             skill_id="draft-store-teacher",
-            owner_teacher_user_id=self.teacher["id"],
+            actor_user_id=self.teacher["id"],
             source_path="/skills/draft-store-teacher/SKILL.md",
             content="先写学生表现, 再给一条可执行建议.",
         )

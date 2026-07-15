@@ -42,7 +42,7 @@ class ClassCommentarySkillImportCommandTests(unittest.TestCase):
                             {
                                 "organization_id": 2,
                                 "skill_id": "teacher-style",
-                                "owner_teacher_user_id": 7,
+                                "actor_user_id": 7,
                                 "source_path": "teacher-style",
                             }
                         ]
@@ -53,13 +53,13 @@ class ClassCommentarySkillImportCommandTests(unittest.TestCase):
 
             items = MODULE.load_skill_manifest(manifest)
 
-        self.assertEqual(items[0]["owner_teacher_user_id"], 7)
+        self.assertEqual(items[0]["actor_user_id"], 7)
         self.assertEqual(items[0]["source_path"], str(skill_dir.resolve()))
 
     def test_check_mode_validates_without_importing(self):
         importer = Mock()
         with patch.object(MODULE, "load_skill_manifest", return_value=[{"id": 1}]), patch.object(
-            MODULE, "validate_skill_owners"
+            MODULE, "validate_skill_actors"
         ) as validate, patch.object(
             MODULE.lesson_manager,
             "import_class_commentary_skill_manifest",
@@ -75,7 +75,7 @@ class ClassCommentarySkillImportCommandTests(unittest.TestCase):
         item = {
             "organization_id": 2,
             "skill_id": "teacher-style",
-            "owner_teacher_user_id": 7,
+            "actor_user_id": 7,
             "source_path": "/skills/teacher-style",
         }
         importer = Mock(
@@ -83,12 +83,12 @@ class ClassCommentarySkillImportCommandTests(unittest.TestCase):
                 "registry_id": 11,
                 "organization_id": 2,
                 "skill_id": "teacher-style",
-                "owner_teacher_user_id": 7,
+                "actor_user_id": 7,
                 "active_version_id": 12,
             }
         )
         with patch.object(MODULE, "load_skill_manifest", return_value=[item]), patch.object(
-            MODULE, "validate_skill_owners"
+            MODULE, "validate_skill_actors"
         ), patch.object(
             MODULE.lesson_manager,
             "import_class_commentary_skill_manifest",
@@ -108,7 +108,7 @@ class ClassCommentarySkillImportCommandTests(unittest.TestCase):
             base = {
                 "organization_id": 2,
                 "skill_id": "teacher-style",
-                "owner_teacher_user_id": 7,
+                "actor_user_id": 7,
                 "source_path": "SKILL.md",
             }
             unknown = root / "unknown.json"

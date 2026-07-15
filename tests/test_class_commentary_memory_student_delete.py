@@ -44,7 +44,7 @@ class ClassCommentaryMemoryStudentDeleteTest(unittest.TestCase):
         skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.teacher["organization_id"],
             skill_id="student-memory-delete-test",
-            owner_teacher_user_id=self.teacher["id"],
+            actor_user_id=self.teacher["id"],
             source_path="/skills/student-memory-delete-test/SKILL.md",
             content="Start with progress, then give one next step.",
         )

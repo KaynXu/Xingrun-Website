@@ -438,6 +438,7 @@ def _candidate_generation_input(
             }
         )
     return {
+        "skill": frozen.get("skill") if isinstance(frozen.get("skill"), Mapping) else {},
         "base_skill": {
             "version_id": int(base_version["id"]),
             "content": str(base_version.get("content") or ""),
@@ -450,6 +451,7 @@ def _candidate_generation_input(
             "Use only repeated style_rules.",
             "Do not put any student or lesson fact into the skill.",
             "Return the complete skill with the smallest supported edit.",
+            "Preserve the colleague identity and all unrelated persona, work, and assessment instructions.",
         ],
     }
 

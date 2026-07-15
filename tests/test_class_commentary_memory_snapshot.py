@@ -27,7 +27,7 @@ class ClassCommentaryMemorySnapshotTest(unittest.TestCase):
         self.skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.teacher["organization_id"],
             skill_id="memory-snapshot-teacher",
-            owner_teacher_user_id=self.teacher["id"],
+            actor_user_id=self.teacher["id"],
             source_path="/skills/memory-snapshot-teacher/SKILL.md",
             content="课堂表现和建议都要有证据.",
         )

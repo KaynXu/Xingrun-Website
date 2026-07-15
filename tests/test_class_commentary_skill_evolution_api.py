@@ -59,7 +59,7 @@ class ClassCommentarySkillEvolutionApiTest(unittest.TestCase):
         self.skill = lesson_manager.import_class_commentary_skill_manifest(
             organization_id=self.owner["organization_id"],
             skill_id="skill-evolution-api",
-            owner_teacher_user_id=self.owner["id"],
+            actor_user_id=self.owner["id"],
             source_path=str(self.base / "skill-evolution-api.skill"),
             content="Write the result first, then one concrete next action.",
         )
@@ -267,8 +267,8 @@ class ClassCommentarySkillEvolutionApiTest(unittest.TestCase):
         return completed
 
     def test_disabled_capability_blocks_all_mutations_without_database_writes(self):
-        _, _, non_owner_headers = self._create_user(
-            username="disabled-capability-non-owner",
+        _, _, same_org_headers = self._create_user(
+            username="disabled-capability-same-org",
             organization_id=self.owner["organization_id"],
         )
         before = self._skill_evolution_state()
@@ -288,25 +288,26 @@ class ClassCommentarySkillEvolutionApiTest(unittest.TestCase):
             self.app_module,
             "_dispatch_class_commentary_memory_best_effort",
         ) as dispatch:
-            non_owner_responses = [
+            same_org_responses = [
                 self.client.post(
-                    self._candidate_path(), headers=non_owner_headers, json=payload
+                    self._candidate_path(), headers=same_org_headers, json=payload
                 ),
                 self.client.post(
                     f"{self._versions_path()}/{active_version_id}/activate",
-                    headers=non_owner_headers,
+                    headers=same_org_headers,
                     json=payload,
                 ),
                 self.client.post(
                     f"{self._versions_path()}/{active_version_id}/rollback",
-                    headers=non_owner_headers,
+                    headers=same_org_headers,
                     json=payload,
                 ),
             ]
-            for response in non_owner_responses:
-                self.assertEqual(response.status_code, 404)
-                self.assertEqual(response.get_json(), {"error": "not found"})
-            capabilities.assert_not_called()
+            for response in same_org_responses:
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(
+                    response.get_json(), {"error": "skill_evolution_disabled"}
+                )
             responses = [
                 self.client.post(
                     self._candidate_path(), headers=self.headers, json=payload
@@ -322,7 +323,7 @@ class ClassCommentarySkillEvolutionApiTest(unittest.TestCase):
                     json=payload,
                 ),
             ]
-            self.assertEqual(capabilities.call_count, 3)
+            self.assertEqual(capabilities.call_count, 6)
             dispatch.assert_not_called()
 
         for response in responses:
@@ -525,7 +526,7 @@ class ClassCommentarySkillEvolutionApiTest(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(event_count, 3)
 
-    def test_stale_candidate_and_non_owner_or_cross_org_access_are_blocked(self):
+    def test_stale_candidate_same_org_access_and_cross_org_isolation(self):
         samples = self._supported_samples()
         completed = self._complete_candidate()
         candidate_version_id = completed["candidate_version_id"]
@@ -565,7 +566,14 @@ class ClassCommentarySkillEvolutionApiTest(unittest.TestCase):
             username="other-org-teacher",
             organization_id=other_org_id,
         )
-        for headers in (member_headers, other_org_headers):
+        same_org_list = self.client.get(self._versions_path(), headers=member_headers)
+        self.assertEqual(same_org_list.status_code, 200)
+        self.assertEqual(
+            same_org_list.get_json()["skill"]["skill_id"],
+            self.skill["skill_id"],
+        )
+
+        for headers in (other_org_headers,):
             listed = self.client.get(self._versions_path(), headers=headers)
             created = self.client.post(
                 self._candidate_path(),
