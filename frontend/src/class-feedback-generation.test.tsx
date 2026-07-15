@@ -102,6 +102,25 @@ test('class feedback generation page allows manual transcript generation without
   assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
 });
 
+test('transcript confirmation fills the upload task card without adding another page card', () => {
+  const uploadCard = cardSource('上传与任务');
+
+  assertSourceMatches(uploadCard, /<CardContent className="flex flex-1 flex-col gap-4">/, 'the upload Card content must fill the equal-height grid item');
+  assertSourceMatches(uploadCard, /<p className="text-sm font-medium text-foreground">转写确认<\/p>/, 'transcript confirmation must stay inside the upload Card');
+  assertSourceMatches(uploadCard, /<Badge variant="outline">\{transcriptStatusLabel\}<\/Badge>/, 'the transcript section must expose its current state');
+  assertSourceMatches(uploadCard, /<Textarea\s+value=\{confirmedTranscript\}[\s\S]*className="min-h-56 flex-1 resize-none field-sizing-fixed"/, 'the transcript editor must absorb the remaining Card height and scroll internally');
+  assertSourceExcludes(source, /<CardTitle>转写确认<\/CardTitle>/, 'transcript confirmation must not remain as a separate page-level Card');
+});
+
+test('completed tasks show completed progress and demote regeneration', () => {
+  const uploadCard = cardSource('上传与任务');
+
+  assertSourceMatches(source, /const hasSucceededGeneration = selectedGeneration\?\.status === 'succeeded';/, 'successful generation state must drive action hierarchy');
+  assertSourceMatches(uploadCard, /转写 \{task\?\.status === 'transcribing' \? '进行中' : task\?\.status === 'transcribed' \|\| task\?\.status === 'generating' \|\| task\?\.status === 'ready' \? '已完成' : '未开始'\}/, 'transcription progress must finish after transcription');
+  assertSourceMatches(uploadCard, /生成 \{task\?\.status === 'generating' \? '进行中' : task\?\.status === 'ready' \? '已完成' : '未开始'\}/, 'generation progress must finish when the task is ready');
+  assertSourceMatches(uploadCard, /variant=\{hasSucceededGeneration \? 'outline' : 'default'\}[\s\S]*\{hasSucceededGeneration \? '重新生成' : '生成反馈包'\}/, 'regeneration must become secondary after a successful result');
+});
+
 test('class feedback generation creates a new text task when the selected task is still transcribing', () => {
   assert.match(source, /const savedTask = task && canUseTranscript\s*\?\s*\(transcriptDirty\s*\?\s*await saveClassCommentaryTranscript\(task\.id, trimmedConfirmedTranscript\)\s*:\s*task\)\s*:\s*await createClassCommentaryTextTask\(Number\(selectedClassId\), trimmedConfirmedTranscript\);/);
 });
