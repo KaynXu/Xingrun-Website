@@ -38,6 +38,8 @@ ENV_VAR_MAP = {
     "mem0_collection_name": "XR_MEM0_COLLECTION_NAME",
     "mem0_embedder_provider": "XR_MEM0_EMBEDDER_PROVIDER",
     "mem0_embedder_model": "XR_MEM0_EMBEDDER_MODEL",
+    "mem0_embedder_api_key": "XR_MEM0_EMBEDDER_API_KEY",
+    "mem0_embedder_base_url": "XR_MEM0_EMBEDDER_BASE_URL",
     "mem0_embedding_dims": "XR_MEM0_EMBEDDING_DIMS",
     "mem0_style_limit": "XR_MEM0_STYLE_LIMIT",
     "mem0_student_limit": "XR_MEM0_STUDENT_LIMIT",
@@ -101,6 +103,8 @@ DEFAULTS = {
     "mem0_collection_name": "xingrun_class_commentary_memory",
     "mem0_embedder_provider": "",
     "mem0_embedder_model": "",
+    "mem0_embedder_api_key": "",
+    "mem0_embedder_base_url": "",
     "mem0_embedding_dims": 0,
     "mem0_style_limit": 8,
     "mem0_student_limit": 5,
@@ -267,6 +271,8 @@ def get_runtime_config() -> dict:
     )
     cfg["mem0_embedder_provider"] = str(cfg.get("mem0_embedder_provider") or "").strip()
     cfg["mem0_embedder_model"] = str(cfg.get("mem0_embedder_model") or "").strip()
+    cfg["mem0_embedder_api_key"] = str(cfg.get("mem0_embedder_api_key") or "").strip()
+    cfg["mem0_embedder_base_url"] = str(cfg.get("mem0_embedder_base_url") or "").strip()
     cfg["mem0_embedding_dims"] = normalize_positive_int(
         cfg.get("mem0_embedding_dims"), 0, allow_zero=True
     )
