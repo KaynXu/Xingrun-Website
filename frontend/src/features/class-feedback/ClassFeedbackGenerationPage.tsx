@@ -616,6 +616,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     && item.generation_id === selectedGeneration?.id) || null;
   const selectedEditorState = selectedGeneration ? generationEditors[selectedGeneration.id] : undefined;
   const generationLoading = loadingGenerationId !== null;
+  const isTaskReadOnly = Boolean(task && task.teacher_user_id !== currentUser.id);
   const copyText = resolveClassCommentaryCopyText(
     feedbackDraft,
     selectedRevision,
@@ -640,15 +641,17 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const canUseTranscript = canUseTranscriptState(task);
   const canCreateManualTextTask = !task || task.status === 'uploaded' || task.status === 'transcribing';
   const canCreateTask = !loadingInitial && !busy && !generationLoading && Boolean(selectedClassId && audioFile);
-  const canSaveTranscript = !busy && !generationLoading && canUseTranscript && hasTranscriptText;
-  const canGenerate = !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
+  const canSaveTranscript = !isTaskReadOnly && !busy && !generationLoading && canUseTranscript && hasTranscriptText;
+  const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
   const hasSucceededGeneration = selectedGeneration?.status === 'succeeded';
-  const canSaveFeedbackDraft = !busy
+  const canSaveFeedbackDraft = !isTaskReadOnly
+    && !busy
     && !generationLoading
     && selectedGeneration?.status === 'succeeded'
     && Boolean(feedbackEditorText.trim())
     && feedbackEditorText !== (selectedEditorState?.savedFeedbackText || '');
-  const canConfirmFeedback = !busy
+  const canConfirmFeedback = !isTaskReadOnly
+    && !busy
     && !generationLoading
     && selectedGeneration?.status === 'succeeded'
     && Boolean(feedbackEditorText.trim());
@@ -698,7 +701,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     let cancelled = false;
     let pollTimer: number | undefined;
     let pollingDelayMs = 2000;
-    if (!capabilities.memory_learning_enabled || !selectedRevision?.learn_requested || revisionId <= 0) {
+    if (isTaskReadOnly || !capabilities.memory_learning_enabled || !selectedRevision?.learn_requested || revisionId <= 0) {
       setRevisionMemorySummary(null);
       setMemoryLoadError('');
       return () => {
@@ -739,6 +742,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     };
   }, [
     capabilities.memory_learning_enabled,
+    isTaskReadOnly,
     memoryRefreshVersion,
     selectedRevision?.id,
     selectedRevision?.learn_requested,
@@ -1611,6 +1615,14 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         </Alert>
       ) : null}
 
+      {isTaskReadOnly ? (
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertTitle>只读查看</AlertTitle>
+          <AlertDescription>这是其他老师的课堂反馈记录, 你可以查看和复制结果, 修改和 AI 学习仍由原老师完成.</AlertDescription>
+        </Alert>
+      ) : null}
+
       {!loadingInitial && (!classes.length || !skills.length) ? (
         <Alert>
           <AlertCircle className="size-4" />
@@ -1785,7 +1797,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     onChange={(event) => setConfirmedTranscript(event.target.value)}
                     placeholder="可直接输入课堂记录, 也可以上传并转写后在这里确认或修订文本."
                     className="min-h-56 flex-1 resize-none field-sizing-fixed"
-                    disabled={loadingInitial}
+                    disabled={loadingInitial || isTaskReadOnly}
                   />
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-muted-foreground">
@@ -1872,7 +1884,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   onChange={(event) => setFeedbackEditorText(event.target.value)}
                   placeholder="生成完成后, 这里会显示可修改并确认的反馈文本."
                   className="min-h-64"
-                  disabled={busy || generationLoading || !selectedGeneration || selectedGeneration.status !== 'succeeded'}
+                  disabled={isTaskReadOnly || busy || generationLoading || !selectedGeneration || selectedGeneration.status !== 'succeeded'}
                 />
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <Button type="button" variant="outline" onClick={handleSaveFeedbackDraft} disabled={!canSaveFeedbackDraft}>
@@ -1888,7 +1900,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                 {!capabilities.memory_learning_enabled ? (
                   <p className="text-xs text-muted-foreground">记忆学习功能尚未启用, 仍可正常保存草稿或确认终稿.</p>
                 ) : null}
-                {capabilities.memory_learning_enabled && selectedRevision?.learn_requested ? (
+                {!isTaskReadOnly && capabilities.memory_learning_enabled && selectedRevision?.learn_requested ? (
                   <>
                     <Separator />
                     <div className="flex flex-col gap-3">

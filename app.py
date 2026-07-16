@@ -4729,6 +4729,20 @@ def _get_owned_class_commentary_task_or_error(user: dict, task_id: int):
     return task, None
 
 
+def _get_readable_class_commentary_task_or_error(user: dict, task_id: int):
+    task, error = _get_accessible_class_commentary_task_or_error(user, task_id)
+    if error:
+        return None, error
+    if int(task["organization_id"]) != int(user.get("organization_id") or 0):
+        return None, (jsonify({"error": "forbidden"}), 403)
+    if (
+        int(task["teacher_user_id"]) != int(user.get("id") or 0)
+        and user.get("role") != "super_owner"
+    ):
+        return None, (jsonify({"error": "forbidden"}), 403)
+    return task, None
+
+
 def _get_owned_class_commentary_revision_or_error(user: dict, revision_id: int):
     revision = get_class_commentary_revision(revision_id)
     if not revision:
@@ -9793,7 +9807,10 @@ def api_class_commentary_tasks_list():
             task,
             include_private=(
                 int(task["organization_id"]) == int(user["organization_id"])
-                and int(task["teacher_user_id"]) == int(user["id"])
+                and (
+                    int(task["teacher_user_id"]) == int(user["id"])
+                    or user.get("role") == "super_owner"
+                )
             ),
         )
         for task in tasks
@@ -9814,7 +9831,10 @@ def api_class_commentary_task_get(task_id: int):
             task,
             include_private=(
                 int(task["organization_id"]) == int(user["organization_id"])
-                and int(task["teacher_user_id"]) == int(user["id"])
+                and (
+                    int(task["teacher_user_id"]) == int(user["id"])
+                    or user.get("role") == "super_owner"
+                )
             ),
         )
     )
@@ -9825,7 +9845,7 @@ def api_class_commentary_generations_list(task_id: int):
     user, error = _require_auth()
     if error:
         return error
-    task, task_error = _get_owned_class_commentary_task_or_error(user, task_id)
+    task, task_error = _get_readable_class_commentary_task_or_error(user, task_id)
     if task_error:
         return task_error
     generations = list_class_commentary_generations(int(task["id"]))
@@ -9845,7 +9865,7 @@ def api_class_commentary_generation_get(task_id: int, generation_id: int):
     user, error = _require_auth()
     if error:
         return error
-    task, task_error = _get_owned_class_commentary_task_or_error(user, task_id)
+    task, task_error = _get_readable_class_commentary_task_or_error(user, task_id)
     if task_error:
         return task_error
     generation = get_class_commentary_generation(generation_id)
@@ -9867,14 +9887,14 @@ def api_class_commentary_feedback_draft_get(task_id: int, generation_id: int):
     user, error = _require_auth()
     if error:
         return error
-    task, task_error = _get_owned_class_commentary_task_or_error(user, task_id)
+    task, task_error = _get_readable_class_commentary_task_or_error(user, task_id)
     if task_error:
         return task_error
     try:
         draft = get_class_commentary_feedback_draft(
             int(task["id"]),
             generation_id,
-            int(user["id"]),
+            int(task["teacher_user_id"]),
         )
     except ValueError:
         return jsonify({"error": "not found"}), 404
@@ -10003,7 +10023,7 @@ def api_class_commentary_feedback_revisions(task_id: int):
     user, error = _require_auth()
     if error:
         return error
-    task, task_error = _get_owned_class_commentary_task_or_error(user, task_id)
+    task, task_error = _get_readable_class_commentary_task_or_error(user, task_id)
     if task_error:
         return task_error
     revisions = list_class_commentary_revisions(int(task["id"]))

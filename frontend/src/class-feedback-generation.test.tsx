@@ -97,8 +97,8 @@ test('class feedback generation page does not trim undefined persisted transcrip
 
 test('class feedback generation page allows manual transcript generation without audio task', () => {
   assert.match(source, /const canCreateManualTextTask = !task \|\| task\.status === 'uploaded' \|\| task\.status === 'transcribing';/);
-  assert.match(source, /const canGenerate = !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && \(!classStudents\.length \|\| attendingStudentIds\.length > 0\);/);
-  assert.match(source, /disabled=\{loadingInitial\}/);
+  assert.match(source, /const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && \(!classStudents\.length \|\| attendingStudentIds\.length > 0\);/);
+  assert.match(source, /disabled=\{loadingInitial \|\| isTaskReadOnly\}/);
   assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
 });
 
@@ -401,7 +401,18 @@ test('generation loading uses a safe empty state and restores the prior selectio
   assertSourceMatches(generationChangeHandler, /isClassCommentaryFeedbackRecordInScope\(generation, taskId, numericGenerationId\)/, 'generation responses must be checked against the requested scope');
   assertSourceMatches(generationChangeHandler, /draft && !isClassCommentaryFeedbackRecordInScope\(draft, taskId, numericGenerationId\)/, 'draft responses must be checked against the requested scope');
   assertSourceMatches(feedbackCard, /disabled=\{generationLoading \|\| !copyText\}/, 'copy must be disabled during generation loading');
-  assertSourceMatches(feedbackCard, /disabled=\{busy \|\| generationLoading \|\| !selectedGeneration \|\| selectedGeneration\.status !== 'succeeded'\}/, 'the editor must be disabled during generation loading');
+  assertSourceMatches(feedbackCard, /disabled=\{isTaskReadOnly \|\| busy \|\| generationLoading \|\| !selectedGeneration \|\| selectedGeneration\.status !== 'succeeded'\}/, 'the editor must be disabled during generation loading and privileged read-only access');
+});
+
+test('super owner history access stays read-only in the class feedback page', () => {
+  assertSourceMatches(source, /const isTaskReadOnly = Boolean\(task && task\.teacher_user_id !== currentUser\.id\);/, 'read-only task ownership state is missing');
+  assertSourceMatches(source, /const canSaveTranscript = !isTaskReadOnly/, 'read-only history must block transcript writes');
+  assertSourceMatches(source, /const canGenerate = !isTaskReadOnly/, 'read-only history must block regeneration');
+  assertSourceMatches(source, /const canSaveFeedbackDraft = !isTaskReadOnly/, 'read-only history must block draft writes');
+  assertSourceMatches(source, /const canConfirmFeedback = !isTaskReadOnly/, 'read-only history must block confirmation and learning');
+  assertSourceMatches(source, /<AlertTitle>只读查看<\/AlertTitle>/, 'read-only history must explain the permission boundary');
+  assertSourceMatches(source, /修改和 AI 学习仍由原老师完成\./, 'read-only notice must identify teacher-owned mutations');
+  assertSourceMatches(source, /if \(isTaskReadOnly \|\| !capabilities\.memory_learning_enabled/, 'read-only history must not request teacher-owned memory details');
 });
 
 test('task switching clears version state and invalidates in-flight work immediately', () => {
