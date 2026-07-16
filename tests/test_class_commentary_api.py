@@ -1116,6 +1116,106 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(confirm_response.status_code, 403)
         self.assertEqual(lesson_manager.list_class_commentary_revisions(task["id"]), [])
 
+    def test_super_owner_can_read_other_teacher_history_but_cannot_mutate_it(self):
+        class_id = self._create_class_with_student()
+        member_id, _ = self._create_member("commentary_history_teacher")
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=member_id,
+            audio_path=str(self.base / "other-teacher.m4a"),
+            audio_filename="other-teacher.m4a",
+        )
+        task = lesson_manager.mark_class_commentary_transcription_succeeded(
+            task["id"],
+            "小王今天计算有进步",
+        )
+        skill = self._register_skill(
+            "super-owner-read-style",
+            "super owner read registry content",
+            owner_user_id=member_id,
+        )
+        generation = self._create_succeeded_generation(task, skill)
+        draft = lesson_manager.save_class_commentary_feedback_draft(
+            task_id=task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=member_id,
+            feedback_text="其他老师的草稿",
+            expected_draft_version=0,
+        )
+        lesson_manager.confirm_class_commentary_feedback(
+            task_id=task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=member_id,
+            feedback_text="其他老师的终稿",
+            learn_requested=False,
+            expected_draft_version=draft["draft_version"],
+            confirmation_request_id="other-teacher-confirmation",
+        )
+        task_url = f"/api/class-commentary/tasks/{task['id']}"
+        generation_url = f"{task_url}/generations/{generation['id']}"
+        draft_url = f"{generation_url}/feedback-draft"
+
+        list_response = self.client.get("/api/class-commentary/tasks", headers=self.headers)
+        task_response = self.client.get(task_url, headers=self.headers)
+        generations_response = self.client.get(f"{task_url}/generations", headers=self.headers)
+        generation_response = self.client.get(generation_url, headers=self.headers)
+        draft_response = self.client.get(draft_url, headers=self.headers)
+        revisions_response = self.client.get(f"{task_url}/feedback-revisions", headers=self.headers)
+
+        listed_task = next(
+            item for item in list_response.get_json()["tasks"] if item["id"] == task["id"]
+        )
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(listed_task["confirmed_transcript_text"], "小王今天计算有进步")
+        self.assertEqual(task_response.status_code, 200)
+        self.assertEqual(task_response.get_json()["feedback_text"], "其他老师的终稿")
+        self.assertEqual(generations_response.status_code, 200)
+        self.assertEqual(generation_response.status_code, 200)
+        self.assertEqual(
+            generation_response.get_json()["confirmed_transcript_snapshot"],
+            "小王今天计算有进步",
+        )
+        self.assertEqual(draft_response.status_code, 200)
+        self.assertEqual(draft_response.get_json()["feedback_text"], "其他老师的终稿")
+        self.assertEqual(revisions_response.status_code, 200)
+        self.assertEqual(revisions_response.get_json()["revisions"][0]["final_feedback_text"], "其他老师的终稿")
+
+        with patch.object(self.app_module, "has_class_commentary_api_key", return_value=True), \
+             patch.object(self.app_module, "_run_ai_feature_with_charge") as charge:
+            generate_response = self.client.post(
+                f"{task_url}/generate",
+                headers=self.headers,
+                json={"request_id": "super-owner-generate", "skill_id": skill["skill_id"]},
+            )
+        transcript_response = self.client.put(
+            f"{task_url}/transcript",
+            headers=self.headers,
+            json={"confirmed_transcript_text": "管理员越权修改"},
+        )
+        draft_put_response = self.client.put(
+            draft_url,
+            headers=self.headers,
+            json={"feedback_text": "管理员越权草稿", "expected_draft_version": 2},
+        )
+        confirmation_response = self.client.post(
+            f"{task_url}/feedback-confirmations",
+            headers=self.headers,
+            json={
+                "generation_id": generation["id"],
+                "feedback_text": "管理员越权终稿",
+                "learn": False,
+                "expected_draft_version": 2,
+                "request_id": "super-owner-confirmation",
+            },
+        )
+
+        self.assertEqual(generate_response.status_code, 403)
+        charge.assert_not_called()
+        self.assertEqual(transcript_response.status_code, 403)
+        self.assertEqual(draft_put_response.status_code, 403)
+        self.assertEqual(confirmation_response.status_code, 403)
+
     def test_class_access_without_task_ownership_only_returns_public_final_summary(self):
         transcript = "小王今天计算有进步, 但还要继续验算."
         generated_feedback = "AI 原稿: 小王计算有进步."
