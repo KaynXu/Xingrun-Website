@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新: 2026-07-15
+最后更新: 2026-07-21
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-07-21 已定位并修复最新课堂反馈生成 502. 生产任务 `175` 及此前多条失败均来自 woyao.pro 当前 API 入口 `https://api.iiiiitoken.com/v1` 的 GPT Plus 上游拒绝 `Upstream access forbidden`; 同一 key 状态 active 且余额正常, 本机与服务器均可复现, 排除 Nginx, Flask, 生产出口 IP 和欠费. 对照确认 OpenAI SDK 默认请求头和旧 `X-Trace` 配置会失败, 使用 `User-Agent: Xingrun/1.0` 后原模型 `gpt-5.6-sol` 连续最小请求通过. 已按最新任务的班级, 当前确认转写, 华奥鑫风格和 13 名到课学生新建任务 `176`, generation `151` 首次成功, 输出 1991 字. 生产 `.env.runtime` 备份为 `.env.runtime.backup-class-commentary-user-agent-20260721-164243`, Web 与 memory worker 已通过标准部署脚本重启, HTTP 302, memory, Redis 和 RQ 健康. 模型未改为 Gemini, 未修改 `master`.
 - 2026-07-16 已完成 9 页 `课堂反馈新功能使用教程`, 覆盖选班和到课名单, 风格选择, 材料输入, 转写校对, 生成反馈, 老师终审, AI 学习确认, 生成历史以及 `generation_snapshot_incomplete` 和 `forbidden` 的处理顺序. PPTX 已经 LibreOffice 兼容性重存并通过 9 页渲染和 `slides_test.py` 零溢出检查; Figma 原生 PPTX 转换仍返回 `Unable to convert file`, 因此改用逐页保真 PDF 导入到 FigJam. 最终 Figma 文件为 `https://www.figma.com/board/WAM8P41cFaNAYTP6edcqEb/课堂反馈新功能使用教程`, 9 页视觉已在画布中逐页可见. 本地一次性交付文件位于 `outputs/class-feedback-teacher-tutorial.pptx` 和 `outputs/class-feedback-teacher-tutorial.pdf`, 按仓库规则不纳入版本控制. 下一步如需真正的 Figma Slides 文件, 等 MCP 额度恢复后再把同一内容写入现有空白 Slides 文件.
 - 2026-07-15 已将课堂反馈独立 OpenAI 模型从 `gpt-5.5` 切换为 woyao.pro 当前提供的 `gpt-5.6-sol`; 复习计划和题图识别模型未改. 生产 `.env.runtime` 已备份为 `.env.runtime.backup-class-commentary-gpt-5-6-sol-20260716-104147`, `XR_CLASS_COMMENTARY_MODEL=gpt-5.6-sol` 已由 `xingrun` 和 `xingrun-class-commentary-memory-worker` 同时加载, PM2 均 online, RQ `class_commentary_memory` 为 1 个 idle worker且 0 failed, 本机 HTTP 302, 公网 HTTP 200. 重启后 live call 解析为 `openai/gpt-5.6-sol`, 2.421 秒返回 `OK`. 本地运行合同, `.env.runtime.example` 和回归已同步; 临时 proof 18 tests OK, `py_compile` 和 `git diff --check` OK. 本轮未修改生产数据库, 未操作 `master`.
 - 2026-07-15 已修复 `super_owner` 课堂反馈历史可见但详情 403 的权限口径冲突. Kayn 等 `super_owner` 现在可只读打开同机构其他老师的任务私有详情, generation, draft 和 revision, 页面可查看与复制结果并显示 `只读查看`; 转写修改, 重新生成, 草稿, 终稿确认和 AI 学习仍严格归原任务老师, 管理员不会冒用老师身份写入学习证据. 后端完整 `tests.test_class_commentary_api` 27 tests OK; 临时 proof 中权限回归 2 tests OK, 课堂反馈前端 55 tests OK, production build OK, `py_compile` 和 `git diff --check` OK. 本轮尚未部署生产, 未操作 `master`.

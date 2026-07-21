@@ -169,7 +169,7 @@ class AiProviderDefaultsTest(unittest.TestCase):
                     "XR_CLASS_COMMENTARY_MODEL": "gpt-5.5",
                     "XR_CLASS_COMMENTARY_OPENAI_BASE_URL": "https://api.iiiiitoken.com",
                     "XR_CLASS_COMMENTARY_OPENAI_API_KEY": "sk-class-test",
-                    "XR_CLASS_COMMENTARY_OPENAI_HEADERS": '{"X-Trace":"aimami"}',
+                    "XR_CLASS_COMMENTARY_OPENAI_HEADERS": '{"User-Agent":"Xingrun/1.0"}',
                 },
                 clear=True,
             ):
@@ -179,7 +179,7 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertEqual(cfg["class_commentary_model"], "gpt-5.5")
                 self.assertEqual(cfg["class_commentary_openai_base_url"], "https://api.iiiiitoken.com")
                 self.assertEqual(cfg["class_commentary_openai_api_key"], "sk-class-test")
-                self.assertEqual(cfg["class_commentary_openai_headers"], '{"X-Trace":"aimami"}')
+                self.assertEqual(cfg["class_commentary_openai_headers"], '{"User-Agent":"Xingrun/1.0"}')
                 self.assertEqual(app._default_ai_provider_name(), "deepseek")
                 self.assertEqual(app._default_chat_model_name(), "deepseek-v4-pro")
                 self.assertEqual(app._review_plan_ai_provider_name(), "deepseek")
@@ -187,7 +187,7 @@ class AiProviderDefaultsTest(unittest.TestCase):
                 self.assertEqual(app._class_commentary_ai_provider_name(fallback=app._default_ai_provider_name()), "openai")
                 self.assertEqual(app._class_commentary_chat_model_name("openai", fallback_model=app._default_chat_model_name()), "gpt-5.5")
                 self.assertEqual(app._class_commentary_openai_base_url(), "https://api.iiiiitoken.com")
-                self.assertEqual(app._class_commentary_openai_headers(), '{"X-Trace":"aimami"}')
+                self.assertEqual(app._class_commentary_openai_headers(), '{"User-Agent":"Xingrun/1.0"}')
                 self.assertFalse(app.has_review_plan_api_key())
                 self.assertTrue(app.has_class_commentary_api_key())
 
