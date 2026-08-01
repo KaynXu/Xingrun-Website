@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 from config_runtime import get_runtime_config
+from class_commentary_feedback_schema import build_class_commentary_feedback_read_envelope
 from class_commentary_memory_privacy import validate_class_commentary_memory_privacy
 from review_plan_workflow.generation_options import (
     generation_options_summary,
@@ -2341,6 +2342,33 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) 
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
+def _ensure_class_commentary_structured_feedback_schema(conn: sqlite3.Connection) -> None:
+    columns = {
+        "class_commentary_generations": {
+            "feedback_schema_version": "TEXT NOT NULL DEFAULT ''",
+            "structured_feedback_json": "TEXT NOT NULL DEFAULT ''",
+            "structured_feedback_hash": "TEXT NOT NULL DEFAULT ''",
+            "eligible_student_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+            "eligible_student_scope_hash": "TEXT NOT NULL DEFAULT ''",
+            "student_mention_matcher_version": "TEXT NOT NULL DEFAULT ''",
+            "response_format_json": "TEXT NOT NULL DEFAULT '{}'",
+            "student_history_memory_mode": "TEXT NOT NULL DEFAULT ''",
+        },
+        "class_commentary_feedback_drafts": {
+            "feedback_schema_version": "TEXT NOT NULL DEFAULT ''",
+            "structured_feedback_json": "TEXT NOT NULL DEFAULT ''",
+        },
+        "class_commentary_revisions": {
+            "feedback_schema_version": "TEXT NOT NULL DEFAULT ''",
+            "structured_feedback_json": "TEXT NOT NULL DEFAULT ''",
+            "structured_feedback_hash": "TEXT NOT NULL DEFAULT ''",
+        },
+    }
+    for table, table_columns in columns.items():
+        for column, ddl in table_columns.items():
+            _ensure_column(conn, table, column, ddl)
+
+
 def canonicalize_class_subject_key(subject: object) -> Optional[str]:
     normalized = str(subject or "").strip().casefold()
     return CLASS_SUBJECT_KEY_ALIASES.get(normalized)
@@ -2549,6 +2577,14 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             memory_context_hash TEXT,
             execution_snapshot_status TEXT NOT NULL DEFAULT 'ready',
             execution_snapshot_finalized_at TEXT,
+            feedback_schema_version TEXT NOT NULL DEFAULT '',
+            structured_feedback_json TEXT NOT NULL DEFAULT '',
+            structured_feedback_hash TEXT NOT NULL DEFAULT '',
+            eligible_student_ids_json TEXT NOT NULL DEFAULT '[]',
+            eligible_student_scope_hash TEXT NOT NULL DEFAULT '',
+            student_mention_matcher_version TEXT NOT NULL DEFAULT '',
+            response_format_json TEXT NOT NULL DEFAULT '{}',
+            student_history_memory_mode TEXT NOT NULL DEFAULT '',
             generated_feedback_text TEXT NOT NULL DEFAULT '',
             origin TEXT NOT NULL,
             snapshot_completeness TEXT NOT NULL,
@@ -2611,6 +2647,8 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
             teacher_user_id INTEGER NOT NULL REFERENCES users(id),
             based_on_revision_id INTEGER REFERENCES class_commentary_revisions(id) ON DELETE SET NULL,
+            feedback_schema_version TEXT NOT NULL DEFAULT '',
+            structured_feedback_json TEXT NOT NULL DEFAULT '',
             feedback_text TEXT NOT NULL,
             content_hash TEXT NOT NULL,
             draft_version INTEGER NOT NULL,
@@ -2632,6 +2670,9 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             previous_revision_id INTEGER REFERENCES class_commentary_revisions(id),
             confirmed_draft_version INTEGER NOT NULL DEFAULT 0,
             confirmed_draft_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            feedback_schema_version TEXT NOT NULL DEFAULT '',
+            structured_feedback_json TEXT NOT NULL DEFAULT '',
+            structured_feedback_hash TEXT NOT NULL DEFAULT '',
             final_feedback_text TEXT NOT NULL,
             generation_diff_json TEXT NOT NULL,
             previous_revision_diff_json TEXT,
@@ -2943,6 +2984,7 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
         "execution_snapshot_finalized_at",
         "TEXT",
     )
+    _ensure_class_commentary_structured_feedback_schema(conn)
     _ensure_column(
         conn,
         "class_commentary_skill_candidate_builds",
@@ -8508,6 +8550,24 @@ class ClassCommentaryDraftVersionConflict(ValueError):
         self.current_draft = current_draft
 
 
+class ClassCommentaryFeedbackSchemaMismatch(ValueError):
+    def __init__(self):
+        super().__init__("feedback_schema_mismatch")
+        self.code = "feedback_schema_mismatch"
+
+
+class ClassCommentaryFeedbackSchemaUnsupported(ValueError):
+    def __init__(self):
+        super().__init__("feedback_schema_unsupported")
+        self.code = "feedback_schema_unsupported"
+
+
+class ClassCommentaryFeedbackSchemaInvalid(ValueError):
+    def __init__(self):
+        super().__init__("feedback_schema_invalid")
+        self.code = "feedback_schema_invalid"
+
+
 class ClassCommentaryConfirmationRequestConflict(ValueError):
     pass
 
@@ -10888,6 +10948,31 @@ def _serialize_class_commentary_feedback_draft_row(row: sqlite3.Row) -> dict:
     return dict(row)
 
 
+def _require_class_commentary_plain_text_feedback_write(
+    record: sqlite3.Row | dict,
+    generation: sqlite3.Row | dict,
+    *,
+    derived_text_field: str,
+    structured_hash_field: str,
+) -> None:
+    source = dict(record)
+    envelope = build_class_commentary_feedback_read_envelope(
+        schema_version=source.get("feedback_schema_version"),
+        structured_json=source.get("structured_feedback_json"),
+        stored_hash=source.get(structured_hash_field),
+        derived_text=source.get(derived_text_field),
+        generation=dict(generation),
+    )
+    status = envelope["feedback_schema_status"]
+    if status == "plain_text":
+        return
+    if status == "unsupported":
+        raise ClassCommentaryFeedbackSchemaUnsupported()
+    if status == "invalid":
+        raise ClassCommentaryFeedbackSchemaInvalid()
+    raise ClassCommentaryFeedbackSchemaMismatch()
+
+
 def _get_class_commentary_feedback_draft_conn(
     conn: sqlite3.Connection,
     task_id: int,
@@ -11003,6 +11088,19 @@ def save_class_commentary_feedback_draft(
             generation_id,
             teacher_user_id,
         )
+        _require_class_commentary_plain_text_feedback_write(
+            generation,
+            generation,
+            derived_text_field="generated_feedback_text",
+            structured_hash_field="structured_feedback_hash",
+        )
+        if current is not None:
+            _require_class_commentary_plain_text_feedback_write(
+                current,
+                generation,
+                derived_text_field="feedback_text",
+                structured_hash_field="content_hash",
+            )
         if current is None:
             if expected_version != 0:
                 raise ClassCommentaryDraftVersionConflict(None)
@@ -11876,6 +11974,12 @@ def confirm_class_commentary_feedback(
             teacher_user_id,
             None,
         )
+        _require_class_commentary_plain_text_feedback_write(
+            generation,
+            generation,
+            derived_text_field="generated_feedback_text",
+            structured_hash_field="structured_feedback_hash",
+        )
         existing = conn.execute(
             """
             SELECT *
@@ -11924,6 +12028,13 @@ def confirm_class_commentary_feedback(
             generation_id,
             teacher_user_id,
         )
+        if current_draft is not None:
+            _require_class_commentary_plain_text_feedback_write(
+                current_draft,
+                generation,
+                derived_text_field="feedback_text",
+                structured_hash_field="content_hash",
+            )
         if current_draft is None:
             if expected_version != 0:
                 raise ClassCommentaryDraftVersionConflict(None)
@@ -11944,6 +12055,18 @@ def confirm_class_commentary_feedback(
             ).fetchone()
             if not previous_revision:
                 raise ValueError("task latest revision pointer is invalid")
+            previous_generation = conn.execute(
+                "SELECT * FROM class_commentary_generations WHERE id=?",
+                (previous_revision["generation_id"],),
+            ).fetchone()
+            if not previous_generation:
+                raise ValueError("revision generation pointer is invalid")
+            _require_class_commentary_plain_text_feedback_write(
+                previous_revision,
+                previous_generation,
+                derived_text_field="final_feedback_text",
+                structured_hash_field="structured_feedback_hash",
+            )
         revision_no = int(task["feedback_revision_no"] or 0) + 1
         captured_at = conn.execute(
             "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now') AS value"

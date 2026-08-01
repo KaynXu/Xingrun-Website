@@ -114,6 +114,7 @@ type PendingClassCommentaryRequest = {
 const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   memory_learning_enabled: false,
   skill_evolution_enabled: false,
+  structured_feedback_enabled: false,
 };
 
 function createClassCommentaryRequestId(prefix: string): string {
@@ -612,11 +613,24 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const selectedClass = classes.find((item) => String(item.id) === selectedClassId) || null;
   const selectedSkill = skills.find((item) => item.id === selectedSkillId) || null;
   const selectedGeneration = generations.find((item) => String(item.id) === selectedGenerationId) || null;
-  const selectedRevision = feedbackRevisions.find((item) => item.id === task?.latest_revision_id
-    && item.generation_id === selectedGeneration?.id) || null;
+  const taskLatestRevision = feedbackRevisions.find((item) => item.id === task?.latest_revision_id) || null;
+  const selectedRevision = taskLatestRevision?.generation_id === selectedGeneration?.id
+    ? taskLatestRevision
+    : null;
   const selectedEditorState = selectedGeneration ? generationEditors[selectedGeneration.id] : undefined;
   const generationLoading = loadingGenerationId !== null;
   const isTaskReadOnly = Boolean(task && task.teacher_user_id !== currentUser.id);
+  const feedbackSchemaStatuses = [
+    selectedGeneration?.feedback_schema_status,
+    feedbackDraft?.feedback_schema_status,
+    taskLatestRevision?.feedback_schema_status,
+  ].filter((status): status is NonNullable<typeof status> => Boolean(status));
+  const feedbackSchemaReadOnly = feedbackSchemaStatuses.some((status) => status !== 'plain_text');
+  const feedbackSchemaNotice = feedbackSchemaStatuses.includes('invalid')
+    ? '反馈数据完整性校验失败, 当前仅可查看和复制现有内容.'
+    : feedbackSchemaStatuses.some((status) => status === 'unsupported' || status === 'supported')
+      ? '当前结构化反馈暂不支持在此版本编辑, 可查看和复制现有内容.'
+      : '';
   const copyText = resolveClassCommentaryCopyText(
     feedbackDraft,
     selectedRevision,
@@ -645,12 +659,14 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
   const hasSucceededGeneration = selectedGeneration?.status === 'succeeded';
   const canSaveFeedbackDraft = !isTaskReadOnly
+    && !feedbackSchemaReadOnly
     && !busy
     && !generationLoading
     && selectedGeneration?.status === 'succeeded'
     && Boolean(feedbackEditorText.trim())
     && feedbackEditorText !== (selectedEditorState?.savedFeedbackText || '');
   const canConfirmFeedback = !isTaskReadOnly
+    && !feedbackSchemaReadOnly
     && !busy
     && !generationLoading
     && selectedGeneration?.status === 'succeeded'
@@ -1884,8 +1900,12 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   onChange={(event) => setFeedbackEditorText(event.target.value)}
                   placeholder="生成完成后, 这里会显示可修改并确认的反馈文本."
                   className="min-h-64"
-                  disabled={isTaskReadOnly || busy || generationLoading || !selectedGeneration || selectedGeneration.status !== 'succeeded'}
+                  readOnly={isTaskReadOnly || feedbackSchemaReadOnly}
+                  disabled={busy || generationLoading || !selectedGeneration || selectedGeneration.status !== 'succeeded'}
                 />
+                {feedbackSchemaNotice ? (
+                  <p className="text-xs text-muted-foreground">{feedbackSchemaNotice}</p>
+                ) : null}
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <Button type="button" variant="outline" onClick={handleSaveFeedbackDraft} disabled={!canSaveFeedbackDraft}>
                     保存草稿

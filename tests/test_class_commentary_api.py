@@ -1,5 +1,6 @@
 import io
 import importlib
+import hashlib
 import json
 import sys
 import tempfile
@@ -152,6 +153,12 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
     def test_old_class_feedback_routes_are_removed(self):
         response = self.client.get("/api/class-feedback/labels", headers=self.headers)
         self.assertEqual(response.status_code, 404)
+
+    def test_structured_feedback_capability_is_present_and_disabled(self):
+        response = self.client.get("/api/class-commentary/capabilities", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["structured_feedback_enabled"])
 
     def test_create_task_returns_transcribing_without_running_transcription_inline(self):
         class_id = self._create_class_with_student()
@@ -867,6 +874,369 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(detail["confirmed_transcript_snapshot"], "小王今天计算有进步")
         self.assertEqual(detail["skill_content_snapshot"], "history registry content")
         self.assertEqual(detail["generated_feedback_text"], "第一版反馈")
+        self.assertEqual(detail["feedback_schema_version"], "")
+        self.assertEqual(detail["feedback_schema_status"], "plain_text")
+        self.assertEqual(detail["student_feedback_items"], [])
+        self.assertEqual(detail["structured_feedback_hash"], "")
+        self.assertEqual(detail["derived_feedback_text"], "第一版反馈")
+        self.assertTrue(detail["writable"])
+        self.assertEqual(summaries[0]["feedback_schema_status"], "plain_text")
+        self.assertEqual(summaries[0]["derived_feedback_text"], "第二版反馈")
+
+    def test_common_read_envelope_supports_v1_and_fails_closed_for_unknown_or_corrupt_rows(self):
+        class_id = self._create_class_with_student()
+        task = self._create_transcribed_task(class_id, "小王今天计算有进步")
+        skill = self._register_skill("structured-read-style", "structured read content")
+        generation = self._create_succeeded_generation(task, skill)
+        roster = json.loads(generation["attending_roster_snapshot_json"])
+        student_id = int(roster[0]["student_id"])
+        student_name = str(roster[0]["student_name"])
+        feedback_text = "今天课堂计算更稳定, 下一步继续加强验算."
+        derived_text = f"{student_name}:\n{feedback_text}"
+        structured_payload = {
+            "schema_version": "class_commentary.student_feedback.v1",
+            "items": [{"student_id": student_id, "feedback_text": feedback_text}],
+        }
+        structured_json = json.dumps(
+            structured_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        structured_hash = hashlib.sha256(structured_json.encode("utf-8")).hexdigest()
+        revision = lesson_manager.confirm_class_commentary_feedback(
+            task_id=task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.owner["id"],
+            feedback_text=derived_text,
+            learn_requested=False,
+            expected_draft_version=0,
+            confirmation_request_id="structured-read-confirmation",
+        )
+        draft_id = int(revision["draft"]["id"])
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version=?, structured_feedback_json=?,
+                    structured_feedback_hash=?, eligible_student_ids_json=?,
+                    eligible_student_scope_hash='scope-hash',
+                    student_mention_matcher_version='class_commentary.student_name_matcher.v1',
+                    response_format_json='{"type":"json_object"}',
+                    student_history_memory_mode='disabled_v1',
+                    generated_feedback_text=?
+                WHERE id=?
+                """,
+                (
+                    structured_payload["schema_version"],
+                    structured_json,
+                    structured_hash,
+                    json.dumps([student_id], separators=(",", ":")),
+                    derived_text,
+                    generation["id"],
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_feedback_drafts
+                SET feedback_schema_version=?, structured_feedback_json=?,
+                    content_hash=?, feedback_text=?
+                WHERE id=?
+                """,
+                (
+                    structured_payload["schema_version"],
+                    structured_json,
+                    structured_hash,
+                    derived_text,
+                    draft_id,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_revisions
+                SET feedback_schema_version=?, structured_feedback_json=?,
+                    structured_feedback_hash=?, final_feedback_text=?
+                WHERE id=?
+                """,
+                (
+                    structured_payload["schema_version"],
+                    structured_json,
+                    structured_hash,
+                    derived_text,
+                    revision["id"],
+                ),
+            )
+            conn.execute("UPDATE students SET name='改名后学生' WHERE id=?", (student_id,))
+
+        generations_url = f"/api/class-commentary/tasks/{task['id']}/generations"
+        generation_url = f"{generations_url}/{generation['id']}"
+        draft_url = f"{generation_url}/feedback-draft"
+        revisions_url = f"/api/class-commentary/tasks/{task['id']}/feedback-revisions"
+        generation_list = self.client.get(generations_url, headers=self.headers).get_json()["generations"]
+        generation_detail = self.client.get(generation_url, headers=self.headers).get_json()
+        draft_detail = self.client.get(draft_url, headers=self.headers).get_json()["draft"]
+        revision_detail = self.client.get(revisions_url, headers=self.headers).get_json()["revisions"][0]
+
+        expected_item = {
+            "student_id": student_id,
+            "student_name": student_name,
+            "feedback_text": feedback_text,
+        }
+        for record in (generation_list[0], generation_detail, draft_detail, revision_detail):
+            with self.subTest(record_id=record["id"]):
+                self.assertEqual(record["feedback_schema_status"], "supported")
+                self.assertEqual(record["student_feedback_items"], [expected_item])
+                self.assertEqual(record["structured_feedback_hash"], structured_hash)
+                self.assertEqual(record["derived_feedback_text"], derived_text)
+                self.assertTrue(record["writable"])
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version='future.student-feedback.v2',
+                    structured_feedback_json='not-json', structured_feedback_hash='future-hash'
+                WHERE id=?
+                """,
+                (generation["id"],),
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_feedback_drafts
+                SET feedback_schema_version='future.student-feedback.v2',
+                    structured_feedback_json='not-json', content_hash='future-hash'
+                WHERE id=?
+                """,
+                (draft_id,),
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_revisions
+                SET feedback_schema_version='future.student-feedback.v2',
+                    structured_feedback_json='not-json', structured_feedback_hash='future-hash'
+                WHERE id=?
+                """,
+                (revision["id"],),
+            )
+
+        unknown_records = (
+            self.client.get(generations_url, headers=self.headers).get_json()["generations"][0],
+            self.client.get(generation_url, headers=self.headers).get_json(),
+            self.client.get(draft_url, headers=self.headers).get_json()["draft"],
+            self.client.get(revisions_url, headers=self.headers).get_json()["revisions"][0],
+        )
+        for record in unknown_records:
+            with self.subTest(unknown_record_id=record["id"]):
+                self.assertEqual(record["feedback_schema_status"], "unsupported")
+                self.assertEqual(record["student_feedback_items"], [])
+                self.assertEqual(record["derived_feedback_text"], derived_text)
+                self.assertFalse(record["writable"])
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version=' ', structured_feedback_json='',
+                    structured_feedback_hash=''
+                WHERE id=?
+                """,
+                (generation["id"],),
+            )
+        whitespace_schema_record = self.client.get(
+            generation_url,
+            headers=self.headers,
+        ).get_json()
+        self.assertEqual(whitespace_schema_record["feedback_schema_version"], " ")
+        self.assertEqual(whitespace_schema_record["feedback_schema_status"], "unsupported")
+        self.assertFalse(whitespace_schema_record["writable"])
+
+        corrupt_cases = (
+            ("{", structured_hash, derived_text),
+            (structured_json, "bad-hash", derived_text),
+            (structured_json, structured_hash, "tampered derived text"),
+        )
+        for corrupt_json, corrupt_hash, corrupt_text in corrupt_cases:
+            with lesson_manager.get_conn() as conn:
+                conn.execute(
+                    """
+                    UPDATE class_commentary_generations
+                    SET feedback_schema_version='class_commentary.student_feedback.v1',
+                        structured_feedback_json=?, structured_feedback_hash=?,
+                        generated_feedback_text=?
+                    WHERE id=?
+                    """,
+                    (corrupt_json, corrupt_hash, corrupt_text, generation["id"]),
+                )
+            corrupt_record = self.client.get(generation_url, headers=self.headers).get_json()
+            self.assertEqual(corrupt_record["feedback_schema_status"], "invalid")
+            self.assertEqual(corrupt_record["student_feedback_items"], [])
+            self.assertFalse(corrupt_record["writable"])
+
+    def test_nonempty_schema_rejects_legacy_writes_without_mutating_feedback_state(self):
+        class_id = self._create_class_with_student()
+        task = self._create_transcribed_task(class_id, "小王今天计算有进步")
+        skill = self._register_skill("structured-write-floor", "structured write floor")
+        generation = self._create_succeeded_generation(task, skill)
+        roster = json.loads(generation["attending_roster_snapshot_json"])
+        student_id = int(roster[0]["student_id"])
+        student_name = str(roster[0]["student_name"])
+        feedback_text = "今天课堂计算更稳定."
+        derived_text = f"{student_name}:\n{feedback_text}"
+        structured_payload = {
+            "schema_version": "class_commentary.student_feedback.v1",
+            "items": [{"student_id": student_id, "feedback_text": feedback_text}],
+        }
+        structured_json = json.dumps(
+            structured_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        structured_hash = hashlib.sha256(structured_json.encode("utf-8")).hexdigest()
+        draft_url = (
+            f"/api/class-commentary/tasks/{task['id']}/generations/"
+            f"{generation['id']}/feedback-draft"
+        )
+        confirmation_url = f"/api/class-commentary/tasks/{task['id']}/feedback-confirmations"
+        plain_draft_payload = {"feedback_text": derived_text, "expected_draft_version": 0}
+        plain_confirmation_payload = {
+            "generation_id": generation["id"],
+            "feedback_text": derived_text,
+            "learn": False,
+            "expected_draft_version": 0,
+            "request_id": "compatibility-floor-write",
+        }
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version='future.student-feedback.v2',
+                    structured_feedback_json='future-json', structured_feedback_hash='future-hash',
+                    generated_feedback_text=?
+                WHERE id=?
+                """,
+                (derived_text, generation["id"]),
+            )
+        unknown_draft = self.client.put(draft_url, headers=self.headers, json=plain_draft_payload)
+        unknown_confirmation = self.client.post(
+            confirmation_url,
+            headers=self.headers,
+            json=plain_confirmation_payload,
+        )
+        self.assertEqual(unknown_draft.status_code, 409)
+        self.assertEqual(unknown_draft.get_json(), {"error": "feedback_schema_unsupported"})
+        self.assertEqual(unknown_confirmation.status_code, 409)
+        self.assertEqual(unknown_confirmation.get_json(), {"error": "feedback_schema_unsupported"})
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version=' ', structured_feedback_json='',
+                    structured_feedback_hash=''
+                WHERE id=?
+                """,
+                (generation["id"],),
+            )
+        whitespace_draft = self.client.put(
+            draft_url,
+            headers=self.headers,
+            json=plain_draft_payload,
+        )
+        self.assertEqual(whitespace_draft.status_code, 409)
+        self.assertEqual(
+            whitespace_draft.get_json(),
+            {"error": "feedback_schema_unsupported"},
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version='class_commentary.student_feedback.v1',
+                    structured_feedback_json='{}', structured_feedback_hash='bad-hash',
+                    eligible_student_ids_json=?
+                WHERE id=?
+                """,
+                (json.dumps([student_id]), generation["id"]),
+            )
+        invalid_draft = self.client.put(draft_url, headers=self.headers, json=plain_draft_payload)
+        invalid_confirmation = self.client.post(
+            confirmation_url,
+            headers=self.headers,
+            json={**plain_confirmation_payload, "request_id": "compatibility-floor-invalid"},
+        )
+        self.assertEqual(invalid_draft.status_code, 409)
+        self.assertEqual(invalid_draft.get_json(), {"error": "feedback_schema_invalid"})
+        self.assertEqual(invalid_confirmation.status_code, 409)
+        self.assertEqual(invalid_confirmation.get_json(), {"error": "feedback_schema_invalid"})
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET structured_feedback_json=?, structured_feedback_hash=?,
+                    generated_feedback_text=?
+                WHERE id=?
+                """,
+                (structured_json, structured_hash, derived_text, generation["id"]),
+            )
+        supported_draft = self.client.put(draft_url, headers=self.headers, json=plain_draft_payload)
+        supported_confirmation = self.client.post(
+            confirmation_url,
+            headers=self.headers,
+            json={**plain_confirmation_payload, "request_id": "compatibility-floor-supported"},
+        )
+        self.assertEqual(supported_draft.status_code, 400)
+        self.assertEqual(supported_draft.get_json(), {"error": "feedback_schema_mismatch"})
+        self.assertEqual(supported_confirmation.status_code, 400)
+        self.assertEqual(supported_confirmation.get_json(), {"error": "feedback_schema_mismatch"})
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version='', structured_feedback_json='',
+                    structured_feedback_hash='', eligible_student_ids_json='[]'
+                WHERE id=?
+                """,
+                (generation["id"],),
+            )
+        structured_request = {
+            "feedback_schema_version": structured_payload["schema_version"],
+            "student_feedback_items": structured_payload["items"],
+            "expected_draft_version": 0,
+        }
+        self.assertEqual(
+            self.client.put(draft_url, headers=self.headers, json=structured_request).get_json(),
+            {"error": "feedback_schema_mismatch"},
+        )
+        self.assertEqual(
+            self.client.post(
+                confirmation_url,
+                headers=self.headers,
+                json={
+                    **structured_request,
+                    "generation_id": generation["id"],
+                    "learn": False,
+                    "request_id": "compatibility-floor-structured-body",
+                },
+            ).get_json(),
+            {"error": "feedback_schema_mismatch"},
+        )
+        with lesson_manager.get_conn() as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_feedback_drafts WHERE task_id=?",
+                (task["id"],),
+            ).fetchone()[0], 0)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_revisions WHERE task_id=?",
+                (task["id"],),
+            ).fetchone()[0], 0)
+        current_task = lesson_manager.get_class_commentary_task(task["id"])
+        self.assertIsNone(current_task["latest_revision_id"])
+        self.assertEqual(current_task["final_feedback_text"], "")
 
     def test_generation_feedback_draft_get_put_uses_cas(self):
         class_id = self._create_class_with_student()
@@ -899,6 +1269,10 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         created = self._unwrap_payload(created_response.get_json(), "draft")
         self.assertEqual(created["feedback_text"], "草稿第一版")
         self.assertEqual(created["draft_version"], 1)
+        self.assertEqual(created["feedback_schema_status"], "plain_text")
+        self.assertEqual(created["student_feedback_items"], [])
+        self.assertEqual(created["derived_feedback_text"], "草稿第一版")
+        self.assertTrue(created["writable"])
         self.assertEqual(read_response.status_code, 200)
         read_draft = self._unwrap_payload(read_response.get_json(), "draft")
         self.assertEqual(read_draft["feedback_text"], "草稿第一版")
@@ -913,6 +1287,8 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(conflict["error"], "draft_version_conflict")
         self.assertEqual(conflict["current_draft"]["feedback_text"], "草稿第二版")
         self.assertEqual(conflict["current_draft"]["draft_version"], 2)
+        self.assertEqual(conflict["current_draft"]["feedback_schema_status"], "plain_text")
+        self.assertEqual(conflict["current_draft"]["derived_feedback_text"], "草稿第二版")
 
     def test_feedback_confirmation_contract_is_idempotent_and_memory_is_disabled(self):
         class_id = self._create_class_with_student()
@@ -969,6 +1345,12 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(first_revision["generation_id"], generation["id"])
         self.assertFalse(first_revision["learn_requested"])
         self.assertEqual(first_revision["draft_version"], 1)
+        self.assertEqual(first_revision["confirmed_draft_version"], 1)
+        self.assertEqual(first_revision["feedback_schema_status"], "plain_text")
+        self.assertEqual(first_revision["derived_feedback_text"], confirmation_payload["feedback_text"])
+        self.assertEqual(first_response.get_json()["latest_revision_id"], revision_id)
+        self.assertEqual(first_response.get_json()["latest_revision_no"], 1)
+        self.assertEqual(first_response.get_json()["draft"]["feedback_schema_status"], "plain_text")
         self.assertEqual(repeated_response.status_code, 200)
         repeated_revision = self._unwrap_payload(repeated_response.get_json(), "revision")
         self.assertEqual(
@@ -987,6 +1369,8 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(draft["draft_version"], 1)
         self.assertEqual(draft["based_on_revision_id"], revision_id)
         self.assertEqual(draft["feedback_text"], confirmation_payload["feedback_text"])
+        self.assertEqual(draft["feedback_schema_status"], "plain_text")
+        self.assertEqual(draft["derived_feedback_text"], confirmation_payload["feedback_text"])
 
     def test_confirmation_replay_returns_first_transaction_snapshot_after_draft_changes(self):
         class_id = self._create_class_with_student()

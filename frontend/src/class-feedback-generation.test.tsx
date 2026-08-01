@@ -185,6 +185,18 @@ test('class feedback result actions use shadcn buttons and gate learning from se
   assertSourceMatches(source, /confirmClassCommentaryFeedback\(/, 'confirmation client is not used');
 });
 
+test('nonempty feedback schemas stay read-only until the structured editor is released', () => {
+  const feedbackCard = cardSource('反馈结果');
+
+  assertSourceMatches(source, /const taskLatestRevision = feedbackRevisions\.find\(\(item\) => item\.id === task\?\.latest_revision_id\) \|\| null;/, 'task-level latest revision must gate legacy editing even when another generation is selected');
+  assertSourceMatches(source, /taskLatestRevision\?\.feedback_schema_status,/, 'the task-level latest revision schema must participate in read-only mode');
+  assertSourceMatches(source, /const feedbackSchemaReadOnly = feedbackSchemaStatuses\.some\(\(status\) => status !== 'plain_text'\);/, 'nonempty schemas must not fall back to plain-text editing');
+  assertSourceMatches(source, /const canSaveFeedbackDraft = !isTaskReadOnly\s*&& !feedbackSchemaReadOnly/, 'schema read-only mode must block draft writes');
+  assertSourceMatches(source, /const canConfirmFeedback = !isTaskReadOnly\s*&& !feedbackSchemaReadOnly/, 'schema read-only mode must block confirmation writes');
+  assertSourceMatches(feedbackCard, /readOnly=\{isTaskReadOnly \|\| feedbackSchemaReadOnly\}/, 'the compatibility text must remain selectable without becoming editable');
+  assertSourceMatches(source, /当前结构化反馈暂不支持在此版本编辑, 可查看和复制现有内容\./, 'read-only structured feedback needs an actionable notice');
+});
+
 test('memory learning stays inside the feedback card and reuses shadcn actions', () => {
   const feedbackCard = cardSource('反馈结果');
 
@@ -373,6 +385,9 @@ test('draft conflicts retain local editor text in a shadcn dialog with explicit 
 
 test('revision history stays lightweight and copy ignores unsaved editor text', () => {
   const feedbackCard = cardSource('反馈结果');
+  const taskLatestRevisionStart = source.indexOf('const taskLatestRevision =');
+  const taskLatestRevisionEnd = source.indexOf(';', taskLatestRevisionStart);
+  const taskLatestRevisionSource = source.slice(taskLatestRevisionStart, taskLatestRevisionEnd + 1);
   const selectedRevisionStart = source.indexOf('const selectedRevision =');
   const selectedRevisionEnd = source.indexOf(';', selectedRevisionStart);
   const selectedRevisionSource = source.slice(selectedRevisionStart, selectedRevisionEnd + 1);
@@ -384,8 +399,8 @@ test('revision history stays lightweight and copy ignores unsaved editor text', 
   assertSourceMatches(feedbackCard, /feedbackRevisions\.map\(\(revision\) => \(/, 'revision history entries are missing');
   assertSourceMatches(feedbackCard, /revision\.revision_no/, 'revision history must identify revisions');
   assertSourceExcludes(source, /<(?:Card|Dialog)Title>修订历史<\/(?:Card|Dialog)Title>/, 'revision history must not add a separate Card or Dialog');
-  assertSourceMatches(selectedRevisionSource, /item\.id === task\?\.latest_revision_id/, 'copy may only use the task current effective revision');
-  assertSourceMatches(selectedRevisionSource, /item\.generation_id === selectedGeneration\?\.id/, 'the effective revision must belong to the selected generation');
+  assertSourceMatches(taskLatestRevisionSource, /item\.id === task\?\.latest_revision_id/, 'copy may only use the task current effective revision');
+  assertSourceMatches(selectedRevisionSource, /taskLatestRevision\?\.generation_id === selectedGeneration\?\.id/, 'the effective revision must belong to the selected generation');
   assertSourceMatches(source, /const copyText = resolveClassCommentaryCopyText\(\s*feedbackDraft,\s*selectedRevision,\s*selectedGeneration,\s*generationLoading,\s*\);/, 'copy must resolve persisted text through the executable precedence helper');
   assertSourceMatches(copyHandler, /if \(generationLoading \|\| !copyText\) \{\s*return;/, 'copy must be blocked while generation data is loading');
   assertSourceExcludes(copyHandler, /feedbackEditorText/, 'copy must not use unsaved editor text');
@@ -401,7 +416,8 @@ test('generation loading uses a safe empty state and restores the prior selectio
   assertSourceMatches(generationChangeHandler, /isClassCommentaryFeedbackRecordInScope\(generation, taskId, numericGenerationId\)/, 'generation responses must be checked against the requested scope');
   assertSourceMatches(generationChangeHandler, /draft && !isClassCommentaryFeedbackRecordInScope\(draft, taskId, numericGenerationId\)/, 'draft responses must be checked against the requested scope');
   assertSourceMatches(feedbackCard, /disabled=\{generationLoading \|\| !copyText\}/, 'copy must be disabled during generation loading');
-  assertSourceMatches(feedbackCard, /disabled=\{isTaskReadOnly \|\| busy \|\| generationLoading \|\| !selectedGeneration \|\| selectedGeneration\.status !== 'succeeded'\}/, 'the editor must be disabled during generation loading and privileged read-only access');
+  assertSourceMatches(feedbackCard, /readOnly=\{isTaskReadOnly \|\| feedbackSchemaReadOnly\}/, 'privileged and schema compatibility access must keep the editor read-only');
+  assertSourceMatches(feedbackCard, /disabled=\{busy \|\| generationLoading \|\| !selectedGeneration \|\| selectedGeneration\.status !== 'succeeded'\}/, 'the editor must be disabled during generation loading');
 });
 
 test('super owner history access stays read-only in the class feedback page', () => {

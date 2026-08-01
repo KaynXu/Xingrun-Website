@@ -79,6 +79,9 @@ _WRONG_QUESTION_PRACTICE_PDF_RETRY_DELAYS_SECONDS = (1, 3, 5)
 from lesson_manager import (
     ClassCommentaryConfirmationRequestConflict,
     ClassCommentaryDraftVersionConflict,
+    ClassCommentaryFeedbackSchemaInvalid,
+    ClassCommentaryFeedbackSchemaMismatch,
+    ClassCommentaryFeedbackSchemaUnsupported,
     ClassCommentaryGenerationRequestConflict,
     ClassCommentaryMemoryEvidenceNotRevocable,
     ClassCommentaryMemoryEvidenceRequestConflict,
@@ -320,6 +323,10 @@ from class_commentary import (
     payload_to_json,
     sanitize_class_commentary_roster,
 )
+from class_commentary_feedback_schema import (
+    CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+    build_class_commentary_feedback_read_envelope,
+)
 from class_commentary_memory import ClassCommentaryMemoryService
 from class_commentary_memory_queue import (
     class_commentary_memory_queue_healthcheck,
@@ -470,6 +477,13 @@ def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
             }
         )
     return payload
+
+
+def _class_commentary_capabilities(*, force: bool = False) -> dict:
+    return {
+        **_class_commentary_memory_capabilities(force=force),
+        "structured_feedback_enabled": False,
+    }
 
 
 def _dispatch_class_commentary_memory_best_effort() -> dict:
@@ -3232,11 +3246,41 @@ def _class_commentary_json_value(value: object, fallback: object):
         return fallback
 
 
+def _class_commentary_feedback_read_envelope(
+    record: dict,
+    *,
+    derived_text_field: str,
+    structured_hash_field: str,
+    generation: Optional[dict] = None,
+) -> dict:
+    schema_version = str(record.get("feedback_schema_version") or "")
+    if (
+        generation is None
+        and schema_version == CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
+    ):
+        generation_id = int(record.get("generation_id") or 0)
+        if generation_id > 0:
+            generation = get_class_commentary_generation(generation_id)
+    return build_class_commentary_feedback_read_envelope(
+        schema_version=schema_version,
+        structured_json=record.get("structured_feedback_json"),
+        stored_hash=record.get(structured_hash_field),
+        derived_text=record.get(derived_text_field),
+        generation=generation,
+    )
+
+
 def _serialize_class_commentary_generation_for_response(
     generation: dict,
     *,
     include_private_snapshots: bool = False,
 ) -> dict:
+    feedback_envelope = _class_commentary_feedback_read_envelope(
+        generation,
+        derived_text_field="generated_feedback_text",
+        structured_hash_field="structured_feedback_hash",
+        generation=generation,
+    )
     item = {
         "id": int(generation["id"]),
         "generation_id": int(generation["id"]),
@@ -3265,6 +3309,23 @@ def _serialize_class_commentary_generation_for_response(
         "execution_snapshot_finalized_at": str(
             generation.get("execution_snapshot_finalized_at") or ""
         ),
+        "eligible_student_ids": _class_commentary_json_value(
+            generation.get("eligible_student_ids_json"),
+            [],
+        ),
+        "eligible_student_scope_hash": str(
+            generation.get("eligible_student_scope_hash") or ""
+        ),
+        "student_mention_matcher_version": str(
+            generation.get("student_mention_matcher_version") or ""
+        ),
+        "response_format": _class_commentary_json_value(
+            generation.get("response_format_json"),
+            {},
+        ),
+        "student_history_memory_mode": str(
+            generation.get("student_history_memory_mode") or ""
+        ),
         "missing_snapshot_fields": _class_commentary_json_value(
             generation.get("missing_snapshot_fields_json"),
             [],
@@ -3278,6 +3339,7 @@ def _serialize_class_commentary_generation_for_response(
         "has_draft": bool(generation.get("draft_id")),
         "draft_version": int(generation.get("draft_version") or 0),
         "draft_updated_at": str(generation.get("draft_updated_at") or ""),
+        **feedback_envelope,
     }
     if include_private_snapshots:
         item.update(
@@ -3320,12 +3382,22 @@ def _serialize_class_commentary_generation_for_response(
     return item
 
 
-def _serialize_class_commentary_draft_for_response(draft: Optional[dict]) -> dict:
+def _serialize_class_commentary_draft_for_response(
+    draft: Optional[dict],
+    *,
+    generation: Optional[dict] = None,
+) -> dict:
     if not draft:
         return {
             "draft": None,
             "draft_version": 0,
         }
+    feedback_envelope = _class_commentary_feedback_read_envelope(
+        draft,
+        derived_text_field="feedback_text",
+        structured_hash_field="content_hash",
+        generation=generation,
+    )
     serialized = {
         "id": int(draft["id"]),
         "organization_id": int(draft["organization_id"]),
@@ -3338,11 +3410,23 @@ def _serialize_class_commentary_draft_for_response(draft: Optional[dict]) -> dic
         "draft_version": int(draft["draft_version"]),
         "created_at": str(draft.get("created_at") or ""),
         "updated_at": str(draft.get("updated_at") or ""),
+        **feedback_envelope,
     }
     return {**serialized, "draft": serialized}
 
 
-def _serialize_class_commentary_revision_for_response(revision: dict) -> dict:
+def _serialize_class_commentary_revision_for_response(
+    revision: dict,
+    *,
+    generation: Optional[dict] = None,
+) -> dict:
+    feedback_envelope = _class_commentary_feedback_read_envelope(
+        revision,
+        derived_text_field="final_feedback_text",
+        structured_hash_field="structured_feedback_hash",
+        generation=generation,
+    )
+    confirmed_draft_version = int(revision.get("confirmed_draft_version") or 0)
     return {
         "id": int(revision["id"]),
         "organization_id": int(revision["organization_id"]),
@@ -3369,7 +3453,9 @@ def _serialize_class_commentary_revision_for_response(revision: dict) -> dict:
             revision.get("learning_evidence_completeness") or ""
         ),
         "confirmed_at": str(revision.get("confirmed_at") or ""),
-        "draft_version": int(revision.get("draft_version") or 0),
+        "confirmed_draft_version": confirmed_draft_version,
+        "draft_version": int(revision.get("draft_version") or confirmed_draft_version),
+        **feedback_envelope,
     }
 
 
@@ -9513,7 +9599,7 @@ def api_class_commentary_skills():
     if error:
         return error
     skills = _sync_configured_class_commentary_skills(user)
-    capabilities = _class_commentary_memory_capabilities()
+    capabilities = _class_commentary_capabilities()
     return jsonify({
         "skills": skills,
         "configured": bool(skills),
@@ -9711,7 +9797,7 @@ def api_class_commentary_capabilities():
     _, error = _require_auth()
     if error:
         return error
-    return jsonify(_class_commentary_memory_capabilities())
+    return jsonify(_class_commentary_capabilities())
 
 
 @app.route("/api/class-commentary/tasks", methods=["POST"])
@@ -9915,6 +10001,8 @@ def api_class_commentary_feedback_draft_put(task_id: int, generation_id: int):
     data, payload_error = _get_json_object_payload()
     if payload_error:
         return payload_error
+    if "feedback_schema_version" in (data or {}) or "student_feedback_items" in (data or {}):
+        return jsonify({"error": "feedback_schema_mismatch"}), 400
     if "expected_draft_version" not in (data or {}):
         return jsonify({"error": "expected_draft_version is required"}), 400
     based_on_revision_id = (data or {}).get("based_on_revision_id")
@@ -9938,6 +10026,12 @@ def api_class_commentary_feedback_draft_put(task_id: int, generation_id: int):
                 else None
             ),
         }), 409
+    except ClassCommentaryFeedbackSchemaUnsupported as exc:
+        return jsonify({"error": exc.code}), 409
+    except ClassCommentaryFeedbackSchemaInvalid as exc:
+        return jsonify({"error": exc.code}), 409
+    except ClassCommentaryFeedbackSchemaMismatch as exc:
+        return jsonify({"error": exc.code}), 400
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(_serialize_class_commentary_draft_for_response(draft))
@@ -9954,6 +10048,8 @@ def api_class_commentary_feedback_confirm(task_id: int):
     data, payload_error = _get_json_object_payload()
     if payload_error:
         return payload_error
+    if "feedback_schema_version" in (data or {}) or "student_feedback_items" in (data or {}):
+        return jsonify({"error": "feedback_schema_mismatch"}), 400
     request_id = str((data or {}).get("request_id") or "").strip()
     if not request_id:
         return jsonify({"error": "request_id is required"}), 400
@@ -9993,6 +10089,12 @@ def api_class_commentary_feedback_confirm(task_id: int):
                 else None
             ),
         }), 409
+    except ClassCommentaryFeedbackSchemaUnsupported as exc:
+        return jsonify({"error": exc.code}), 409
+    except ClassCommentaryFeedbackSchemaInvalid as exc:
+        return jsonify({"error": exc.code}), 409
+    except ClassCommentaryFeedbackSchemaMismatch as exc:
+        return jsonify({"error": exc.code}), 400
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     memory_summary = None
@@ -10007,11 +10109,17 @@ def api_class_commentary_feedback_confirm(task_id: int):
             actor_user_id=int(user["id"]),
         )
     serialized = _serialize_class_commentary_revision_for_response(revision)
+    serialized_draft = _serialize_class_commentary_draft_for_response(
+        revision.get("draft") if isinstance(revision.get("draft"), dict) else None,
+        generation=get_class_commentary_generation(int(revision["generation_id"])),
+    )["draft"]
     response_payload = {
         **serialized,
         "revision_id": serialized["id"],
+        "latest_revision_id": serialized["id"],
+        "latest_revision_no": serialized["revision_no"],
         "revision": serialized,
-        "draft": revision.get("draft"),
+        "draft": serialized_draft,
     }
     if memory_summary is not None:
         response_payload["memory"] = memory_summary

@@ -282,6 +282,66 @@ class ClassCommentaryConfirmationStoreTest(unittest.TestCase):
         self.assertEqual(second_draft["based_on_revision_id"], second_revision["id"])
         self.assertEqual(second_draft["feedback_text"], revised_feedback)
 
+    def test_legacy_confirmation_rejects_task_with_structured_latest_revision(self):
+        self._confirm(
+            self.generated_feedback,
+            "confirmation-request-before-structured-revision",
+        )
+        first_revision = self._revision_rows()[0]
+        structured_feedback = "计算过程更稳定, 每次完成后再验算一次."
+        derived_feedback = f"小王:\n{structured_feedback}"
+        structured_payload = {
+            "schema_version": "class_commentary.student_feedback.v1",
+            "items": [
+                {
+                    "student_id": self.roster[0]["student_id"],
+                    "feedback_text": structured_feedback,
+                }
+            ],
+        }
+        structured_json = self._canonical_json(structured_payload)
+        structured_hash = hashlib.sha256(structured_json.encode("utf-8")).hexdigest()
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET eligible_student_ids_json=?
+                WHERE id=?
+                """,
+                (
+                    self._canonical_json([self.roster[0]["student_id"]]),
+                    self.generation["id"],
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_revisions
+                SET feedback_schema_version='class_commentary.student_feedback.v1',
+                    structured_feedback_json=?, structured_feedback_hash=?,
+                    final_feedback_text=?
+                WHERE id=?
+                """,
+                (structured_json, structured_hash, derived_feedback, first_revision["id"]),
+            )
+
+        revisions_before = self._revision_rows()
+        draft_before = self._draft_row()
+        task_before = lesson_manager.get_class_commentary_task(self.task["id"])
+
+        with self.assertRaises(lesson_manager.ClassCommentaryFeedbackSchemaMismatch):
+            self._confirm(
+                "小王: legacy 客户端试图覆盖 structured revision.",
+                "confirmation-request-after-structured-revision",
+                expected_draft_version=1,
+            )
+
+        self.assertEqual(self._revision_rows(), revisions_before)
+        self.assertEqual(self._draft_row(), draft_before)
+        self.assertEqual(
+            lesson_manager.get_class_commentary_task(self.task["id"]),
+            task_before,
+        )
+
     def test_learning_is_not_enabled_for_runtime_or_legacy_partial_generation(self):
         with self.assertRaises(lesson_manager.ClassCommentaryMemoryNotEnabled) as runtime_error:
             self._confirm(
