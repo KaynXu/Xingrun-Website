@@ -1,11 +1,12 @@
 ## Handoff
 
-最后更新: 2026-07-21
+最后更新: 2026-08-02
 
 这份文件只记录当前权威状态、下一步、风险和残留. 禁止记录流水账.
 详细过程、proof、提交顺序、历史流水请直接看 `git log`。
 
 ### 当前状态
+- 2026-08-02 已确认并完成课堂反馈 `结构化学生反馈 + 单独复制` 设计规格. v1 使用 `class_commentary.student_feedback.v1`, 模型只返回 `student_id + feedback_text`, 姓名和顺序由 generation 冻结到课 roster 解析; JSON 是事实来源, 现有整段文本只作派生兼容. 页面继续使用现有 `反馈结果` Card, 增加逐学生 Accordion, `复制该学生` 和 `复制全部`, 复制当前可见本地文本且不保存, 不确认, 不触发学习. 草稿, 确认, revision 和 Memory 仍是全局老师终审边界; 历史纯文本不强拆, 旧 `class_feedback_*` 不恢复. 规格位于 `docs/superpowers/specs/2026-08-02-class-commentary-structured-student-feedback-design.md`, 本轮仅文档设计, 尚未实现或部署.
 - 2026-07-21 已按用户确认把课堂反馈模型从 GPT Plus 号池 `gpt-5.6-sol` 切换为 woyao.pro 当前标记为纯 GPT Pro 号池的 `gpt-5.6-sol-0.3x`; API 地址和已验证的 `User-Agent: Xingrun/1.0` 请求头保持不变. 生产 `.env.runtime` 备份为 `.env.runtime.backup-class-commentary-gpt-5-6-sol-pro-20260721-170337`, 标准部署脚本已重启 Web 和 memory worker并通过 memory, Redis, RQ 和 HTTP 302 健康门槛. 精确配置模型连续 3 次 live call 成功, 完整课堂反馈冻结提示 67.112 秒完成, `finish_reason=stop`, 输出 2692 字; 网关 resolved model 为基础模型 `gpt-5.6-sol`. `master` 未操作.
 - 2026-07-21 已定位并修复最新课堂反馈生成 502. 生产任务 `175` 及此前多条失败均来自 woyao.pro 当前 API 入口 `https://api.iiiiitoken.com/v1` 的 GPT Plus 上游拒绝 `Upstream access forbidden`; 同一 key 状态 active 且余额正常, 本机与服务器均可复现, 排除 Nginx, Flask, 生产出口 IP 和欠费. 对照确认 OpenAI SDK 默认请求头和旧 `X-Trace` 配置会失败, 使用 `User-Agent: Xingrun/1.0` 后原模型 `gpt-5.6-sol` 连续最小请求通过. 已按最新任务的班级, 当前确认转写, 华奥鑫风格和 13 名到课学生新建任务 `176`, generation `151` 首次成功, 输出 1991 字. 生产 `.env.runtime` 备份为 `.env.runtime.backup-class-commentary-user-agent-20260721-164243`, Web 与 memory worker 已通过标准部署脚本重启, HTTP 302, memory, Redis 和 RQ 健康. 模型未改为 Gemini, 未修改 `master`.
 - 2026-07-16 已完成 9 页 `课堂反馈新功能使用教程`, 覆盖选班和到课名单, 风格选择, 材料输入, 转写校对, 生成反馈, 老师终审, AI 学习确认, 生成历史以及 `generation_snapshot_incomplete` 和 `forbidden` 的处理顺序. PPTX 已经 LibreOffice 兼容性重存并通过 9 页渲染和 `slides_test.py` 零溢出检查; Figma 原生 PPTX 转换仍返回 `Unable to convert file`, 因此改用逐页保真 PDF 导入到 FigJam. 最终 Figma 文件为 `https://www.figma.com/board/WAM8P41cFaNAYTP6edcqEb/课堂反馈新功能使用教程`, 9 页视觉已在画布中逐页可见. 本地一次性交付文件位于 `outputs/class-feedback-teacher-tutorial.pptx` 和 `outputs/class-feedback-teacher-tutorial.pdf`, 按仓库规则不纳入版本控制. 下一步如需真正的 Figma Slides 文件, 等 MCP 额度恢复后再把同一内容写入现有空白 Slides 文件.
@@ -661,6 +662,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
+- 课堂反馈下一步按已确认规格实现 `class_commentary.student_feedback.v1`: 先完成服务端 schema 校验, canonical JSON 和 additive migration, 再接 structured draft/confirmation 与现有结果 Card 的逐学生编辑和复制; capability 默认关闭, 验证真实到课名单全链路后再启用.
 - 课堂反馈 Memory + Skill Evolution 下一步只剩真实登录用户 smoke: 打开生产课堂反馈页, 选择任一同事 Skill, 完成生成 -> 修改文字 -> 确认并学习 -> 等待学习完成 -> 对同一学生再次生成并核对记忆命中; 随后验证撤销或删除 evidence. Skill 候选默认需要 5 个不同 task 的有效 revision, 且至少 3 个不同 task 支持同一变化, 因此单次确认后没有新 Skill 版本是正常结果, 不是失败.
 - 复习计划工作流下一步应跑三科 fixture eval 和真实 PDF 目视 smoke，确认 repair/revision 后的数学、物理、雅思 Reading 输出质量；之后再把 task generation 从单个 plan LLM call 拆成更细的可校验分节点输出。IELTS 当前只把 Reading 作为已覆盖能力，Listening/Writing/Speaking 需要单独补资料后进入 Phase 2，不能假装已经完整覆盖。
 - 先按重排后的闭环顺序推进：`archive/reflection authority layer -> same-record continuity -> student-facing AI chat front door -> practice artifact rebuild -> error_correction adapter -> optional workbench`，不再让“先补更多入口”反过来定义主链路。
