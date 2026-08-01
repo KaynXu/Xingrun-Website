@@ -316,6 +316,7 @@ from lesson_manager import (
 from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import (
     CLASS_COMMENTARY_PROMPT_VERSION,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_TEMPERATURE,
     build_class_commentary_chat_request,
     list_colleague_skills,
@@ -325,7 +326,11 @@ from class_commentary import (
 )
 from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+    CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
+    ClassCommentaryStudentScopeError,
+    ClassCommentaryStructuredFeedbackValidationError,
     build_class_commentary_feedback_read_envelope,
+    validate_class_commentary_structured_generation_contract,
 )
 from class_commentary_memory import ClassCommentaryMemoryService
 from class_commentary_memory_queue import (
@@ -482,7 +487,9 @@ def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
 def _class_commentary_capabilities(*, force: bool = False) -> dict:
     return {
         **_class_commentary_memory_capabilities(force=force),
-        "structured_feedback_enabled": False,
+        "structured_feedback_enabled": bool(
+            get_config().get("class_commentary_structured_feedback_enabled")
+        ),
     }
 
 
@@ -3246,12 +3253,33 @@ def _class_commentary_json_value(value: object, fallback: object):
         return fallback
 
 
+def _class_commentary_frozen_chat_request(generation: dict) -> dict:
+    raw_payload = str(generation.get("prompt_payload_snapshot_json") or "")
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError as exc:
+        raise ValueError("generation prompt snapshot is invalid") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("generation prompt snapshot is invalid")
+    canonical_payload = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    expected_hash = hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+    if expected_hash != str(generation.get("prompt_payload_hash") or ""):
+        raise ValueError("generation prompt snapshot hash mismatch")
+    return payload
+
+
 def _class_commentary_feedback_read_envelope(
     record: dict,
     *,
     derived_text_field: str,
     structured_hash_field: str,
     generation: Optional[dict] = None,
+    allow_empty_generation_payload: bool = False,
 ) -> dict:
     schema_version = str(record.get("feedback_schema_version") or "")
     if (
@@ -3267,6 +3295,7 @@ def _class_commentary_feedback_read_envelope(
         stored_hash=record.get(structured_hash_field),
         derived_text=record.get(derived_text_field),
         generation=generation,
+        allow_empty_generation_payload=allow_empty_generation_payload,
     )
 
 
@@ -3280,6 +3309,7 @@ def _serialize_class_commentary_generation_for_response(
         derived_text_field="generated_feedback_text",
         structured_hash_field="structured_feedback_hash",
         generation=generation,
+        allow_empty_generation_payload=True,
     )
     item = {
         "id": int(generation["id"]),
@@ -10376,6 +10406,14 @@ def api_class_commentary_task_generate(task_id: int):
         return jsonify({"error": "skill not found"}), 404
     chat_provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
     chat_model = _class_commentary_chat_model_name(chat_provider, fallback_model=_default_chat_model_name())
+    structured_feedback_enabled = bool(
+        get_config().get("class_commentary_structured_feedback_enabled")
+    )
+    prompt_version = (
+        CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
+        if structured_feedback_enabled
+        else CLASS_COMMENTARY_PROMPT_VERSION
+    )
     attending_roster = [
         {
             "student_id": int(student["id"]),
@@ -10392,9 +10430,12 @@ def api_class_commentary_task_generate(task_id: int):
             model_provider=chat_provider,
             model_name=chat_model,
             model_parameters={"temperature": CLASS_COMMENTARY_TEMPERATURE},
-            prompt_version=CLASS_COMMENTARY_PROMPT_VERSION,
+            prompt_version=prompt_version,
             attending_roster_explicit="attending_student_ids" in (data or {}),
+            structured_feedback_enabled=structured_feedback_enabled,
         )
+    except ClassCommentaryStudentScopeError as exc:
+        return jsonify({"error": exc.code}), 400
     except ClassCommentaryGenerationRequestConflict:
         return jsonify({"error": "generation_request_conflict"}), 409
     if generation.get("is_idempotent"):
@@ -10412,13 +10453,34 @@ def api_class_commentary_task_generate(task_id: int):
             generation.get("attending_roster_snapshot_json"),
             [],
         )
+        frozen_schema_version = str(
+            generation.get("feedback_schema_version") or ""
+        )
+        if frozen_schema_version:
+            validate_class_commentary_structured_generation_contract(generation)
+        frozen_eligible_ids = _class_commentary_json_value(
+            generation.get("eligible_student_ids_json"),
+            [],
+        )
+        frozen_eligible_id_set = {
+            int(student_id)
+            for student_id in frozen_eligible_ids
+            if type(student_id) is int and student_id > 0
+        }
         frozen_students = [
             {
                 "id": int(item.get("student_id") or 0),
                 "name": str(item.get("student_name") or ""),
             }
             for item in frozen_roster
-            if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
+            if (
+                isinstance(item, dict)
+                and int(item.get("student_id") or 0) > 0
+                and (
+                    not frozen_schema_version
+                    or int(item.get("student_id") or 0) in frozen_eligible_id_set
+                )
+            )
         ]
         frozen_skill = {
             "id": str(generation.get("skill_id") or ""),
@@ -10445,7 +10507,10 @@ def api_class_commentary_task_generate(task_id: int):
             )
         except Exception as exc:
             memory_context = empty_class_commentary_memory_context(
-                f"retrieval_{type(exc).__name__}"
+                f"retrieval_{type(exc).__name__}",
+                student_history_memory_mode=str(
+                    generation.get("student_history_memory_mode") or ""
+                ),
             )
         chat_request = build_class_commentary_chat_request(
             class_record=frozen_class,
@@ -10454,16 +10519,23 @@ def api_class_commentary_task_generate(task_id: int):
             skill=frozen_skill,
             teacher_style_memories=memory_context["teacher_style_memories"],
             student_history_memories=memory_context["student_history_memories"],
+            feedback_schema_version=frozen_schema_version,
+            eligible_student_ids=frozen_eligible_ids,
+            prompt_version=str(generation.get("prompt_version") or ""),
+            response_format=_class_commentary_json_value(
+                generation.get("response_format_json"),
+                {},
+            ),
+            student_history_memory_mode=str(
+                generation.get("student_history_memory_mode") or ""
+            ),
         )
         generation = finalize_class_commentary_generation_execution_snapshot(
             int(generation["id"]),
             prompt_payload=chat_request,
             memory_context=memory_context,
         )
-        persisted_chat_request = _class_commentary_json_value(
-            generation.get("prompt_payload_snapshot_json"),
-            {},
-        )
+        persisted_chat_request = _class_commentary_frozen_chat_request(generation)
         feedback_text = _run_ai_feature_with_charge(
             user={"id": int(user["id"]), "organization_id": int(user["organization_id"])},
             feature_key="class_commentary_generate",
@@ -10494,6 +10566,29 @@ def api_class_commentary_task_generate(task_id: int):
         return jsonify(
             _serialize_class_commentary_generation_result(ready_task, completed_generation)
         )
+    except ClassCommentaryStructuredFeedbackValidationError as exc:
+        logger.warning(
+            "class commentary structured feedback validation failed generation_id=%s reason=%s",
+            int(generation["id"]),
+            exc.reason,
+        )
+        failed_generation = fail_class_commentary_generation(
+            int(generation["id"]),
+            "structured_feedback_invalid",
+        )
+        failed_task = get_class_commentary_task(int(task["id"]))
+        return jsonify({
+            "error": "structured_feedback_invalid",
+            "task": _serialize_class_commentary_task_for_response(
+                failed_task,
+                include_private=True,
+            ),
+            "generation": _serialize_class_commentary_generation_for_response(
+                failed_generation
+            ),
+            "generation_id": int(failed_generation["id"]),
+            "generation_status": str(failed_generation["status"]),
+        }), 500
     except Exception as exc:
         failed_generation = fail_class_commentary_generation(
             int(generation["id"]),

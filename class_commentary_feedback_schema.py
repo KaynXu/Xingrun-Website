@@ -2,12 +2,63 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from collections.abc import Mapping
+from typing import Literal
 
-from class_commentary import normalize_class_commentary_feedback_text
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationError
+
+from class_commentary import (
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    normalize_class_commentary_feedback_text,
+)
 
 
 CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1 = "class_commentary.student_feedback.v1"
+CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1 = "class_commentary.student_name_matcher.v1"
+CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT = {"type": "json_object"}
+CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1 = "disabled_v1"
+CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT = 2000
+CLASS_COMMENTARY_STUDENT_FEEDBACK_TOTAL_LIMIT = 30000
+
+
+class ClassCommentaryStudentScopeError(ValueError):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+class ClassCommentaryStructuredFeedbackValidationError(ValueError):
+    def __init__(
+        self,
+        code: str,
+        *,
+        student_id: int | None = None,
+        field: str = "",
+        limit: int | None = None,
+        reason: str = "",
+    ):
+        super().__init__(reason or code)
+        self.code = code
+        self.student_id = student_id
+        self.field = field
+        self.limit = limit
+        self.reason = reason or code
+
+
+class _StudentFeedbackItemV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    student_id: StrictInt
+    feedback_text: StrictStr
+
+
+class _StudentFeedbackEnvelopeV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    schema_version: Literal[CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1]
+    items: list[_StudentFeedbackItemV1]
 
 
 def _invalid_envelope(
@@ -38,6 +89,81 @@ def _canonical_json(value: object) -> str:
 
 def _content_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _normalize_match_text(value: object) -> str:
+    normalized = unicodedata.normalize("NFKC", str(value or "")).strip()
+    return re.sub(r"\s+", " ", normalized)
+
+
+def match_class_commentary_eligible_student_ids(
+    *,
+    transcript_text: object,
+    roster: object,
+) -> list[int]:
+    if not isinstance(roster, list):
+        raise ValueError("structured feedback roster must be a list")
+    normalized_roster: list[tuple[int, int, str]] = []
+    names_seen: set[str] = set()
+    student_ids_seen: set[int] = set()
+    for position, item in enumerate(roster):
+        if not isinstance(item, Mapping):
+            raise ValueError("structured feedback roster item is invalid")
+        student_id = item.get("student_id")
+        student_name = _normalize_match_text(item.get("student_name"))
+        if type(student_id) is not int or student_id <= 0 or student_id in student_ids_seen:
+            raise ValueError("structured feedback roster item is invalid")
+        if not student_name:
+            raise ValueError("structured feedback roster name is invalid")
+        if student_name in names_seen:
+            raise ClassCommentaryStudentScopeError("student_roster_name_ambiguous")
+        student_ids_seen.add(student_id)
+        names_seen.add(student_name)
+        normalized_roster.append((position, student_id, student_name))
+
+    transcript = _normalize_match_text(transcript_text)
+    candidates: list[tuple[int, int, int, int]] = []
+    for position, student_id, student_name in normalized_roster:
+        start = transcript.find(student_name)
+        while start >= 0:
+            candidates.append((start, start + len(student_name), position, student_id))
+            start = transcript.find(student_name, start + 1)
+
+    accepted_spans: list[tuple[int, int]] = []
+    accepted_ids: set[int] = set()
+    for start, end, _, student_id in sorted(
+        candidates,
+        key=lambda item: (-(item[1] - item[0]), item[0], item[2]),
+    ):
+        if any(start < accepted_end and end > accepted_start for accepted_start, accepted_end in accepted_spans):
+            continue
+        accepted_spans.append((start, end))
+        accepted_ids.add(student_id)
+
+    eligible_ids = [
+        student_id
+        for _, student_id, _ in normalized_roster
+        if student_id in accepted_ids
+    ]
+    if not eligible_ids:
+        raise ClassCommentaryStudentScopeError("student_feedback_no_eligible_students")
+    return eligible_ids
+
+
+def build_class_commentary_eligible_scope_hash(
+    *,
+    transcript_hash: str,
+    roster_hash: str,
+    eligible_student_ids: list[int],
+    matcher_version: str = CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1,
+) -> str:
+    envelope = {
+        "attending_roster_hash": str(roster_hash or ""),
+        "confirmed_transcript_hash": str(transcript_hash or ""),
+        "eligible_student_ids": eligible_student_ids,
+        "student_mention_matcher_version": str(matcher_version or ""),
+    }
+    return _content_hash(_canonical_json(envelope))
 
 
 def _parse_frozen_scope(generation: Mapping[str, object]) -> tuple[list[int], dict[int, str]]:
@@ -79,54 +205,161 @@ def _parse_frozen_scope(generation: Mapping[str, object]) -> tuple[list[int], di
     return parsed_eligible_ids, names_by_id
 
 
-def _validate_v1_feedback(
-    *,
-    structured_json: object,
-    stored_hash: str,
-    derived_text: str,
+def validate_class_commentary_structured_generation_contract(
     generation: Mapping[str, object],
-) -> list[dict]:
-    parsed = _parse_json(structured_json)
-    if not isinstance(parsed, dict) or set(parsed) != {"schema_version", "items"}:
-        raise ValueError("structured feedback envelope is invalid")
+) -> None:
+    if str(generation.get("feedback_schema_version") or "") != CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1:
+        raise ValueError("structured feedback schema contract is invalid")
+    snapshot_hash_fields = (
+        ("confirmed_transcript_snapshot", "confirmed_transcript_hash"),
+        ("attending_roster_snapshot_json", "attending_roster_hash"),
+        ("skill_content_snapshot", "skill_content_hash"),
+    )
+    if any(
+        _content_hash(str(generation.get(snapshot_field) or ""))
+        != str(generation.get(hash_field) or "")
+        for snapshot_field, hash_field in snapshot_hash_fields
+    ):
+        raise ValueError("structured feedback core snapshot hash is invalid")
+    eligible_ids, _ = _parse_frozen_scope(generation)
+    matcher_version = str(generation.get("student_mention_matcher_version") or "")
+    if matcher_version != CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1:
+        raise ValueError("structured feedback matcher contract is invalid")
+    response_format = _parse_json(generation.get("response_format_json"))
+    if response_format != CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT:
+        raise ValueError("structured feedback response format contract is invalid")
+    if (
+        str(generation.get("student_history_memory_mode") or "")
+        != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
+    ):
+        raise ValueError("structured feedback memory contract is invalid")
+    if (
+        str(generation.get("prompt_version") or "")
+        != CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
+    ):
+        raise ValueError("structured feedback prompt contract is invalid")
+    expected_scope_hash = build_class_commentary_eligible_scope_hash(
+        transcript_hash=str(generation.get("confirmed_transcript_hash") or ""),
+        roster_hash=str(generation.get("attending_roster_hash") or ""),
+        eligible_student_ids=eligible_ids,
+        matcher_version=matcher_version,
+    )
+    if str(generation.get("eligible_student_scope_hash") or "") != expected_scope_hash:
+        raise ValueError("structured feedback eligible scope hash is invalid")
+
+
+def _only_student_name_and_punctuation(text: str, student_name: str) -> bool:
+    normalized_text = _normalize_match_text(text)
+    normalized_name = _normalize_match_text(student_name)
+    if normalized_name:
+        normalized_text = normalized_text.replace(normalized_name, "")
+    return not any(
+        not char.isspace()
+        and not unicodedata.category(char).startswith("P")
+        and not unicodedata.category(char).startswith("S")
+        for char in normalized_text
+    )
+
+
+def canonicalize_class_commentary_structured_feedback(
+    *,
+    structured_feedback: object,
+    generation: Mapping[str, object],
+    validate_generation_contract: bool = True,
+) -> dict:
+    if validate_generation_contract:
+        validate_class_commentary_structured_generation_contract(generation)
+    try:
+        parsed = _parse_json(structured_feedback)
+    except (TypeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid",
+            reason="response is not valid JSON",
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid",
+            reason="response is not a JSON object",
+        )
     if parsed.get("schema_version") != CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1:
-        raise ValueError("structured feedback schema version is invalid")
-    raw_items = parsed.get("items")
-    if not isinstance(raw_items, list):
-        raise ValueError("structured feedback items are invalid")
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "feedback_schema_mismatch",
+            reason="response schema version does not match generation",
+        )
+    try:
+        envelope = _StudentFeedbackEnvelopeV1.model_validate(parsed)
+    except ValidationError as exc:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid",
+            reason="response does not match the structured feedback schema",
+        ) from exc
 
     eligible_ids, names_by_id = _parse_frozen_scope(generation)
+    eligible_id_set = set(eligible_ids)
     items_by_id: dict[int, str] = {}
-    for item in raw_items:
-        if not isinstance(item, dict) or set(item) != {"student_id", "feedback_text"}:
-            raise ValueError("structured feedback item is invalid")
-        student_id = item.get("student_id")
-        feedback_text = item.get("feedback_text")
-        if (
-            type(student_id) is not int
-            or student_id <= 0
-            or student_id in items_by_id
-            or not isinstance(feedback_text, str)
+    for item in envelope.items:
+        student_id = int(item.student_id)
+        if student_id <= 0 or student_id not in names_by_id or student_id not in eligible_id_set:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_unknown_student",
+                student_id=student_id if student_id > 0 else None,
+                field="student_id",
+            )
+        if student_id in items_by_id:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_duplicate_student",
+                student_id=student_id,
+                field="student_id",
+            )
+        normalized_text = normalize_class_commentary_feedback_text(item.feedback_text)
+        if not normalized_text or _only_student_name_and_punctuation(
+            normalized_text,
+            names_by_id[student_id],
         ):
-            raise ValueError("structured feedback item is invalid")
-        normalized_text = normalize_class_commentary_feedback_text(feedback_text)
-        if not normalized_text or normalized_text != feedback_text or len(normalized_text) > 2000:
-            raise ValueError("structured feedback text is invalid")
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_empty",
+                student_id=student_id,
+                field="feedback_text",
+            )
+        if len(normalized_text) > CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_too_long",
+                student_id=student_id,
+                field="feedback_text",
+                limit=CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT,
+            )
+        normalized_match_text = _normalize_match_text(normalized_text)
+        for other_student_id, other_name in names_by_id.items():
+            if other_student_id == student_id:
+                continue
+            if _normalize_match_text(other_name) in normalized_match_text:
+                raise ClassCommentaryStructuredFeedbackValidationError(
+                    "student_feedback_cross_student_reference",
+                    student_id=student_id,
+                    field="feedback_text",
+                )
         items_by_id[student_id] = normalized_text
-    if set(items_by_id) != set(eligible_ids):
-        raise ValueError("structured feedback coverage is invalid")
 
+    if set(items_by_id) != eligible_id_set:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "student_feedback_coverage_mismatch"
+        )
     canonical_items = [
         {"student_id": student_id, "feedback_text": items_by_id[student_id]}
         for student_id in eligible_ids
     ]
-    canonical_json = _canonical_json({
+    canonical_envelope = {
         "schema_version": CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
         "items": canonical_items,
-    })
-    if str(structured_json or "") != canonical_json or stored_hash != _content_hash(canonical_json):
-        raise ValueError("structured feedback integrity check failed")
-
+    }
+    try:
+        canonical_json = _canonical_json(canonical_envelope)
+        canonical_hash = _content_hash(canonical_json)
+    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid",
+            reason="response cannot be canonicalized",
+        ) from exc
     response_items = [
         {
             "student_id": item["student_id"],
@@ -135,13 +368,44 @@ def _validate_v1_feedback(
         }
         for item in canonical_items
     ]
-    expected_derived_text = "\n\n".join(
+    derived_text = "\n\n".join(
         f"{item['student_name']}:\n{item['feedback_text']}"
         for item in response_items
     )
-    if len(expected_derived_text) > 30000 or derived_text != expected_derived_text:
+    if len(derived_text) > CLASS_COMMENTARY_STUDENT_FEEDBACK_TOTAL_LIMIT:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "student_feedback_too_long",
+            field="feedback_text",
+            limit=CLASS_COMMENTARY_STUDENT_FEEDBACK_TOTAL_LIMIT,
+        )
+    return {
+        "feedback_schema_version": CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+        "structured_feedback_json": canonical_json,
+        "structured_feedback_hash": canonical_hash,
+        "derived_feedback_text": derived_text,
+        "student_feedback_items": response_items,
+    }
+
+
+def _validate_v1_feedback(
+    *,
+    structured_json: object,
+    stored_hash: str,
+    derived_text: str,
+    generation: Mapping[str, object],
+) -> list[dict]:
+    canonical = canonicalize_class_commentary_structured_feedback(
+        structured_feedback=structured_json,
+        generation=generation,
+    )
+    if (
+        str(structured_json or "") != canonical["structured_feedback_json"]
+        or stored_hash != canonical["structured_feedback_hash"]
+    ):
+        raise ValueError("structured feedback integrity check failed")
+    if derived_text != canonical["derived_feedback_text"]:
         raise ValueError("structured feedback derived text is invalid")
-    return response_items
+    return canonical["student_feedback_items"]
 
 
 def build_class_commentary_feedback_read_envelope(
@@ -151,6 +415,7 @@ def build_class_commentary_feedback_read_envelope(
     stored_hash: object,
     derived_text: object,
     generation: Mapping[str, object] | None,
+    allow_empty_generation_payload: bool = False,
 ) -> dict:
     normalized_schema_version = str(schema_version or "")
     normalized_hash = str(stored_hash or "")
@@ -179,6 +444,33 @@ def build_class_commentary_feedback_read_envelope(
             stored_hash=normalized_hash,
             derived_text=normalized_derived_text,
         )
+    if allow_empty_generation_payload and str(generation.get("status") or "") in {
+        "generating",
+        "failed",
+    }:
+        payload_is_empty = (
+            str(structured_json or "") == ""
+            and normalized_hash == ""
+            and normalized_derived_text == ""
+        )
+        try:
+            if not payload_is_empty:
+                raise ValueError("nonterminal structured generation has result data")
+            validate_class_commentary_structured_generation_contract(generation)
+        except (TypeError, ValueError, json.JSONDecodeError, RecursionError):
+            return _invalid_envelope(
+                schema_version=normalized_schema_version,
+                stored_hash=normalized_hash,
+                derived_text=normalized_derived_text,
+            )
+        return {
+            "feedback_schema_version": normalized_schema_version,
+            "feedback_schema_status": "supported",
+            "student_feedback_items": [],
+            "structured_feedback_hash": "",
+            "derived_feedback_text": "",
+            "writable": False,
+        }
     try:
         response_items = _validate_v1_feedback(
             structured_json=structured_json,

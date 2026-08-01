@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 import lesson_manager
+from class_commentary import CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
 
 
 class ClassCommentaryConfirmationStoreTest(unittest.TestCase):
@@ -301,15 +302,37 @@ class ClassCommentaryConfirmationStoreTest(unittest.TestCase):
         }
         structured_json = self._canonical_json(structured_payload)
         structured_hash = hashlib.sha256(structured_json.encode("utf-8")).hexdigest()
+        eligible_student_ids = [self.roster[0]["student_id"]]
+        eligible_scope_hash = self._hash_json(
+            {
+                "attending_roster_hash": self.generation["attending_roster_hash"],
+                "confirmed_transcript_hash": self.generation["confirmed_transcript_hash"],
+                "eligible_student_ids": eligible_student_ids,
+                "student_mention_matcher_version": (
+                    "class_commentary.student_name_matcher.v1"
+                ),
+            }
+        )
         with lesson_manager.get_conn() as conn:
             conn.execute(
                 """
                 UPDATE class_commentary_generations
-                SET eligible_student_ids_json=?
+                SET feedback_schema_version='class_commentary.student_feedback.v1',
+                    structured_feedback_json=?, structured_feedback_hash=?,
+                    generated_feedback_text=?, eligible_student_ids_json=?,
+                    eligible_student_scope_hash=?,
+                    student_mention_matcher_version='class_commentary.student_name_matcher.v1',
+                    response_format_json='{"type":"json_object"}',
+                    student_history_memory_mode='disabled_v1', prompt_version=?
                 WHERE id=?
                 """,
                 (
-                    self._canonical_json([self.roster[0]["student_id"]]),
+                    structured_json,
+                    structured_hash,
+                    derived_feedback,
+                    self._canonical_json(eligible_student_ids),
+                    eligible_scope_hash,
+                    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
                     self.generation["id"],
                 ),
             )

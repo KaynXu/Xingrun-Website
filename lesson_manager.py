@@ -31,7 +31,23 @@ from pathlib import Path
 from typing import Optional
 
 from config_runtime import get_runtime_config
-from class_commentary_feedback_schema import build_class_commentary_feedback_read_envelope
+from class_commentary import (
+    CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES,
+    CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT,
+)
+from class_commentary_feedback_schema import (
+    CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+    CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
+    CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1,
+    CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT,
+    ClassCommentaryStudentScopeError,
+    ClassCommentaryStructuredFeedbackValidationError,
+    build_class_commentary_eligible_scope_hash,
+    build_class_commentary_feedback_read_envelope,
+    canonicalize_class_commentary_structured_feedback,
+    match_class_commentary_eligible_student_ids,
+    validate_class_commentary_structured_generation_contract,
+)
 from class_commentary_memory_privacy import validate_class_commentary_memory_privacy
 from review_plan_workflow.generation_options import (
     generation_options_summary,
@@ -10473,7 +10489,7 @@ def _class_commentary_requested_roster_ids(attending_roster: object) -> list[int
         if student_id <= 0 or student_id in requested_ids:
             raise ValueError("attending_roster contains an invalid student")
         requested_ids.append(student_id)
-    return sorted(requested_ids)
+    return requested_ids
 
 
 def _normalize_class_commentary_attending_roster(
@@ -10503,7 +10519,7 @@ def _normalize_class_commentary_attending_roster(
         raise ValueError("attending_roster contains a student outside the class")
     return [
         {"student_id": student_id, "student_name": students_by_id[student_id]}
-        for student_id in sorted(requested_ids)
+        for student_id in requested_ids
     ]
 
 
@@ -10569,6 +10585,156 @@ def list_class_commentary_generations(task_id: int) -> list[dict]:
     return [_serialize_class_commentary_generation_row(row) for row in rows]
 
 
+def _parse_class_commentary_structured_prompt_sections(user_content: object) -> tuple:
+    prefixes = (
+        "[CURRENT_TASK_FACTS]\n",
+        "[ACTIVE_SKILL]\n",
+        "[TEACHER_STYLE_MEMORIES]\n",
+        "[OUTPUT_RULES]\n",
+    )
+    parts = str(user_content or "").split("\n\n")
+    if len(parts) != len(prefixes) or any(
+        not part.startswith(prefix)
+        for part, prefix in zip(parts, prefixes)
+    ):
+        raise ValueError("structured generation prompt sections are invalid")
+    try:
+        current_task_facts = json.loads(parts[0][len(prefixes[0]):])
+        active_skill = json.loads(parts[1][len(prefixes[1]):])
+        teacher_style_memories = json.loads(parts[2][len(prefixes[2]):])
+    except (TypeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError("structured generation prompt sections are invalid") from exc
+    return (
+        current_task_facts,
+        active_skill,
+        teacher_style_memories,
+        parts[3][len(prefixes[3]):],
+    )
+
+
+def _validate_class_commentary_generation_execution_contract(
+    generation: dict | sqlite3.Row,
+    *,
+    prompt_payload: object,
+    memory_context: object,
+) -> None:
+    generation_record = dict(generation)
+    if str(generation_record["feedback_schema_version"] or "") != CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1:
+        return
+    validate_class_commentary_structured_generation_contract(generation_record)
+    if not isinstance(prompt_payload, dict) or not isinstance(memory_context, dict):
+        raise ValueError("structured generation execution snapshot is invalid")
+    try:
+        frozen_response_format = json.loads(
+            str(generation_record["response_format_json"] or "{}")
+        )
+        model_parameters = json.loads(
+            str(generation_record["model_parameters_json"] or "{}")
+        )
+        frozen_roster = json.loads(
+            str(generation_record["attending_roster_snapshot_json"] or "[]")
+        )
+        eligible_student_ids = json.loads(
+            str(generation_record["eligible_student_ids_json"] or "[]")
+        )
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError("structured generation response format is invalid") from exc
+    expected_keys = {
+        "messages",
+        "prompt_version",
+        "response_format",
+        "student_history_memory_mode",
+        "temperature",
+    }
+    messages = prompt_payload.get("messages")
+    if (
+        set(prompt_payload) != expected_keys
+        or not isinstance(messages, list)
+        or len(messages) != 2
+        or messages[0] != {
+            "role": "system",
+            "content": CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT,
+        }
+        or not isinstance(messages[1], dict)
+        or set(messages[1]) != {"role", "content"}
+        or messages[1].get("role") != "user"
+    ):
+        raise ValueError("structured generation execution prompt is invalid")
+    (
+        current_task_facts,
+        active_skill,
+        teacher_style_memories,
+        output_rules,
+    ) = _parse_class_commentary_structured_prompt_sections(
+        messages[1].get("content")
+    )
+    if (
+        not isinstance(frozen_roster, list)
+        or not isinstance(eligible_student_ids, list)
+        or not isinstance(model_parameters, dict)
+        or set(model_parameters) != {"temperature"}
+        or type(model_parameters.get("temperature")) not in {int, float}
+        or type(prompt_payload.get("temperature")) not in {int, float}
+        or float(prompt_payload["temperature"])
+        != float(model_parameters["temperature"])
+    ):
+        raise ValueError("structured generation model parameters are invalid")
+    roster_by_id = {
+        int(item.get("student_id") or 0): str(item.get("student_name") or "")
+        for item in frozen_roster
+        if isinstance(item, dict) and type(item.get("student_id")) is int
+    }
+    expected_students = [
+        {"id": student_id, "name": roster_by_id.get(student_id, "")}
+        for student_id in eligible_student_ids
+        if type(student_id) is int
+    ]
+    expected_output_rules = "\n".join(
+        f"- {rule}" for rule in CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES
+    )
+    if (
+        not isinstance(current_task_facts, dict)
+        or set(current_task_facts)
+        != {"class", "students", "transcript", "eligible_student_ids"}
+        or not isinstance(current_task_facts.get("class"), dict)
+        or set(current_task_facts["class"]) != {"id", "name"}
+        or current_task_facts["class"].get("id")
+        != int(generation_record["class_id"])
+        or not isinstance(current_task_facts["class"].get("name"), str)
+        or current_task_facts.get("students") != expected_students
+        or current_task_facts.get("transcript")
+        != str(generation_record["confirmed_transcript_snapshot"] or "")
+        or current_task_facts.get("eligible_student_ids") != eligible_student_ids
+        or not isinstance(active_skill, dict)
+        or set(active_skill) != {"id", "name", "content"}
+        or active_skill.get("id") != str(generation_record["skill_id"] or "")
+        or not isinstance(active_skill.get("name"), str)
+        or active_skill.get("content")
+        != str(generation_record["skill_content_snapshot"] or "")
+        or teacher_style_memories
+        != memory_context.get("teacher_style_memories")
+        or output_rules != expected_output_rules
+    ):
+        raise ValueError("structured generation prompt does not match reservation")
+    if (
+        str(prompt_payload.get("prompt_version") or "")
+        != str(generation_record["prompt_version"] or "")
+        or prompt_payload.get("response_format") != frozen_response_format
+        or str(prompt_payload.get("student_history_memory_mode") or "")
+        != str(generation_record["student_history_memory_mode"] or "")
+        or str(memory_context.get("student_history_memory_mode") or "")
+        != str(generation_record["student_history_memory_mode"] or "")
+        or memory_context.get("student_history_memories") != []
+    ):
+        raise ValueError("structured generation execution snapshot does not match reservation")
+    records = memory_context.get("records")
+    if not isinstance(records, list) or any(
+        isinstance(record, dict) and record.get("memory_type") == "student_fact"
+        for record in records
+    ):
+        raise ValueError("structured generation student history memory is not disabled")
+
+
 def reserve_class_commentary_generation(
     *,
     task_id: int,
@@ -10582,6 +10748,7 @@ def reserve_class_commentary_generation(
     prompt_payload: object = None,
     memory_context: object = None,
     attending_roster_explicit: bool = True,
+    structured_feedback_enabled: bool = False,
 ) -> dict:
     normalized_request_id = str(generation_request_id or "").strip()
     normalized_provider = str(model_provider or "").strip()
@@ -10593,7 +10760,11 @@ def reserve_class_commentary_generation(
         raise ValueError("model_provider, model_name, and prompt_version are required")
     if not isinstance(attending_roster_explicit, bool):
         raise ValueError("attending_roster_explicit must be a boolean")
-    requested_roster_ids = _class_commentary_requested_roster_ids(attending_roster)
+    if not isinstance(structured_feedback_enabled, bool):
+        raise ValueError("structured_feedback_enabled must be a boolean")
+    requested_roster_ids = sorted(
+        _class_commentary_requested_roster_ids(attending_roster)
+    )
     model_parameters_json = _class_commentary_canonical_json(model_parameters)
     execution_snapshot_status = (
         "ready" if prompt_payload is not None and memory_context is not None else "pending"
@@ -10629,7 +10800,10 @@ def reserve_class_commentary_generation(
             )
             if (
                 int(existing["skill_registry_id"] or 0) != int(skill_registry_id)
-                or saved_roster_ids != requested_roster_ids
+                or (
+                    attending_roster_explicit
+                    and saved_roster_ids != requested_roster_ids
+                )
                 or bool(existing["attending_roster_explicit"]) != attending_roster_explicit
             ):
                 raise ClassCommentaryGenerationRequestConflict(
@@ -10678,25 +10852,88 @@ def reserve_class_commentary_generation(
         if skill_content_hash != str(skill["content_hash"]):
             raise ValueError("skill content hash mismatch")
 
+        roster_request = (
+            attending_roster
+            if structured_feedback_enabled
+            else [{"student_id": student_id} for student_id in requested_roster_ids]
+        )
         roster_snapshot = _normalize_class_commentary_attending_roster(
             conn,
             class_id,
             organization_id,
-            attending_roster,
+            roster_request,
         )
         roster_snapshot_json = _class_commentary_canonical_json(roster_snapshot)
         roster_hash = _class_commentary_content_hash(roster_snapshot_json)
+        feedback_schema_version = ""
+        eligible_student_ids: list[int] = []
+        eligible_student_scope_hash = ""
+        student_mention_matcher_version = ""
+        response_format: dict = {}
+        student_history_memory_mode = ""
+        if structured_feedback_enabled:
+            feedback_schema_version = CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
+            student_mention_matcher_version = CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1
+            response_format = dict(CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT)
+            student_history_memory_mode = (
+                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
+            )
+            eligible_student_ids = match_class_commentary_eligible_student_ids(
+                transcript_text=transcript_snapshot,
+                roster=roster_snapshot,
+            )
+            eligible_student_scope_hash = build_class_commentary_eligible_scope_hash(
+                transcript_hash=transcript_hash,
+                roster_hash=roster_hash,
+                eligible_student_ids=eligible_student_ids,
+                matcher_version=student_mention_matcher_version,
+            )
+            if execution_snapshot_status == "ready":
+                _validate_class_commentary_generation_execution_contract(
+                    {
+                        "class_id": class_id,
+                        "attending_roster_hash": roster_hash,
+                        "attending_roster_snapshot_json": roster_snapshot_json,
+                        "confirmed_transcript_hash": transcript_hash,
+                        "confirmed_transcript_snapshot": transcript_snapshot,
+                        "eligible_student_ids_json": _class_commentary_canonical_json(
+                            eligible_student_ids
+                        ),
+                        "eligible_student_scope_hash": eligible_student_scope_hash,
+                        "feedback_schema_version": feedback_schema_version,
+                        "model_parameters_json": model_parameters_json,
+                        "prompt_version": normalized_prompt_version,
+                        "response_format_json": _class_commentary_canonical_json(
+                            response_format
+                        ),
+                        "student_history_memory_mode": student_history_memory_mode,
+                        "student_mention_matcher_version": (
+                            student_mention_matcher_version
+                        ),
+                        "skill_content_hash": skill_content_hash,
+                        "skill_content_snapshot": skill_content,
+                        "skill_id": str(skill["skill_id"]),
+                    },
+                    prompt_payload=prompt_payload,
+                    memory_context=memory_context,
+                )
         request_payload = {
             "attending_student_ids": [item["student_id"] for item in roster_snapshot],
             "attending_roster_explicit": attending_roster_explicit,
             "confirmed_transcript_hash": transcript_hash,
             "confirmed_transcript_version": transcript_version,
+            "eligible_student_ids": eligible_student_ids,
+            "eligible_student_scope_hash": eligible_student_scope_hash,
+            "feedback_schema_version": feedback_schema_version,
             "model_name": normalized_model,
             "model_parameters": model_parameters,
             "model_provider": normalized_provider,
             "prompt_version": normalized_prompt_version,
+            "response_format": response_format,
             "skill_registry_id": int(skill["registry_id"]),
             "skill_version_id": int(skill["version_id"]),
+            "student_history_memory_mode": student_history_memory_mode,
+            "student_mention_matcher_version": student_mention_matcher_version,
             "subject_key": task["subject_key"],
             "task_id": int(task_id),
         }
@@ -10714,14 +10951,18 @@ def reserve_class_commentary_generation(
                 attending_roster_hash, attending_roster_explicit,
                 skill_registry_id, skill_id, skill_version_id,
                 skill_content_snapshot, skill_content_hash, model_provider, model_name,
-                model_parameters_json, prompt_version, prompt_payload_snapshot_json,
+                model_parameters_json, prompt_version, feedback_schema_version,
+                eligible_student_ids_json, eligible_student_scope_hash,
+                student_mention_matcher_version, response_format_json,
+                student_history_memory_mode, prompt_payload_snapshot_json,
                 prompt_payload_hash, memory_context_snapshot_json, memory_context_hash,
                 execution_snapshot_status, execution_snapshot_finalized_at,
                 generated_feedback_text, origin, snapshot_completeness,
                 missing_snapshot_fields_json, status
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'runtime', 'complete', '[]', 'generating')
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    '', 'runtime', 'complete', '[]', 'generating')
             """,
             (
                 organization_id,
@@ -10747,6 +10988,12 @@ def reserve_class_commentary_generation(
                 normalized_model,
                 model_parameters_json,
                 normalized_prompt_version,
+                feedback_schema_version,
+                _class_commentary_canonical_json(eligible_student_ids),
+                eligible_student_scope_hash,
+                student_mention_matcher_version,
+                _class_commentary_canonical_json(response_format),
+                student_history_memory_mode,
                 prompt_payload_json,
                 prompt_payload_hash,
                 memory_context_json,
@@ -10819,6 +11066,11 @@ def finalize_class_commentary_generation_execution_snapshot(
         ).fetchone()
         if not generation:
             raise ValueError("generation not found")
+        _validate_class_commentary_generation_execution_contract(
+            generation,
+            prompt_payload=prompt_payload,
+            memory_context=memory_context,
+        )
         if str(generation["execution_snapshot_status"] or "ready") == "ready":
             if (
                 str(generation["prompt_payload_hash"] or "") != prompt_payload_hash
@@ -10859,7 +11111,7 @@ def finalize_class_commentary_generation_execution_snapshot(
 
 
 def complete_class_commentary_generation(generation_id: int, feedback_text: str) -> dict:
-    normalized_feedback = str(feedback_text or "")
+    raw_feedback = str(feedback_text or "")
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         generation = conn.execute(
@@ -10872,15 +11124,38 @@ def complete_class_commentary_generation(generation_id: int, feedback_text: str)
             return _serialize_class_commentary_generation_row(generation)
         if str(generation["execution_snapshot_status"] or "ready") != "ready":
             raise ValueError("generation execution snapshot is not finalized")
-        conn.execute(
-            """
-            UPDATE class_commentary_generations
-            SET status='succeeded', generated_feedback_text=?, error_code=NULL,
-                completed_at=datetime('now','localtime')
-            WHERE id=? AND status='generating'
-            """,
-            (normalized_feedback, generation_id),
-        )
+        if str(generation["feedback_schema_version"] or ""):
+            canonical = canonicalize_class_commentary_structured_feedback(
+                structured_feedback=raw_feedback,
+                generation=dict(generation),
+            )
+            normalized_feedback = str(canonical["derived_feedback_text"])
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET status='succeeded', structured_feedback_json=?,
+                    structured_feedback_hash=?, generated_feedback_text=?,
+                    error_code=NULL, completed_at=datetime('now','localtime')
+                WHERE id=? AND status='generating'
+                """,
+                (
+                    canonical["structured_feedback_json"],
+                    canonical["structured_feedback_hash"],
+                    normalized_feedback,
+                    generation_id,
+                ),
+            )
+        else:
+            normalized_feedback = raw_feedback
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET status='succeeded', generated_feedback_text=?, error_code=NULL,
+                    completed_at=datetime('now','localtime')
+                WHERE id=? AND status='generating'
+                """,
+                (normalized_feedback, generation_id),
+            )
         conn.execute(
             """
             UPDATE class_commentary_tasks

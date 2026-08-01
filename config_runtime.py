@@ -27,6 +27,7 @@ ENV_VAR_MAP = {
     "class_commentary_openai_base_url": "XR_CLASS_COMMENTARY_OPENAI_BASE_URL",
     "class_commentary_openai_headers": "XR_CLASS_COMMENTARY_OPENAI_HEADERS",
     "class_commentary_memory_enabled": "XR_CLASS_COMMENTARY_MEMORY_ENABLED",
+    "class_commentary_structured_feedback_enabled": "XR_CLASS_COMMENTARY_STRUCTURED_FEEDBACK_ENABLED",
     "redis_url": "XR_REDIS_URL",
     "class_commentary_memory_queue": "XR_CLASS_COMMENTARY_MEMORY_QUEUE",
     "class_commentary_memory_extraction_timeout": "XR_CLASS_COMMENTARY_MEMORY_EXTRACTION_TIMEOUT",
@@ -92,6 +93,7 @@ DEFAULTS = {
     "class_commentary_openai_base_url": "",
     "class_commentary_openai_headers": "",
     "class_commentary_memory_enabled": False,
+    "class_commentary_structured_feedback_enabled": False,
     "redis_url": "redis://127.0.0.1:6379/0",
     "class_commentary_memory_queue": "class_commentary_memory",
     "class_commentary_memory_extraction_timeout": 300,
@@ -247,6 +249,9 @@ def get_runtime_config() -> dict:
     cfg["class_commentary_openai_headers"] = str(cfg.get("class_commentary_openai_headers") or "").strip()
     cfg["class_commentary_memory_enabled"] = normalize_bool_flag(
         cfg.get("class_commentary_memory_enabled")
+    )
+    cfg["class_commentary_structured_feedback_enabled"] = normalize_bool_flag(
+        cfg.get("class_commentary_structured_feedback_enabled")
     )
     cfg["redis_url"] = str(cfg.get("redis_url") or "redis://127.0.0.1:6379/0").strip()
     cfg["class_commentary_memory_queue"] = (

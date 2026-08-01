@@ -271,6 +271,7 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertNotIn("[破涕为笑]", messages[1]["content"])
         self.assertNotIn("only as expression style and feedback framing", messages[1]["content"])
         self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 0.55)
+        self.assertNotIn("response_format", fake_client.chat.completions.kwargs)
 
     def test_generate_class_commentary_feedback_sends_prebuilt_chat_request_unchanged(self):
         class FakeMessage:
@@ -330,6 +331,65 @@ class ClassCommentaryAiTest(unittest.TestCase):
             },
             chat_request,
         )
+
+    def test_generate_class_commentary_feedback_forwards_frozen_response_format(self):
+        model_content = (
+            '{"schema_version":"class_commentary.student_feedback.v1",'
+            '"items":[{"student_id":21,"feedback_text":"Arithmetic checks improved."}]}'
+        )
+
+        class FakeMessage:
+            content = model_content
+
+        class FakeChoice:
+            message = FakeMessage()
+
+        class FakeResponse:
+            choices = [FakeChoice()]
+            usage = None
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                self.kwargs = kwargs
+                return FakeResponse()
+
+        class FakeChat:
+            def __init__(self):
+                self.completions = FakeCompletions()
+
+        class FakeClient:
+            def __init__(self):
+                self.chat = FakeChat()
+
+        response_format = {"type": "json_object"}
+        chat_request = {
+            "prompt_version": "class-commentary-student-feedback-v1",
+            "messages": [
+                {"role": "system", "content": "Return the frozen structured contract."},
+                {"role": "user", "content": "Generate feedback for student 21."},
+            ],
+            "temperature": 0.23,
+            "response_format": response_format,
+        }
+        fake_client = FakeClient()
+        with patch.object(ai_processor, "_get_client", return_value=fake_client), patch.object(
+            ai_processor,
+            "build_class_commentary_chat_request",
+            side_effect=AssertionError("prebuilt request must not be rebuilt"),
+        ):
+            text = ai_processor.generate_class_commentary_feedback(
+                class_record={"id": 7, "name": "ignored class"},
+                students=[{"id": 99, "name": "ignored student"}],
+                transcript_text="ignored transcript",
+                skill={"id": "ignored-skill", "name": "Ignored", "content": "ignored"},
+                chat_request=chat_request,
+            )
+
+        call_payload = fake_client.chat.completions.kwargs
+        self.assertEqual(text, model_content)
+        self.assertIs(call_payload["messages"], chat_request["messages"])
+        self.assertEqual(call_payload["temperature"], chat_request["temperature"])
+        self.assertIs(call_payload["response_format"], response_format)
 
     def test_generate_class_commentary_feedback_uses_class_commentary_openai_override(self):
         class FakeMessage:
