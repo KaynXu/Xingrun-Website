@@ -726,9 +726,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           setSelectedGenerationId(String(targetGeneration.id));
           setFeedbackEditorText(cachedTarget.feedbackText);
           setFeedbackDraft(cachedTarget.draft);
-          setExpandedStudentIds((current) => current.length
-            ? current
-            : cachedTarget.studentOrder[0] ? [String(cachedTarget.studentOrder[0])] : []);
+          setExpandedStudentIds([]);
           setLoadingGenerationId(null);
           return;
         }
@@ -778,7 +776,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           ...current,
           [nextEditor.workspaceKey]: nextEditor,
         }));
-        setExpandedStudentIds(nextEditor.studentOrder[0] ? [String(nextEditor.studentOrder[0])] : []);
+        setExpandedStudentIds([]);
       })
       .catch((error) => {
         if (
@@ -1264,7 +1262,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         [nextEditor.workspaceKey]: nextEditor,
       }));
       setRevisionPreview(null);
-      setExpandedStudentIds(nextEditor.studentOrder[0] ? [String(nextEditor.studentOrder[0])] : []);
+      setExpandedStudentIds([]);
       setCopiedStudentId(null);
       setCopyNotice('');
       setStudentFeedbackErrors({});
@@ -1449,7 +1447,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     if (cached) {
       setFeedbackEditorText(cached.feedbackText);
       setFeedbackDraft(cached.draft);
-      setExpandedStudentIds(cached.studentOrder[0] ? [String(cached.studentOrder[0])] : []);
+      setExpandedStudentIds([]);
       setLoadingGenerationId(null);
       return;
     }
@@ -1489,7 +1487,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         ...current,
         [nextWorkspaceKey]: nextEditor,
       }));
-      setExpandedStudentIds(nextEditor.studentOrder[0] ? [String(nextEditor.studentOrder[0])] : []);
+      setExpandedStudentIds([]);
     } catch (error) {
       if (
         requestToken === generationLoadRequestTokenRef.current
@@ -2090,7 +2088,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     ) {
       setFeedbackEditorText(serverText);
       setFeedbackDraft(draftConflict.serverDraft);
-      setExpandedStudentIds(serverItems[0] ? [String(serverItems[0].student_id)] : []);
+      setExpandedStudentIds([]);
     }
     setDraftConflict(null);
   }
@@ -2158,9 +2156,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       revisionPreviewKey: buildClassCommentaryRevisionPreviewKey(task.id, revision.id),
       revision,
     });
-    setExpandedStudentIds(revision.feedback_schema_status === 'supported' && revision.student_feedback_items[0]
-      ? [String(revision.student_feedback_items[0].student_id)]
-      : []);
+    setExpandedStudentIds([]);
     setCopied(false);
     setCopiedStudentId(null);
     setCopyNotice('');
@@ -2169,9 +2165,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
 
   function handleReturnFromRevisionPreview() {
     setRevisionPreview(null);
-    setExpandedStudentIds(selectedEditorState?.studentOrder[0]
-      ? [String(selectedEditorState.studentOrder[0])]
-      : []);
+    setExpandedStudentIds([]);
     setCopied(false);
     setCopiedStudentId(null);
     setCopyNotice('');
