@@ -662,7 +662,7 @@
 - 最近一次相关产品代码提交并已部署生产的是 `776b534 Merge branch 'develop'`。
 
 ### 下一步
-- 课堂反馈 structured student feedback 的开发已完成. 下一步只在用户准备发布时, 人工确认 `develop -> master`, 先以 capability 关闭状态部署并完成真实老师账号 smoke, 再显式开启 `XR_CLASS_COMMENTARY_STRUCTURED_FEEDBACK_ENABLED`; 不需要继续补业务代码.
+- 课堂反馈 structured student feedback 已于 2026-08-02 发布生产: `develop@717de222 -> master@e7ed25ab`. 发布先保持 capability 关闭并完成正式 owner 账号只读 smoke, 随后启用 `XR_CLASS_COMMENTARY_STRUCTURED_FEEDBACK_ENABLED=1`; 生产 Git/PM2/HTTP/RQ/Memory/数据库 schema/前端静态资源验收全部通过. 本轮未调用模型, 未创建课堂反馈任务, 未扣积分.
 - 课堂反馈 Memory + Skill Evolution 下一步只剩真实登录用户 smoke: 打开生产课堂反馈页, 选择任一同事 Skill, 完成生成 -> 修改文字 -> 确认并学习 -> 等待学习完成 -> 对同一学生再次生成并核对记忆命中; 随后验证撤销或删除 evidence. Skill 候选默认需要 5 个不同 task 的有效 revision, 且至少 3 个不同 task 支持同一变化, 因此单次确认后没有新 Skill 版本是正常结果, 不是失败.
 - 复习计划工作流下一步应跑三科 fixture eval 和真实 PDF 目视 smoke，确认 repair/revision 后的数学、物理、雅思 Reading 输出质量；之后再把 task generation 从单个 plan LLM call 拆成更细的可校验分节点输出。IELTS 当前只把 Reading 作为已覆盖能力，Listening/Writing/Speaking 需要单独补资料后进入 Phase 2，不能假装已经完整覆盖。
 - 先按重排后的闭环顺序推进：`archive/reflection authority layer -> same-record continuity -> student-facing AI chat front door -> practice artifact rebuild -> error_correction adapter -> optional workbench`，不再让“先补更多入口”反过来定义主链路。
