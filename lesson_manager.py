@@ -34,6 +34,7 @@ from config_runtime import get_runtime_config
 from class_commentary import (
     CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES,
     CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT,
+    read_class_commentary_skill_package_content,
 )
 from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
@@ -2359,6 +2360,62 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) 
     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
+def _ensure_class_commentary_skill_activation_reason_schema(
+    conn: sqlite3.Connection,
+) -> None:
+    row = conn.execute(
+        """
+        SELECT sql FROM sqlite_master
+        WHERE type='table' AND name='class_commentary_skill_activation_events'
+        """
+    ).fetchone()
+    if not row or "'manifest_refresh'" in str(row["sql"] or ""):
+        return
+    conn.executescript(
+        """
+        BEGIN IMMEDIATE;
+        DROP TRIGGER IF EXISTS trg_class_commentary_skill_activation_event_immutable;
+        ALTER TABLE class_commentary_skill_activation_events
+        RENAME TO class_commentary_skill_activation_events__legacy_reason;
+
+        CREATE TABLE class_commentary_skill_activation_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            skill_registry_id INTEGER NOT NULL REFERENCES class_commentary_skills(id) ON DELETE CASCADE,
+            activation_request_id TEXT NOT NULL,
+            activation_payload_hash TEXT NOT NULL,
+            from_version_id INTEGER REFERENCES class_commentary_skill_versions(id),
+            to_version_id INTEGER NOT NULL REFERENCES class_commentary_skill_versions(id),
+            actor_user_id INTEGER NOT NULL REFERENCES users(id),
+            reason TEXT NOT NULL,
+            evaluation_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(skill_registry_id, activation_request_id),
+            CHECK(reason IN ('initial_import','candidate_approved','rollback','manifest_refresh'))
+        );
+
+        INSERT INTO class_commentary_skill_activation_events (
+            id, organization_id, skill_registry_id, activation_request_id,
+            activation_payload_hash, from_version_id, to_version_id,
+            actor_user_id, reason, evaluation_snapshot_json, created_at
+        )
+        SELECT id, organization_id, skill_registry_id, activation_request_id,
+               activation_payload_hash, from_version_id, to_version_id,
+               actor_user_id, reason, evaluation_snapshot_json, created_at
+        FROM class_commentary_skill_activation_events__legacy_reason;
+
+        DROP TABLE class_commentary_skill_activation_events__legacy_reason;
+
+        CREATE TRIGGER trg_class_commentary_skill_activation_event_immutable
+        BEFORE UPDATE ON class_commentary_skill_activation_events
+        BEGIN
+            SELECT RAISE(ABORT, 'skill activation event is immutable');
+        END;
+        COMMIT;
+        """
+    )
+
+
 def _ensure_class_commentary_structured_feedback_schema(conn: sqlite3.Connection) -> None:
     columns = {
         "class_commentary_generations": {
@@ -2560,7 +2617,7 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             evaluation_snapshot_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
             UNIQUE(skill_registry_id, activation_request_id),
-            CHECK(reason IN ('initial_import','candidate_approved','rollback'))
+            CHECK(reason IN ('initial_import','candidate_approved','rollback','manifest_refresh'))
         );
 
         CREATE TABLE IF NOT EXISTS class_commentary_generations (
@@ -2970,6 +3027,7 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
         END;
         """
     )
+    _ensure_class_commentary_skill_activation_reason_schema(conn)
 
     _ensure_column(
         conn,
@@ -8638,18 +8696,12 @@ def _class_commentary_content_hash(value: object) -> str:
 def _read_class_commentary_skill_source(source_path: str) -> str:
     path = Path(str(source_path or "")).expanduser().resolve()
     if path.is_dir():
-        parts = []
-        for filename in ("SKILL.md", "work.md", "persona.md"):
-            file_path = path / filename
-            if file_path.is_file():
-                text = file_path.read_text(encoding="utf-8").strip()
-                if text:
-                    parts.append(f"## {filename}\n{text}")
-        content = "\n\n".join(parts).strip()
+        content = read_class_commentary_skill_package_content(path)
     elif path.is_file():
         if path.name == "SKILL.md":
-            return _read_class_commentary_skill_source(str(path.parent))
-        content = path.read_text(encoding="utf-8").strip()
+            content = read_class_commentary_skill_package_content(path.parent)
+        else:
+            content = path.read_text(encoding="utf-8").strip()
     else:
         raise ValueError("skill source_path not found")
     if not content:
@@ -8891,6 +8943,209 @@ def import_class_commentary_skill_manifest(
         if not row:
             raise ClassCommentarySkillImportConflict("skill registry import did not produce an active skill")
         return _serialize_class_commentary_skill_row(row)
+
+
+def refresh_class_commentary_skill_manifest(
+    *,
+    organization_id: int,
+    skill_id: str,
+    actor_user_id: int,
+    activation_request_id: str,
+    expected_active_version_id: int,
+) -> dict:
+    normalized_request_id = str(activation_request_id or "").strip()
+    if not normalized_request_id:
+        raise ValueError("activation_request_id is required")
+    try:
+        expected_version_id = int(expected_active_version_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("expected_active_version_id must be an integer") from exc
+    if expected_version_id <= 0:
+        raise ValueError("expected_active_version_id must be positive")
+
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        registry = _get_class_commentary_skill_registry_for_actor_conn(
+            conn,
+            organization_id=organization_id,
+            actor_user_id=actor_user_id,
+            skill_id=skill_id,
+        )
+        if str(registry["source_type"] or "") != "external_skill_package":
+            raise ValueError("manifest refresh requires an external skill package")
+        source_path = str(registry["source_path"] or "").strip()
+        source_content = _read_class_commentary_skill_source(source_path)
+        source_content_hash = _class_commentary_content_hash(source_content)
+        payload_hash = _class_commentary_content_hash(
+            _class_commentary_canonical_json(
+                {
+                    "expected_active_version_id": expected_version_id,
+                    "organization_id": int(organization_id),
+                    "reason": "manifest_refresh",
+                    "skill_registry_id": int(registry["id"]),
+                    "source_content_hash": source_content_hash,
+                    "source_path": source_path,
+                }
+            )
+        )
+        existing_event = conn.execute(
+            """
+            SELECT * FROM class_commentary_skill_activation_events
+            WHERE skill_registry_id=? AND activation_request_id=?
+            """,
+            (registry["id"], normalized_request_id),
+        ).fetchone()
+        if existing_event:
+            if str(existing_event["activation_payload_hash"]) != payload_hash:
+                raise ClassCommentarySkillActivationRequestConflict(
+                    "activation request_id was already used with a different payload"
+                )
+            target_version = conn.execute(
+                "SELECT * FROM class_commentary_skill_versions WHERE id=?",
+                (existing_event["to_version_id"],),
+            ).fetchone()
+            skill_row = _get_class_commentary_skill_for_organization_conn(
+                conn,
+                organization_id,
+                skill_id,
+            )
+            return {
+                "changed": int(existing_event["from_version_id"] or 0)
+                != int(existing_event["to_version_id"]),
+                "skill": _serialize_class_commentary_skill_row(skill_row),
+                "version": _serialize_class_commentary_skill_version_conn(
+                    conn,
+                    target_version,
+                    active_version_id=int(registry["active_version_id"]),
+                ),
+                "activation_event": _serialize_class_commentary_skill_activation_event_conn(
+                    conn, existing_event
+                ),
+            }
+
+        active_version = conn.execute(
+            """
+            SELECT * FROM class_commentary_skill_versions
+            WHERE id=? AND organization_id=? AND skill_registry_id=?
+            """,
+            (expected_version_id, organization_id, registry["id"]),
+        ).fetchone()
+        if (
+            int(registry["active_version_id"] or 0) != expected_version_id
+            or not active_version
+        ):
+            raise ClassCommentarySkillVersionConflict()
+        if str(active_version["version_kind"] or "") != "imported":
+            raise ValueError("manifest refresh requires an imported active version")
+
+        changed = not (
+            str(active_version["content"] or "") == source_content
+            and str(active_version["content_hash"] or "") == source_content_hash
+        )
+        if not changed:
+            raise ClassCommentarySkillImportConflict(
+                "skill manifest already matches the active imported version"
+            )
+        next_version_no = int(
+            conn.execute(
+                """
+                SELECT COALESCE(MAX(version_no), 0) + 1 AS version_no
+                FROM class_commentary_skill_versions
+                WHERE skill_registry_id=?
+                """,
+                (registry["id"],),
+            ).fetchone()["version_no"]
+        )
+        version_cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_skill_versions (
+                organization_id, skill_registry_id, version_no, version_kind,
+                content, content_hash, base_version_id, source_snapshot_hash,
+                evaluation_snapshot_json, evaluation_hash, review_status
+            )
+            VALUES (?, ?, ?, 'imported', ?, ?, ?, ?, '{}', '', 'not_required')
+            """,
+            (
+                organization_id,
+                registry["id"],
+                next_version_no,
+                source_content,
+                source_content_hash,
+                expected_version_id,
+                source_content_hash,
+            ),
+        )
+        target_version_id = int(version_cursor.lastrowid)
+        moved = conn.execute(
+            """
+            UPDATE class_commentary_skills
+            SET active_version_id=?, source_content_hash=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND active_version_id=?
+            """,
+            (
+                target_version_id,
+                source_content_hash,
+                registry["id"],
+                expected_version_id,
+            ),
+        )
+        if moved.rowcount != 1:
+            raise ClassCommentarySkillVersionConflict()
+
+        refresh_snapshot_json = _class_commentary_canonical_json(
+            {
+                "changed": changed,
+                "from_content_hash": str(active_version["content_hash"] or ""),
+                "source_content_hash": source_content_hash,
+                "source_path": source_path,
+            }
+        )
+        event_cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_skill_activation_events (
+                organization_id, skill_registry_id, activation_request_id,
+                activation_payload_hash, from_version_id, to_version_id,
+                actor_user_id, reason, evaluation_snapshot_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'manifest_refresh', ?)
+            """,
+            (
+                organization_id,
+                registry["id"],
+                normalized_request_id,
+                payload_hash,
+                expected_version_id,
+                target_version_id,
+                actor_user_id,
+                refresh_snapshot_json,
+            ),
+        )
+        event = conn.execute(
+            "SELECT * FROM class_commentary_skill_activation_events WHERE id=?",
+            (event_cursor.lastrowid,),
+        ).fetchone()
+        target_version = conn.execute(
+            "SELECT * FROM class_commentary_skill_versions WHERE id=?",
+            (target_version_id,),
+        ).fetchone()
+        skill_row = _get_class_commentary_skill_for_organization_conn(
+            conn,
+            organization_id,
+            skill_id,
+        )
+        return {
+            "changed": changed,
+            "skill": _serialize_class_commentary_skill_row(skill_row),
+            "version": _serialize_class_commentary_skill_version_conn(
+                conn,
+                target_version,
+                active_version_id=target_version_id,
+            ),
+            "activation_event": _serialize_class_commentary_skill_activation_event_conn(
+                conn, event
+            ),
+        }
 
 
 def list_class_commentary_skills_for_organization(organization_id: int) -> list[dict]:

@@ -496,6 +496,7 @@ class ClassCommentaryStoreTest(unittest.TestCase):
                 "initial_import",
                 "candidate_approved",
                 "rollback",
+                "manifest_refresh",
             },
             ("class_commentary_generations", "origin"): {
                 "runtime",
@@ -572,6 +573,117 @@ class ClassCommentaryStoreTest(unittest.TestCase):
         self.assertEqual(self._table_names(), table_names)
         self.assertEqual(self._column_names("classes"), class_columns)
         self.assertEqual(self._column_names("class_commentary_tasks"), task_columns)
+
+    def test_init_db_migrates_activation_reason_check_without_losing_events(self):
+        with lesson_manager.get_conn() as conn:
+            organization_id = int(
+                conn.execute(
+                    "INSERT INTO organizations (name) VALUES ('Migration Organization')"
+                ).lastrowid
+            )
+            actor_user_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO users (
+                        username, password_hash, display_name, role, status,
+                        organization_id
+                    )
+                    VALUES ('migration-teacher', 'hash', 'Migration Teacher',
+                            'member', 'active', ?)
+                    """,
+                    (organization_id,),
+                ).lastrowid
+            )
+        source_path = os.path.join(self.tmp.name, "migration-teacher.skill")
+        with open(source_path, "w", encoding="utf-8") as source_file:
+            source_file.write("Migration style")
+        lesson_manager.import_class_commentary_skill_manifest(
+            organization_id=organization_id,
+            skill_id="migration-teacher",
+            actor_user_id=actor_user_id,
+            source_path=source_path,
+        )
+        with lesson_manager.get_conn() as conn:
+            event_before = dict(
+                conn.execute(
+                    "SELECT * FROM class_commentary_skill_activation_events"
+                ).fetchone()
+            )
+            conn.execute(
+                "DROP TRIGGER trg_class_commentary_skill_activation_event_immutable"
+            )
+            conn.execute(
+                """
+                ALTER TABLE class_commentary_skill_activation_events
+                RENAME TO class_commentary_skill_activation_events__current_reason
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE class_commentary_skill_activation_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    skill_registry_id INTEGER NOT NULL REFERENCES class_commentary_skills(id) ON DELETE CASCADE,
+                    activation_request_id TEXT NOT NULL,
+                    activation_payload_hash TEXT NOT NULL,
+                    from_version_id INTEGER REFERENCES class_commentary_skill_versions(id),
+                    to_version_id INTEGER NOT NULL REFERENCES class_commentary_skill_versions(id),
+                    actor_user_id INTEGER NOT NULL REFERENCES users(id),
+                    reason TEXT NOT NULL,
+                    evaluation_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                    UNIQUE(skill_registry_id, activation_request_id),
+                    CHECK(reason IN ('initial_import','candidate_approved','rollback'))
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO class_commentary_skill_activation_events
+                SELECT * FROM class_commentary_skill_activation_events__current_reason
+                """
+            )
+            conn.execute(
+                "DROP TABLE class_commentary_skill_activation_events__current_reason"
+            )
+
+        lesson_manager.init_db()
+
+        self.assertEqual(
+            self._check_values("class_commentary_skill_activation_events", "reason"),
+            {"initial_import", "candidate_approved", "rollback", "manifest_refresh"},
+        )
+        with lesson_manager.get_conn() as conn:
+            event_after = dict(
+                conn.execute(
+                    """
+                    SELECT * FROM class_commentary_skill_activation_events
+                    WHERE activation_request_id=?
+                    """,
+                    (f"initial-import:{organization_id}:migration-teacher",),
+                ).fetchone()
+            )
+            trigger = conn.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='trigger'
+                  AND name='trg_class_commentary_skill_activation_event_immutable'
+                """
+            ).fetchone()
+            foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        self.assertEqual(event_after, event_before)
+        self.assertIsNotNone(trigger)
+        self.assertEqual(foreign_key_errors, [])
+
+        lesson_manager.init_db()
+
+        with lesson_manager.get_conn() as conn:
+            event_after_second_init = dict(
+                conn.execute(
+                    "SELECT * FROM class_commentary_skill_activation_events"
+                ).fetchone()
+            )
+        self.assertEqual(event_after_second_init, event_before)
 
     def test_init_db_renames_legacy_skill_owner_without_rewriting_history(self):
         class_id = lesson_manager.save_class(

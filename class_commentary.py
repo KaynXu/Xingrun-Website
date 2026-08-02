@@ -88,15 +88,18 @@ def _skill_package_updated_at(path: Path) -> str:
     return str(int(max(mtimes)))
 
 
-def _read_skill_package_content(path: Path) -> str:
+def read_class_commentary_skill_package_content(path: Path) -> str:
     parts = []
+    included_contents = []
     for filename in ("SKILL.md", "work.md", "persona.md"):
         file_path = path / filename
         if not file_path.is_file():
             continue
         content = file_path.read_text(encoding="utf-8").strip()
-        if content:
-            parts.append(f"## {filename}\n{content}")
+        if not content or any(content in included for included in included_contents):
+            continue
+        parts.append(f"## {filename}\n{content}")
+        included_contents.append(content)
     return "\n\n".join(parts).strip()
 
 
@@ -146,7 +149,7 @@ def load_colleague_skill(skill_dir: str, skill_id: str) -> dict:
                 "name": _read_skill_package_name(package_path),
                 "filename": f"{package_path.name}/SKILL.md",
                 "path": str(package_path / "SKILL.md"),
-                "content": _read_skill_package_content(package_path),
+                "content": read_class_commentary_skill_package_content(package_path),
             }
     path = root / _safe_skill_filename(normalized_id)
     if path.is_file():
