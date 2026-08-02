@@ -9,8 +9,12 @@ from class_commentary_memory import ClassCommentaryMemoryService
 CLASS_COMMENTARY_MEMORY_MIN_CONFIDENCE = 0.7
 
 
-def empty_class_commentary_memory_context(reason: str = "") -> dict:
-    return {
+def empty_class_commentary_memory_context(
+    reason: str = "",
+    *,
+    student_history_memory_mode: str = "",
+) -> dict:
+    context = {
         "records": [],
         "rendered_text": "",
         "student_history_memories": [],
@@ -18,6 +22,9 @@ def empty_class_commentary_memory_context(reason: str = "") -> dict:
         "retrieval_status": "degraded" if reason else "empty",
         "degraded_reason": str(reason or ""),
     }
+    if student_history_memory_mode:
+        context["student_history_memory_mode"] = student_history_memory_mode
+    return context
 
 
 def _json_list(value: object) -> list:
@@ -62,31 +69,43 @@ def retrieve_class_commentary_memory_context(
     memory_service: Optional[ClassCommentaryMemoryService] = None,
     reconciliation_marker: Optional[Callable[[int, list[int], str], object]] = None,
 ) -> dict:
+    student_history_memory_mode = str(
+        generation.get("student_history_memory_mode") or ""
+    )
+    student_history_disabled = student_history_memory_mode == "disabled_v1"
     service = memory_service or ClassCommentaryMemoryService()
     if not service.enabled:
-        return empty_class_commentary_memory_context("memory_disabled")
+        return empty_class_commentary_memory_context(
+            "memory_disabled",
+            student_history_memory_mode=student_history_memory_mode,
+        )
 
     organization_id = _positive_int(generation.get("organization_id"))
     skill_registry_id = _positive_int(generation.get("skill_registry_id"))
     subject_key = str(generation.get("subject_key") or "").strip()
     transcript = str(generation.get("confirmed_transcript_snapshot") or "").strip()
-    roster = []
-    for item in _json_list(generation.get("attending_roster_snapshot_json")):
-        if not isinstance(item, Mapping):
-            continue
-        student_id = _positive_int(item.get("student_id"))
-        student_name = str(item.get("student_name") or "").strip()
-        if student_id and student_name:
-            roster.append({"student_id": student_id, "student_name": student_name})
-    live_ids = {_positive_int(item) for item in live_student_ids}
-    live_ids.discard(0)
-    mentioned_roster = [
-        item
-        for item in roster
-        if item["student_id"] in live_ids and item["student_name"] in transcript
-    ]
+    mentioned_roster = []
+    if not student_history_disabled:
+        roster = []
+        for item in _json_list(generation.get("attending_roster_snapshot_json")):
+            if not isinstance(item, Mapping):
+                continue
+            student_id = _positive_int(item.get("student_id"))
+            student_name = str(item.get("student_name") or "").strip()
+            if student_id and student_name:
+                roster.append({"student_id": student_id, "student_name": student_name})
+        live_ids = {_positive_int(item) for item in live_student_ids}
+        live_ids.discard(0)
+        mentioned_roster = [
+            item
+            for item in roster
+            if item["student_id"] in live_ids and item["student_name"] in transcript
+        ]
     if not organization_id or not skill_registry_id:
-        return empty_class_commentary_memory_context("generation_scope_unavailable")
+        return empty_class_commentary_memory_context(
+            "generation_scope_unavailable",
+            student_history_memory_mode=student_history_memory_mode,
+        )
 
     style_candidates = []
     student_candidates: list[tuple[dict, dict]] = []
@@ -96,7 +115,7 @@ def retrieve_class_commentary_memory_context(
             organization_id=organization_id,
             scope_skill_registry_id=skill_registry_id,
         )
-        if subject_key:
+        if subject_key and not student_history_disabled:
             for student in mentioned_roster:
                 candidates = service.search_student(
                     transcript[:2000],
@@ -107,7 +126,8 @@ def retrieve_class_commentary_memory_context(
                 student_candidates.extend((candidate, student) for candidate in candidates)
     except Exception as exc:
         return empty_class_commentary_memory_context(
-            f"mem0_{type(exc).__name__}"
+            f"mem0_{type(exc).__name__}",
+            student_history_memory_mode=student_history_memory_mode,
         )
 
     candidate_ids = sorted({
@@ -230,7 +250,7 @@ def retrieve_class_commentary_memory_context(
             for item in accepted_student
         ),
     ]
-    return {
+    context = {
         "records": records_snapshot,
         "rendered_text": "\n".join(rendered_lines),
         "student_history_memories": accepted_student,
@@ -238,3 +258,6 @@ def retrieve_class_commentary_memory_context(
         "retrieval_status": "ready" if records_snapshot else "empty",
         "degraded_reason": "",
     }
+    if student_history_memory_mode:
+        context["student_history_memory_mode"] = student_history_memory_mode
+    return context

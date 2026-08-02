@@ -174,6 +174,14 @@ class ClassCommentaryStoreTest(unittest.TestCase):
                 "memory_context_hash",
                 "execution_snapshot_status",
                 "execution_snapshot_finalized_at",
+                "feedback_schema_version",
+                "structured_feedback_json",
+                "structured_feedback_hash",
+                "eligible_student_ids_json",
+                "eligible_student_scope_hash",
+                "student_mention_matcher_version",
+                "response_format_json",
+                "student_history_memory_mode",
                 "generated_feedback_text",
                 "origin",
                 "snapshot_completeness",
@@ -190,6 +198,8 @@ class ClassCommentaryStoreTest(unittest.TestCase):
                 "generation_id",
                 "teacher_user_id",
                 "based_on_revision_id",
+                "feedback_schema_version",
+                "structured_feedback_json",
                 "feedback_text",
                 "content_hash",
                 "draft_version",
@@ -208,6 +218,9 @@ class ClassCommentaryStoreTest(unittest.TestCase):
                 "previous_revision_id",
                 "confirmed_draft_version",
                 "confirmed_draft_snapshot_json",
+                "feedback_schema_version",
+                "structured_feedback_json",
+                "structured_feedback_hash",
                 "final_feedback_text",
                 "generation_diff_json",
                 "previous_revision_diff_json",
@@ -229,6 +242,134 @@ class ClassCommentaryStoreTest(unittest.TestCase):
         for table_name, columns in expected_columns.items():
             with self.subTest(table=table_name):
                 self.assertEqual(self._column_names(table_name), columns)
+
+    def test_structured_feedback_columns_are_additive_with_safe_defaults(self):
+        expected_defaults = {
+            "class_commentary_generations": {
+                "feedback_schema_version": "''",
+                "structured_feedback_json": "''",
+                "structured_feedback_hash": "''",
+                "eligible_student_ids_json": "'[]'",
+                "eligible_student_scope_hash": "''",
+                "student_mention_matcher_version": "''",
+                "response_format_json": "'{}'",
+                "student_history_memory_mode": "''",
+            },
+            "class_commentary_feedback_drafts": {
+                "feedback_schema_version": "''",
+                "structured_feedback_json": "''",
+            },
+            "class_commentary_revisions": {
+                "feedback_schema_version": "''",
+                "structured_feedback_json": "''",
+                "structured_feedback_hash": "''",
+            },
+        }
+
+        for table_name, columns in expected_defaults.items():
+            metadata = self._column_metadata(table_name)
+            for column_name, expected_default in columns.items():
+                with self.subTest(table=table_name, column=column_name):
+                    self.assertEqual(metadata[column_name]["notnull"], 1)
+                    self.assertEqual(metadata[column_name]["dflt_value"], expected_default)
+
+    def test_init_db_adds_structured_feedback_columns_without_backfilling_legacy_rows(self):
+        class_id = lesson_manager.save_class(
+            "兼容迁移班",
+            organization_id=1,
+            teacher_user_id=1,
+        )
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=1,
+            class_id=class_id,
+            teacher_user_id=1,
+            audio_path="/tmp/compatibility-floor.m4a",
+            audio_filename="compatibility-floor.m4a",
+        )
+        task = lesson_manager.mark_class_commentary_transcription_succeeded(
+            task["id"],
+            "小王本节课计算稳定",
+        )
+        generation = self._reserve_runtime_generation(
+            task,
+            "compatibility-floor-style",
+            "compatibility floor style",
+        )
+        lesson_manager.complete_class_commentary_generation(
+            generation["id"],
+            "小王: 本节课计算稳定.",
+        )
+        draft = lesson_manager.save_class_commentary_feedback_draft(
+            task_id=task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=1,
+            feedback_text="小王: 老师草稿.",
+            expected_draft_version=0,
+        )
+        revision = lesson_manager.confirm_class_commentary_feedback(
+            task_id=task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=1,
+            feedback_text="小王: 老师终稿.",
+            learn_requested=False,
+            expected_draft_version=draft["draft_version"],
+            confirmation_request_id="compatibility-floor-confirmation",
+        )
+        columns_to_drop = {
+            "class_commentary_generations": [
+                "feedback_schema_version",
+                "structured_feedback_json",
+                "structured_feedback_hash",
+                "eligible_student_ids_json",
+                "eligible_student_scope_hash",
+                "student_mention_matcher_version",
+                "response_format_json",
+                "student_history_memory_mode",
+            ],
+            "class_commentary_feedback_drafts": [
+                "feedback_schema_version",
+                "structured_feedback_json",
+            ],
+            "class_commentary_revisions": [
+                "feedback_schema_version",
+                "structured_feedback_json",
+                "structured_feedback_hash",
+            ],
+        }
+        with lesson_manager.get_conn() as conn:
+            for table_name, column_names in columns_to_drop.items():
+                for column_name in column_names:
+                    conn.execute(f"ALTER TABLE {table_name} DROP COLUMN {column_name}")
+
+        lesson_manager.init_db()
+        lesson_manager.init_db()
+
+        with lesson_manager.get_conn() as conn:
+            migrated_generation = dict(conn.execute(
+                "SELECT * FROM class_commentary_generations WHERE id=?",
+                (generation["id"],),
+            ).fetchone())
+            migrated_draft = dict(conn.execute(
+                "SELECT * FROM class_commentary_feedback_drafts WHERE id=?",
+                (draft["id"],),
+            ).fetchone())
+            migrated_revision = dict(conn.execute(
+                "SELECT * FROM class_commentary_revisions WHERE id=?",
+                (revision["id"],),
+            ).fetchone())
+
+        self.assertEqual(migrated_generation["generated_feedback_text"], "小王: 本节课计算稳定.")
+        self.assertEqual(migrated_generation["feedback_schema_version"], "")
+        self.assertEqual(migrated_generation["structured_feedback_json"], "")
+        self.assertEqual(migrated_generation["eligible_student_ids_json"], "[]")
+        self.assertEqual(migrated_generation["response_format_json"], "{}")
+        self.assertEqual(migrated_draft["feedback_text"], "小王: 老师终稿.")
+        self.assertEqual(migrated_draft["feedback_schema_version"], "")
+        self.assertEqual(migrated_draft["structured_feedback_json"], "")
+        self.assertEqual(migrated_revision["final_feedback_text"], "小王: 老师终稿.")
+        self.assertEqual(migrated_revision["feedback_schema_version"], "")
+        self.assertEqual(migrated_revision["structured_feedback_json"], "")
+        self.assertEqual(migrated_revision["structured_feedback_hash"], "")
 
     def test_phase_one_v3_schema_has_documented_unique_constraints(self):
         expected_unique_columns = {

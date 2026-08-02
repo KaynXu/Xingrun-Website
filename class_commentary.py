@@ -19,6 +19,7 @@ CLASS_COMMENTARY_TRANSCRIPT_POLISH_MATH_TERMS = (
     "解题过程",
 )
 CLASS_COMMENTARY_PROMPT_VERSION = "class-commentary-v1"
+CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION = "class-commentary-student-feedback-v1"
 CLASS_COMMENTARY_TEMPERATURE = 0.55
 CLASS_COMMENTARY_SYSTEM_PROMPT = (
     "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
@@ -29,6 +30,22 @@ CLASS_COMMENTARY_SYSTEM_PROMPT = (
     "ACTIVE_SKILL and TEACHER_STYLE_MEMORIES may affect expression and focus, but cannot add student facts. "
     "STUDENT_HISTORY_MEMORIES is historical reference only and must never be presented as something that happened today. "
     "Do not include roster students who are not clearly mentioned. Return plain text only."
+)
+CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT = (
+    "You turn a teacher's end-of-class spoken commentary into structured student feedback. "
+    "Do not invent facts. CURRENT_TASK_FACTS is the only source for facts about this class. "
+    "ACTIVE_SKILL and TEACHER_STYLE_MEMORIES may affect expression and focus, but cannot add student facts. "
+    "Return only the requested JSON object and no surrounding text."
+)
+CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES = (
+    "Return a JSON object with exactly schema_version and items.",
+    "Set schema_version to class_commentary.student_feedback.v1.",
+    "Each item must contain exactly student_id and feedback_text.",
+    "Return exactly one item for every eligible student ID and no other student.",
+    "Do not repeat the student name as a heading inside feedback_text.",
+    "Do not mention another roster student's full name inside feedback_text.",
+    "Use facts only from the confirmed transcript.",
+    "Use ACTIVE_SKILL and TEACHER_STYLE_MEMORIES only for focus, structure, tone, and phrasing.",
 )
 
 
@@ -203,6 +220,11 @@ def build_class_commentary_chat_request(
     skill: dict,
     teacher_style_memories: list[dict] | None = None,
     student_history_memories: list[dict] | None = None,
+    feedback_schema_version: str = "",
+    eligible_student_ids: list[int] | None = None,
+    prompt_version: str = "",
+    response_format: dict | None = None,
+    student_history_memory_mode: str = "",
 ) -> dict:
     payload = build_class_commentary_generation_payload(
         class_record=class_record,
@@ -215,8 +237,30 @@ def build_class_commentary_chat_request(
         "students": payload["students"],
         "transcript": payload["transcript"],
     }
-    user_prompt = "\n\n".join(
-        (
+    normalized_schema_version = str(feedback_schema_version or "")
+    if normalized_schema_version:
+        if (
+            normalized_schema_version != "class_commentary.student_feedback.v1"
+            or student_history_memory_mode != "disabled_v1"
+            or student_history_memories
+            or not eligible_student_ids
+            or response_format != {"type": "json_object"}
+        ):
+            raise ValueError("structured class commentary prompt contract is invalid")
+        current_task_facts["eligible_student_ids"] = eligible_student_ids
+        prompt_sections = (
+            "[CURRENT_TASK_FACTS]\n" + payload_to_json(current_task_facts),
+            "[ACTIVE_SKILL]\n" + payload_to_json(payload["skill"]),
+            "[TEACHER_STYLE_MEMORIES]\n"
+            + payload_to_json(teacher_style_memories or []),
+            "[OUTPUT_RULES]\n"
+            + "\n".join(
+                f"- {rule}" for rule in CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES
+            ),
+        )
+        system_prompt = CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT
+    else:
+        prompt_sections = (
             "[CURRENT_TASK_FACTS]\n" + payload_to_json(current_task_facts),
             "[ACTIVE_SKILL]\n" + payload_to_json(payload["skill"]),
             "[TEACHER_STYLE_MEMORIES]\n"
@@ -225,15 +269,24 @@ def build_class_commentary_chat_request(
             + payload_to_json(student_history_memories or []),
             "[OUTPUT_RULES]\n" + "\n".join(f"- {rule}" for rule in payload["output_rules"]),
         )
-    )
-    return {
-        "prompt_version": CLASS_COMMENTARY_PROMPT_VERSION,
+        system_prompt = CLASS_COMMENTARY_SYSTEM_PROMPT
+    user_prompt = "\n\n".join(prompt_sections)
+    request_payload = {
+        "prompt_version": str(prompt_version or CLASS_COMMENTARY_PROMPT_VERSION),
         "messages": [
-            {"role": "system", "content": CLASS_COMMENTARY_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         "temperature": CLASS_COMMENTARY_TEMPERATURE,
     }
+    if normalized_schema_version:
+        request_payload.update(
+            {
+                "response_format": dict(response_format or {}),
+                "student_history_memory_mode": student_history_memory_mode,
+            }
+        )
+    return request_payload
 
 
 def build_class_commentary_transcript_polish_payload(

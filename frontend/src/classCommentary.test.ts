@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
 import {
+  areClassCommentaryStudentFeedbackItemsEqual,
+  buildClassCommentaryFeedbackWorkspaceKey,
+  buildClassCommentaryRevisionPreviewKey,
   buildClassCommentarySkillPreferenceKey,
   buildClassCommentaryTaskPath,
   classCommentaryStatusLabel,
   activateClassCommentarySkillVersion,
   confirmClassCommentaryFeedback,
   createClassCommentarySkillCandidate,
+  fetchClassCommentaryCapabilities,
   fetchClassCommentaryTasks,
   fetchClassCommentaryFeedbackDraft,
   fetchClassCommentaryFeedbackRevisions,
@@ -16,16 +20,22 @@ import {
   fetchClassCommentaryGeneration,
   fetchClassCommentaryGenerations,
   createClassCommentaryTextTask,
+  deriveClassCommentaryStructuredFeedbackText,
+  formatClassCommentaryStudentFeedback,
   generateClassCommentaryFeedback,
   isClassCommentaryFeedbackRecordInScope,
+  isClassCommentaryTaskLatestSchemaCompatible,
+  normalizeClassCommentaryGeneration,
   normalizeClassCommentaryTask,
   readClassCommentarySkillPreference,
   rollbackClassCommentarySkillVersion,
   retryClassCommentaryRevisionMemory,
   revokeClassCommentaryMemoryEvidence,
   resolveClassCommentaryCopyText,
+  resolveClassCommentaryStudentFeedbackItems,
   saveClassCommentaryFeedbackDraft,
   shouldPollClassCommentaryTask,
+  updateClassCommentaryScopedStudentFeedback,
   writeClassCommentarySkillPreference,
 } from './classCommentary';
 import { ApiFetchError } from './workspaceShared';
@@ -84,6 +94,112 @@ test('normalizes missing task fields to empty strings', () => {
   assert.equal(task.generation_error, '');
 });
 
+test('normalizes feedback envelopes into plain, supported, unsupported, and invalid modes', () => {
+  const plain = normalizeClassCommentaryGeneration({
+    id: 1,
+    generated_feedback_text: '历史纯文本',
+    feedback_schema_version: '',
+  });
+  assert.equal(plain.feedback_schema_status, 'plain_text');
+  assert.deepEqual(plain.student_feedback_items, []);
+  assert.equal(plain.derived_feedback_text, '历史纯文本');
+  assert.equal(plain.writable, true);
+
+  const supported = normalizeClassCommentaryGeneration({
+    id: 2,
+    feedback_schema_version: 'class_commentary.student_feedback.v1',
+    feedback_schema_status: 'supported',
+    structured_feedback_hash: 'known-hash',
+    derived_feedback_text: '小王:\n课堂计算更稳定.',
+    student_feedback_items: [{
+      student_id: 11,
+      student_name: '小王',
+      feedback_text: '课堂计算更稳定.',
+    }],
+  });
+  assert.equal(supported.feedback_schema_status, 'supported');
+  assert.equal(supported.student_feedback_items[0].student_name, '小王');
+  assert.equal(supported.generated_feedback_text, '小王:\n课堂计算更稳定.');
+  assert.equal(supported.writable, true);
+
+  const unknown = normalizeClassCommentaryGeneration({
+    id: 3,
+    feedback_schema_version: 'future.student-feedback.v2',
+    feedback_schema_status: 'plain_text',
+    writable: true,
+    derived_feedback_text: '未来版本兼容文本',
+    student_feedback_items: [{ student_id: 11, student_name: '不应信任', feedback_text: '不应解析' }],
+  });
+  assert.equal(unknown.feedback_schema_status, 'unsupported');
+  assert.deepEqual(unknown.student_feedback_items, []);
+  assert.equal(unknown.derived_feedback_text, '未来版本兼容文本');
+  assert.equal(unknown.writable, false);
+
+  const whitespaceSchema = normalizeClassCommentaryGeneration({
+    id: 4,
+    feedback_schema_version: ' ',
+    feedback_schema_status: 'plain_text',
+    writable: true,
+    derived_feedback_text: '空格版本也必须只读',
+  });
+  assert.equal(whitespaceSchema.feedback_schema_status, 'unsupported');
+  assert.equal(whitespaceSchema.feedback_schema_version, ' ');
+  assert.equal(whitespaceSchema.writable, false);
+
+  const invalid = normalizeClassCommentaryGeneration({
+    id: 5,
+    feedback_schema_version: 'class_commentary.student_feedback.v1',
+    feedback_schema_status: 'supported',
+    structured_feedback_hash: 'known-hash',
+    derived_feedback_text: '损坏的结构化反馈',
+    student_feedback_items: [{ student_id: 0, student_name: '', feedback_text: '' }],
+  });
+  assert.equal(invalid.feedback_schema_status, 'invalid');
+  assert.deepEqual(invalid.student_feedback_items, []);
+  assert.equal(invalid.writable, false);
+
+  const generating = normalizeClassCommentaryGeneration({
+    id: 6,
+    status: 'generating',
+    feedback_schema_version: 'class_commentary.student_feedback.v1',
+    feedback_schema_status: 'supported',
+    structured_feedback_hash: '',
+    derived_feedback_text: '',
+    student_feedback_items: [],
+    writable: false,
+  });
+  assert.equal(generating.feedback_schema_status, 'supported');
+  assert.deepEqual(generating.student_feedback_items, []);
+  assert.equal(generating.writable, false);
+});
+
+test('task latest schema compatibility is asymmetric for legacy to structured upgrades', () => {
+  assert.equal(isClassCommentaryTaskLatestSchemaCompatible(
+    'class_commentary.student_feedback.v1',
+    '',
+  ), true);
+  assert.equal(isClassCommentaryTaskLatestSchemaCompatible(
+    '',
+    'class_commentary.student_feedback.v1',
+  ), false);
+  assert.equal(isClassCommentaryTaskLatestSchemaCompatible(
+    'class_commentary.student_feedback.v1',
+    'class_commentary.student_feedback.v1',
+  ), true);
+});
+
+test('class commentary capabilities keep structured feedback disabled by default', async () => {
+  mockJsonFetch({ memory_learning_enabled: true, skill_evolution_enabled: true });
+
+  const capabilities = await fetchClassCommentaryCapabilities();
+
+  assert.deepEqual(capabilities, {
+    memory_learning_enabled: true,
+    skill_evolution_enabled: true,
+    structured_feedback_enabled: false,
+  });
+});
+
 test('polling is limited to async task states', () => {
   assert.equal(shouldPollClassCommentaryTask('uploaded'), true);
   assert.equal(shouldPollClassCommentaryTask('transcribing'), true);
@@ -105,6 +221,59 @@ test('feedback records must match both task and generation scope', () => {
   assert.equal(isClassCommentaryFeedbackRecordInScope(record, 9, 32), false);
   assert.equal(isClassCommentaryFeedbackRecordInScope({ task_id: 9, generation_id: 0 }, 9, 0), false);
   assert.equal(isClassCommentaryFeedbackRecordInScope(null, 9, 31), false);
+});
+
+test('structured feedback helpers preserve frozen order and current visible text', () => {
+  const generationItems = [
+    { student_id: 11, student_name: '小王', feedback_text: 'AI 原稿' },
+    { student_id: 12, student_name: '小李', feedback_text: '第二段' },
+  ];
+  const draftItems = [
+    { student_id: 11, student_name: '小王', feedback_text: '未保存前的草稿' },
+    { student_id: 12, student_name: '小李', feedback_text: '第二段草稿' },
+  ];
+  const resolved = resolveClassCommentaryStudentFeedbackItems(
+    { feedback_schema_status: 'supported', student_feedback_items: draftItems },
+    null,
+    { feedback_schema_status: 'supported', student_feedback_items: generationItems },
+  );
+
+  assert.deepEqual(resolved, draftItems);
+  assert.notEqual(resolved, draftItems);
+  resolved[0].feedback_text = '当前界面未保存修改';
+  assert.equal(
+    deriveClassCommentaryStructuredFeedbackText(resolved),
+    '小王:\n当前界面未保存修改\n\n小李:\n第二段草稿',
+  );
+  assert.equal(formatClassCommentaryStudentFeedback(resolved[0]), '小王:\n当前界面未保存修改');
+  assert.equal(areClassCommentaryStudentFeedbackItemsEqual(resolved, draftItems), false);
+  assert.deepEqual(resolveClassCommentaryStudentFeedbackItems(null, null, null, true), []);
+});
+
+test('task generation workspace keys isolate overlapping student ids', () => {
+  const firstKey = buildClassCommentaryFeedbackWorkspaceKey(10, 25);
+  const secondKey = buildClassCommentaryFeedbackWorkspaceKey(11, 25);
+  const editors = {
+    [firstKey]: {
+      itemsByStudentId: {
+        123: { student_id: 123, student_name: '同名 ID', feedback_text: '任务一' },
+      },
+    },
+    [secondKey]: {
+      itemsByStudentId: {
+        123: { student_id: 123, student_name: '同名 ID', feedback_text: '任务二' },
+      },
+    },
+  };
+
+  const updated = updateClassCommentaryScopedStudentFeedback(editors, firstKey, 123, '只修改任务一');
+
+  assert.equal(firstKey, '10:25');
+  assert.equal(secondKey, '11:25');
+  assert.equal(buildClassCommentaryRevisionPreviewKey(10, 7), '10:7');
+  assert.equal(updated[firstKey].itemsByStudentId[123].feedback_text, '只修改任务一');
+  assert.equal(updated[secondKey].itemsByStudentId[123].feedback_text, '任务二');
+  assert.equal(updated[secondKey], editors[secondKey]);
 });
 
 test('copy text uses persisted precedence and is empty while generation data is blocked', () => {
@@ -296,6 +465,8 @@ test('fetchClassCommentaryFeedbackDraft unwraps and normalizes the saved draft',
   assert.equal(draft.feedback_text, '老师草稿');
   assert.equal(draft.draft_version, 2);
   assert.equal(draft.created_at, '');
+  assert.equal(draft.feedback_schema_status, 'plain_text');
+  assert.equal(draft.derived_feedback_text, '老师草稿');
 });
 
 test('fetchClassCommentaryFeedbackDraft returns null when no draft exists', async () => {
@@ -326,6 +497,44 @@ test('saveClassCommentaryFeedbackDraft sends CAS version and unwraps the draft',
   });
   assert.equal(draft.feedback_text, '保存后的草稿');
   assert.equal(draft.draft_version, 3);
+});
+
+test('structured draft save sends items as the only writable content source', async () => {
+  const calls = mockJsonFetch({
+    draft: {
+      id: 43,
+      task_id: 9,
+      generation_id: 31,
+      teacher_user_id: 4,
+      based_on_revision_id: 8,
+      feedback_schema_version: 'class_commentary.student_feedback.v1',
+      feedback_schema_status: 'supported',
+      student_feedback_items: [{ student_id: 11, student_name: '小王', feedback_text: '老师当前修改' }],
+      structured_feedback_hash: 'draft-hash',
+      derived_feedback_text: '小王:\n老师当前修改',
+      feedback_text: '小王:\n老师当前修改',
+      draft_version: 3,
+    },
+  });
+
+  await saveClassCommentaryFeedbackDraft(
+    9,
+    31,
+    {
+      feedback_schema_version: 'class_commentary.student_feedback.v1',
+      student_feedback_items: [{ student_id: 11, feedback_text: '老师当前修改' }],
+    },
+    2,
+    8,
+  );
+
+  assert.deepEqual(JSON.parse(String(calls[0].options?.body)), {
+    feedback_schema_version: 'class_commentary.student_feedback.v1',
+    student_feedback_items: [{ student_id: 11, feedback_text: '老师当前修改' }],
+    expected_draft_version: 2,
+    based_on_revision_id: 8,
+  });
+  assert.doesNotMatch(String(calls[0].options?.body), /feedback_text":"小王:/);
 });
 
 test('confirmClassCommentaryFeedback returns the revision with its transaction-bound draft', async () => {
@@ -383,6 +592,61 @@ test('confirmClassCommentaryFeedback returns the revision with its transaction-b
   assert.equal(result.draft.draft_version, 3);
 });
 
+test('structured confirmation sends task revision CAS and keeps names response-only', async () => {
+  const envelope = {
+    feedback_schema_version: 'class_commentary.student_feedback.v1',
+    feedback_schema_status: 'supported',
+    student_feedback_items: [{ student_id: 11, student_name: '小王', feedback_text: '老师终稿' }],
+    structured_feedback_hash: 'confirmed-hash',
+    derived_feedback_text: '小王:\n老师终稿',
+  };
+  const calls = mockJsonFetch({
+    revision: {
+      id: 53,
+      task_id: 9,
+      generation_id: 31,
+      revision_no: 2,
+      final_feedback_text: '小王:\n老师终稿',
+      confirmed_draft_version: 3,
+      ...envelope,
+    },
+    draft: {
+      id: 43,
+      task_id: 9,
+      generation_id: 31,
+      teacher_user_id: 4,
+      feedback_text: '小王:\n老师终稿',
+      draft_version: 3,
+      ...envelope,
+    },
+  });
+
+  const result = await confirmClassCommentaryFeedback(
+    9,
+    31,
+    {
+      feedback_schema_version: 'class_commentary.student_feedback.v1',
+      student_feedback_items: [{ student_id: 11, feedback_text: '老师终稿' }],
+    },
+    true,
+    2,
+    'confirmation-request-53',
+    52,
+  );
+
+  assert.deepEqual(JSON.parse(String(calls[0].options?.body)), {
+    generation_id: 31,
+    feedback_schema_version: 'class_commentary.student_feedback.v1',
+    student_feedback_items: [{ student_id: 11, feedback_text: '老师终稿' }],
+    learn: true,
+    expected_draft_version: 2,
+    expected_latest_revision_id: 52,
+    request_id: 'confirmation-request-53',
+  });
+  assert.equal(result.revision.confirmed_draft_version, 3);
+  assert.equal(result.revision.student_feedback_items[0].student_name, '小王');
+});
+
 test('fetchClassCommentaryFeedbackRevisions normalizes revision history', async () => {
   const calls = mockJsonFetch({
     revisions: [{
@@ -408,6 +672,8 @@ test('fetchClassCommentaryFeedbackRevisions normalizes revision history', async 
   assert.equal(revisions[0].revision_no, 2);
   assert.equal(revisions[0].previous_revision_id, 51);
   assert.equal(revisions[0].confirmed_at, '2026-07-14T12:00:00Z');
+  assert.equal(revisions[0].feedback_schema_status, 'plain_text');
+  assert.equal(revisions[0].derived_feedback_text, '再次确认的终稿');
 });
 
 test('memory helpers normalize status and preserve item-level evidence actions', async () => {

@@ -2405,12 +2405,20 @@ def generate_class_commentary_feedback(
         transcript_text=transcript_text,
         skill=skill,
     )
-    response = client.chat.completions.create(
-        model=model,
-        messages=request_payload["messages"],
-        temperature=float(request_payload["temperature"]),
+    completion_kwargs = {
+        "model": model,
+        "messages": request_payload["messages"],
+        "temperature": float(request_payload["temperature"]),
+    }
+    if "response_format" in request_payload:
+        completion_kwargs["response_format"] = request_payload["response_format"]
+    response = client.chat.completions.create(**completion_kwargs)
+    response_text = response.choices[0].message.content or ""
+    text = (
+        str(response_text).strip()
+        if "response_format" in request_payload
+        else normalize_class_commentary_feedback_text(response_text)
     )
-    text = normalize_class_commentary_feedback_text(response.choices[0].message.content or "")
     if include_usage:
         return text, _usage_dict(response, provider=provider, model_fallback=model)
     return text

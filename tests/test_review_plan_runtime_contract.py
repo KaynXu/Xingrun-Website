@@ -58,7 +58,7 @@ class ReviewPlanRuntimeContractTestCase(unittest.TestCase):
                     "XR_REVIEW_PLAN_WRITER_PROVIDER": "deepseek",
                     "XR_REVIEW_PLAN_WRITER_MODEL": "deepseek-v4-pro",
                     "XR_CLASS_COMMENTARY_PROVIDER": "openai",
-                    "XR_CLASS_COMMENTARY_MODEL": "gpt-5.5",
+                    "XR_CLASS_COMMENTARY_MODEL": "gpt-5.6-sol",
                     "XR_PROVIDER": "deepseek",
                 },
                 clear=True,
@@ -72,7 +72,7 @@ class ReviewPlanRuntimeContractTestCase(unittest.TestCase):
                 self.assertEqual(cfg["review_plan_writer_provider"], "deepseek")
                 self.assertEqual(cfg["review_plan_writer_model"], "deepseek-v4-pro")
                 self.assertEqual(cfg["class_commentary_provider"], "openai")
-                self.assertEqual(cfg["class_commentary_model"], "gpt-5.5")
+                self.assertEqual(cfg["class_commentary_model"], "gpt-5.6-sol")
 
                 self.assertEqual(resolve_review_plan_provider(cfg), "openai")
                 self.assertEqual(resolve_review_plan_model(cfg), "gpt-5.5")
@@ -83,7 +83,7 @@ class ReviewPlanRuntimeContractTestCase(unittest.TestCase):
                 self.assertEqual(app_module._review_plan_writer_ai_provider_name(), "deepseek")
                 self.assertEqual(app_module._review_plan_writer_chat_model_name(), "deepseek-v4-pro")
                 self.assertEqual(app_module._class_commentary_ai_provider_name(fallback=app_module._default_ai_provider_name()), "openai")
-                self.assertEqual(app_module._class_commentary_chat_model_name("openai", fallback_model=app_module._default_chat_model_name()), "gpt-5.5")
+                self.assertEqual(app_module._class_commentary_chat_model_name("openai", fallback_model=app_module._default_chat_model_name()), "gpt-5.6-sol")
                 self.assertEqual(_audio_transcription_provider_name(), "tencent")
                 self.assertEqual(_audio_transcription_model_name(), "flash-16k_zh")
 
@@ -120,7 +120,7 @@ class ReviewPlanRuntimeContractTestCase(unittest.TestCase):
                     "XR_REVIEW_PLAN_WRITER_PROVIDER": "deepseek",
                     "XR_REVIEW_PLAN_WRITER_MODEL": "deepseek-v4-pro",
                     "XR_CLASS_COMMENTARY_PROVIDER": "openai",
-                    "XR_CLASS_COMMENTARY_MODEL": "gpt-5.5",
+                    "XR_CLASS_COMMENTARY_MODEL": "gpt-5.6-sol",
                     "XR_PROVIDER": "deepseek",
                 },
                 clear=True,

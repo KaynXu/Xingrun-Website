@@ -21,6 +21,7 @@ export type ClassCommentarySkill = {
 export type ClassCommentaryCapabilities = {
   memory_learning_enabled: boolean;
   skill_evolution_enabled: boolean;
+  structured_feedback_enabled: boolean;
 };
 
 export type ClassCommentaryTask = {
@@ -54,7 +55,53 @@ export type ClassCommentaryTask = {
 
 export type ClassCommentaryGenerationStatus = 'generating' | 'succeeded' | 'failed';
 
-export type ClassCommentaryGeneration = {
+export const CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1 = 'class_commentary.student_feedback.v1';
+
+export type ClassCommentaryStudentFeedbackItem = {
+  student_id: number;
+  student_name: string;
+  feedback_text: string;
+};
+
+export type ClassCommentaryStudentFeedbackInput = Pick<
+  ClassCommentaryStudentFeedbackItem,
+  'student_id' | 'feedback_text'
+>;
+
+export type ClassCommentaryStructuredFeedbackWriteContent = {
+  feedback_schema_version: typeof CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1;
+  student_feedback_items: ClassCommentaryStudentFeedbackInput[];
+};
+
+export type ClassCommentaryFeedbackWriteContent = string | ClassCommentaryStructuredFeedbackWriteContent;
+
+export type ClassCommentaryFeedbackReadEnvelope =
+  | {
+    feedback_schema_version: '';
+    feedback_schema_status: 'plain_text';
+    student_feedback_items: [];
+    structured_feedback_hash: '';
+    derived_feedback_text: string;
+    writable: true;
+  }
+  | {
+    feedback_schema_version: typeof CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1;
+    feedback_schema_status: 'supported';
+    student_feedback_items: ClassCommentaryStudentFeedbackItem[];
+    structured_feedback_hash: string;
+    derived_feedback_text: string;
+    writable: boolean;
+  }
+  | {
+    feedback_schema_version: string;
+    feedback_schema_status: 'unsupported' | 'invalid';
+    student_feedback_items: [];
+    structured_feedback_hash: string;
+    derived_feedback_text: string;
+    writable: false;
+  };
+
+export type ClassCommentaryGeneration = ClassCommentaryFeedbackReadEnvelope & {
   id: number;
   generation_id: number;
   task_id: number;
@@ -83,7 +130,7 @@ export type ClassCommentaryGeneration = {
   draft_version: number;
 };
 
-export type ClassCommentaryFeedbackDraft = {
+export type ClassCommentaryFeedbackDraft = ClassCommentaryFeedbackReadEnvelope & {
   id: number;
   task_id: number;
   generation_id: number;
@@ -96,7 +143,7 @@ export type ClassCommentaryFeedbackDraft = {
   updated_at: string;
 };
 
-export type ClassCommentaryFeedbackRevision = {
+export type ClassCommentaryFeedbackRevision = ClassCommentaryFeedbackReadEnvelope & {
   id: number;
   task_id: number;
   generation_id: number;
@@ -110,6 +157,7 @@ export type ClassCommentaryFeedbackRevision = {
   generation_diff: Record<string, unknown>;
   previous_revision_diff: Record<string, unknown> | null;
   confirmed_at: string;
+  confirmed_draft_version: number;
   draft_version: number;
 };
 
@@ -402,6 +450,82 @@ export function isClassCommentaryFeedbackRecordInScope(
     && record.generation_id === generationId;
 }
 
+export function buildClassCommentaryFeedbackWorkspaceKey(taskId: number, generationId: number): string {
+  return `${taskId}:${generationId}`;
+}
+
+export function buildClassCommentaryRevisionPreviewKey(taskId: number, revisionId: number): string {
+  return `${taskId}:${revisionId}`;
+}
+
+export function isClassCommentaryTaskLatestSchemaCompatible(
+  selectedGenerationSchemaVersion: string,
+  taskLatestRevisionSchemaVersion: string,
+): boolean {
+  return !taskLatestRevisionSchemaVersion
+    || taskLatestRevisionSchemaVersion === selectedGenerationSchemaVersion;
+}
+
+export function updateClassCommentaryScopedStudentFeedback<
+  TEditor extends { itemsByStudentId: Record<number, ClassCommentaryStudentFeedbackItem> },
+>(
+  editors: Record<string, TEditor>,
+  workspaceKey: string,
+  studentId: number,
+  feedbackText: string,
+): Record<string, TEditor> {
+  const editor = editors[workspaceKey];
+  const item = editor?.itemsByStudentId[studentId];
+  if (!editor || !item) {
+    return editors;
+  }
+  return {
+    ...editors,
+    [workspaceKey]: {
+      ...editor,
+      itemsByStudentId: {
+        ...editor.itemsByStudentId,
+        [studentId]: { ...item, feedback_text: feedbackText },
+      },
+    },
+  };
+}
+
+export function formatClassCommentaryStudentFeedback(
+  item: Pick<ClassCommentaryStudentFeedbackItem, 'student_name' | 'feedback_text'>,
+): string {
+  return `${item.student_name}:\n${item.feedback_text}`;
+}
+
+export function deriveClassCommentaryStructuredFeedbackText(
+  items: Array<Pick<ClassCommentaryStudentFeedbackItem, 'student_name' | 'feedback_text'>>,
+): string {
+  return items.map((item) => formatClassCommentaryStudentFeedback(item)).join('\n\n');
+}
+
+export function areClassCommentaryStudentFeedbackItemsEqual(
+  left: ClassCommentaryStudentFeedbackItem[],
+  right: ClassCommentaryStudentFeedbackItem[],
+): boolean {
+  return left.length === right.length && left.every((item, index) => (
+    item.student_id === right[index]?.student_id
+    && item.feedback_text === right[index]?.feedback_text
+  ));
+}
+
+export function resolveClassCommentaryStudentFeedbackItems(
+  draft: Pick<ClassCommentaryFeedbackDraft, 'feedback_schema_status' | 'student_feedback_items'> | null,
+  revision: Pick<ClassCommentaryFeedbackRevision, 'feedback_schema_status' | 'student_feedback_items'> | null,
+  generation: Pick<ClassCommentaryGeneration, 'feedback_schema_status' | 'student_feedback_items'> | null,
+  blocked = false,
+): ClassCommentaryStudentFeedbackItem[] {
+  if (blocked) {
+    return [];
+  }
+  const source = [draft, revision, generation].find((record) => record?.feedback_schema_status === 'supported');
+  return source?.student_feedback_items.map((item) => ({ ...item })) || [];
+}
+
 export function resolveClassCommentaryCopyText(
   draft: Pick<ClassCommentaryFeedbackDraft, 'feedback_text'> | null,
   revision: Pick<ClassCommentaryFeedbackRevision, 'final_feedback_text'> | null,
@@ -415,6 +539,118 @@ export function resolveClassCommentaryCopyText(
     || revision?.final_feedback_text
     || generation?.generated_feedback_text
     || '';
+}
+
+function invalidClassCommentaryFeedbackEnvelope(
+  schemaVersion: string,
+  structuredHash: string,
+  derivedText: string,
+): ClassCommentaryFeedbackReadEnvelope {
+  return {
+    feedback_schema_version: schemaVersion,
+    feedback_schema_status: 'invalid',
+    student_feedback_items: [],
+    structured_feedback_hash: structuredHash,
+    derived_feedback_text: derivedText,
+    writable: false,
+  };
+}
+
+function normalizeClassCommentaryFeedbackEnvelope(
+  source: Record<string, unknown>,
+  legacyText: string,
+  allowEmptySupportedReadOnly = false,
+): ClassCommentaryFeedbackReadEnvelope {
+  const schemaVersion = stringValue(source.feedback_schema_version);
+  const structuredHash = stringValue(source.structured_feedback_hash);
+  const derivedText = stringValue(source.derived_feedback_text) || legacyText;
+  if (!schemaVersion) {
+    return {
+      feedback_schema_version: '',
+      feedback_schema_status: 'plain_text',
+      student_feedback_items: [],
+      structured_feedback_hash: '',
+      derived_feedback_text: derivedText,
+      writable: true,
+    };
+  }
+  if (schemaVersion !== CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1) {
+    return {
+      feedback_schema_version: schemaVersion,
+      feedback_schema_status: 'unsupported',
+      student_feedback_items: [],
+      structured_feedback_hash: structuredHash,
+      derived_feedback_text: derivedText,
+      writable: false,
+    };
+  }
+  const schemaStatus = stringValue(source.feedback_schema_status);
+  if (schemaStatus === 'unsupported') {
+    return {
+      feedback_schema_version: schemaVersion,
+      feedback_schema_status: 'unsupported',
+      student_feedback_items: [],
+      structured_feedback_hash: structuredHash,
+      derived_feedback_text: derivedText,
+      writable: false,
+    };
+  }
+  if (schemaStatus !== 'supported' || !Array.isArray(source.student_feedback_items)) {
+    return invalidClassCommentaryFeedbackEnvelope(schemaVersion, structuredHash, derivedText);
+  }
+  if (
+    allowEmptySupportedReadOnly
+    && source.writable === false
+    && source.student_feedback_items.length === 0
+    && !structuredHash
+    && !derivedText
+  ) {
+    return {
+      feedback_schema_version: CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+      feedback_schema_status: 'supported',
+      student_feedback_items: [],
+      structured_feedback_hash: '',
+      derived_feedback_text: '',
+      writable: false,
+    };
+  }
+  const items: ClassCommentaryStudentFeedbackItem[] = [];
+  const studentIds = new Set<number>();
+  for (const rawItem of source.student_feedback_items) {
+    const item = recordValue(rawItem);
+    const studentId = item.student_id;
+    const studentName = item.student_name;
+    const feedbackText = item.feedback_text;
+    if (
+      typeof studentId !== 'number'
+      || !Number.isInteger(studentId)
+      || studentId <= 0
+      || studentIds.has(studentId)
+      || typeof studentName !== 'string'
+      || !studentName.trim()
+      || typeof feedbackText !== 'string'
+      || !feedbackText.trim()
+    ) {
+      return invalidClassCommentaryFeedbackEnvelope(schemaVersion, structuredHash, derivedText);
+    }
+    studentIds.add(studentId);
+    items.push({
+      student_id: studentId,
+      student_name: studentName,
+      feedback_text: feedbackText,
+    });
+  }
+  if (!items.length || !structuredHash || !derivedText) {
+    return invalidClassCommentaryFeedbackEnvelope(schemaVersion, structuredHash, derivedText);
+  }
+  return {
+    feedback_schema_version: CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+    feedback_schema_status: 'supported',
+    student_feedback_items: items,
+    structured_feedback_hash: structuredHash,
+    derived_feedback_text: derivedText,
+    writable: true,
+  };
 }
 
 function normalizeClassCommentarySkill(item: unknown): ClassCommentarySkill {
@@ -437,6 +673,12 @@ export function normalizeClassCommentaryGeneration(source: Record<string, unknow
   const status: ClassCommentaryGenerationStatus = rawStatus === 'succeeded' || rawStatus === 'failed'
     ? rawStatus
     : 'generating';
+  const generatedFeedbackText = stringValue(source.generated_feedback_text);
+  const feedbackEnvelope = normalizeClassCommentaryFeedbackEnvelope(
+    source,
+    generatedFeedbackText,
+    status !== 'succeeded',
+  );
   return {
     id: numberValue(source.id || source.generation_id),
     generation_id: numberValue(source.generation_id || source.id),
@@ -448,7 +690,7 @@ export function normalizeClassCommentaryGeneration(source: Record<string, unknow
     snapshot_completeness: stringValue(source.snapshot_completeness) === 'partial' ? 'partial' : 'complete',
     skill_id: stringValue(source.skill_id),
     model_name: stringValue(source.model_name),
-    generated_feedback_text: stringValue(source.generated_feedback_text),
+    generated_feedback_text: generatedFeedbackText || feedbackEnvelope.derived_feedback_text,
     missing_snapshot_fields: stringArrayValue(source.missing_snapshot_fields),
     confirmed_transcript_version: numberValue(source.confirmed_transcript_version),
     confirmed_transcript_snapshot: stringValue(source.confirmed_transcript_snapshot),
@@ -472,32 +714,38 @@ export function normalizeClassCommentaryGeneration(source: Record<string, unknow
     latest_revision_id: nullableNumberValue(source.latest_revision_id),
     has_draft: booleanValue(source.has_draft),
     draft_version: numberValue(source.draft_version),
+    ...feedbackEnvelope,
   };
 }
 
-function normalizeClassCommentaryFeedbackDraft(source: Record<string, unknown>): ClassCommentaryFeedbackDraft {
+export function normalizeClassCommentaryFeedbackDraft(source: Record<string, unknown>): ClassCommentaryFeedbackDraft {
+  const feedbackText = stringValue(source.feedback_text);
+  const feedbackEnvelope = normalizeClassCommentaryFeedbackEnvelope(source, feedbackText);
   return {
     id: numberValue(source.id),
     task_id: numberValue(source.task_id),
     generation_id: numberValue(source.generation_id),
     teacher_user_id: numberValue(source.teacher_user_id),
     based_on_revision_id: nullableNumberValue(source.based_on_revision_id),
-    feedback_text: stringValue(source.feedback_text),
+    feedback_text: feedbackText || feedbackEnvelope.derived_feedback_text,
     content_hash: stringValue(source.content_hash),
     draft_version: numberValue(source.draft_version),
     created_at: stringValue(source.created_at),
     updated_at: stringValue(source.updated_at),
+    ...feedbackEnvelope,
   };
 }
 
-function normalizeClassCommentaryFeedbackRevision(source: Record<string, unknown>): ClassCommentaryFeedbackRevision {
+export function normalizeClassCommentaryFeedbackRevision(source: Record<string, unknown>): ClassCommentaryFeedbackRevision {
+  const finalFeedbackText = stringValue(source.final_feedback_text);
+  const feedbackEnvelope = normalizeClassCommentaryFeedbackEnvelope(source, finalFeedbackText);
   return {
     id: numberValue(source.id || source.revision_id),
     task_id: numberValue(source.task_id),
     generation_id: numberValue(source.generation_id),
     revision_no: numberValue(source.revision_no),
     previous_revision_id: nullableNumberValue(source.previous_revision_id),
-    final_feedback_text: stringValue(source.final_feedback_text),
+    final_feedback_text: finalFeedbackText || feedbackEnvelope.derived_feedback_text,
     learn_requested: booleanValue(source.learn_requested),
     accepted_without_edit: booleanValue(source.accepted_without_edit),
     unchanged_from_previous_revision: booleanValue(source.unchanged_from_previous_revision),
@@ -507,7 +755,9 @@ function normalizeClassCommentaryFeedbackRevision(source: Record<string, unknown
       ? null
       : recordValue(source.previous_revision_diff),
     confirmed_at: stringValue(source.confirmed_at),
-    draft_version: numberValue(source.draft_version),
+    confirmed_draft_version: numberValue(source.confirmed_draft_version || source.draft_version),
+    draft_version: numberValue(source.draft_version || source.confirmed_draft_version),
+    ...feedbackEnvelope,
   };
 }
 
@@ -732,6 +982,7 @@ export async function fetchClassCommentaryCapabilities(): Promise<ClassCommentar
   return {
     memory_learning_enabled: payload.memory_learning_enabled === true,
     skill_evolution_enabled: payload.skill_evolution_enabled === true,
+    structured_feedback_enabled: payload.structured_feedback_enabled === true,
   };
 }
 
@@ -825,17 +1076,32 @@ export async function fetchClassCommentaryFeedbackDraft(
   return payload.draft ? normalizeClassCommentaryFeedbackDraft(recordValue(payload.draft)) : null;
 }
 
+function buildClassCommentaryFeedbackWritePayload(
+  content: ClassCommentaryFeedbackWriteContent,
+): Record<string, unknown> {
+  if (typeof content === 'string') {
+    return { feedback_text: content };
+  }
+  return {
+    feedback_schema_version: content.feedback_schema_version,
+    student_feedback_items: content.student_feedback_items.map((item) => ({
+      student_id: item.student_id,
+      feedback_text: item.feedback_text,
+    })),
+  };
+}
+
 export async function saveClassCommentaryFeedbackDraft(
   taskId: number,
   generationId: number,
-  feedbackText: string,
+  content: ClassCommentaryFeedbackWriteContent,
   expectedDraftVersion: number,
   basedOnRevisionId: number | null = null,
 ): Promise<ClassCommentaryFeedbackDraft> {
   const payload = await apiFetch<Record<string, unknown>>(buildClassCommentaryDraftPath(taskId, generationId), {
     method: 'PUT',
     body: JSON.stringify({
-      feedback_text: feedbackText,
+      ...buildClassCommentaryFeedbackWritePayload(content),
       expected_draft_version: expectedDraftVersion,
       ...(basedOnRevisionId === null ? {} : { based_on_revision_id: basedOnRevisionId }),
     }),
@@ -846,20 +1112,23 @@ export async function saveClassCommentaryFeedbackDraft(
 export async function confirmClassCommentaryFeedback(
   taskId: number,
   generationId: number,
-  feedbackText: string,
+  content: ClassCommentaryFeedbackWriteContent,
   learn: boolean,
   expectedDraftVersion: number,
   requestId: string,
+  expectedLatestRevisionId?: number | null,
 ): Promise<ClassCommentaryConfirmationResult> {
+  const structuredContent = typeof content === 'string' ? null : content;
   const payload = await apiFetch<Record<string, unknown>>(
     `${buildClassCommentaryTaskPath(taskId)}/feedback-confirmations`,
     {
       method: 'POST',
       body: JSON.stringify({
         generation_id: generationId,
-        feedback_text: feedbackText,
+        ...buildClassCommentaryFeedbackWritePayload(content),
         learn,
         expected_draft_version: expectedDraftVersion,
+        ...(structuredContent ? { expected_latest_revision_id: expectedLatestRevisionId ?? null } : {}),
         request_id: requestId,
       }),
     },

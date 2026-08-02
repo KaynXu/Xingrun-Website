@@ -97,8 +97,8 @@ test('class feedback generation page does not trim undefined persisted transcrip
 
 test('class feedback generation page allows manual transcript generation without audio task', () => {
   assert.match(source, /const canCreateManualTextTask = !task \|\| task\.status === 'uploaded' \|\| task\.status === 'transcribing';/);
-  assert.match(source, /const canGenerate = !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && \(!classStudents\.length \|\| attendingStudentIds\.length > 0\);/);
-  assert.match(source, /disabled=\{loadingInitial\}/);
+  assert.match(source, /const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && \(!classStudents\.length \|\| attendingStudentIds\.length > 0\);/);
+  assert.match(source, /disabled=\{loadingInitial \|\| isTaskReadOnly\}/);
   assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
 });
 
@@ -146,7 +146,7 @@ test('class feedback generation page remembers selected coworker style for the c
   assert.match(source, /writeClassCommentarySkillPreference/);
   assert.match(source, /setSelectedSkillId\(\(currentValue\) => currentValue \|\| readClassCommentarySkillPreference\(currentUser, nextSkills\) \|\| \(nextSkills\[0\]\?\.id \|\| ''\)\);/);
   assert.match(source, /function handleSkillChange\(nextSkillId: string\) \{\s*setSelectedSkillId\(nextSkillId\);\s*writeClassCommentarySkillPreference\(currentUser, nextSkillId\);/);
-  assert.match(source, /<Select value=\{selectedSkillId \|\| undefined\} onValueChange=\{handleSkillChange\}>/);
+  assert.match(source, /<Select value=\{selectedSkillId\} onValueChange=\{handleSkillChange\}>/);
   assert.match(source, /<p className="text-sm font-medium text-foreground">同事测评风格<\/p>/);
   assert.match(source, /<SelectValue placeholder="请选择同事" \/>/);
   assert.match(source, /\{skills\.map\(\(item\) => \([\s\S]*\{item\.name\}[\s\S]*\)\)\}/);
@@ -165,8 +165,10 @@ test('class feedback result stays in its current card with a shadcn editor and g
   assertSourceMatches(source, /fetchClassCommentaryGenerations/, 'generation list client is not used');
   assertSourceMatches(source, /fetchClassCommentaryGeneration/, 'generation detail client is not used');
   assertSourceMatches(source, /fetchClassCommentaryFeedbackDraft/, 'generation draft client is not used');
-  assertSourceMatches(feedbackCard, /<Textarea\s+value=\{feedbackEditorText\}\s+onChange=\{\(event\) => setFeedbackEditorText\(event\.target\.value\)\}/, 'feedback result Card must use the shadcn Textarea as its editor');
-  assertSourceMatches(feedbackCard, /<Select value=\{selectedGenerationId \|\| undefined\} onValueChange=\{handleGenerationChange\} disabled=\{busy \|\| generationLoading\}>/, 'feedback result Card must use the shadcn Select and block switching during mutations and generation loads');
+  assertSourceMatches(feedbackCard, /<Textarea[\s\S]*value=\{previewRevision \? previewRevision\.final_feedback_text : feedbackEditorText\}[\s\S]*handlePlainFeedbackChange/, 'legacy feedback must keep the shadcn Textarea editor');
+  assertSourceMatches(feedbackCard, /showStructuredFeedbackEditor[\s\S]*structuredFeedbackAccordion/, 'supported structured feedback must render in the same Card');
+  assertSourceMatches(source, /@\/components\/ui\/accordion/, 'structured feedback must use the project shadcn Accordion');
+  assertSourceMatches(feedbackCard, /<Select value=\{selectedGenerationId\} onValueChange=\{handleGenerationChange\} disabled=\{busy \|\| generationLoading\}>/, 'feedback result Card must use a controlled shadcn Select and block switching during mutations and generation loads');
   assertSourceMatches(feedbackCard, /generations\.map\(\(generation\) => \(/, 'generation Select options are missing');
   assertSourceMatches(feedbackCard, /<SelectItem key=\{generation\.id\} value=\{String\(generation\.id\)\}>/, 'generation options must use shadcn SelectItem');
 });
@@ -183,6 +185,34 @@ test('class feedback result actions use shadcn buttons and gate learning from se
   assertSourceMatches(feedbackCard, /<Button type="button" onClick=\{\(\) => handleConfirmFeedback\(true\)\} disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}>\s*确认并让 AI 学习修改\s*<\/Button>/, 'confirm and learn must be disabled when the server capability is off');
   assertSourceMatches(source, /saveClassCommentaryFeedbackDraft\(/, 'save draft client is not used');
   assertSourceMatches(source, /confirmClassCommentaryFeedback\(/, 'confirmation client is not used');
+});
+
+test('supported structured feedback is editable while unsupported and invalid schemas fail closed', () => {
+  const feedbackCard = cardSource('反馈结果');
+
+  assertSourceMatches(source, /const taskLatestRevision = feedbackRevisions\.find\(\(item\) => item\.id === task\?\.latest_revision_id\) \|\| null;/, 'task-level latest revision must gate legacy editing even when another generation is selected');
+  assertSourceMatches(source, /taskLatestRevision\?\.feedback_schema_status/, 'task latest revision status must participate in the fail-closed gate');
+  assertSourceMatches(source, /isClassCommentaryTaskLatestSchemaCompatible\(/, 'task latest revision schema must use the asymmetric compatibility gate');
+  assertSourceMatches(source, /status === 'unsupported' \|\| status === 'invalid'/, 'unknown and invalid schemas must remain read-only');
+  assertSourceMatches(source, /const structuredFeedbackMode = selectedGeneration\?\.feedback_schema_status === 'supported'/, 'known v1 generations must enter structured mode');
+  assertSourceMatches(source, /const canSaveFeedbackDraft = !isTaskReadOnly\s*&& !feedbackSchemaReadOnly/, 'schema read-only mode must block draft writes');
+  assertSourceMatches(source, /const canConfirmFeedback = !isTaskReadOnly\s*&& !feedbackSchemaReadOnly/, 'schema read-only mode must block confirmation writes');
+  assertSourceMatches(feedbackCard, /readOnly=\{Boolean\(revisionPreview\) \|\| isTaskReadOnly \|\| feedbackSchemaReadOnly\}/, 'compatibility text must remain selectable without becoming editable');
+  assertSourceMatches(source, /当前版本暂不支持编辑, 可查看和复制现有内容\./, 'unsupported feedback needs an actionable notice');
+  assertSourceMatches(source, /!nextEditor\.feedbackText && !generationDetail\.feedback_schema_version/, 'structured nonterminal generations must not inherit another generation text');
+  assertSourceMatches(source, /反馈结构校验失败, 请重新生成/, 'invalid structured generation errors must be actionable');
+});
+
+test('generation failures consume the complete envelope and localize reservation errors', () => {
+  const generationErrorHelper = functionSource('getClassCommentaryGenerationErrorMessage', 'formatClassCommentaryTime');
+  const generationHandler = functionSource('handleGenerate', 'handleCopy');
+
+  assertSourceMatches(generationHandler, /normalizeClassCommentaryTask\([\s\S]*normalizeClassCommentaryGeneration\(/, 'failed generation responses must normalize both task and generation records');
+  assertSourceMatches(generationHandler, /setTask\(failedTask\);[\s\S]*setGenerations\([\s\S]*failedGeneration/, 'the complete failed envelope must replace the visible task and generation state');
+  assertSourceMatches(generationHandler, /setErrorMessage\(getClassCommentaryGenerationErrorMessage\(error\)\);/, 'generation errors must use the localized mapper');
+  assertSourceMatches(generationErrorHelper, /structured_feedback_invalid[\s\S]*反馈结构校验失败, 请重新生成/, 'invalid structured output must keep its stable actionable message');
+  assertSourceMatches(generationErrorHelper, /student_feedback_no_eligible_students[\s\S]*转写中没有识别到到课学生全名, 请补充学生全名后重新生成/, 'an empty eligible scope must explain how to correct the transcript');
+  assertSourceMatches(generationErrorHelper, /student_roster_name_ambiguous[\s\S]*到课名单存在无法区分的重名, 请调整到课名单后重新生成/, 'ambiguous roster names must explain how to correct the attendance scope');
 });
 
 test('memory learning stays inside the feedback card and reuses shadcn actions', () => {
@@ -282,7 +312,7 @@ test('skill evolution is capability-gated and stays inside the existing feedback
 test('skill evolution shows human-readable changes before using or restoring a version', () => {
   const feedbackCard = cardSource('反馈结果');
 
-  assertSourceMatches(feedbackCard, /<Select value=\{selectedSkillVersionId \|\| undefined\} onValueChange=\{setSelectedSkillVersionId\}>/, 'version selection must use the shadcn Select');
+  assertSourceMatches(feedbackCard, /<Select value=\{selectedSkillVersionId\} onValueChange=\{setSelectedSkillVersionId\}>/, 'version selection must use the controlled shadcn Select');
   assertSourceMatches(feedbackCard, /selectedSkillVersion\.evaluation\.change_summary\.map\(\(change\) => \(/, 'candidate review must show the worker change summary');
   assertSourceMatches(feedbackCard, /本次建议的调整/, 'candidate changes need a human-readable heading');
   assertSourceMatches(feedbackCard, /有 \{selectedSkillVersion\.evaluation\.failed_sample_count\} 条历史反馈检查未通过/, 'failed checks must be summarized without exposing sample ids');
@@ -343,7 +373,7 @@ test('generation switching ignores stale async responses', () => {
   const awaitPosition = generationChangeHandler.indexOf('await Promise.all');
   const tokenGuardPosition = generationChangeHandler.indexOf('requestToken !== generationLoadRequestTokenRef.current');
   const generationGuardPosition = generationChangeHandler.indexOf('selectedGenerationIdRef.current !== nextGenerationId');
-  const editorWritePosition = generationChangeHandler.indexOf('setFeedbackEditorText(nextText)');
+  const editorWritePosition = generationChangeHandler.indexOf('setFeedbackEditorText(nextEditor.feedbackText)');
   assert.ok(awaitPosition >= 0, 'generation detail and draft must load asynchronously');
   assert.ok(tokenGuardPosition > awaitPosition, 'stale request token must be checked after the async load');
   assert.ok(generationGuardPosition > awaitPosition, 'the requested generation must still be selected after the async load');
@@ -353,26 +383,29 @@ test('generation switching ignores stale async responses', () => {
 test('draft conflicts retain local editor text in a shadcn dialog with explicit recovery actions', () => {
   const loadServerDraftHandler = functionSource('handleLoadServerDraft', 'handleCopyLocalDraft');
 
-  assertSourceMatches(source, /const \[draftConflict, setDraftConflict\] = useState<\{\s*localText: string;\s*serverDraft: ClassCommentaryFeedbackDraft;\s*\} \| null>\(null\);/, 'draft conflict state must retain both local text and the server draft');
+  assertSourceMatches(source, /type StructuredDraftConflict = \{[\s\S]*workspaceKey: string;[\s\S]*localItems: ClassCommentaryStudentFeedbackItem\[];[\s\S]*serverDraft: ClassCommentaryFeedbackDraft;/, 'draft conflict state must retain scoped local items and the server draft');
   assertSourceMatches(source, /error instanceof ApiFetchError && error\.status === 409 && error\.payload\?\.error === 'draft_version_conflict'/, 'draft CAS conflicts are not detected from the API response');
-  assertSourceMatches(source, /setDraftConflict\(\{\s*localText: mutationFeedbackText,\s*serverDraft: currentDraft,\s*\}\);/, 'draft conflict handling must retain the text captured for the mutation');
+  assertSourceMatches(source, /setDraftConflict\(\{[\s\S]*workspaceKey: mutationWorkspaceKey,[\s\S]*localItems: mutationItems,[\s\S]*serverDraft: currentDraft,[\s\S]*attemptedExpectedDraftVersion: expectedDraftVersion,/, 'draft conflict handling must retain the complete local snapshot');
   assertSourceMatches(source, /<Dialog open=\{Boolean\(draftConflict\)\} onOpenChange=\{handleDraftConflictOpenChange\}>/, 'draft conflict must use the shadcn Dialog');
   assertSourceMatches(source, /<DialogTitle>草稿版本冲突<\/DialogTitle>/, 'draft conflict dialog title is missing');
   assertSourceMatches(source, /onClick=\{handleLoadServerDraft\}[\s\S]*加载服务器版本/, 'load server draft action is missing');
   assertSourceMatches(source, /onClick=\{handleCopyLocalDraft\}[\s\S]*复制本地内容/, 'copy local draft action is missing');
   assertSourceMatches(loadServerDraftHandler, /const conflictGenerationId = draftConflict\.serverDraft\.generation_id;/, 'conflict recovery must use the server draft generation');
-  assertSourceMatches(loadServerDraftHandler, /\[conflictGenerationId\]: \{/, 'the recovered draft must be cached under its own generation');
-  assertSourceExcludes(loadServerDraftHandler, /\[selectedGeneration\.id\]: \{/, 'conflict recovery must not attach a server draft to whichever generation is currently selected');
+  assertSourceMatches(loadServerDraftHandler, /conflictWorkspaceKey !== draftConflict\.workspaceKey/, 'conflict recovery must verify the task generation workspace key');
+  assertSourceMatches(loadServerDraftHandler, /\[conflictWorkspaceKey\]: \{/, 'the recovered draft must be cached under its exact workspace key');
   assertSourceMatches(
     loadServerDraftHandler,
-    /if \(selectedGenerationIdRef\.current === String\(conflictGenerationId\)\) \{[\s\S]*setFeedbackEditorText\(draftConflict\.serverDraft\.feedback_text\);[\s\S]*setFeedbackDraft\(draftConflict\.serverDraft\);[\s\S]*\}/,
+    /currentTaskIdRef\.current === draftConflict\.serverDraft\.task_id[\s\S]*selectedGenerationIdRef\.current === String\(conflictGenerationId\)[\s\S]*setFeedbackEditorText\(serverText\);[\s\S]*setFeedbackDraft\(draftConflict\.serverDraft\);/,
     'server text may replace the visible editor only when its generation is still selected',
   );
-  assertSourceMatches(source, /navigator\.clipboard\.writeText\(draftConflict\.localText\)/, 'copy local action must use the retained local text');
+  assertSourceMatches(source, /deriveClassCommentaryStructuredFeedbackText\(draftConflict\.localItems\)/, 'copy local action must use the retained structured local items');
 });
 
-test('revision history stays lightweight and copy ignores unsaved editor text', () => {
+test('revision history opens immutable previews while copy uses current editor text', () => {
   const feedbackCard = cardSource('反馈结果');
+  const taskLatestRevisionStart = source.indexOf('const taskLatestRevision =');
+  const taskLatestRevisionEnd = source.indexOf(';', taskLatestRevisionStart);
+  const taskLatestRevisionSource = source.slice(taskLatestRevisionStart, taskLatestRevisionEnd + 1);
   const selectedRevisionStart = source.indexOf('const selectedRevision =');
   const selectedRevisionEnd = source.indexOf(';', selectedRevisionStart);
   const selectedRevisionSource = source.slice(selectedRevisionStart, selectedRevisionEnd + 1);
@@ -384,12 +417,29 @@ test('revision history stays lightweight and copy ignores unsaved editor text', 
   assertSourceMatches(feedbackCard, /feedbackRevisions\.map\(\(revision\) => \(/, 'revision history entries are missing');
   assertSourceMatches(feedbackCard, /revision\.revision_no/, 'revision history must identify revisions');
   assertSourceExcludes(source, /<(?:Card|Dialog)Title>修订历史<\/(?:Card|Dialog)Title>/, 'revision history must not add a separate Card or Dialog');
-  assertSourceMatches(selectedRevisionSource, /item\.id === task\?\.latest_revision_id/, 'copy may only use the task current effective revision');
-  assertSourceMatches(selectedRevisionSource, /item\.generation_id === selectedGeneration\?\.id/, 'the effective revision must belong to the selected generation');
-  assertSourceMatches(source, /const copyText = resolveClassCommentaryCopyText\(\s*feedbackDraft,\s*selectedRevision,\s*selectedGeneration,\s*generationLoading,\s*\);/, 'copy must resolve persisted text through the executable precedence helper');
+  assertSourceMatches(taskLatestRevisionSource, /item\.id === task\?\.latest_revision_id/, 'copy may only use the task current effective revision');
+  assertSourceMatches(selectedRevisionSource, /taskLatestRevision\?\.generation_id === selectedGeneration\?\.id/, 'the effective revision must belong to the selected generation');
+  assertSourceMatches(feedbackCard, /onClick=\{\(\) => handleOpenRevisionPreview\(revision\)\}/, 'revision rows must be selectable');
+  assertSourceMatches(source, /revisionPreviewKey: buildClassCommentaryRevisionPreviewKey\(task\.id, revision\.id\)/, 'revision preview state must be isolated from the generation editor');
+  assertSourceMatches(feedbackCard, /返回当前编辑/, 'immutable preview must provide a return action');
+  assertSourceMatches(source, /deriveClassCommentaryStructuredFeedbackText\(displayedStudentFeedbackItems\)/, 'copy all must derive from current visible student items');
   assertSourceMatches(copyHandler, /if \(generationLoading \|\| !copyText\) \{\s*return;/, 'copy must be blocked while generation data is loading');
-  assertSourceExcludes(copyHandler, /feedbackEditorText/, 'copy must not use unsaved editor text');
   assertSourceMatches(copyHandler, /navigator\.clipboard\.writeText\(copyText\)/, 'copy action must write the resolved saved text');
+});
+
+test('copy always follows visible editor text and announces a transient confirmation', () => {
+  const feedbackCard = cardSource('反馈结果');
+  const copyResolution = source.slice(
+    source.indexOf('const persistedCopyText ='),
+    source.indexOf('const currentContentConfirmed ='),
+  );
+  const copyNoticeHelper = functionSource('showCopyNotice', 'resetFeedbackVersionState');
+
+  assertSourceMatches(copyResolution, /: feedbackEditorText \|\| persistedCopyText;/, 'plain and fail-closed copy must prefer the text visible in the editor');
+  assertSourceExcludes(copyResolution, /feedbackSchemaReadOnly\s*\?\s*persistedCopyText/, 'schema conflicts must not copy hidden persisted text over the visible editor');
+  assertSourceMatches(copyNoticeHelper, /window\.clearTimeout\(copyNoticeTimerRef\.current\);[\s\S]*window\.setTimeout\([\s\S]*setCopyNotice\(''\);[\s\S]*2400/, 'copy notices must restart and clear after a bounded delay');
+  assertSourceMatches(feedbackCard, /<Alert[\s\S]*role="status"[\s\S]*aria-live="polite"[\s\S]*data-testid="copy-notice-toast"[\s\S]*className="fixed [^"]*z-50[^"]*"/, 'copy confirmation must be a visible viewport toast with a polite live region');
+  assertSourceMatches(feedbackCard, /<AlertTitle>复制成功<\/AlertTitle>[\s\S]*<AlertDescription>\{copyNotice\}<\/AlertDescription>/, 'the toast must present the confirmation message');
 });
 
 test('generation loading uses a safe empty state and restores the prior selection on failure', () => {
@@ -401,12 +451,23 @@ test('generation loading uses a safe empty state and restores the prior selectio
   assertSourceMatches(generationChangeHandler, /isClassCommentaryFeedbackRecordInScope\(generation, taskId, numericGenerationId\)/, 'generation responses must be checked against the requested scope');
   assertSourceMatches(generationChangeHandler, /draft && !isClassCommentaryFeedbackRecordInScope\(draft, taskId, numericGenerationId\)/, 'draft responses must be checked against the requested scope');
   assertSourceMatches(feedbackCard, /disabled=\{generationLoading \|\| !copyText\}/, 'copy must be disabled during generation loading');
-  assertSourceMatches(feedbackCard, /disabled=\{busy \|\| generationLoading \|\| !selectedGeneration \|\| selectedGeneration\.status !== 'succeeded'\}/, 'the editor must be disabled during generation loading');
+  assertSourceMatches(feedbackCard, /readOnly=\{Boolean\(revisionPreview\) \|\| isTaskReadOnly \|\| feedbackSchemaReadOnly\}/, 'privileged and schema compatibility access must keep the editor read-only');
+  assertSourceMatches(feedbackCard, /disabled=\{!isTaskReadOnly && !revisionPreview && \(busy \|\| generationLoading \|\| !selectedGeneration \|\| selectedGeneration\.status !== 'succeeded'\)\}/, 'owner legacy editor must be disabled during generation loading without disabling super-owner text');
 });
 
-test('task switching clears version state and invalidates in-flight work immediately', () => {
+test('super owner history access stays read-only in the class feedback page', () => {
+  assertSourceMatches(source, /const isTaskReadOnly = Boolean\(task && task\.teacher_user_id !== currentUser\.id\);/, 'read-only task ownership state is missing');
+  assertSourceMatches(source, /const canSaveTranscript = !isTaskReadOnly/, 'read-only history must block transcript writes');
+  assertSourceMatches(source, /const canGenerate = !isTaskReadOnly/, 'read-only history must block regeneration');
+  assertSourceMatches(source, /const canSaveFeedbackDraft = !isTaskReadOnly/, 'read-only history must block draft writes');
+  assertSourceMatches(source, /const canConfirmFeedback = !isTaskReadOnly/, 'read-only history must block confirmation and learning');
+  assertSourceMatches(source, /<AlertTitle>只读查看<\/AlertTitle>/, 'read-only history must explain the permission boundary');
+  assertSourceMatches(source, /修改和 AI 学习仍由原老师完成\./, 'read-only notice must identify teacher-owned mutations');
+  assertSourceMatches(source, /if \(isTaskReadOnly \|\| !capabilities\.memory_learning_enabled/, 'read-only history must not request teacher-owned memory details');
+});
+
+test('task switching invalidates requests but preserves scoped editors behind a dirty guard', () => {
   const resetHandler = functionSource('resetFeedbackVersionState', 'isCurrentFeedbackMutation');
-  const historyHandler = functionSource('handleSelectHistoryTask', 'handleSkillChange');
 
   assertSourceMatches(resetHandler, /generationLoadRequestTokenRef\.current \+= 1;/, 'task reset must invalidate generation reads');
   assertSourceMatches(resetHandler, /feedbackMutationActiveRef\.current = false;/, 'task reset must release obsolete mutation ownership');
@@ -414,7 +475,9 @@ test('task switching clears version state and invalidates in-flight work immedia
   assertSourceMatches(resetHandler, /currentTaskIdRef\.current = nextTaskId;/, 'task reset must publish the new task identity first');
   assertSourceMatches(resetHandler, /setGenerations\(\[]\);[\s\S]*setSelectedGenerationId\(''\);[\s\S]*setFeedbackEditorText\(''\);[\s\S]*setFeedbackDraft\(null\);[\s\S]*setFeedbackRevisions\(\[]\);/, 'task reset must clear all old generation state');
   assertSourceMatches(resetHandler, /if \(releaseBusy\) \{\s*setBusy\(false\);/, 'explicit task navigation must release obsolete busy state');
-  assertSourceMatches(historyHandler, /resetFeedbackVersionState\(nextTask\.id, true\);[\s\S]*setTask\(nextTask\);/, 'history navigation must clear feedback state before selecting the task');
+  assertSourceExcludes(resetHandler, /setGenerationEditors\(\{\}\)/, 'task reset must not destroy other task generation editor snapshots');
+  assertSourceMatches(source, /if \(feedbackDirty && !skipDirtyGuard\) \{\s*setHistoryDialogOpen\(false\);\s*setPendingFeedbackTransition\(\{ kind: 'task', task: nextTask \}\);/, 'dirty task navigation must be deferred');
+  assertSourceMatches(source, /function selectHistoryTask\(nextTask: ClassCommentaryTask\) \{[\s\S]*resetFeedbackVersionState\(nextTask\.id, true\);[\s\S]*setTask\(nextTask\);/, 'confirmed task navigation must reset only visible version state');
   assertSourceMatches(source, /onClick=\{\(\) => handleSelectHistoryTask\(historyTask\)\}\s*disabled=\{busy \|\| generationLoading\}/, 'history rows must be disabled while work is in flight');
 });
 
@@ -426,13 +489,56 @@ test('draft and confirmation mutations are scoped to their captured task and gen
     assertSourceMatches(handler, /const mutationTaskId = task\.id;/, 'mutation must capture its task');
     assertSourceMatches(handler, /const mutationGenerationId = selectedGeneration\.id;/, 'mutation must capture its generation');
     assertSourceMatches(handler, /const mutationToken = \+\+feedbackMutationTokenRef\.current;/, 'mutation must capture an operation token');
-    assertSourceMatches(handler, /if \(!isCurrentFeedbackMutation\(mutationTaskId, mutationGenerationId, mutationToken\)\) \{\s*return;/, 'mutation response must be ignored after scope changes');
+    assertSourceMatches(handler, /if \(!isCurrentFeedbackMutation\(mutationTaskId, mutationGenerationId, mutationToken\)\) \{\s*return(?: false)?;/, 'mutation response must be ignored after scope changes');
     assertSourceMatches(handler, /finally \{\s*if \(isCurrentFeedbackMutation\(mutationTaskId, mutationGenerationId, mutationToken\)\) \{\s*feedbackMutationActiveRef\.current = false;\s*setBusy\(false\);/, 'obsolete mutation finally blocks must not own current busy state');
   }
   assertSourceMatches(saveHandler, /isClassCommentaryFeedbackRecordInScope\(nextDraft, mutationTaskId, mutationGenerationId\)/, 'saved draft responses must match mutation scope');
   assertSourceMatches(confirmationHandler, /isClassCommentaryFeedbackRecordInScope\(revision, mutationTaskId, mutationGenerationId\)/, 'revision responses must match mutation scope');
   assertSourceMatches(confirmationHandler, /isClassCommentaryFeedbackRecordInScope\(nextDraft, mutationTaskId, mutationGenerationId\)/, 'transaction-bound draft responses must match mutation scope');
   assertSourceMatches(source, /if \(feedbackMutationActiveRef\.current\) \{\s*return;\s*\}\s*targetGenerationId = targetGeneration\.id;/, 'automatic generation selection must not invalidate an active mutation');
+});
+
+test('structured student editor provides per-student copy, accessibility, and bounded scrolling', () => {
+  const feedbackCard = cardSource('反馈结果');
+
+  assertSourceMatches(source, /<Accordion[\s\S]*type="multiple"[\s\S]*value=\{expandedStudentIds\}/, 'student editor must use a controlled shadcn Accordion');
+  assertSourceMatches(source, /<label htmlFor=\{textareaId\}[\s\S]*\{item\.student_name\}反馈内容/, 'each student textarea needs a visible associated label');
+  assertSourceMatches(source, /aria-invalid=\{Boolean\(itemError\)\}[\s\S]*aria-describedby=\{itemError \? errorId : undefined\}/, 'student validation errors need accessible field wiring');
+  assertSourceMatches(source, /setExpandedStudentIds[\s\S]*requestAnimationFrame[\s\S]*textarea\?\.focus\(\)/, 'student-specific errors must expand and focus the failing textarea');
+  assertSourceMatches(source, /readOnly=\{Boolean\(revisionPreview\) \|\| isTaskReadOnly \|\| busy\}/, 'super-owner structured textareas must be readOnly, not disabled');
+  assertSourceMatches(feedbackCard, /displayedStudentFeedbackItems\.length >= 5[\s\S]*h-\[clamp\(280px,55vh,480px\)\][\s\S]*sm:h-\[clamp\(320px,60vh,560px\)\]/, 'five or more students need the bounded responsive ScrollArea');
+  assertSourceMatches(source, /复制该学生/, 'each student needs a local copy action');
+  assertSourceMatches(feedbackCard, /showStructuredFeedbackEditor \? '复制全部' : '复制结果'/, 'structured mode must retain copy all');
+});
+
+test('dirty transitions cover generation task revision route and reload with the same recovery dialog', () => {
+  assertSourceMatches(source, /CLASS_COMMENTARY_NAVIGATION_REQUEST_EVENT/, 'workspace route changes must use the shared cancelable event');
+  assertSourceMatches(source, /event\.preventDefault\(\);[\s\S]*kind: 'route',[\s\S]*proceed: event\.detail\.proceed/, 'dirty route changes must retain a deferred proceed callback');
+  assertSourceMatches(source, /window\.addEventListener\('beforeunload', handleBeforeUnload\)/, 'dirty browser reload and close need the native guard');
+  assertSourceMatches(source, /setPendingFeedbackTransition\(\{ kind: 'generation', generationId: nextGenerationId \}\)/, 'generation switching must be guarded');
+  assertSourceMatches(source, /setPendingFeedbackTransition\(\{ kind: 'revision', revision \}\)/, 'revision preview must be guarded');
+  assertSourceMatches(source, /<DialogTitle>有未保存的反馈修改<\/DialogTitle>[\s\S]*取消[\s\S]*复制本地内容[\s\S]*放弃并切换[\s\S]*保存草稿/, 'dirty transitions need the four explicit recovery actions');
+});
+
+test('workspace editor keys and revision conflict recovery preserve local student items', () => {
+  assertSourceMatches(source, /Record<string, GenerationEditorState>/, 'generation editors must be keyed by task generation workspace key');
+  assertSourceMatches(source, /itemsByStudentId: Record<number, ClassCommentaryStudentFeedbackItem>/, 'each workspace needs student-id keyed current items');
+  assertSourceMatches(source, /savedItemsByStudentId: Record<number, ClassCommentaryStudentFeedbackItem>/, 'each workspace needs a separate saved snapshot');
+  assertSourceMatches(source, /currentLatestRevision && currentLatestRevision\.task_id !== mutationTaskId/, 'revision conflicts must validate task scope');
+  assertSourceMatches(source, /\[revisionConflict\.workspaceKey\]: \{[\s\S]*latestRevisionIdAtLoad: revisionConflict\.currentLatestRevisionId/, 'revision rebase must update only the conflicted workspace CAS pointer');
+  assertSourceMatches(source, /同步版本并保留本地修改/, 'revision conflicts need an explicit acknowledge and retry path');
+  assertSourceMatches(source, /本地修改仍保留\. 请重新确认\./, 'revision recovery must explain that local items were preserved');
+});
+
+test('dirty navigation from revision preview copies and saves the preserved editor, not preview text', () => {
+  const saveAndContinue = functionSource('handleSaveAndContinueTransition', 'handleCopyPendingLocalContent');
+  const copyPending = functionSource('handleCopyPendingLocalContent', 'handleDiscardAndContinueTransition');
+
+  assertSourceMatches(source, /const localEditorCopyText = selectedEditorState[\s\S]*orderedStudentFeedbackItems\(selectedEditorState\)/, 'pending copy text must derive from the preserved generation editor');
+  assertSourceMatches(copyPending, /navigator\.clipboard\.writeText\(localEditorCopyText\)/, 'preview dirty dialog must never copy global preview copyText');
+  assertSourceExcludes(copyPending, /writeText\(copyText\)/, 'preview text must not replace the local editor snapshot');
+  assertSourceMatches(saveAndContinue, /if \(revisionPreview\) \{\s*setRevisionPreview\(null\);/, 'saving from a preview guard must return to the current editor first');
+  assertSourceMatches(source, /disabled=\{!canSavePendingFeedbackTransition\}/, 'preview guard must allow saving the preserved dirty editor');
 });
 
 test('class feedback page adds no raw controls, custom modal, or custom stylesheet', () => {

@@ -6,6 +6,19 @@ import tempfile
 import unittest
 
 import lesson_manager
+from class_commentary import (
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    CLASS_COMMENTARY_TEMPERATURE,
+    build_class_commentary_chat_request,
+)
+
+
+STRUCTURED_SCHEMA_VERSION = "class_commentary.student_feedback.v1"
+STRUCTURED_MATCHER_VERSION = "class_commentary.student_name_matcher.v1"
+STRUCTURED_PROMPT_VERSION = CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
+STRUCTURED_RESPONSE_FORMAT = {"type": "json_object"}
+STRUCTURED_MEMORY_MODE = "disabled_v1"
+STRUCTURED_MODEL_PARAMETERS = {"temperature": CLASS_COMMENTARY_TEMPERATURE}
 
 
 class ClassCommentaryGenerationStoreTest(unittest.TestCase):
@@ -84,7 +97,13 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
     def _hash_json(cls, value):
         return hashlib.sha256(cls._canonical_json(value).encode("utf-8")).hexdigest()
 
-    def _reserve(self, request_id, attending_roster=None):
+    def _reserve(
+        self,
+        request_id,
+        attending_roster=None,
+        *,
+        attending_roster_explicit=True,
+    ):
         return lesson_manager.reserve_class_commentary_generation(
             task_id=self.task["id"],
             generation_request_id=request_id,
@@ -96,7 +115,62 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
             prompt_version="class-commentary-v1",
             prompt_payload=self.prompt_payload,
             memory_context=self.memory_context,
+            attending_roster_explicit=attending_roster_explicit,
         )
+
+    def _reserve_structured(self, request_id, attending_roster=None):
+        selected_roster = self.roster if attending_roster is None else attending_roster
+        structured_memory = {
+            "records": [],
+            "rendered_text": "",
+            "student_history_memories": [],
+            "teacher_style_memories": [],
+            "student_history_memory_mode": STRUCTURED_MEMORY_MODE,
+        }
+        structured_prompt = build_class_commentary_chat_request(
+            class_record=lesson_manager.get_class(self.class_id),
+            students=[
+                {"id": item["student_id"], "name": item["student_name"]}
+                for item in selected_roster
+            ],
+            transcript_text=lesson_manager.get_class_commentary_task(
+                self.task["id"]
+            )["confirmed_transcript_text"],
+            skill={
+                "id": "generation-store-teacher",
+                "name": "",
+                "content": self.skill_content,
+            },
+            teacher_style_memories=[],
+            student_history_memories=[],
+            feedback_schema_version=STRUCTURED_SCHEMA_VERSION,
+            eligible_student_ids=[item["student_id"] for item in selected_roster],
+            prompt_version=STRUCTURED_PROMPT_VERSION,
+            response_format=copy.deepcopy(STRUCTURED_RESPONSE_FORMAT),
+            student_history_memory_mode=STRUCTURED_MEMORY_MODE,
+        )
+        return lesson_manager.reserve_class_commentary_generation(
+            task_id=self.task["id"],
+            generation_request_id=request_id,
+            skill_registry_id=self.skill_registry_id,
+            attending_roster=(
+                self.roster if attending_roster is None else attending_roster
+            ),
+            model_provider="deepseek",
+            model_name="deepseek-chat",
+            model_parameters=STRUCTURED_MODEL_PARAMETERS,
+            prompt_version=STRUCTURED_PROMPT_VERSION,
+            prompt_payload=structured_prompt,
+            memory_context=structured_memory,
+            structured_feedback_enabled=True,
+        )
+
+    def _generation_count(self):
+        with lesson_manager.get_conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_generations WHERE task_id=?",
+                (self.task["id"],),
+            ).fetchone()[0]
 
     def test_reservation_freezes_complete_snapshots_and_moves_task_pointer(self):
         expected_roster = copy.deepcopy(self.roster)
@@ -162,6 +236,296 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
         self.assertEqual(row["status"], "generating")
         self.assertEqual(row["generated_feedback_text"], "")
 
+    def test_structured_reservation_freezes_contract_hashes_in_requested_roster_order(self):
+        expected_roster = list(reversed(copy.deepcopy(self.roster)))
+        expected_eligible_ids = [item["student_id"] for item in expected_roster]
+        expected_roster_hash = self._hash_json(expected_roster)
+        expected_transcript_hash = hashlib.sha256(
+            self.transcript.encode("utf-8")
+        ).hexdigest()
+        expected_scope_hash = self._hash_json(
+            {
+                "attending_roster_hash": expected_roster_hash,
+                "confirmed_transcript_hash": expected_transcript_hash,
+                "eligible_student_ids": expected_eligible_ids,
+                "student_mention_matcher_version": STRUCTURED_MATCHER_VERSION,
+            }
+        )
+        expected_request_hash = self._hash_json(
+            {
+                "attending_student_ids": expected_eligible_ids,
+                "attending_roster_explicit": True,
+                "confirmed_transcript_hash": expected_transcript_hash,
+                "confirmed_transcript_version": 1,
+                "eligible_student_ids": expected_eligible_ids,
+                "eligible_student_scope_hash": expected_scope_hash,
+                "feedback_schema_version": STRUCTURED_SCHEMA_VERSION,
+                "model_name": "deepseek-chat",
+                "model_parameters": STRUCTURED_MODEL_PARAMETERS,
+                "model_provider": "deepseek",
+                "prompt_version": STRUCTURED_PROMPT_VERSION,
+                "response_format": STRUCTURED_RESPONSE_FORMAT,
+                "skill_registry_id": self.skill_registry_id,
+                "skill_version_id": self.skill_version_id,
+                "student_history_memory_mode": STRUCTURED_MEMORY_MODE,
+                "student_mention_matcher_version": STRUCTURED_MATCHER_VERSION,
+                "subject_key": "math",
+                "task_id": self.task["id"],
+            }
+        )
+
+        reserved = self._reserve_structured(
+            "generation-request-structured-contract",
+            attending_roster=expected_roster,
+        )
+
+        with lesson_manager.get_conn() as conn:
+            row = dict(
+                conn.execute(
+                    "SELECT * FROM class_commentary_generations WHERE id=?",
+                    (reserved["id"],),
+                ).fetchone()
+            )
+        self.assertEqual(
+            row["attending_roster_snapshot_json"],
+            self._canonical_json(expected_roster),
+        )
+        self.assertEqual(row["attending_roster_hash"], expected_roster_hash)
+        self.assertEqual(row["feedback_schema_version"], STRUCTURED_SCHEMA_VERSION)
+        self.assertEqual(
+            json.loads(row["eligible_student_ids_json"]),
+            expected_eligible_ids,
+        )
+        self.assertEqual(row["eligible_student_scope_hash"], expected_scope_hash)
+        self.assertEqual(
+            row["student_mention_matcher_version"],
+            STRUCTURED_MATCHER_VERSION,
+        )
+        self.assertEqual(
+            row["response_format_json"],
+            self._canonical_json(STRUCTURED_RESPONSE_FORMAT),
+        )
+        self.assertEqual(
+            row["student_history_memory_mode"],
+            STRUCTURED_MEMORY_MODE,
+        )
+        self.assertEqual(row["generation_request_payload_hash"], expected_request_hash)
+
+    def test_structured_reservation_replay_ignores_later_capability_change(self):
+        first = self._reserve_structured(
+            "generation-request-structured-capability-freeze"
+        )
+
+        repeated = lesson_manager.reserve_class_commentary_generation(
+            task_id=self.task["id"],
+            generation_request_id="generation-request-structured-capability-freeze",
+            skill_registry_id=self.skill_registry_id,
+            attending_roster=copy.deepcopy(self.roster),
+            model_provider="deepseek",
+            model_name="deepseek-chat",
+            model_parameters=self.model_parameters,
+            prompt_version="class-commentary-v1",
+            structured_feedback_enabled=False,
+        )
+
+        self.assertEqual(repeated["id"], first["id"])
+        self.assertTrue(repeated["is_idempotent"])
+        self.assertEqual(
+            repeated["feedback_schema_version"],
+            STRUCTURED_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            json.loads(repeated["response_format_json"]),
+            STRUCTURED_RESPONSE_FORMAT,
+        )
+        self.assertEqual(
+            repeated["student_history_memory_mode"],
+            STRUCTURED_MEMORY_MODE,
+        )
+
+    def test_structured_reservation_scope_failures_do_not_insert_or_mutate_task(self):
+        lesson_manager.save_class_commentary_transcript(
+            self.task["id"],
+            "今天没有点到任何学生姓名.",
+        )
+        task_before_no_eligible = lesson_manager.get_class_commentary_task(
+            self.task["id"]
+        )
+        count_before_no_eligible = self._generation_count()
+
+        with self.assertRaises(lesson_manager.ClassCommentaryStudentScopeError) as caught:
+            self._reserve_structured("generation-request-no-eligible")
+
+        self.assertEqual(caught.exception.code, "student_feedback_no_eligible_students")
+        self.assertEqual(self._generation_count(), count_before_no_eligible)
+        self.assertEqual(
+            lesson_manager.get_class_commentary_task(self.task["id"]),
+            task_before_no_eligible,
+        )
+
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE students SET name=? WHERE id=?",
+                ("Ａ 同学", self.roster[0]["student_id"]),
+            )
+            conn.execute(
+                "UPDATE students SET name=? WHERE id=?",
+                ("A 同学", self.roster[1]["student_id"]),
+            )
+        lesson_manager.save_class_commentary_transcript(
+            self.task["id"],
+            "A 同学今天回答了问题.",
+        )
+        task_before_ambiguous = lesson_manager.get_class_commentary_task(
+            self.task["id"]
+        )
+        count_before_ambiguous = self._generation_count()
+
+        with self.assertRaises(lesson_manager.ClassCommentaryStudentScopeError) as caught:
+            self._reserve_structured("generation-request-ambiguous")
+
+        self.assertEqual(caught.exception.code, "student_roster_name_ambiguous")
+        self.assertEqual(self._generation_count(), count_before_ambiguous)
+        self.assertEqual(
+            lesson_manager.get_class_commentary_task(self.task["id"]),
+            task_before_ambiguous,
+        )
+
+    def test_structured_completion_canonicalizes_roster_order_and_updates_task_atomically(self):
+        generation = self._reserve_structured("generation-request-structured-complete")
+        first_student_id = self.roster[0]["student_id"]
+        second_student_id = self.roster[1]["student_id"]
+        model_output = {
+            "schema_version": STRUCTURED_SCHEMA_VERSION,
+            "items": [
+                {
+                    "student_id": second_student_id,
+                    "feedback_text": "验算步骤更完整.",
+                },
+                {
+                    "student_id": first_student_id,
+                    "feedback_text": "计算过程更稳定.",
+                },
+            ],
+        }
+        expected_envelope = {
+            "schema_version": STRUCTURED_SCHEMA_VERSION,
+            "items": [
+                {
+                    "student_id": first_student_id,
+                    "feedback_text": "计算过程更稳定.",
+                },
+                {
+                    "student_id": second_student_id,
+                    "feedback_text": "验算步骤更完整.",
+                },
+            ],
+        }
+        expected_json = self._canonical_json(expected_envelope)
+        expected_text = "小王:\n计算过程更稳定.\n\n小李:\n验算步骤更完整."
+
+        completed = lesson_manager.complete_class_commentary_generation(
+            generation["id"],
+            json.dumps(model_output, ensure_ascii=False),
+        )
+        task = lesson_manager.get_class_commentary_task(self.task["id"])
+
+        self.assertEqual(completed["status"], "succeeded")
+        self.assertEqual(completed["feedback_schema_version"], STRUCTURED_SCHEMA_VERSION)
+        self.assertEqual(completed["structured_feedback_json"], expected_json)
+        self.assertEqual(completed["structured_feedback_hash"], self._hash_json(expected_envelope))
+        self.assertEqual(completed["generated_feedback_text"], expected_text)
+        self.assertEqual(task["latest_generation_id"], generation["id"])
+        self.assertEqual(task["status"], "ready")
+        self.assertEqual(task["feedback_text"], expected_text)
+        self.assertEqual(task["generation_error"], "")
+
+    def test_invalid_structured_completion_does_not_write_partial_generation_or_task_state(self):
+        generation = self._reserve_structured("generation-request-structured-invalid")
+        generation_before = lesson_manager.get_class_commentary_generation(
+            generation["id"]
+        )
+        task_before = lesson_manager.get_class_commentary_task(self.task["id"])
+        incomplete_output = {
+            "schema_version": STRUCTURED_SCHEMA_VERSION,
+            "items": [
+                {
+                    "student_id": self.roster[0]["student_id"],
+                    "feedback_text": "计算过程更稳定.",
+                }
+            ],
+        }
+
+        with self.assertRaises(
+            lesson_manager.ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            lesson_manager.complete_class_commentary_generation(
+                generation["id"],
+                json.dumps(incomplete_output, ensure_ascii=False),
+            )
+
+        self.assertEqual(caught.exception.code, "student_feedback_coverage_mismatch")
+        self.assertEqual(
+            lesson_manager.get_class_commentary_generation(generation["id"]),
+            generation_before,
+        )
+        self.assertEqual(
+            lesson_manager.get_class_commentary_task(self.task["id"]),
+            task_before,
+        )
+
+    def test_aggregate_limit_failure_does_not_write_partial_generation_or_task_state(self):
+        for index in range(3, 17):
+            lesson_manager.create_student_for_class(
+                self.class_id,
+                f"扩展学生{index:02d}",
+            )
+        roster = [
+            {"student_id": student["id"], "student_name": student["name"]}
+            for student in lesson_manager.list_students_for_class(self.class_id)
+        ]
+        lesson_manager.save_class_commentary_transcript(
+            self.task["id"],
+            " ".join(item["student_name"] for item in roster),
+        )
+        generation = self._reserve_structured(
+            "generation-request-structured-total-limit",
+            attending_roster=roster,
+        )
+        generation_before = lesson_manager.get_class_commentary_generation(
+            generation["id"]
+        )
+        task_before = lesson_manager.get_class_commentary_task(self.task["id"])
+        oversized_output = {
+            "schema_version": STRUCTURED_SCHEMA_VERSION,
+            "items": [
+                {
+                    "student_id": item["student_id"],
+                    "feedback_text": "a" * 1999,
+                }
+                for item in roster
+            ],
+        }
+
+        with self.assertRaises(
+            lesson_manager.ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            lesson_manager.complete_class_commentary_generation(
+                generation["id"],
+                json.dumps(oversized_output, ensure_ascii=False),
+            )
+
+        self.assertEqual(caught.exception.code, "student_feedback_too_long")
+        self.assertEqual(caught.exception.limit, 30000)
+        self.assertEqual(
+            lesson_manager.get_class_commentary_generation(generation["id"]),
+            generation_before,
+        )
+        self.assertEqual(
+            lesson_manager.get_class_commentary_task(self.task["id"]),
+            task_before,
+        )
+
     def test_same_request_is_idempotent_and_changed_roster_conflicts(self):
         first = self._reserve("generation-request-idempotent")
         repeated = self._reserve(
@@ -190,6 +554,41 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
         self.assertEqual(task["generation_seq"], 1)
         self.assertEqual(task["latest_generation_id"], first["id"])
 
+    def test_implicit_roster_replay_ignores_later_live_roster_changes(self):
+        first = self._reserve(
+            "generation-request-implicit-roster",
+            attending_roster_explicit=False,
+        )
+        lesson_manager.create_student_for_class(self.class_id, "后来加入的学生")
+        changed_roster = [
+            {"student_id": student["id"], "student_name": student["name"]}
+            for student in lesson_manager.list_students_for_class(self.class_id)
+        ]
+
+        repeated = self._reserve(
+            "generation-request-implicit-roster",
+            attending_roster=changed_roster,
+            attending_roster_explicit=False,
+        )
+
+        self.assertEqual(repeated["id"], first["id"])
+        self.assertTrue(repeated["is_idempotent"])
+        self.assertEqual(self._generation_count(), 1)
+
+    def test_plain_reservation_keeps_legacy_student_id_roster_order(self):
+        reversed_roster = list(reversed(self.roster))
+
+        generation = self._reserve(
+            "generation-request-plain-roster-order",
+            attending_roster=reversed_roster,
+        )
+
+        frozen_roster = json.loads(generation["attending_roster_snapshot_json"])
+        self.assertEqual(
+            [item["student_id"] for item in frozen_roster],
+            sorted(item["student_id"] for item in reversed_roster),
+        )
+
     def test_same_request_ignores_later_prompt_and_memory_results(self):
         original_prompt = copy.deepcopy(self.prompt_payload)
         original_memory = copy.deepcopy(self.memory_context)
@@ -213,6 +612,49 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
         self.assertEqual(
             json.loads(saved["memory_context_snapshot_json"]),
             original_memory,
+        )
+
+    def test_structured_execution_snapshot_rejects_prompt_or_temperature_drift(self):
+        generation = self._reserve_structured(
+            "generation-request-structured-execution-drift"
+        )
+        saved = lesson_manager.get_class_commentary_generation(generation["id"])
+        valid_prompt = json.loads(saved["prompt_payload_snapshot_json"])
+        valid_memory = json.loads(saved["memory_context_snapshot_json"])
+        mutations = (
+            ("messages", {**valid_prompt, "messages": []}),
+            (
+                "eligible_ids",
+                {
+                    **valid_prompt,
+                    "messages": [
+                        valid_prompt["messages"][0],
+                        {
+                            **valid_prompt["messages"][1],
+                            "content": valid_prompt["messages"][1]["content"].replace(
+                                '"eligible_student_ids": [',
+                                '"eligible_student_ids": [999,',
+                                1,
+                            ),
+                        },
+                    ],
+                },
+            ),
+            ("temperature", {**valid_prompt, "temperature": 0.1}),
+        )
+
+        for label, prompt_payload in mutations:
+            with self.subTest(label=label):
+                with self.assertRaises(ValueError):
+                    lesson_manager.finalize_class_commentary_generation_execution_snapshot(
+                        generation["id"],
+                        prompt_payload=prompt_payload,
+                        memory_context=valid_memory,
+                    )
+
+        self.assertEqual(
+            lesson_manager.get_class_commentary_generation(generation["id"]),
+            saved,
         )
 
     def test_pending_execution_snapshot_can_only_be_finalized_once_before_completion(self):

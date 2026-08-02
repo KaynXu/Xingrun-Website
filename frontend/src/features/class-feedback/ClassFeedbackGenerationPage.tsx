@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { AlertCircle, CheckCheck, Copy, FileAudio, History, Sparkles, Upload } from 'lucide-react';
 
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -50,12 +56,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import type { ClassItem, CurrentUser } from '../../appTypes';
 import {
+  areClassCommentaryStudentFeedbackItemsEqual,
   activateClassCommentarySkillVersion,
+  buildClassCommentaryFeedbackWorkspaceKey,
+  buildClassCommentaryRevisionPreviewKey,
   classCommentaryStatusLabel,
+  CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
   createClassCommentarySkillCandidate,
   createClassCommentaryTask,
   createClassCommentaryTextTask,
   confirmClassCommentaryFeedback,
+  deriveClassCommentaryStructuredFeedbackText,
   fetchClassCommentaryCapabilities,
   fetchClassCommentaryFeedbackDraft,
   fetchClassCommentaryFeedbackRevisions,
@@ -67,11 +78,18 @@ import {
   fetchClassCommentaryTasks,
   fetchClassCommentaryTask,
   generateClassCommentaryFeedback,
+  formatClassCommentaryStudentFeedback,
   isClassCommentaryFeedbackRecordInScope,
+  isClassCommentaryTaskLatestSchemaCompatible,
+  normalizeClassCommentaryFeedbackDraft,
+  normalizeClassCommentaryFeedbackRevision,
+  normalizeClassCommentaryGeneration,
+  normalizeClassCommentaryTask,
   readClassCommentarySkillPreference,
   rollbackClassCommentarySkillVersion,
   retryClassCommentaryRevisionMemory,
   resolveClassCommentaryCopyText,
+  resolveClassCommentaryStudentFeedbackItems,
   revokeClassCommentaryMemoryEvidence,
   saveClassCommentaryFeedbackDraft,
   saveClassCommentaryTranscript,
@@ -81,14 +99,21 @@ import {
   type ClassCommentaryCapabilities,
   type ClassCommentaryFeedbackDraft,
   type ClassCommentaryFeedbackRevision,
+  type ClassCommentaryFeedbackWriteContent,
   type ClassCommentaryGeneration,
   type ClassCommentaryMemorySummary,
   type ClassCommentarySkillEligibility,
   type ClassCommentarySkillEvolution,
   type ClassCommentarySkillVersion,
   type ClassCommentaryTask,
+  type ClassCommentaryStudentFeedbackItem,
+  updateClassCommentaryScopedStudentFeedback,
   writeClassCommentarySkillPreference,
 } from '../../classCommentary';
+import {
+  CLASS_COMMENTARY_NAVIGATION_REQUEST_EVENT,
+  type ClassCommentaryNavigationRequestDetail,
+} from '../../classCommentaryNavigationGuard';
 import { ApiFetchError, apiFetch } from '../../workspaceShared';
 
 type ClassFeedbackGenerationPageProps = {
@@ -101,9 +126,38 @@ type ClassFeedbackStudent = {
 };
 
 type GenerationEditorState = {
+  workspaceKey: string;
+  taskId: number;
+  generationId: number;
+  feedbackSchemaVersion: string;
   feedbackText: string;
   savedFeedbackText: string;
+  studentOrder: number[];
+  itemsByStudentId: Record<number, ClassCommentaryStudentFeedbackItem>;
+  savedItemsByStudentId: Record<number, ClassCommentaryStudentFeedbackItem>;
   draft: ClassCommentaryFeedbackDraft | null;
+  latestRevisionIdAtLoad: number | null;
+};
+
+type RevisionPreviewState = {
+  revisionPreviewKey: string;
+  revision: ClassCommentaryFeedbackRevision;
+};
+
+type PendingFeedbackTransition =
+  | { kind: 'generation'; generationId: string }
+  | { kind: 'task'; task: ClassCommentaryTask }
+  | { kind: 'revision'; revision: ClassCommentaryFeedbackRevision }
+  | { kind: 'create-task' }
+  | { kind: 'generate' }
+  | { kind: 'route'; proceed: () => void };
+
+type StructuredDraftConflict = {
+  workspaceKey: string;
+  localText: string;
+  localItems: ClassCommentaryStudentFeedbackItem[];
+  serverDraft: ClassCommentaryFeedbackDraft;
+  attemptedExpectedDraftVersion: number;
 };
 
 type PendingClassCommentaryRequest = {
@@ -114,6 +168,7 @@ type PendingClassCommentaryRequest = {
 const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   memory_learning_enabled: false,
   skill_evolution_enabled: false,
+  structured_feedback_enabled: false,
 };
 
 function createClassCommentaryRequestId(prefix: string): string {
@@ -183,9 +238,27 @@ function getTaskErrorMessage(task: ClassCommentaryTask | null, errorMessage: str
     return task.transcription_error || '转写失败';
   }
   if (task.failure_stage === 'generation') {
+    if (task.generation_error === 'structured_feedback_invalid') {
+      return '反馈结构校验失败, 请重新生成';
+    }
     return task.generation_error || '生成失败';
   }
   return '任务失败';
+}
+
+function getClassCommentaryGenerationErrorMessage(error: unknown): string {
+  if (error instanceof ApiFetchError) {
+    if (error.payload?.error === 'structured_feedback_invalid') {
+      return '反馈结构校验失败, 请重新生成';
+    }
+    if (error.payload?.error === 'student_feedback_no_eligible_students') {
+      return '转写中没有识别到到课学生全名, 请补充学生全名后重新生成';
+    }
+    if (error.payload?.error === 'student_roster_name_ambiguous') {
+      return '到课名单存在无法区分的重名, 请调整到课名单后重新生成';
+    }
+  }
+  return error instanceof Error ? error.message : '生成失败';
 }
 
 function formatClassCommentaryTime(value: string): string {
@@ -276,6 +349,91 @@ function mergeHistoryTask(historyTasks: ClassCommentaryTask[], nextTask: ClassCo
   return [nextTask, ...historyTasks.filter((item) => item.id !== nextTask.id)].slice(0, 30);
 }
 
+function cloneStudentFeedbackItems(items: ClassCommentaryStudentFeedbackItem[]): ClassCommentaryStudentFeedbackItem[] {
+  return items.map((item) => ({ ...item }));
+}
+
+function indexStudentFeedbackItems(
+  items: ClassCommentaryStudentFeedbackItem[],
+): Record<number, ClassCommentaryStudentFeedbackItem> {
+  return Object.fromEntries(items.map((item) => [item.student_id, { ...item }]));
+}
+
+function orderedStudentFeedbackItems(
+  editor: GenerationEditorState,
+  saved = false,
+): ClassCommentaryStudentFeedbackItem[] {
+  const itemsByStudentId = saved ? editor.savedItemsByStudentId : editor.itemsByStudentId;
+  return editor.studentOrder
+    .map((studentId) => itemsByStudentId[studentId])
+    .filter((item): item is ClassCommentaryStudentFeedbackItem => Boolean(item));
+}
+
+function createGenerationEditorState(
+  taskId: number,
+  generation: ClassCommentaryGeneration,
+  draft: ClassCommentaryFeedbackDraft | null,
+  revision: ClassCommentaryFeedbackRevision | null,
+  latestRevisionIdAtLoad: number | null,
+): GenerationEditorState {
+  const items = resolveClassCommentaryStudentFeedbackItems(draft, revision, generation);
+  const feedbackText = items.length
+    ? deriveClassCommentaryStructuredFeedbackText(items)
+    : resolveClassCommentaryCopyText(draft, revision, generation);
+  return {
+    workspaceKey: buildClassCommentaryFeedbackWorkspaceKey(taskId, generation.id),
+    taskId,
+    generationId: generation.id,
+    feedbackSchemaVersion: generation.feedback_schema_version,
+    feedbackText,
+    savedFeedbackText: feedbackText,
+    studentOrder: items.map((item) => item.student_id),
+    itemsByStudentId: indexStudentFeedbackItems(items),
+    savedItemsByStudentId: indexStudentFeedbackItems(items),
+    draft,
+    latestRevisionIdAtLoad,
+  };
+}
+
+function isGenerationEditorDirty(editor: GenerationEditorState | undefined): boolean {
+  if (!editor) {
+    return false;
+  }
+  if (editor.feedbackSchemaVersion === CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1) {
+    return !areClassCommentaryStudentFeedbackItemsEqual(
+      orderedStudentFeedbackItems(editor),
+      orderedStudentFeedbackItems(editor, true),
+    );
+  }
+  return editor.feedbackText !== editor.savedFeedbackText;
+}
+
+function buildFeedbackWriteContent(editor: GenerationEditorState): ClassCommentaryFeedbackWriteContent {
+  if (editor.feedbackSchemaVersion !== CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1) {
+    return editor.feedbackText;
+  }
+  return {
+    feedback_schema_version: CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+    student_feedback_items: orderedStudentFeedbackItems(editor).map((item) => ({
+      student_id: item.student_id,
+      feedback_text: item.feedback_text,
+    })),
+  };
+}
+
+function classCommentaryStudentFeedbackErrorMessage(errorCode: string, limit?: number): string {
+  if (errorCode === 'student_feedback_empty') {
+    return '反馈内容不能为空.';
+  }
+  if (errorCode === 'student_feedback_too_long') {
+    return limit ? `反馈内容不能超过 ${limit} 个字.` : '反馈内容过长, 请精简后重试.';
+  }
+  if (errorCode === 'student_feedback_cross_student_reference') {
+    return '这段反馈提到了另一名学生, 请核对后重试.';
+  }
+  return '这段反馈未通过校验, 请核对后重试.';
+}
+
 export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenerationPageProps) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [skills, setSkills] = useState<ClassCommentarySkill[]>([]);
@@ -298,8 +456,14 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [selectedGenerationId, setSelectedGenerationId] = useState('');
   const [feedbackEditorText, setFeedbackEditorText] = useState('');
   const [feedbackDraft, setFeedbackDraft] = useState<ClassCommentaryFeedbackDraft | null>(null);
-  const [generationEditors, setGenerationEditors] = useState<Record<number, GenerationEditorState>>({});
+  const [generationEditors, setGenerationEditors] = useState<Record<string, GenerationEditorState>>({});
   const [feedbackRevisions, setFeedbackRevisions] = useState<ClassCommentaryFeedbackRevision[]>([]);
+  const [revisionPreview, setRevisionPreview] = useState<RevisionPreviewState | null>(null);
+  const [expandedStudentIds, setExpandedStudentIds] = useState<string[]>([]);
+  const [copiedStudentId, setCopiedStudentId] = useState<number | null>(null);
+  const [copyNotice, setCopyNotice] = useState('');
+  const [studentFeedbackErrors, setStudentFeedbackErrors] = useState<Record<number, string>>({});
+  const [pendingFeedbackTransition, setPendingFeedbackTransition] = useState<PendingFeedbackTransition | null>(null);
   const [revisionMemorySummary, setRevisionMemorySummary] = useState<ClassCommentaryMemorySummary | null>(null);
   const [memoryLoadError, setMemoryLoadError] = useState('');
   const [memoryRefreshVersion, setMemoryRefreshVersion] = useState(0);
@@ -313,9 +477,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [skillEvolutionRefreshVersion, setSkillEvolutionRefreshVersion] = useState(0);
   const [loadingGenerationId, setLoadingGenerationId] = useState<number | null>(null);
   const [capabilities, setCapabilities] = useState<ClassCommentaryCapabilities>(disabledClassCommentaryCapabilities);
-  const [draftConflict, setDraftConflict] = useState<{
-    localText: string;
-    serverDraft: ClassCommentaryFeedbackDraft;
+  const [draftConflict, setDraftConflict] = useState<StructuredDraftConflict | null>(null);
+  const [revisionConflict, setRevisionConflict] = useState<{
+    workspaceKey: string;
+    currentLatestRevision: ClassCommentaryFeedbackRevision | null;
+    currentLatestRevisionId: number | null;
   } | null>(null);
   const generationLoadRequestTokenRef = useRef(0);
   const feedbackMutationActiveRef = useRef(false);
@@ -332,6 +498,25 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const skillCandidateRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
   const skillActivateRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
   const skillRollbackRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const feedbackDirtyRef = useRef(false);
+  const copyNoticeTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (copyNoticeTimerRef.current !== null) {
+      window.clearTimeout(copyNoticeTimerRef.current);
+    }
+  }, []);
+
+  function showCopyNotice(message: string) {
+    if (copyNoticeTimerRef.current !== null) {
+      window.clearTimeout(copyNoticeTimerRef.current);
+    }
+    setCopyNotice(message);
+    copyNoticeTimerRef.current = window.setTimeout(() => {
+      setCopyNotice('');
+      copyNoticeTimerRef.current = null;
+    }, 2400);
+  }
 
   function resetFeedbackVersionState(nextTaskId: number | null, releaseBusy = false) {
     generationLoadRequestTokenRef.current += 1;
@@ -344,6 +529,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setFeedbackEditorText('');
     setFeedbackDraft(null);
     setFeedbackRevisions([]);
+    setRevisionPreview(null);
+    setExpandedStudentIds([]);
+    setCopiedStudentId(null);
+    setCopyNotice('');
+    setStudentFeedbackErrors({});
     memoryLoadRequestTokenRef.current += 1;
     memoryActionRequestTokenRef.current += 1;
     setRevisionMemorySummary(null);
@@ -353,9 +543,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     confirmationRequestRef.current = null;
     memoryRetryRequestRef.current = null;
     memoryRevokeRequestRef.current = null;
-    setGenerationEditors({});
     setLoadingGenerationId(null);
     setDraftConflict(null);
+    setRevisionConflict(null);
     if (releaseBusy) {
       setBusy(false);
     }
@@ -520,19 +710,25 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           setSelectedGenerationId('');
           setFeedbackEditorText(task.final_feedback_text || task.feedback_text || '');
           setFeedbackDraft(null);
-          setGenerationEditors({});
           return;
         }
-        const cachedTarget = generationEditors[targetGeneration.id];
+        const targetWorkspaceKey = buildClassCommentaryFeedbackWorkspaceKey(taskId, targetGeneration.id);
+        const cachedTarget = generationEditors[targetWorkspaceKey];
         if (
-          selectedGenerationIdRef.current === String(targetGeneration.id)
-          && cachedTarget
+          cachedTarget
           && (!cachedTarget.draft || isClassCommentaryFeedbackRecordInScope(
             cachedTarget.draft,
             taskId,
             targetGeneration.id,
           ))
         ) {
+          selectedGenerationIdRef.current = String(targetGeneration.id);
+          setSelectedGenerationId(String(targetGeneration.id));
+          setFeedbackEditorText(cachedTarget.feedbackText);
+          setFeedbackDraft(cachedTarget.draft);
+          setExpandedStudentIds((current) => current.length
+            ? current
+            : cachedTarget.studentOrder[0] ? [String(cachedTarget.studentOrder[0])] : []);
           setLoadingGenerationId(null);
           return;
         }
@@ -545,7 +741,6 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         setSelectedGenerationId(String(targetGenerationId));
         setFeedbackEditorText('');
         setFeedbackDraft(null);
-        setGenerationEditors({});
         setLoadingGenerationId(targetGenerationId);
         const [generationDetail, nextDraft] = await Promise.all([
           fetchClassCommentaryGeneration(taskId, targetGenerationId),
@@ -566,18 +761,24 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           throw new Error('生成版本响应范围不一致');
         }
         const latestRevision = nextRevisions.find((item) => item.generation_id === targetGenerationId) || null;
-        const nextText = resolveClassCommentaryCopyText(nextDraft, latestRevision, generationDetail)
-          || task.feedback_text
-          || '';
-        setFeedbackEditorText(nextText);
+        const nextEditor = createGenerationEditorState(
+          taskId,
+          generationDetail,
+          nextDraft,
+          latestRevision,
+          task.latest_revision_id,
+        );
+        if (!nextEditor.feedbackText && !generationDetail.feedback_schema_version) {
+          nextEditor.feedbackText = task.feedback_text || '';
+          nextEditor.savedFeedbackText = nextEditor.feedbackText;
+        }
+        setFeedbackEditorText(nextEditor.feedbackText);
         setFeedbackDraft(nextDraft);
-        setGenerationEditors({
-          [targetGenerationId]: {
-            feedbackText: nextText,
-            savedFeedbackText: nextDraft?.feedback_text || nextText,
-            draft: nextDraft,
-          },
-        });
+        setGenerationEditors((current) => ({
+          ...current,
+          [nextEditor.workspaceKey]: nextEditor,
+        }));
+        setExpandedStudentIds(nextEditor.studentOrder[0] ? [String(nextEditor.studentOrder[0])] : []);
       })
       .catch((error) => {
         if (
@@ -590,7 +791,6 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
             setSelectedGenerationId('');
             setFeedbackEditorText('');
             setFeedbackDraft(null);
-            setGenerationEditors({});
           }
           setErrorMessage(error instanceof Error ? error.message : '加载反馈版本失败');
         }
@@ -612,17 +812,86 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const selectedClass = classes.find((item) => String(item.id) === selectedClassId) || null;
   const selectedSkill = skills.find((item) => item.id === selectedSkillId) || null;
   const selectedGeneration = generations.find((item) => String(item.id) === selectedGenerationId) || null;
-  const selectedRevision = feedbackRevisions.find((item) => item.id === task?.latest_revision_id
-    && item.generation_id === selectedGeneration?.id) || null;
-  const selectedEditorState = selectedGeneration ? generationEditors[selectedGeneration.id] : undefined;
+  const taskLatestRevision = feedbackRevisions.find((item) => item.id === task?.latest_revision_id) || null;
+  const selectedRevision = taskLatestRevision?.generation_id === selectedGeneration?.id
+    ? taskLatestRevision
+    : null;
+  const selectedWorkspaceKey = task && selectedGeneration
+    ? buildClassCommentaryFeedbackWorkspaceKey(task.id, selectedGeneration.id)
+    : '';
+  const selectedEditorState = selectedWorkspaceKey ? generationEditors[selectedWorkspaceKey] : undefined;
+  const previewRevision = revisionPreview?.revision || null;
+  const displayedRevision = previewRevision || selectedRevision;
   const generationLoading = loadingGenerationId !== null;
-  const copyText = resolveClassCommentaryCopyText(
+  const isTaskReadOnly = Boolean(task && task.teacher_user_id !== currentUser.id);
+  const feedbackSchemaStatuses = [
+    ...(previewRevision ? [] : [
+      selectedGeneration?.feedback_schema_status,
+      feedbackDraft?.feedback_schema_status,
+      taskLatestRevision?.feedback_schema_status,
+    ]),
+    displayedRevision?.feedback_schema_status,
+  ].filter((status): status is NonNullable<typeof status> => Boolean(status));
+  const feedbackSchemaMismatch = !previewRevision && Boolean(
+    selectedGeneration
+    && (
+      (feedbackDraft && feedbackDraft.feedback_schema_version !== selectedGeneration.feedback_schema_version)
+      || !isClassCommentaryTaskLatestSchemaCompatible(
+        selectedGeneration.feedback_schema_version,
+        taskLatestRevision?.feedback_schema_version || '',
+      )
+    ),
+  );
+  const feedbackSchemaReadOnly = feedbackSchemaMismatch
+    || feedbackSchemaStatuses.some((status) => status === 'unsupported' || status === 'invalid');
+  const feedbackSchemaNotice = feedbackSchemaStatuses.includes('invalid')
+    ? '反馈数据完整性校验失败, 当前仅可查看和复制现有内容.'
+    : feedbackSchemaStatuses.includes('unsupported')
+      ? '当前版本暂不支持编辑, 可查看和复制现有内容.'
+      : feedbackSchemaMismatch
+        ? '反馈格式不一致, 当前仅可查看和复制现有内容.'
+      : '';
+  const persistedCopyText = resolveClassCommentaryCopyText(
     feedbackDraft,
     selectedRevision,
     selectedGeneration,
     generationLoading,
   );
+  const displayedStudentFeedbackItems = previewRevision?.feedback_schema_status === 'supported'
+    ? previewRevision.student_feedback_items
+    : selectedEditorState ? orderedStudentFeedbackItems(selectedEditorState) : [];
+  const structuredFeedbackMode = selectedGeneration?.feedback_schema_status === 'supported'
+    && selectedGeneration.feedback_schema_version === CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
+    && !feedbackSchemaReadOnly;
+  const previewStructuredFeedbackMode = previewRevision?.feedback_schema_status === 'supported'
+    && previewRevision.feedback_schema_version === CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1;
+  const feedbackDirty = isGenerationEditorDirty(selectedEditorState);
+  const localEditorCopyText = selectedEditorState
+    ? selectedEditorState.feedbackSchemaVersion === CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
+      ? deriveClassCommentaryStructuredFeedbackText(orderedStudentFeedbackItems(selectedEditorState))
+      : selectedEditorState.feedbackText
+    : feedbackEditorText;
+  const copyText = generationLoading
+    ? ''
+    : previewRevision
+      ? previewRevision.derived_feedback_text || previewRevision.final_feedback_text
+      : structuredFeedbackMode
+        ? deriveClassCommentaryStructuredFeedbackText(displayedStudentFeedbackItems)
+        : feedbackEditorText || persistedCopyText;
+  const currentContentConfirmed = Boolean(previewRevision) || Boolean(
+    selectedRevision
+    && selectedEditorState
+    && (structuredFeedbackMode
+      ? areClassCommentaryStudentFeedbackItemsEqual(
+        orderedStudentFeedbackItems(selectedEditorState),
+        selectedRevision.feedback_schema_status === 'supported'
+          ? selectedRevision.student_feedback_items
+          : [],
+      )
+      : selectedEditorState.feedbackText === selectedRevision.final_feedback_text),
+  );
   const taskErrorMessage = getTaskErrorMessage(task, errorMessage);
+  const taskStatusMessage = errorMessage === '已同步最新终稿版本, 本地修改仍保留. 请重新确认.';
   const taskProgress = getTaskProgress(task, uploadProgress);
   const trimmedConfirmedTranscript = confirmedTranscript.trim();
   const persistedTranscript = (task?.confirmed_transcript_text || task?.transcript_text || '').trim();
@@ -640,18 +909,43 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const canUseTranscript = canUseTranscriptState(task);
   const canCreateManualTextTask = !task || task.status === 'uploaded' || task.status === 'transcribing';
   const canCreateTask = !loadingInitial && !busy && !generationLoading && Boolean(selectedClassId && audioFile);
-  const canSaveTranscript = !busy && !generationLoading && canUseTranscript && hasTranscriptText;
-  const canGenerate = !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
+  const canSaveTranscript = !isTaskReadOnly && !busy && !generationLoading && canUseTranscript && hasTranscriptText;
+  const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
   const hasSucceededGeneration = selectedGeneration?.status === 'succeeded';
-  const canSaveFeedbackDraft = !busy
+  const feedbackContentValid = structuredFeedbackMode
+    ? Boolean(
+      selectedEditorState?.studentOrder.length
+      && orderedStudentFeedbackItems(selectedEditorState).every((item) => Boolean(item.feedback_text.trim())),
+    )
+    : Boolean(feedbackEditorText.trim());
+  const localEditorContentValid = selectedEditorState?.feedbackSchemaVersion === CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
+    ? Boolean(
+      selectedEditorState.studentOrder.length
+      && orderedStudentFeedbackItems(selectedEditorState).every((item) => Boolean(item.feedback_text.trim())),
+    )
+    : Boolean(selectedEditorState?.feedbackText.trim());
+  const canSaveFeedbackDraft = !isTaskReadOnly
+    && !feedbackSchemaReadOnly
+    && !revisionPreview
+    && !busy
     && !generationLoading
     && selectedGeneration?.status === 'succeeded'
-    && Boolean(feedbackEditorText.trim())
-    && feedbackEditorText !== (selectedEditorState?.savedFeedbackText || '');
-  const canConfirmFeedback = !busy
+    && feedbackContentValid
+    && feedbackDirty;
+  const canConfirmFeedback = !isTaskReadOnly
+    && !feedbackSchemaReadOnly
+    && !revisionPreview
+    && !busy
     && !generationLoading
     && selectedGeneration?.status === 'succeeded'
-    && Boolean(feedbackEditorText.trim());
+    && feedbackContentValid;
+  const canSavePendingFeedbackTransition = !isTaskReadOnly
+    && !feedbackSchemaReadOnly
+    && !busy
+    && !generationLoading
+    && selectedGeneration?.status === 'succeeded'
+    && localEditorContentValid
+    && feedbackDirty;
   const attendanceListHeight = Math.min(224, Math.max(32, classStudents.length * 40 - 8));
   const activeSkillVersion = skillEvolution?.versions.find((version) => version.is_active)
     || skillEvolution?.versions.find((version) => version.id === skillEvolution.skill.active_version_id)
@@ -693,12 +987,49 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   );
 
   useEffect(() => {
+    feedbackDirtyRef.current = feedbackDirty;
+  }, [feedbackDirty]);
+
+  useEffect(() => {
+    const handleNavigationRequest = (rawEvent: Event) => {
+      if (!feedbackDirtyRef.current) {
+        return;
+      }
+      const event = rawEvent as CustomEvent<ClassCommentaryNavigationRequestDetail>;
+      if (typeof event.detail?.proceed !== 'function') {
+        return;
+      }
+      event.preventDefault();
+      setPendingFeedbackTransition((current) => current || {
+        kind: 'route',
+        proceed: event.detail.proceed,
+      });
+    };
+    window.addEventListener(CLASS_COMMENTARY_NAVIGATION_REQUEST_EVENT, handleNavigationRequest as EventListener);
+    return () => {
+      window.removeEventListener(CLASS_COMMENTARY_NAVIGATION_REQUEST_EVENT, handleNavigationRequest as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!feedbackDirty) {
+      return undefined;
+    }
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [feedbackDirty]);
+
+  useEffect(() => {
     const revisionId = selectedRevision?.id || 0;
     const requestToken = ++memoryLoadRequestTokenRef.current;
     let cancelled = false;
     let pollTimer: number | undefined;
     let pollingDelayMs = 2000;
-    if (!capabilities.memory_learning_enabled || !selectedRevision?.learn_requested || revisionId <= 0) {
+    if (isTaskReadOnly || !capabilities.memory_learning_enabled || !selectedRevision?.learn_requested || revisionId <= 0) {
       setRevisionMemorySummary(null);
       setMemoryLoadError('');
       return () => {
@@ -739,6 +1070,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     };
   }, [
     capabilities.memory_learning_enabled,
+    isTaskReadOnly,
     memoryRefreshVersion,
     selectedRevision?.id,
     selectedRevision?.learn_requested,
@@ -817,7 +1149,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     skillEvolutionRefreshVersion,
   ]);
 
-  async function handleCreateTask() {
+  async function handleCreateTask(skipDirtyGuard = false) {
+    if (feedbackDirty && !skipDirtyGuard) {
+      setPendingFeedbackTransition({ kind: 'create-task' });
+      return;
+    }
     if (!selectedClassId || !audioFile) {
       setErrorMessage('请选择班级并上传录音');
       return;
@@ -861,7 +1197,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     }
   }
 
-  async function handleGenerate() {
+  async function handleGenerate(skipDirtyGuard = false) {
+    if (feedbackDirty && !skipDirtyGuard) {
+      setPendingFeedbackTransition({ kind: 'generate' });
+      return;
+    }
     if (!selectedClassId || !selectedSkillId) {
       setErrorMessage('请选择同事测评风格后再生成');
       return;
@@ -876,10 +1216,12 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     }
     setBusy(true);
     setErrorMessage('');
+    let generationTaskId = task?.id || 0;
     try {
       const savedTask = task && canUseTranscript
         ? (transcriptDirty ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript) : task)
         : await createClassCommentaryTextTask(Number(selectedClassId), trimmedConfirmedTranscript);
+      generationTaskId = savedTask.id;
       if (currentTaskIdRef.current !== savedTask.id) {
         resetFeedbackVersionState(savedTask.id);
       }
@@ -909,17 +1251,69 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setSelectedGenerationId(String(nextGeneration.id));
       setFeedbackDraft(null);
       setLoadingGenerationId(null);
-      setFeedbackEditorText(nextGeneration.generated_feedback_text);
+      const nextEditor = createGenerationEditorState(
+        savedTask.id,
+        nextGeneration,
+        null,
+        null,
+        nextTask.latest_revision_id,
+      );
+      setFeedbackEditorText(nextEditor.feedbackText);
       setGenerationEditors((current) => ({
         ...current,
-        [nextGeneration.id]: {
-          feedbackText: nextGeneration.generated_feedback_text,
-          savedFeedbackText: nextGeneration.generated_feedback_text,
-          draft: null,
-        },
+        [nextEditor.workspaceKey]: nextEditor,
       }));
+      setRevisionPreview(null);
+      setExpandedStudentIds(nextEditor.studentOrder[0] ? [String(nextEditor.studentOrder[0])] : []);
+      setCopiedStudentId(null);
+      setCopyNotice('');
+      setStudentFeedbackErrors({});
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '生成失败');
+      if (error instanceof ApiFetchError) {
+        const rawFailedTask = error.payload.task;
+        const rawFailedGeneration = error.payload.generation;
+        if (
+          rawFailedTask && typeof rawFailedTask === 'object'
+          && rawFailedGeneration && typeof rawFailedGeneration === 'object'
+        ) {
+          const failedTask = normalizeClassCommentaryTask(
+            rawFailedTask as Record<string, unknown>,
+          );
+          const failedGeneration = normalizeClassCommentaryGeneration(
+            rawFailedGeneration as Record<string, unknown>,
+          );
+          if (
+            failedTask.id === generationTaskId
+            && failedGeneration.task_id === generationTaskId
+            && failedGeneration.id > 0
+          ) {
+            setTask(failedTask);
+            setHistoryTasks((current) => mergeHistoryTask(current, failedTask));
+            setGenerations((current) => [
+              failedGeneration,
+              ...current.filter((item) => item.id !== failedGeneration.id),
+            ]);
+            selectedGenerationIdRef.current = String(failedGeneration.id);
+            setSelectedGenerationId(String(failedGeneration.id));
+            setFeedbackDraft(null);
+            const failedEditor = createGenerationEditorState(
+              generationTaskId,
+              failedGeneration,
+              null,
+              null,
+              failedTask.latest_revision_id,
+            );
+            setFeedbackEditorText(failedEditor.feedbackText);
+            setGenerationEditors((current) => ({
+              ...current,
+              [failedEditor.workspaceKey]: failedEditor,
+            }));
+            setRevisionPreview(null);
+            setExpandedStudentIds([]);
+          }
+        }
+      }
+      setErrorMessage(getClassCommentaryGenerationErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -931,11 +1325,98 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     }
     await navigator.clipboard.writeText(copyText);
     setCopied(true);
+    showCopyNotice(currentContentConfirmed
+      ? '已复制已确认内容.'
+      : '已复制未确认内容, 发送前请再次检查.');
     window.setTimeout(() => setCopied(false), 1600);
   }
 
-  async function handleGenerationChange(nextGenerationId: string) {
+  async function handleCopyStudent(studentId: number) {
+    const item = displayedStudentFeedbackItems.find((candidate) => candidate.student_id === studentId);
+    if (!item) {
+      return;
+    }
+    await navigator.clipboard.writeText(formatClassCommentaryStudentFeedback(item));
+    setCopiedStudentId(studentId);
+    showCopyNotice(currentContentConfirmed
+      ? '已复制已确认内容.'
+      : '已复制未确认内容, 发送前请再次检查.');
+    window.setTimeout(() => setCopiedStudentId((current) => current === studentId ? null : current), 1600);
+  }
+
+  function handlePlainFeedbackChange(nextText: string) {
+    setFeedbackEditorText(nextText);
+    setCopied(false);
+    setCopyNotice('');
+    if (!selectedWorkspaceKey) {
+      return;
+    }
+    setGenerationEditors((current) => {
+      const editor = current[selectedWorkspaceKey];
+      return editor ? {
+        ...current,
+        [selectedWorkspaceKey]: {
+          ...editor,
+          feedbackText: nextText,
+        },
+      } : current;
+    });
+  }
+
+  function handleStudentFeedbackChange(studentId: number, nextText: string) {
+    if (!selectedEditorState || !selectedWorkspaceKey || revisionPreview) {
+      return;
+    }
+    const currentItem = selectedEditorState.itemsByStudentId[studentId];
+    if (!currentItem) {
+      return;
+    }
+    const nextItemsByStudentId = {
+      ...selectedEditorState.itemsByStudentId,
+      [studentId]: { ...currentItem, feedback_text: nextText },
+    };
+    const nextItems = selectedEditorState.studentOrder
+      .map((orderedStudentId) => nextItemsByStudentId[orderedStudentId])
+      .filter((item): item is ClassCommentaryStudentFeedbackItem => Boolean(item));
+    setGenerationEditors((current) => {
+      const nextEditors = updateClassCommentaryScopedStudentFeedback(
+        current,
+        selectedWorkspaceKey,
+        studentId,
+        nextText,
+      );
+      const nextEditor = nextEditors[selectedWorkspaceKey];
+      return nextEditor ? {
+        ...nextEditors,
+        [selectedWorkspaceKey]: {
+          ...nextEditor,
+          feedbackText: deriveClassCommentaryStructuredFeedbackText(orderedStudentFeedbackItems(nextEditor)),
+        },
+      } : current;
+    });
+    setFeedbackEditorText(deriveClassCommentaryStructuredFeedbackText(nextItems));
+    setCopiedStudentId((current) => current === studentId ? null : current);
+    setCopied(false);
+    setCopyNotice('');
+    setStudentFeedbackErrors((current) => {
+      if (!current[studentId]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[studentId];
+      return next;
+    });
+  }
+
+  async function handleGenerationChange(nextGenerationId: string, skipDirtyGuard = false) {
     if (!task || busy || generationLoading) {
+      return;
+    }
+    if (nextGenerationId === selectedGenerationId) {
+      return;
+    }
+    if (feedbackDirty && !skipDirtyGuard) {
+      setPendingFeedbackTransition({ kind: 'generation', generationId: nextGenerationId });
       return;
     }
     const taskId = task.id;
@@ -957,22 +1438,18 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     memoryLoadRequestTokenRef.current += 1;
     setRevisionMemorySummary(null);
     setMemoryLoadError('');
-    const numericPreviousGenerationId = Number(previousGenerationId);
-    if (numericPreviousGenerationId > 0) {
-      setGenerationEditors((current) => ({
-        ...current,
-        [numericPreviousGenerationId]: {
-          feedbackText: feedbackEditorText,
-          savedFeedbackText: current[numericPreviousGenerationId]?.savedFeedbackText || feedbackEditorText,
-          draft: feedbackDraft,
-        },
-      }));
-    }
+    setRevisionPreview(null);
+    setCopied(false);
+    setCopiedStudentId(null);
+    setCopyNotice('');
+    setStudentFeedbackErrors({});
     setSelectedGenerationId(nextGenerationId);
-    const cached = generationEditors[numericGenerationId];
+    const nextWorkspaceKey = buildClassCommentaryFeedbackWorkspaceKey(taskId, numericGenerationId);
+    const cached = generationEditors[nextWorkspaceKey];
     if (cached) {
       setFeedbackEditorText(cached.feedbackText);
       setFeedbackDraft(cached.draft);
+      setExpandedStudentIds(cached.studentOrder[0] ? [String(cached.studentOrder[0])] : []);
       setLoadingGenerationId(null);
       return;
     }
@@ -999,17 +1476,20 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         throw new Error('生成版本响应范围不一致');
       }
       const revision = feedbackRevisions.find((item) => item.generation_id === numericGenerationId) || null;
-      const nextText = resolveClassCommentaryCopyText(draft, revision, generation);
-      setFeedbackEditorText(nextText);
+      const nextEditor = createGenerationEditorState(
+        taskId,
+        generation,
+        draft,
+        revision,
+        task.latest_revision_id,
+      );
+      setFeedbackEditorText(nextEditor.feedbackText);
       setFeedbackDraft(draft);
       setGenerationEditors((current) => ({
         ...current,
-        [numericGenerationId]: {
-          feedbackText: nextText,
-          savedFeedbackText: draft?.feedback_text || nextText,
-          draft,
-        },
+        [nextWorkspaceKey]: nextEditor,
       }));
+      setExpandedStudentIds(nextEditor.studentOrder[0] ? [String(nextEditor.studentOrder[0])] : []);
     } catch (error) {
       if (
         requestToken === generationLoadRequestTokenRef.current
@@ -1032,58 +1512,110 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     }
   }
 
-  async function handleSaveFeedbackDraft() {
-    if (!task || !selectedGeneration) {
-      return;
+  function handleStudentFeedbackApiError(error: unknown): boolean {
+    if (!(error instanceof ApiFetchError) || !selectedEditorState) {
+      return false;
+    }
+    const studentId = Number(error.payload?.student_id || 0);
+    if (!studentId || !selectedEditorState.itemsByStudentId[studentId]) {
+      return false;
+    }
+    const message = classCommentaryStudentFeedbackErrorMessage(
+      String(error.payload?.error || ''),
+      Number(error.payload?.limit || 0) || undefined,
+    );
+    setStudentFeedbackErrors((current) => ({ ...current, [studentId]: message }));
+    setExpandedStudentIds((current) => current.includes(String(studentId))
+      ? current
+      : [...current, String(studentId)]);
+    window.requestAnimationFrame(() => {
+      const textarea = document.getElementById(
+        `class-commentary-student-feedback-${selectedEditorState.taskId}-${selectedEditorState.generationId}-${studentId}`,
+      );
+      textarea?.scrollIntoView({ block: 'center' });
+      textarea?.focus();
+    });
+    return true;
+  }
+
+  async function handleSaveFeedbackDraft(): Promise<boolean> {
+    if (!task || !selectedGeneration || !selectedEditorState) {
+      return false;
     }
     const mutationTaskId = task.id;
     const mutationGenerationId = selectedGeneration.id;
-    const mutationFeedbackText = feedbackEditorText;
+    const mutationEditor = selectedEditorState;
+    const mutationWorkspaceKey = mutationEditor.workspaceKey;
+    const mutationFeedbackText = mutationEditor.feedbackText;
+    const mutationItems = cloneStudentFeedbackItems(orderedStudentFeedbackItems(mutationEditor));
+    const mutationContent = buildFeedbackWriteContent(mutationEditor);
+    const expectedDraftVersion = mutationEditor.draft?.draft_version || 0;
     const mutationToken = ++feedbackMutationTokenRef.current;
     feedbackMutationActiveRef.current = true;
     setBusy(true);
     setErrorMessage('');
+    setStudentFeedbackErrors({});
+    let saved = false;
     try {
       const nextDraft = await saveClassCommentaryFeedbackDraft(
         mutationTaskId,
         mutationGenerationId,
-        mutationFeedbackText,
-        feedbackDraft?.draft_version || 0,
-        feedbackDraft?.based_on_revision_id || null,
+        mutationContent,
+        expectedDraftVersion,
+        mutationEditor.draft?.based_on_revision_id || null,
       );
       if (!isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
-        return;
+        return false;
       }
       if (!isClassCommentaryFeedbackRecordInScope(nextDraft, mutationTaskId, mutationGenerationId)) {
         throw new Error('草稿响应范围不一致');
       }
+      const savedItems = nextDraft.feedback_schema_status === 'supported'
+        ? cloneStudentFeedbackItems(nextDraft.student_feedback_items)
+        : mutationItems;
+      const savedText = nextDraft.feedback_schema_status === 'supported'
+        ? deriveClassCommentaryStructuredFeedbackText(savedItems)
+        : nextDraft.feedback_text || mutationFeedbackText;
+      const nextEditor: GenerationEditorState = {
+        ...mutationEditor,
+        feedbackText: savedText,
+        savedFeedbackText: savedText,
+        studentOrder: savedItems.map((item) => item.student_id),
+        itemsByStudentId: indexStudentFeedbackItems(savedItems),
+        savedItemsByStudentId: indexStudentFeedbackItems(savedItems),
+        draft: nextDraft,
+      };
       setFeedbackDraft(nextDraft);
+      setFeedbackEditorText(savedText);
       setGenerationEditors((current) => ({
         ...current,
-        [mutationGenerationId]: {
-          feedbackText: mutationFeedbackText,
-          savedFeedbackText: mutationFeedbackText,
-          draft: nextDraft,
-        },
+        [mutationWorkspaceKey]: nextEditor,
       }));
       setGenerations((current) => current.map((item) => item.id === mutationGenerationId
         ? { ...item, has_draft: true, draft_version: nextDraft.draft_version }
         : item));
+      saved = true;
     } catch (error) {
       if (!isCurrentFeedbackMutation(mutationTaskId, mutationGenerationId, mutationToken)) {
-        return;
+        return false;
       }
       if (error instanceof ApiFetchError && error.status === 409 && error.payload?.error === 'draft_version_conflict') {
-        const currentDraft = error.payload.current_draft as ClassCommentaryFeedbackDraft | undefined;
+        const rawCurrentDraft = error.payload.current_draft;
+        const currentDraft = rawCurrentDraft && typeof rawCurrentDraft === 'object'
+          ? normalizeClassCommentaryFeedbackDraft(rawCurrentDraft as Record<string, unknown>)
+          : null;
         if (currentDraft && isClassCommentaryFeedbackRecordInScope(currentDraft, mutationTaskId, mutationGenerationId)) {
           setDraftConflict({
+            workspaceKey: mutationWorkspaceKey,
             localText: mutationFeedbackText,
+            localItems: mutationItems,
             serverDraft: currentDraft,
+            attemptedExpectedDraftVersion: expectedDraftVersion,
           });
         } else {
           setErrorMessage('服务器草稿范围不一致');
         }
-      } else {
+      } else if (!handleStudentFeedbackApiError(error)) {
         setErrorMessage(error instanceof Error ? error.message : '保存草稿失败');
       }
     } finally {
@@ -1092,24 +1624,31 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         setBusy(false);
       }
     }
+    return saved;
   }
 
   async function handleConfirmFeedback(learn: boolean) {
-    if (!task || !selectedGeneration) {
+    if (!task || !selectedGeneration || !selectedEditorState) {
       return;
     }
     const mutationTaskId = task.id;
     const mutationGenerationId = selectedGeneration.id;
-    const mutationFeedbackText = feedbackEditorText;
-    const expectedDraftVersion = feedbackDraft?.draft_version || 0;
+    const mutationEditor = selectedEditorState;
+    const mutationWorkspaceKey = mutationEditor.workspaceKey;
+    const mutationFeedbackText = mutationEditor.feedbackText;
+    const mutationItems = cloneStudentFeedbackItems(orderedStudentFeedbackItems(mutationEditor));
+    const mutationContent = buildFeedbackWriteContent(mutationEditor);
+    const expectedDraftVersion = mutationEditor.draft?.draft_version || 0;
+    const expectedLatestRevisionId = mutationEditor.latestRevisionIdAtLoad;
     const confirmationRequest = claimClassCommentaryRequest(
       confirmationRequestRef.current,
       JSON.stringify({
         taskId: mutationTaskId,
         generationId: mutationGenerationId,
-        feedbackText: mutationFeedbackText,
+        content: mutationContent,
         learn,
         expectedDraftVersion,
+        expectedLatestRevisionId,
       }),
       'confirmation',
     );
@@ -1118,14 +1657,16 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     feedbackMutationActiveRef.current = true;
     setBusy(true);
     setErrorMessage('');
+    setStudentFeedbackErrors({});
     try {
       const { revision, draft: nextDraft } = await confirmClassCommentaryFeedback(
         mutationTaskId,
         mutationGenerationId,
-        mutationFeedbackText,
+        mutationContent,
         learn,
         expectedDraftVersion,
         confirmationRequest.requestId,
+        expectedLatestRevisionId,
       );
       confirmationRequestRef.current = settleClassCommentaryRequest(
         confirmationRequestRef.current,
@@ -1141,15 +1682,26 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       ) {
         throw new Error('确认响应范围不一致');
       }
+      const confirmedItems = nextDraft.feedback_schema_status === 'supported'
+        ? cloneStudentFeedbackItems(nextDraft.student_feedback_items)
+        : mutationItems;
+      const confirmedText = nextDraft.feedback_schema_status === 'supported'
+        ? deriveClassCommentaryStructuredFeedbackText(confirmedItems)
+        : nextDraft.feedback_text || mutationFeedbackText;
       setFeedbackRevisions((current) => [revision, ...current.filter((item) => item.id !== revision.id)]);
-      setFeedbackEditorText(nextDraft.feedback_text);
+      setFeedbackEditorText(confirmedText);
       setFeedbackDraft(nextDraft);
       setGenerationEditors((current) => ({
         ...current,
-        [mutationGenerationId]: {
-          feedbackText: nextDraft.feedback_text,
-          savedFeedbackText: revision.final_feedback_text,
+        [mutationWorkspaceKey]: {
+          ...mutationEditor,
+          feedbackText: confirmedText,
+          savedFeedbackText: confirmedText,
+          studentOrder: confirmedItems.map((item) => item.student_id),
+          itemsByStudentId: indexStudentFeedbackItems(confirmedItems),
+          savedItemsByStudentId: indexStudentFeedbackItems(confirmedItems),
           draft: nextDraft,
+          latestRevisionIdAtLoad: revision.id,
         },
       }));
       setGenerations((current) => current.map((item) => item.id === mutationGenerationId
@@ -1178,16 +1730,43 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         return;
       }
       if (error instanceof ApiFetchError && error.status === 409 && error.payload?.error === 'draft_version_conflict') {
-        const currentDraft = error.payload.current_draft as ClassCommentaryFeedbackDraft | undefined;
+        const rawCurrentDraft = error.payload.current_draft;
+        const currentDraft = rawCurrentDraft && typeof rawCurrentDraft === 'object'
+          ? normalizeClassCommentaryFeedbackDraft(rawCurrentDraft as Record<string, unknown>)
+          : null;
         if (currentDraft && isClassCommentaryFeedbackRecordInScope(currentDraft, mutationTaskId, mutationGenerationId)) {
           setDraftConflict({
+            workspaceKey: mutationWorkspaceKey,
             localText: mutationFeedbackText,
+            localItems: mutationItems,
             serverDraft: currentDraft,
+            attemptedExpectedDraftVersion: expectedDraftVersion,
           });
         } else {
           setErrorMessage('服务器草稿范围不一致');
         }
-      } else {
+      } else if (error instanceof ApiFetchError && error.status === 409 && error.payload?.error === 'revision_version_conflict') {
+        const rawCurrentLatestRevision = error.payload.current_latest_revision;
+        const currentLatestRevision = rawCurrentLatestRevision && typeof rawCurrentLatestRevision === 'object'
+          ? normalizeClassCommentaryFeedbackRevision(rawCurrentLatestRevision as Record<string, unknown>)
+          : null;
+        const rawCurrentLatestRevisionId = error.payload.current_latest_revision_id;
+        const currentLatestRevisionId = rawCurrentLatestRevisionId === null
+          ? null
+          : Number(rawCurrentLatestRevisionId || currentLatestRevision?.id || 0) || null;
+        if (
+          (currentLatestRevision && currentLatestRevision.task_id !== mutationTaskId)
+          || (currentLatestRevision && currentLatestRevisionId !== currentLatestRevision.id)
+        ) {
+          setErrorMessage('服务器终稿范围不一致');
+        } else {
+          setRevisionConflict({
+            workspaceKey: mutationWorkspaceKey,
+            currentLatestRevision,
+            currentLatestRevisionId,
+          });
+        }
+      } else if (!handleStudentFeedbackApiError(error)) {
         setErrorMessage(error instanceof Error ? error.message : '确认终稿失败');
       }
     } finally {
@@ -1465,14 +2044,39 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setErrorMessage('服务器草稿范围不一致');
       return;
     }
-    setGenerationEditors((current) => ({
-      ...current,
-      [conflictGenerationId]: {
-        feedbackText: draftConflict.serverDraft.feedback_text,
-        savedFeedbackText: draftConflict.serverDraft.feedback_text,
-        draft: draftConflict.serverDraft,
-      },
-    }));
+    const conflictWorkspaceKey = buildClassCommentaryFeedbackWorkspaceKey(
+      draftConflict.serverDraft.task_id,
+      conflictGenerationId,
+    );
+    if (conflictWorkspaceKey !== draftConflict.workspaceKey) {
+      setDraftConflict(null);
+      setErrorMessage('服务器草稿范围不一致');
+      return;
+    }
+    const serverItems = draftConflict.serverDraft.feedback_schema_status === 'supported'
+      ? cloneStudentFeedbackItems(draftConflict.serverDraft.student_feedback_items)
+      : [];
+    const serverText = serverItems.length
+      ? deriveClassCommentaryStructuredFeedbackText(serverItems)
+      : draftConflict.serverDraft.feedback_text;
+    setGenerationEditors((current) => {
+      const editor = current[conflictWorkspaceKey];
+      if (!editor) {
+        return current;
+      }
+      return {
+        ...current,
+        [conflictWorkspaceKey]: {
+          ...editor,
+          feedbackText: serverText,
+          savedFeedbackText: serverText,
+          studentOrder: serverItems.map((item) => item.student_id),
+          itemsByStudentId: indexStudentFeedbackItems(serverItems),
+          savedItemsByStudentId: indexStudentFeedbackItems(serverItems),
+          draft: draftConflict.serverDraft,
+        },
+      };
+    });
     setGenerations((current) => current.map((item) => item.id === conflictGenerationId
       ? {
         ...item,
@@ -1480,9 +2084,13 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         draft_version: draftConflict.serverDraft.draft_version,
       }
       : item));
-    if (selectedGenerationIdRef.current === String(conflictGenerationId)) {
-      setFeedbackEditorText(draftConflict.serverDraft.feedback_text);
+    if (
+      currentTaskIdRef.current === draftConflict.serverDraft.task_id
+      && selectedGenerationIdRef.current === String(conflictGenerationId)
+    ) {
+      setFeedbackEditorText(serverText);
       setFeedbackDraft(draftConflict.serverDraft);
+      setExpandedStudentIds(serverItems[0] ? [String(serverItems[0].student_id)] : []);
     }
     setDraftConflict(null);
   }
@@ -1491,8 +2099,12 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     if (!draftConflict) {
       return;
     }
-    await navigator.clipboard.writeText(draftConflict.localText);
+    const localCopyText = draftConflict.localItems.length
+      ? deriveClassCommentaryStructuredFeedbackText(draftConflict.localItems)
+      : draftConflict.localText;
+    await navigator.clipboard.writeText(localCopyText);
     setCopied(true);
+    showCopyNotice('已复制未确认内容, 发送前请再次检查.');
     window.setTimeout(() => setCopied(false), 1600);
   }
 
@@ -1504,7 +2116,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setErrorMessage('');
   }
 
-  function handleSelectHistoryTask(nextTask: ClassCommentaryTask) {
+  function selectHistoryTask(nextTask: ClassCommentaryTask) {
     const nextSkillId = nextTask.skill_id || selectedSkillId;
     resetFeedbackVersionState(nextTask.id, true);
     setTask(nextTask);
@@ -1515,6 +2127,189 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setErrorMessage('');
     setCopied(false);
     setHistoryDialogOpen(false);
+  }
+
+  function handleSelectHistoryTask(nextTask: ClassCommentaryTask, skipDirtyGuard = false) {
+    if (task?.id === nextTask.id) {
+      setHistoryDialogOpen(false);
+      return;
+    }
+    if (feedbackDirty && !skipDirtyGuard) {
+      setHistoryDialogOpen(false);
+      setPendingFeedbackTransition({ kind: 'task', task: nextTask });
+      return;
+    }
+    selectHistoryTask(nextTask);
+  }
+
+  function handleOpenRevisionPreview(
+    revision: ClassCommentaryFeedbackRevision,
+    skipDirtyGuard = false,
+  ) {
+    if (!task || revision.task_id !== task.id) {
+      setErrorMessage('修订版本范围不一致');
+      return;
+    }
+    if (feedbackDirty && !skipDirtyGuard) {
+      setPendingFeedbackTransition({ kind: 'revision', revision });
+      return;
+    }
+    setRevisionPreview({
+      revisionPreviewKey: buildClassCommentaryRevisionPreviewKey(task.id, revision.id),
+      revision,
+    });
+    setExpandedStudentIds(revision.feedback_schema_status === 'supported' && revision.student_feedback_items[0]
+      ? [String(revision.student_feedback_items[0].student_id)]
+      : []);
+    setCopied(false);
+    setCopiedStudentId(null);
+    setCopyNotice('');
+    setStudentFeedbackErrors({});
+  }
+
+  function handleReturnFromRevisionPreview() {
+    setRevisionPreview(null);
+    setExpandedStudentIds(selectedEditorState?.studentOrder[0]
+      ? [String(selectedEditorState.studentOrder[0])]
+      : []);
+    setCopied(false);
+    setCopiedStudentId(null);
+    setCopyNotice('');
+  }
+
+  function discardCurrentEditorChanges() {
+    if (!selectedEditorState || !selectedWorkspaceKey) {
+      return;
+    }
+    const restoredItems = cloneStudentFeedbackItems(orderedStudentFeedbackItems(selectedEditorState, true));
+    const restoredText = selectedEditorState.feedbackSchemaVersion === CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
+      ? deriveClassCommentaryStructuredFeedbackText(restoredItems)
+      : selectedEditorState.savedFeedbackText;
+    setGenerationEditors((current) => ({
+      ...current,
+      [selectedWorkspaceKey]: {
+        ...selectedEditorState,
+        feedbackText: restoredText,
+        itemsByStudentId: indexStudentFeedbackItems(restoredItems),
+      },
+    }));
+    setFeedbackEditorText(restoredText);
+  }
+
+  function performPendingFeedbackTransition(transition: PendingFeedbackTransition) {
+    setPendingFeedbackTransition(null);
+    if (transition.kind === 'generation') {
+      void handleGenerationChange(transition.generationId, true);
+      return;
+    }
+    if (transition.kind === 'task') {
+      handleSelectHistoryTask(transition.task, true);
+      return;
+    }
+    if (transition.kind === 'revision') {
+      handleOpenRevisionPreview(transition.revision, true);
+      return;
+    }
+    if (transition.kind === 'create-task') {
+      void handleCreateTask(true);
+      return;
+    }
+    if (transition.kind === 'generate') {
+      void handleGenerate(true);
+      return;
+    }
+    transition.proceed();
+  }
+
+  async function handleSaveAndContinueTransition() {
+    if (!pendingFeedbackTransition) {
+      return;
+    }
+    const transition = pendingFeedbackTransition;
+    if (revisionPreview) {
+      setRevisionPreview(null);
+    }
+    if (await handleSaveFeedbackDraft()) {
+      performPendingFeedbackTransition(transition);
+    }
+  }
+
+  async function handleCopyPendingLocalContent() {
+    if (!localEditorCopyText) {
+      return;
+    }
+    await navigator.clipboard.writeText(localEditorCopyText);
+    showCopyNotice('已复制未确认内容, 发送前请再次检查.');
+  }
+
+  function handleDiscardAndContinueTransition() {
+    if (!pendingFeedbackTransition) {
+      return;
+    }
+    const transition = pendingFeedbackTransition;
+    discardCurrentEditorChanges();
+    performPendingFeedbackTransition(transition);
+  }
+
+  function handleRevisionConflictOpenChange(open: boolean) {
+    if (!open) {
+      setRevisionConflict(null);
+    }
+  }
+
+  function handlePreviewConflictingRevision() {
+    if (!revisionConflict?.currentLatestRevision) {
+      return;
+    }
+    handleOpenRevisionPreview(revisionConflict.currentLatestRevision, true);
+    setRevisionConflict(null);
+  }
+
+  function handleAcknowledgeRevisionConflict() {
+    if (!revisionConflict) {
+      return;
+    }
+    const conflictEditor = generationEditors[revisionConflict.workspaceKey];
+    const latestRevision = revisionConflict.currentLatestRevision;
+    if (
+      !conflictEditor
+      || conflictEditor.taskId !== currentTaskIdRef.current
+      || (latestRevision && latestRevision.task_id !== conflictEditor.taskId)
+    ) {
+      setRevisionConflict(null);
+      setErrorMessage('服务器终稿范围不一致');
+      return;
+    }
+    setGenerationEditors((current) => {
+      const editor = current[revisionConflict.workspaceKey];
+      if (!editor || editor.taskId !== conflictEditor.taskId) {
+        return current;
+      }
+      return {
+        ...current,
+        [revisionConflict.workspaceKey]: {
+          ...editor,
+          latestRevisionIdAtLoad: revisionConflict.currentLatestRevisionId,
+        },
+      };
+    });
+    if (latestRevision) {
+      setFeedbackRevisions((current) => [
+        latestRevision,
+        ...current.filter((item) => item.id !== latestRevision.id),
+      ]);
+    }
+    setTask((current) => current?.id === conflictEditor.taskId ? {
+      ...current,
+      latest_revision_id: revisionConflict.currentLatestRevisionId,
+      ...(latestRevision ? {
+        final_feedback_text: latestRevision.final_feedback_text,
+        feedback_revision_no: latestRevision.revision_no,
+        feedback_confirmed_at: latestRevision.confirmed_at,
+      } : {}),
+    } : current);
+    setRevisionConflict(null);
+    setErrorMessage('已同步最新终稿版本, 本地修改仍保留. 请重新确认.');
   }
 
   function handleSkillChange(nextSkillId: string) {
@@ -1530,6 +2325,65 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       return current.filter((item) => item !== studentId);
     });
   }
+
+  const showStructuredFeedbackEditor = previewRevision
+    ? previewStructuredFeedbackMode
+    : structuredFeedbackMode;
+  const structuredFeedbackAccordion = showStructuredFeedbackEditor ? (
+    <Accordion
+      type="multiple"
+      value={expandedStudentIds}
+      onValueChange={setExpandedStudentIds}
+      className="rounded-lg border border-border/70 px-3"
+    >
+      {displayedStudentFeedbackItems.map((item) => {
+        const textareaId = `class-commentary-student-feedback-${task?.id || 0}-${selectedGeneration?.id || 0}-${item.student_id}`;
+        const errorId = `${textareaId}-error`;
+        const itemError = studentFeedbackErrors[item.student_id] || '';
+        const savedItem = selectedEditorState?.savedItemsByStudentId[item.student_id];
+        const itemDirty = !revisionPreview && savedItem?.feedback_text !== item.feedback_text;
+        return (
+          <AccordionItem key={item.student_id} value={String(item.student_id)}>
+            <AccordionTrigger>
+              <span className="flex min-w-0 items-center gap-2 pr-3">
+                <span className="truncate">{item.student_name}</span>
+                {revisionPreview ? (
+                  <Badge variant="secondary">已确认</Badge>
+                ) : itemDirty ? (
+                  <Badge variant="outline">已修改</Badge>
+                ) : null}
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="flex flex-col gap-3">
+              <label htmlFor={textareaId} className="text-sm font-medium text-foreground">
+                {item.student_name}反馈内容
+              </label>
+              <Textarea
+                id={textareaId}
+                value={item.feedback_text}
+                onChange={(event) => handleStudentFeedbackChange(item.student_id, event.target.value)}
+                className="min-h-32 resize-y field-sizing-fixed"
+                readOnly={Boolean(revisionPreview) || isTaskReadOnly || busy}
+                aria-invalid={Boolean(itemError)}
+                aria-describedby={itemError ? errorId : undefined}
+              />
+              {itemError ? (
+                <p id={errorId} className="text-xs text-destructive">{itemError}</p>
+              ) : null}
+              <div className="flex justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => handleCopyStudent(item.student_id)}>
+                  {copiedStudentId === item.student_id
+                    ? <CheckCheck data-icon="inline-start" />
+                    : <Copy data-icon="inline-start" />}
+                  {copiedStudentId === item.student_id ? '已复制' : '复制该学生'}
+                </Button>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        );
+      })}
+    </Accordion>
+  ) : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
@@ -1604,10 +2458,18 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       </div>
 
       {taskErrorMessage ? (
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertTitle>处理失败</AlertTitle>
+        <Alert variant={taskStatusMessage ? 'default' : 'destructive'}>
+          {taskStatusMessage ? <CheckCheck className="size-4" /> : <AlertCircle className="size-4" />}
+          <AlertTitle>{taskStatusMessage ? '版本已同步' : '处理失败'}</AlertTitle>
           <AlertDescription>{taskErrorMessage}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {isTaskReadOnly ? (
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertTitle>只读查看</AlertTitle>
+          <AlertDescription>这是其他老师的课堂反馈记录, 你可以查看和复制结果, 修改和 AI 学习仍由原老师完成.</AlertDescription>
         </Alert>
       ) : null}
 
@@ -1641,7 +2503,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   <div className="flex flex-col gap-2">
                     <p className="text-sm font-medium text-foreground">班级</p>
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                      <Select value={selectedClassId || undefined} onValueChange={setSelectedClassId}>
+                      <Select value={selectedClassId} onValueChange={setSelectedClassId}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="请选择班级" />
                         </SelectTrigger>
@@ -1705,7 +2567,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   </div>
                   <div className="flex flex-col gap-2">
                     <p className="text-sm font-medium text-foreground">同事测评风格</p>
-                    <Select value={selectedSkillId || undefined} onValueChange={handleSkillChange}>
+                    <Select value={selectedSkillId} onValueChange={handleSkillChange}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="请选择同事" />
                       </SelectTrigger>
@@ -1743,7 +2605,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     </span>
                     {selectedSkill ? <Badge variant="outline">{selectedSkill.name}</Badge> : null}
                   </div>
-                  <Button type="button" onClick={handleCreateTask} disabled={!canCreateTask}>
+                  <Button type="button" onClick={() => void handleCreateTask()} disabled={!canCreateTask}>
                     <Upload data-icon="inline-start" />
                     上传并转写
                   </Button>
@@ -1785,7 +2647,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     onChange={(event) => setConfirmedTranscript(event.target.value)}
                     placeholder="可直接输入课堂记录, 也可以上传并转写后在这里确认或修订文本."
                     className="min-h-56 flex-1 resize-none field-sizing-fixed"
-                    disabled={loadingInitial}
+                    disabled={loadingInitial || isTaskReadOnly}
                   />
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-muted-foreground">
@@ -1800,7 +2662,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                       <Button
                         type="button"
                         variant={hasSucceededGeneration ? 'outline' : 'default'}
-                        onClick={handleGenerate}
+                        onClick={() => void handleGenerate()}
                         disabled={!canGenerate}
                       >
                         {hasSucceededGeneration ? '重新生成' : '生成反馈包'}
@@ -1839,7 +2701,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                 <Separator />
                 <div className="flex flex-col gap-2">
                   <p className="text-sm font-medium text-foreground">生成版本</p>
-                  <Select value={selectedGenerationId || undefined} onValueChange={handleGenerationChange} disabled={busy || generationLoading}>
+                  <Select value={selectedGenerationId} onValueChange={handleGenerationChange} disabled={busy || generationLoading}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="请选择生成版本" />
                     </SelectTrigger>
@@ -1859,36 +2721,79 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     <Badge variant={selectedGeneration?.status === 'failed' ? 'destructive' : 'outline'}>
                       {selectedGeneration?.status === 'succeeded' ? '已生成' : selectedGeneration?.status === 'failed' ? '失败' : selectedGeneration ? '生成中' : '未创建任务'}
                     </Badge>
-                    {feedbackDraft ? <Badge variant="secondary">草稿 v{feedbackDraft.draft_version}</Badge> : null}
-                    {selectedRevision ? <Badge variant="secondary">已确认第 {selectedRevision.revision_no} 版</Badge> : null}
+                    {!revisionPreview && feedbackDraft ? <Badge variant="secondary">草稿 v{feedbackDraft.draft_version}</Badge> : null}
+                    {revisionPreview ? (
+                      <Badge variant="secondary">已确认第 {revisionPreview.revision.revision_no} 版</Badge>
+                    ) : selectedRevision ? (
+                      <Badge variant="secondary">已确认第 {selectedRevision.revision_no} 版</Badge>
+                    ) : null}
+                    {feedbackDirty ? <Badge variant="outline">当前编辑未保存</Badge> : null}
+                    {!currentContentConfirmed ? <Badge variant="outline">未确认</Badge> : null}
                   </div>
-                  <Button type="button" variant="outline" onClick={handleCopy} disabled={generationLoading || !copyText}>
-                    {copied ? <CheckCheck data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
-                    复制结果
-                  </Button>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {revisionPreview ? (
+                      <Button type="button" variant="outline" onClick={handleReturnFromRevisionPreview}>
+                        返回当前编辑
+                      </Button>
+                    ) : null}
+                    <Button type="button" variant="outline" onClick={handleCopy} disabled={generationLoading || !copyText}>
+                      {copied ? <CheckCheck data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
+                      {showStructuredFeedbackEditor ? '复制全部' : '复制结果'}
+                    </Button>
+                  </div>
                 </div>
-                <Textarea
-                  value={feedbackEditorText}
-                  onChange={(event) => setFeedbackEditorText(event.target.value)}
-                  placeholder="生成完成后, 这里会显示可修改并确认的反馈文本."
-                  className="min-h-64"
-                  disabled={busy || generationLoading || !selectedGeneration || selectedGeneration.status !== 'succeeded'}
-                />
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={handleSaveFeedbackDraft} disabled={!canSaveFeedbackDraft}>
-                    保存草稿
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => handleConfirmFeedback(false)} disabled={!canConfirmFeedback}>
-                    确认但不学习
-                  </Button>
-                  <Button type="button" onClick={() => handleConfirmFeedback(true)} disabled={!canConfirmFeedback || !capabilities.memory_learning_enabled}>
-                    确认并让 AI 学习修改
-                  </Button>
-                </div>
-                {!capabilities.memory_learning_enabled ? (
+                {showStructuredFeedbackEditor ? (
+                  displayedStudentFeedbackItems.length >= 5 ? (
+                    <ScrollArea
+                      className="h-[clamp(280px,55vh,480px)] overflow-hidden sm:h-[clamp(320px,60vh,560px)]"
+                      data-testid="structured-feedback-scroll-area"
+                    >
+                      <div className="pr-3 pb-2">{structuredFeedbackAccordion}</div>
+                    </ScrollArea>
+                  ) : structuredFeedbackAccordion
+                ) : (
+                  <Textarea
+                    value={previewRevision ? previewRevision.final_feedback_text : feedbackEditorText}
+                    onChange={(event) => handlePlainFeedbackChange(event.target.value)}
+                    placeholder="生成完成后, 这里会显示可修改并确认的反馈文本."
+                    className="min-h-64"
+                    readOnly={Boolean(revisionPreview) || isTaskReadOnly || feedbackSchemaReadOnly}
+                    disabled={!isTaskReadOnly && !revisionPreview && (busy || generationLoading || !selectedGeneration || selectedGeneration.status !== 'succeeded')}
+                  />
+                )}
+                {feedbackSchemaNotice ? (
+                  <p className="text-xs text-muted-foreground">{feedbackSchemaNotice}</p>
+                ) : null}
+                {copyNotice ? (
+                  <Alert
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    data-testid="copy-notice-toast"
+                    className="fixed right-4 bottom-4 z-50 w-[calc(100%-2rem)] max-w-sm shadow-lg"
+                  >
+                    <CheckCheck className="size-4" />
+                    <AlertTitle>复制成功</AlertTitle>
+                    <AlertDescription>{copyNotice}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {!revisionPreview ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={handleSaveFeedbackDraft} disabled={!canSaveFeedbackDraft}>
+                      保存草稿
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => handleConfirmFeedback(false)} disabled={!canConfirmFeedback}>
+                      确认但不学习
+                    </Button>
+                    <Button type="button" onClick={() => handleConfirmFeedback(true)} disabled={!canConfirmFeedback || !capabilities.memory_learning_enabled}>
+                      确认并让 AI 学习修改
+                    </Button>
+                  </div>
+                ) : null}
+                {!revisionPreview && !capabilities.memory_learning_enabled ? (
                   <p className="text-xs text-muted-foreground">记忆学习功能尚未启用, 仍可正常保存草稿或确认终稿.</p>
                 ) : null}
-                {capabilities.memory_learning_enabled && selectedRevision?.learn_requested ? (
+                {!revisionPreview && !isTaskReadOnly && capabilities.memory_learning_enabled && selectedRevision?.learn_requested ? (
                   <>
                     <Separator />
                     <div className="flex flex-col gap-3">
@@ -2071,7 +2976,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                     <>
                                       <div className="flex flex-col gap-2">
                                         <p className="text-sm font-medium text-foreground">选择风格版本</p>
-                                        <Select value={selectedSkillVersionId || undefined} onValueChange={setSelectedSkillVersionId}>
+                                        <Select value={selectedSkillVersionId} onValueChange={setSelectedSkillVersionId}>
                                           <SelectTrigger className="w-full">
                                             <SelectValue placeholder="请选择要查看的版本" />
                                           </SelectTrigger>
@@ -2236,7 +3141,14 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     <div className="flex flex-col gap-2 pr-2">
                       {feedbackRevisions.map((revision) => (
                         <div key={revision.id} className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                          <span>第 {revision.revision_no} 版 · {revision.learn_requested ? '已请求学习' : '未学习'}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenRevisionPreview(revision)}
+                          >
+                            查看第 {revision.revision_no} 版 · {revision.learn_requested ? '已请求学习' : '未学习'}
+                          </Button>
                           <span>{formatClassCommentaryTime(revision.confirmed_at)}</span>
                         </div>
                       ))}
@@ -2265,6 +3177,66 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
             </Button>
             <Button type="button" onClick={handleLoadServerDraft}>
               加载服务器版本
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pendingFeedbackTransition)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingFeedbackTransition(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>有未保存的反馈修改</DialogTitle>
+            <DialogDescription>
+              {revisionPreview ? '你正在查看历史终稿, 当前编辑仍有未保存修改. ' : ''}
+              保存整份草稿后继续, 或先复制当前编辑的本地内容. 放弃会丢掉当前这份未保存修改.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-wrap">
+            <Button type="button" variant="outline" onClick={() => setPendingFeedbackTransition(null)}>
+              取消
+            </Button>
+            <Button type="button" variant="outline" onClick={handleCopyPendingLocalContent}>
+              复制本地内容
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleDiscardAndContinueTransition}>
+              放弃并切换
+            </Button>
+            <Button type="button" onClick={handleSaveAndContinueTransition} disabled={!canSavePendingFeedbackTransition}>
+              保存草稿
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(revisionConflict)} onOpenChange={handleRevisionConflictOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>终稿版本已更新</DialogTitle>
+            <DialogDescription>
+              另一处已经确认了更新的终稿. 当前本地修改仍然保留, 请先查看最新版本或关闭后重试.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleCopy}>
+              复制本地内容
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePreviewConflictingRevision}
+              disabled={!revisionConflict?.currentLatestRevision}
+            >
+              查看最新终稿
+            </Button>
+            <Button type="button" onClick={handleAcknowledgeRevisionConflict}>
+              同步版本并保留本地修改
             </Button>
           </DialogFooter>
         </DialogContent>

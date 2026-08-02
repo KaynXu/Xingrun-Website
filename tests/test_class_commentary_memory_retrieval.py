@@ -123,6 +123,89 @@ class ClassCommentaryMemoryRetrievalTest(unittest.TestCase):
         self.assertNotIn("untrusted projection text", context["rendered_text"])
         self.assertEqual(marked, [])
 
+    def test_structured_retrieval_disables_student_history_memory(self):
+        generation = {
+            **self.generation,
+            "feedback_schema_version": "class_commentary.student_feedback.v1",
+            "student_history_memory_mode": "disabled_v1",
+            "eligible_student_ids_json": [21, 22],
+        }
+        service = FakeMemoryService(
+            style=[candidate(10, 2, "teacher_style", scope_skill_registry_id=8)],
+            students={
+                21: [candidate(11, 1, "student_fact", student_id=21, subject_key="math")],
+                22: [candidate(12, 1, "student_fact", student_id=22, subject_key="math")],
+            },
+        )
+        records = {
+            10: {
+                "id": 10,
+                "organization_id": 4,
+                "memory_type": "teacher_style",
+                "scope_skill_registry_id": 8,
+                "student_id": None,
+                "desired_status": "active",
+                "record_version": 2,
+                "active_evidence_count": 1,
+                "confidence": 0.9,
+                "memory_text": "Each focus point gets its own paragraph.",
+                "created_from_revision_id": 31,
+            },
+            11: {
+                "id": 11,
+                "organization_id": 4,
+                "memory_type": "student_fact",
+                "scope_skill_registry_id": None,
+                "student_id": 21,
+                "subject_key": "math",
+                "desired_status": "active",
+                "record_version": 1,
+                "active_evidence_count": 1,
+                "confidence": 0.9,
+                "memory_text": "Student 21 history must stay out of this generation.",
+                "created_from_revision_id": 32,
+            },
+            12: {
+                "id": 12,
+                "organization_id": 4,
+                "memory_type": "student_fact",
+                "scope_skill_registry_id": None,
+                "student_id": 22,
+                "subject_key": "math",
+                "desired_status": "active",
+                "record_version": 1,
+                "active_evidence_count": 1,
+                "confidence": 0.9,
+                "memory_text": "Student 22 history must stay out of this generation.",
+                "created_from_revision_id": 33,
+            },
+        }
+        loaded_record_ids = []
+
+        def load_records(record_ids):
+            loaded_record_ids.extend(record_ids)
+            return [records[item] for item in record_ids if item in records]
+
+        context = retrieve_class_commentary_memory_context(
+            generation=generation,
+            live_student_ids=[21, 22],
+            memory_service=service,
+            record_loader=load_records,
+        )
+
+        self.assertEqual([call[0] for call in service.calls], ["style"])
+        self.assertEqual(loaded_record_ids, [10])
+        self.assertEqual(
+            [item["memory_record_id"] for item in context["teacher_style_memories"]],
+            [10],
+        )
+        self.assertEqual(context["student_history_memories"], [])
+        self.assertEqual([item["memory_type"] for item in context["records"]], ["teacher_style"])
+        self.assertIn("Each focus point gets its own paragraph.", context["rendered_text"])
+        self.assertNotIn("Student 21 history", context["rendered_text"])
+        self.assertNotIn("Student 22 history", context["rendered_text"])
+        self.assertEqual(context["student_history_memory_mode"], "disabled_v1")
+
     def test_stale_projection_is_dropped_and_marked_for_reconciliation(self):
         service = FakeMemoryService(
             style=[candidate(10, 1, "teacher_style", scope_skill_registry_id=8)]

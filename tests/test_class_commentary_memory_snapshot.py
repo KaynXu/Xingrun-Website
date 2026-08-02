@@ -1,9 +1,11 @@
+import hashlib
 import json
 import os
 import tempfile
 import unittest
 
 import lesson_manager
+from class_commentary import CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
 
 
 class ClassCommentaryMemorySnapshotTest(unittest.TestCase):
@@ -119,6 +121,72 @@ class ClassCommentaryMemorySnapshotTest(unittest.TestCase):
             feedback_text="小王: 分式计算更熟练, 每题完成后反向代入验算.",
             learn_requested=learn,
             expected_draft_version=0,
+            confirmation_request_id=request_id,
+        )
+
+    def _confirm_structured(self, request_id):
+        generation = lesson_manager.get_class_commentary_generation(self.generation["id"])
+        student_id = int(self.student["id"])
+        generated_feedback = "分式计算更熟练, 继续练习验算."
+        payload = {
+            "schema_version": "class_commentary.student_feedback.v1",
+            "items": [
+                {"student_id": student_id, "feedback_text": generated_feedback}
+            ],
+        }
+        structured_json = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        structured_hash = hashlib.sha256(structured_json.encode("utf-8")).hexdigest()
+        derived_text = f"{self.student['name']}:\n{generated_feedback}"
+        scope_hash = lesson_manager.build_class_commentary_eligible_scope_hash(
+            transcript_hash=generation["confirmed_transcript_hash"],
+            roster_hash=generation["attending_roster_hash"],
+            eligible_student_ids=[student_id],
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version='class_commentary.student_feedback.v1',
+                    structured_feedback_json=?, structured_feedback_hash=?,
+                    generated_feedback_text=?, eligible_student_ids_json=?,
+                    eligible_student_scope_hash=?,
+                    student_mention_matcher_version='class_commentary.student_name_matcher.v1',
+                    response_format_json='{"type":"json_object"}',
+                    student_history_memory_mode='disabled_v1', prompt_version=?
+                WHERE id=?
+                """,
+                (
+                    structured_json,
+                    structured_hash,
+                    derived_text,
+                    json.dumps([student_id], separators=(",", ":")),
+                    scope_hash,
+                    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+                    generation["id"],
+                ),
+            )
+        self.generation = lesson_manager.get_class_commentary_generation(
+            self.generation["id"]
+        )
+        return lesson_manager.confirm_class_commentary_feedback(
+            task_id=self.task["id"],
+            generation_id=self.generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=[
+                {
+                    "student_id": student_id,
+                    "feedback_text": "分式计算更熟练, 每题完成后反向代入验算.",
+                }
+            ],
+            learn_requested=True,
+            expected_draft_version=0,
+            expected_latest_revision_id=None,
             confirmation_request_id=request_id,
         )
 
@@ -308,6 +376,126 @@ class ClassCommentaryMemorySnapshotTest(unittest.TestCase):
             lesson_manager.get_class_commentary_memory_extraction_job(job_id)["status"],
             "integrity_failed",
         )
+
+    def test_structured_extraction_validates_both_envelopes_without_exposing_json(self):
+        revision = self._confirm_structured("snapshot-confirm-structured-integrity")
+        job_id = int(revision["memory_job"]["id"])
+        frozen = lesson_manager.get_class_commentary_memory_extraction_input(job_id)
+        self.assertTrue(frozen["integrity_valid"])
+        extraction_input = frozen["extraction_input"]
+        self.assertEqual(
+            extraction_input["final_feedback_text"],
+            "小王:\n分式计算更熟练, 每题完成后反向代入验算.",
+        )
+        extractor_payload = json.dumps(extraction_input, ensure_ascii=False)
+        self.assertNotIn("structured_feedback_json", extractor_payload)
+        self.assertNotIn("structured_feedback_hash", extractor_payload)
+        self.assertNotIn("feedback_schema_version", extractor_payload)
+        self.assertNotIn("student_feedback_items", extractor_payload)
+
+        with lesson_manager.get_conn() as conn:
+            generation_row = dict(conn.execute(
+                "SELECT * FROM class_commentary_generations WHERE id=?",
+                (self.generation["id"],),
+            ).fetchone())
+            revision_row = dict(conn.execute(
+                "SELECT * FROM class_commentary_revisions WHERE id=?",
+                (revision["id"],),
+            ).fetchone())
+        original_input_hash = lesson_manager._class_commentary_extraction_input_hash(
+            generation_row,
+            revision_row,
+        )
+        changed_revision_identity = dict(revision_row)
+        changed_revision_identity["structured_feedback_hash"] = "changed-hash"
+        self.assertNotEqual(
+            original_input_hash,
+            lesson_manager._class_commentary_extraction_input_hash(
+                generation_row,
+                changed_revision_identity,
+            ),
+        )
+
+        tamper_cases = (
+            (
+                "class_commentary_generations",
+                self.generation["id"],
+                "structured_feedback_json",
+                '{"tampered":true}',
+                generation_row["structured_feedback_json"],
+            ),
+            (
+                "class_commentary_generations",
+                self.generation["id"],
+                "structured_feedback_hash",
+                "tampered-hash",
+                generation_row["structured_feedback_hash"],
+            ),
+            (
+                "class_commentary_generations",
+                self.generation["id"],
+                "generated_feedback_text",
+                "篡改后的 generation derived text",
+                generation_row["generated_feedback_text"],
+            ),
+            (
+                "class_commentary_generations",
+                self.generation["id"],
+                "feedback_schema_version",
+                "future.student-feedback.v2",
+                generation_row["feedback_schema_version"],
+            ),
+            (
+                "class_commentary_revisions",
+                revision["id"],
+                "structured_feedback_json",
+                '{"tampered":true}',
+                revision_row["structured_feedback_json"],
+            ),
+            (
+                "class_commentary_revisions",
+                revision["id"],
+                "structured_feedback_hash",
+                "tampered-hash",
+                revision_row["structured_feedback_hash"],
+            ),
+            (
+                "class_commentary_revisions",
+                revision["id"],
+                "final_feedback_text",
+                "篡改后的 revision derived text",
+                revision_row["final_feedback_text"],
+            ),
+            (
+                "class_commentary_revisions",
+                revision["id"],
+                "feedback_schema_version",
+                "future.student-feedback.v2",
+                revision_row["feedback_schema_version"],
+            ),
+        )
+        for table, row_id, column, tampered_value, original_value in tamper_cases:
+            with self.subTest(table=table, column=column):
+                with lesson_manager.get_conn() as conn:
+                    conn.execute(
+                        f"UPDATE {table} SET {column}=? WHERE id=?",
+                        (tampered_value, row_id),
+                    )
+                self.assertFalse(
+                    lesson_manager.get_class_commentary_memory_extraction_input(job_id)[
+                        "integrity_valid"
+                    ]
+                )
+                with lesson_manager.get_conn() as conn:
+                    conn.execute(
+                        f"UPDATE {table} SET {column}=? WHERE id=?",
+                        (original_value, row_id),
+                    )
+                self.assertTrue(
+                    lesson_manager.get_class_commentary_memory_extraction_input(job_id)[
+                        "integrity_valid"
+                    ]
+                )
 
 
 if __name__ == "__main__":
