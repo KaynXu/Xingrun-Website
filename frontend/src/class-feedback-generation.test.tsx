@@ -511,6 +511,21 @@ test('structured student editor provides per-student copy, accessibility, and bo
   assertSourceMatches(feedbackCard, /showStructuredFeedbackEditor \? '复制全部' : '复制结果'/, 'structured mode must retain copy all');
 });
 
+test('structured student feedback views default to all students collapsed', () => {
+  const generationChangeHandler = functionSource('handleGenerationChange', 'handleStudentFeedbackApiError');
+  const serverDraftHandler = functionSource('handleLoadServerDraft', 'handleCopyLocalDraft');
+  const generationChangeCollapseCalls = generationChangeHandler.match(/setExpandedStudentIds\(\[\]\);/g) || [];
+
+  assertSourceExcludes(source, /studentOrder\[0\] \? \[String/, 'generation editors must not default the first student open');
+  assertSourceExcludes(source, /serverItems\[0\] \? \[String/, 'server draft recovery must not default the first student open');
+  assertSourceExcludes(source, /student_feedback_items\[0\]/, 'revision previews must not default the first student open');
+  assertSourceMatches(source, /setRevisionPreview\(null\);\s*setExpandedStudentIds\(\[\]\);/, 'a successful generation must start fully collapsed');
+  assert.equal(generationChangeCollapseCalls.length, 2, 'cached and fetched generation switches must both start fully collapsed');
+  assertSourceMatches(serverDraftHandler, /setFeedbackDraft\(draftConflict\.serverDraft\);\s*setExpandedStudentIds\(\[\]\);/, 'server draft recovery must start fully collapsed');
+  assertSourceMatches(source, /function handleOpenRevisionPreview[\s\S]*setRevisionPreview\([\s\S]*setExpandedStudentIds\(\[\]\);/, 'revision previews must start fully collapsed');
+  assertSourceMatches(source, /function handleReturnFromRevisionPreview\(\) \{\s*setRevisionPreview\(null\);\s*setExpandedStudentIds\(\[\]\);/, 'returning to the editor must start fully collapsed');
+});
+
 test('dirty transitions cover generation task revision route and reload with the same recovery dialog', () => {
   assertSourceMatches(source, /CLASS_COMMENTARY_NAVIGATION_REQUEST_EVENT/, 'workspace route changes must use the shared cancelable event');
   assertSourceMatches(source, /event\.preventDefault\(\);[\s\S]*kind: 'route',[\s\S]*proceed: event\.detail\.proceed/, 'dirty route changes must retain a deferred proceed callback');
