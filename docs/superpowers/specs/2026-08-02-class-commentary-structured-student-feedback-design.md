@@ -505,10 +505,10 @@ confirmation 成功返回:
 
 - Card header 的复制动作改为 `复制全部`.
 - 学生列表使用现有 shadcn/ui `Accordion`.
-- 第一名学生默认展开, 其余学生按 frozen roster 顺序排列.
+- 全部学生默认折叠, 并按 frozen roster 顺序排列; 老师主动选择后再展开对应学生.
 - 每个 Accordion trigger 显示学生姓名和轻量编辑状态.
 - 每个 Accordion content 包含该学生的 Textarea 和 `复制该学生` Button.
-- 1-4 名学生自然展开. 5 名及以上放入 shadcn/ui `ScrollArea`. 桌面高度使用 `clamp(320px, 60vh, 560px)`, 小于 640px 的窄屏使用 `clamp(280px, 55vh, 480px)`.
+- 1-4 名学生直接显示 Accordion 列表, 但仍默认全部折叠. 5 名及以上放入 shadcn/ui `ScrollArea`. 桌面高度使用 `clamp(320px, 60vh, 560px)`, 小于 640px 的窄屏使用 `clamp(280px, 55vh, 480px)`.
 - 不新增自定义 Card, Button 或 Accordion 视觉体系, 沿用项目现有 shadcn tokens.
 
 ScrollArea 验收不能只检查无视觉溢出. 必须断言 viewport 可滚动, 最后一名学生的 trigger, Textarea 和 copy action 都能通过键盘和滚动到达.
@@ -752,6 +752,7 @@ reservation 成功后, 执行层不能重新读取 `structured_feedback_enabled`
 ### Frontend
 
 - structured generation 在现有结果 Card 内显示逐学生 Accordion, 不新增页面.
+- 新 generation, generation 切换, draft conflict recovery, revision preview 和返回 editor 时全部学生默认折叠; 只有 student-specific validation error 自动展开对应学生.
 - `复制该学生` 复制姓名标题和当前可见正文.
 - `复制全部` 复制当前可见的所有正文, 包括未保存修改.
 - 复制不调用 draft 或 confirmation API.
