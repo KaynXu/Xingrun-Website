@@ -62,6 +62,55 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertEqual(skills[0]["filename"], "teacher-c/SKILL.md")
         self.assertIn("Use parent-friendly emojis.", loaded["content"])
 
+    def test_skill_loader_skips_package_files_already_embedded_in_skill_md(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-d"
+            package.mkdir()
+            work_content = "# Work Skill\nUse direct, actionable feedback."
+            persona_content = "# Persona\nUse a warm parent-group voice."
+            (package / "SKILL.md").write_text(
+                "# Teacher D\n\n## Part A\n"
+                + work_content
+                + "\n\n## Part B\n"
+                + persona_content,
+                encoding="utf-8",
+            )
+            (package / "work.md").write_text(work_content, encoding="utf-8")
+            (package / "persona.md").write_text(persona_content, encoding="utf-8")
+
+            loaded = class_commentary.load_colleague_skill(str(root), "teacher-d")
+
+        self.assertEqual(loaded["content"].count(work_content), 1)
+        self.assertEqual(loaded["content"].count(persona_content), 1)
+        self.assertNotIn("## work.md", loaded["content"])
+        self.assertNotIn("## persona.md", loaded["content"])
+
+    def test_skill_loader_keeps_revised_work_and_skips_embedded_persona(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-e"
+            package.mkdir()
+            embedded_work = "# Work Skill\nUse direct feedback."
+            revised_work = embedded_work + "\nAlways include one next step."
+            persona_content = "# Persona\nUse a calm parent-group voice."
+            (package / "SKILL.md").write_text(
+                "# Teacher E\n\n## Part A\n"
+                + embedded_work
+                + "\n\n## Part B\n"
+                + persona_content,
+                encoding="utf-8",
+            )
+            (package / "work.md").write_text(revised_work, encoding="utf-8")
+            (package / "persona.md").write_text(persona_content, encoding="utf-8")
+
+            loaded = class_commentary.load_colleague_skill(str(root), "teacher-e")
+
+        self.assertIn("## work.md", loaded["content"])
+        self.assertIn(revised_work, loaded["content"])
+        self.assertEqual(loaded["content"].count(persona_content), 1)
+        self.assertNotIn("## persona.md", loaded["content"])
+
     def test_load_skill_rejects_path_traversal(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):

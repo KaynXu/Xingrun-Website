@@ -133,6 +133,149 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         self.assertTrue(event["activation_request_id"])
         self.assertTrue(event["activation_payload_hash"])
 
+    def test_package_import_skips_companion_files_embedded_in_skill_md(self):
+        package = Path(self.tmp.name) / "teacher-package"
+        package.mkdir()
+        work_content = "# Work Skill\nUse direct, actionable feedback."
+        persona_content = "# Persona\nUse a warm parent-group voice."
+        (package / "SKILL.md").write_text(
+            "# Teacher Package\n\n## Part A\n"
+            + work_content
+            + "\n\n## Part B\n"
+            + persona_content,
+            encoding="utf-8",
+        )
+        (package / "work.md").write_text(work_content, encoding="utf-8")
+        (package / "persona.md").write_text(persona_content, encoding="utf-8")
+
+        imported = lesson_manager.import_class_commentary_skill_manifest(
+            organization_id=self.org_one_id,
+            skill_id="teacher-package",
+            actor_user_id=self.teacher_one_id,
+            source_path=str(package / "SKILL.md"),
+        )
+
+        self.assertEqual(imported["content"].count(work_content), 1)
+        self.assertEqual(imported["content"].count(persona_content), 1)
+        self.assertNotIn("## work.md", imported["content"])
+        self.assertNotIn("## persona.md", imported["content"])
+
+    def test_manifest_refresh_creates_audited_imported_version_and_is_idempotent(self):
+        package = Path(self.tmp.name) / "teacher-refresh"
+        package.mkdir()
+        work_content = "# Work Skill\nUse direct, actionable feedback."
+        persona_content = "# Persona\nUse a warm parent-group voice."
+        skill_path = package / "SKILL.md"
+        skill_path.write_text("# Teacher Refresh", encoding="utf-8")
+        (package / "work.md").write_text(work_content, encoding="utf-8")
+        (package / "persona.md").write_text(persona_content, encoding="utf-8")
+        imported = lesson_manager.import_class_commentary_skill_manifest(
+            organization_id=self.org_one_id,
+            skill_id="teacher-refresh",
+            actor_user_id=self.teacher_one_id,
+            source_path=str(skill_path),
+        )
+        original_content = imported["content"]
+        original_version_id = imported["active_version_id"]
+        skill_path.write_text(
+            "# Teacher Refresh\n\n## Part A\n"
+            + work_content
+            + "\n\n## Part B\n"
+            + persona_content,
+            encoding="utf-8",
+        )
+
+        refreshed = lesson_manager.refresh_class_commentary_skill_manifest(
+            organization_id=self.org_one_id,
+            skill_id="teacher-refresh",
+            actor_user_id=self.teacher_one_id,
+            activation_request_id="manifest-refresh-v1",
+            expected_active_version_id=original_version_id,
+        )
+        counts_after_refresh = self._row_counts()
+        replayed = lesson_manager.refresh_class_commentary_skill_manifest(
+            organization_id=self.org_one_id,
+            skill_id="teacher-refresh",
+            actor_user_id=self.teacher_one_id,
+            activation_request_id="manifest-refresh-v1",
+            expected_active_version_id=original_version_id,
+        )
+
+        self.assertTrue(refreshed["changed"])
+        self.assertEqual(replayed, refreshed)
+        self.assertEqual(self._row_counts(), counts_after_refresh)
+        self.assertEqual(refreshed["version"]["version_no"], 2)
+        self.assertEqual(refreshed["version"]["version_kind"], "imported")
+        self.assertEqual(refreshed["version"]["base_version_id"], original_version_id)
+        self.assertEqual(refreshed["skill"]["active_version_id"], refreshed["version"]["id"])
+        self.assertEqual(refreshed["activation_event"]["reason"], "manifest_refresh")
+        self.assertEqual(
+            refreshed["activation_event"]["from_version_id"],
+            original_version_id,
+        )
+        self.assertEqual(
+            refreshed["activation_event"]["to_version_id"],
+            refreshed["version"]["id"],
+        )
+        self.assertEqual(refreshed["skill"]["content"].count(work_content), 1)
+        self.assertEqual(refreshed["skill"]["content"].count(persona_content), 1)
+        self.assertNotIn("## work.md", refreshed["skill"]["content"])
+        self.assertNotIn("## persona.md", refreshed["skill"]["content"])
+        with lesson_manager.get_conn() as conn:
+            original_version = conn.execute(
+                "SELECT * FROM class_commentary_skill_versions WHERE id=?",
+                (original_version_id,),
+            ).fetchone()
+        self.assertEqual(original_version["content"], original_content)
+
+        (package / "persona.md").write_text(
+            persona_content + "\nUse one emoji.",
+            encoding="utf-8",
+        )
+        with self.assertRaises(
+            lesson_manager.ClassCommentarySkillActivationRequestConflict
+        ):
+            lesson_manager.refresh_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-refresh",
+                actor_user_id=self.teacher_one_id,
+                activation_request_id="manifest-refresh-v1",
+                expected_active_version_id=original_version_id,
+            )
+        self.assertEqual(self._row_counts(), counts_after_refresh)
+
+    def test_manifest_refresh_stale_active_version_has_no_writes(self):
+        source_path = self._source_path("teacher-stale.skill", "Original content")
+        imported = lesson_manager.import_class_commentary_skill_manifest(
+            organization_id=self.org_one_id,
+            skill_id="teacher-stale",
+            actor_user_id=self.teacher_one_id,
+            source_path=str(source_path),
+        )
+        counts_before = self._row_counts()
+
+        with self.assertRaises(lesson_manager.ClassCommentarySkillImportConflict):
+            lesson_manager.refresh_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-stale",
+                actor_user_id=self.teacher_one_id,
+                activation_request_id="manifest-refresh-unchanged",
+                expected_active_version_id=imported["active_version_id"],
+            )
+        self.assertEqual(self._row_counts(), counts_before)
+
+        source_path.write_text("Updated content", encoding="utf-8")
+        with self.assertRaises(lesson_manager.ClassCommentarySkillVersionConflict):
+            lesson_manager.refresh_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-stale",
+                actor_user_id=self.teacher_one_id,
+                activation_request_id="manifest-refresh-stale",
+                expected_active_version_id=imported["active_version_id"] + 100,
+            )
+
+        self.assertEqual(self._row_counts(), counts_before)
+
     def test_repeat_import_is_idempotent_and_changed_content_conflicts_without_writes(self):
         content = "# Teacher One\nUse short sentences.\n"
         source_path = self._source_path("teacher-one.skill", content)

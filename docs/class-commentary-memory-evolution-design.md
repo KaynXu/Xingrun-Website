@@ -685,7 +685,7 @@ UNIQUE(candidate_build_id, candidate_revision_id, memory_record_id)
 
 ### 8.10 `class_commentary_skill_activation_events`
 
-每次激活和回滚都创建 immutable event:
+每次激活, 回滚和显式 external manifest refresh 都创建 immutable event:
 
 - `id`.
 - `organization_id`.
@@ -695,7 +695,7 @@ UNIQUE(candidate_build_id, candidate_revision_id, memory_record_id)
 - `from_version_id` nullable.
 - `to_version_id`.
 - `actor_user_id`.
-- `reason`: `initial_import`, `candidate_approved`, `rollback`.
+- `reason`: `initial_import`, `candidate_approved`, `rollback`, `manifest_refresh`.
 - `evaluation_snapshot_json`.
 - `created_at`.
 
@@ -717,6 +717,8 @@ WHERE id = :skill_registry_id
 ```
 
 更新行数不是 1 时返回版本冲突, 不能覆盖另一个并发激活. 回滚本质上是指向旧版本的新 activation event.
+
+External manifest refresh 只能从当前 active imported version 创建新的 imported version. 它保留旧版本和所有 generation frozen snapshot, 使用独立 request ID 幂等查重, 再通过 expected active version CAS 切换指针. 首次 no-op refresh 必须拒绝, 不能制造没有新版本的 activation event.
 
 ### 8.11 `class_commentary_memory_records`
 
