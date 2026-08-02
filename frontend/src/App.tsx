@@ -16,6 +16,7 @@ import {
   getWorkspacePath,
   normalizeWorkspacePathname,
 } from './features/navigation/workspaceRoutes';
+import { requestClassCommentaryNavigation } from './classCommentaryNavigationGuard';
 import { ConsultationPage } from './features/consultation/ConsultationPage';
 
 import {
@@ -220,18 +221,34 @@ export default function App() {
     }
 
     const syncWorkspacePageFromHistory = () => {
+      const targetPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       const routePage = getWorkspacePageFromPathname(window.location.pathname);
-      if (routePage) {
-        setActivePage(routePage);
-        setShowLanding(false);
+      let restoredCurrentPath = false;
+      const proceed = () => {
+        if (restoredCurrentPath) {
+          window.history.pushState({}, '', targetPath);
+        }
+        if (routePage) {
+          setActivePage(routePage);
+          setShowLanding(false);
+          return;
+        }
+        setShowLanding(true);
+      };
+      if (!requestClassCommentaryNavigation(proceed)) {
+        const currentPath = showLanding
+          ? '/'
+          : getWorkspacePath(currentUser ? getWorkspacePageFallback(currentUser, activePage) : activePage);
+        window.history.replaceState({}, '', currentPath);
+        restoredCurrentPath = true;
         return;
       }
-      setShowLanding(true);
+      proceed();
     };
 
     window.addEventListener('popstate', syncWorkspacePageFromHistory);
     return () => window.removeEventListener('popstate', syncWorkspacePageFromHistory);
-  }, []);
+  }, [activePage, currentUser, showLanding]);
 
   const handleLogin = (t: string) => {
     persistLogin(t);
@@ -239,32 +256,54 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    clearWorkspaceAuth();
-    setShowLanding(false);
-    setActivePage('dashboard');
-    setMobileNavOpen(false);
-    setReviewTaskDockDismissed(false);
-    setReviewTaskDockAvailable(false);
-    if (typeof window !== 'undefined' && normalizeWorkspacePathname(window.location.pathname) !== '/') {
-      window.history.pushState({}, '', '/');
+    const proceed = () => {
+      clearWorkspaceAuth();
+      setShowLanding(false);
+      setActivePage('dashboard');
+      setMobileNavOpen(false);
+      setReviewTaskDockDismissed(false);
+      setReviewTaskDockAvailable(false);
+      if (typeof window !== 'undefined' && normalizeWorkspacePathname(window.location.pathname) !== '/') {
+        window.history.pushState({}, '', '/');
+      }
+    };
+    if (requestClassCommentaryNavigation(proceed)) {
+      proceed();
     }
   };
 
   const navigateWorkspacePage = useCallback((page: Page) => {
     const nextPage = currentUser ? getWorkspacePageFallback(currentUser, page) : 'dashboard';
-    if (!currentUser) {
-      setActivePage('dashboard');
-    } else {
-      setActivePage(getWorkspacePageFallback(currentUser, page));
-    }
-    setShowLanding(false);
-    if (typeof window !== 'undefined') {
-      const nextPath = getWorkspacePath(nextPage);
-      if (normalizeWorkspacePathname(window.location.pathname) !== nextPath) {
-        window.history.pushState({}, '', nextPath);
+    const proceed = () => {
+      if (!currentUser) {
+        setActivePage('dashboard');
+      } else {
+        setActivePage(getWorkspacePageFallback(currentUser, page));
       }
+      setShowLanding(false);
+      if (typeof window !== 'undefined') {
+        const nextPath = getWorkspacePath(nextPage);
+        if (normalizeWorkspacePathname(window.location.pathname) !== nextPath) {
+          window.history.pushState({}, '', nextPath);
+        }
+      }
+    };
+    if (requestClassCommentaryNavigation(proceed)) {
+      proceed();
     }
   }, [currentUser]);
+
+  const handleGoHome = useCallback(() => {
+    const proceed = () => {
+      setShowLanding(true);
+      if (typeof window !== 'undefined' && normalizeWorkspacePathname(window.location.pathname) !== '/') {
+        window.history.pushState({}, '', '/');
+      }
+    };
+    if (requestClassCommentaryNavigation(proceed)) {
+      proceed();
+    }
+  }, []);
 
   const handleReviewGenerationSuccess = () => {
     navigateWorkspacePage('review-generation');
@@ -387,12 +426,7 @@ export default function App() {
       title={pageTitle[activeWorkspacePage]}
       isDark={isDark}
       mobileNavOpen={mobileNavOpen}
-      onGoHome={() => {
-        setShowLanding(true);
-        if (typeof window !== 'undefined' && normalizeWorkspacePathname(window.location.pathname) !== '/') {
-          window.history.pushState({}, '', '/');
-        }
-      }}
+      onGoHome={handleGoHome}
       onToggleDarkMode={() => setIsDark((current) => !current)}
       onOpenSidebar={() => setMobileNavOpen(true)}
       onCloseSidebar={() => setMobileNavOpen(false)}

@@ -88,6 +88,7 @@ from lesson_manager import (
     ClassCommentaryMemoryNotEnabled,
     ClassCommentaryMemoryRetryRequestConflict,
     ClassCommentaryMemoryRevisionNotRetryable,
+    ClassCommentaryRevisionVersionConflict,
     ClassCommentarySkillActivationRequestConflict,
     ClassCommentarySkillCandidateNotReady,
     ClassCommentarySkillCandidateRequestConflict,
@@ -3251,6 +3252,19 @@ def _class_commentary_json_value(value: object, fallback: object):
         return json.loads(str(value or ""))
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _class_commentary_structured_feedback_error_payload(
+    exc: ClassCommentaryStructuredFeedbackValidationError,
+) -> dict:
+    payload = {"error": exc.code}
+    if exc.student_id is not None:
+        payload["student_id"] = int(exc.student_id)
+    if exc.field:
+        payload["field"] = str(exc.field)
+    if exc.limit is not None:
+        payload["limit"] = int(exc.limit)
+    return payload
 
 
 def _class_commentary_frozen_chat_request(generation: dict) -> dict:
@@ -10031,21 +10045,37 @@ def api_class_commentary_feedback_draft_put(task_id: int, generation_id: int):
     data, payload_error = _get_json_object_payload()
     if payload_error:
         return payload_error
-    if "feedback_schema_version" in (data or {}) or "student_feedback_items" in (data or {}):
+    structured_request = (
+        "feedback_schema_version" in (data or {})
+        or "student_feedback_items" in (data or {})
+    )
+    if structured_request and (
+        "feedback_text" in (data or {})
+        or "feedback_schema_version" not in (data or {})
+        or "student_feedback_items" not in (data or {})
+    ):
         return jsonify({"error": "feedback_schema_mismatch"}), 400
     if "expected_draft_version" not in (data or {}):
         return jsonify({"error": "expected_draft_version is required"}), 400
     based_on_revision_id = (data or {}).get("based_on_revision_id")
+    feedback_kwargs = (
+        {
+            "feedback_schema_version": (data or {}).get("feedback_schema_version"),
+            "student_feedback_items": (data or {}).get("student_feedback_items"),
+        }
+        if structured_request
+        else {"feedback_text": str((data or {}).get("feedback_text") or "")}
+    )
     try:
         draft = save_class_commentary_feedback_draft(
             task_id=int(task["id"]),
             generation_id=generation_id,
             teacher_user_id=int(user["id"]),
-            feedback_text=str((data or {}).get("feedback_text") or ""),
             expected_draft_version=(data or {}).get("expected_draft_version"),
             based_on_revision_id=(
                 int(based_on_revision_id) if based_on_revision_id is not None else None
             ),
+            **feedback_kwargs,
         )
     except ClassCommentaryDraftVersionConflict as exc:
         return jsonify({
@@ -10062,6 +10092,8 @@ def api_class_commentary_feedback_draft_put(task_id: int, generation_id: int):
         return jsonify({"error": exc.code}), 409
     except ClassCommentaryFeedbackSchemaMismatch as exc:
         return jsonify({"error": exc.code}), 400
+    except ClassCommentaryStructuredFeedbackValidationError as exc:
+        return jsonify(_class_commentary_structured_feedback_error_payload(exc)), 400
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(_serialize_class_commentary_draft_for_response(draft))
@@ -10078,33 +10110,37 @@ def api_class_commentary_feedback_confirm(task_id: int):
     data, payload_error = _get_json_object_payload()
     if payload_error:
         return payload_error
-    if "feedback_schema_version" in (data or {}) or "student_feedback_items" in (data or {}):
-        return jsonify({"error": "feedback_schema_mismatch"}), 400
     request_id = str((data or {}).get("request_id") or "").strip()
     if not request_id:
         return jsonify({"error": "request_id is required"}), 400
-    if "expected_draft_version" not in (data or {}):
-        return jsonify({"error": "expected_draft_version is required"}), 400
-    if not isinstance((data or {}).get("learn"), bool):
-        return jsonify({"error": "learn must be a boolean"}), 400
-    feedback_text = str((data or {}).get("feedback_text") or "")
-    if not feedback_text.strip():
-        return jsonify({"error": "feedback_text is required"}), 400
-    try:
-        generation_id = int((data or {}).get("generation_id") or 0)
-    except (TypeError, ValueError):
-        generation_id = 0
-    if generation_id <= 0:
-        return jsonify({"error": "generation_id is required"}), 400
+    feedback_kwargs = {
+        key: (data or {}).get(key)
+        for key in (
+            "feedback_text",
+            "feedback_schema_version",
+            "student_feedback_items",
+        )
+        if key in (data or {})
+    }
+    expected_latest_kwargs = (
+        {
+            "expected_latest_revision_id": (data or {}).get(
+                "expected_latest_revision_id"
+            )
+        }
+        if "expected_latest_revision_id" in (data or {})
+        else {}
+    )
     try:
         revision = confirm_class_commentary_feedback(
             task_id=int(task["id"]),
-            generation_id=generation_id,
+            generation_id=(data or {}).get("generation_id"),
             teacher_user_id=int(user["id"]),
-            feedback_text=feedback_text,
-            learn_requested=bool((data or {}).get("learn")),
+            learn_requested=(data or {}).get("learn"),
             expected_draft_version=(data or {}).get("expected_draft_version"),
             confirmation_request_id=request_id,
+            **feedback_kwargs,
+            **expected_latest_kwargs,
         )
     except ClassCommentaryMemoryNotEnabled as exc:
         return jsonify({"error": exc.code}), 409
@@ -10119,12 +10155,26 @@ def api_class_commentary_feedback_confirm(task_id: int):
                 else None
             ),
         }), 409
+    except ClassCommentaryRevisionVersionConflict as exc:
+        return jsonify({
+            "error": exc.code,
+            "current_latest_revision_id": exc.current_latest_revision_id,
+            "current_latest_revision": (
+                _serialize_class_commentary_revision_for_response(
+                    exc.current_latest_revision
+                )
+                if exc.current_latest_revision
+                else None
+            ),
+        }), 409
     except ClassCommentaryFeedbackSchemaUnsupported as exc:
         return jsonify({"error": exc.code}), 409
     except ClassCommentaryFeedbackSchemaInvalid as exc:
         return jsonify({"error": exc.code}), 409
     except ClassCommentaryFeedbackSchemaMismatch as exc:
         return jsonify({"error": exc.code}), 400
+    except ClassCommentaryStructuredFeedbackValidationError as exc:
+        return jsonify(_class_commentary_structured_feedback_error_payload(exc)), 400
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     memory_summary = None

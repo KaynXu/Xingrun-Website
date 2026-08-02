@@ -279,6 +279,44 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
                     )
                 self.assertEqual(caught.exception.code, expected_code)
 
+    def test_cross_student_validation_uses_longest_non_overlapping_name_spans(self):
+        generation = self._generation_for_roster([
+            {"student_id": 1, "student_name": "张三"},
+            {"student_id": 2, "student_name": "张三丰"},
+        ])
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback={
+                "schema_version": SCHEMA_VERSION,
+                "items": [
+                    {"student_id": 1, "feedback_text": "张三今天能主动验算."},
+                    {"student_id": 2, "feedback_text": "张三丰今天计算也很认真."},
+                ],
+            },
+            generation=generation,
+        )
+        self.assertEqual(
+            [item["student_id"] for item in accepted["student_feedback_items"]],
+            [1, 2],
+        )
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback={
+                    "schema_version": SCHEMA_VERSION,
+                    "items": [
+                        {"student_id": 1, "feedback_text": "张三丰今天计算很认真."},
+                        {"student_id": 2, "feedback_text": "张三丰今天也有进步."},
+                    ],
+                },
+                generation=generation,
+            )
+        self.assertEqual(
+            caught.exception.code,
+            "student_feedback_cross_student_reference",
+        )
+
     def test_validation_rejects_aggregate_text_over_30000_code_points(self):
         roster = [
             {"student_id": index, "student_name": f"学生{index:02d}"}

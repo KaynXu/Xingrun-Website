@@ -96,6 +96,31 @@ def _normalize_match_text(value: object) -> str:
     return re.sub(r"\s+", " ", normalized)
 
 
+def _match_normalized_student_name_spans(
+    text: str,
+    normalized_roster: list[tuple[int, int, str]],
+) -> list[tuple[int, int, int]]:
+    candidates: list[tuple[int, int, int, int]] = []
+    for position, student_id, student_name in normalized_roster:
+        start = text.find(student_name)
+        while start >= 0:
+            candidates.append((start, start + len(student_name), position, student_id))
+            start = text.find(student_name, start + 1)
+
+    accepted_spans: list[tuple[int, int, int]] = []
+    for start, end, _, student_id in sorted(
+        candidates,
+        key=lambda item: (-(item[1] - item[0]), item[0], item[2]),
+    ):
+        if any(
+            start < accepted_end and end > accepted_start
+            for accepted_start, accepted_end, _ in accepted_spans
+        ):
+            continue
+        accepted_spans.append((start, end, student_id))
+    return accepted_spans
+
+
 def match_class_commentary_eligible_student_ids(
     *,
     transcript_text: object,
@@ -122,23 +147,13 @@ def match_class_commentary_eligible_student_ids(
         normalized_roster.append((position, student_id, student_name))
 
     transcript = _normalize_match_text(transcript_text)
-    candidates: list[tuple[int, int, int, int]] = []
-    for position, student_id, student_name in normalized_roster:
-        start = transcript.find(student_name)
-        while start >= 0:
-            candidates.append((start, start + len(student_name), position, student_id))
-            start = transcript.find(student_name, start + 1)
-
-    accepted_spans: list[tuple[int, int]] = []
-    accepted_ids: set[int] = set()
-    for start, end, _, student_id in sorted(
-        candidates,
-        key=lambda item: (-(item[1] - item[0]), item[0], item[2]),
-    ):
-        if any(start < accepted_end and end > accepted_start for accepted_start, accepted_end in accepted_spans):
-            continue
-        accepted_spans.append((start, end))
-        accepted_ids.add(student_id)
+    accepted_ids = {
+        student_id
+        for _, _, student_id in _match_normalized_student_name_spans(
+            transcript,
+            normalized_roster,
+        )
+    }
 
     eligible_ids = [
         student_id
@@ -296,6 +311,10 @@ def canonicalize_class_commentary_structured_feedback(
 
     eligible_ids, names_by_id = _parse_frozen_scope(generation)
     eligible_id_set = set(eligible_ids)
+    normalized_roster = [
+        (position, student_id, _normalize_match_text(student_name))
+        for position, (student_id, student_name) in enumerate(names_by_id.items())
+    ]
     items_by_id: dict[int, str] = {}
     for item in envelope.items:
         student_id = int(item.student_id)
@@ -329,15 +348,19 @@ def canonicalize_class_commentary_structured_feedback(
                 limit=CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT,
             )
         normalized_match_text = _normalize_match_text(normalized_text)
-        for other_student_id, other_name in names_by_id.items():
-            if other_student_id == student_id:
-                continue
-            if _normalize_match_text(other_name) in normalized_match_text:
-                raise ClassCommentaryStructuredFeedbackValidationError(
-                    "student_feedback_cross_student_reference",
-                    student_id=student_id,
-                    field="feedback_text",
-                )
+        matched_student_ids = {
+            matched_student_id
+            for _, _, matched_student_id in _match_normalized_student_name_spans(
+                normalized_match_text,
+                normalized_roster,
+            )
+        }
+        if any(matched_student_id != student_id for matched_student_id in matched_student_ids):
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_cross_student_reference",
+                student_id=student_id,
+                field="feedback_text",
+            )
         items_by_id[student_id] = normalized_text
 
     if set(items_by_id) != eligible_id_set:
@@ -384,6 +407,91 @@ def canonicalize_class_commentary_structured_feedback(
         "structured_feedback_hash": canonical_hash,
         "derived_feedback_text": derived_text,
         "student_feedback_items": response_items,
+    }
+
+
+def canonicalize_class_commentary_structured_feedback_replay(
+    *,
+    structured_feedback: object,
+    frozen_structured_feedback: object,
+) -> dict:
+    try:
+        frozen_parsed = _parse_json(frozen_structured_feedback)
+        frozen_envelope = _StudentFeedbackEnvelopeV1.model_validate(frozen_parsed)
+        parsed = _parse_json(structured_feedback)
+        envelope = _StudentFeedbackEnvelopeV1.model_validate(parsed)
+    except (TypeError, json.JSONDecodeError, ValidationError, RecursionError) as exc:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid",
+            reason="response does not match the frozen structured feedback schema",
+        ) from exc
+
+    frozen_student_ids: list[int] = []
+    for item in frozen_envelope.items:
+        student_id = int(item.student_id)
+        if student_id <= 0 or student_id in frozen_student_ids:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "structured_feedback_invalid",
+                reason="frozen structured feedback scope is invalid",
+            )
+        frozen_student_ids.append(student_id)
+    if not frozen_student_ids:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid",
+            reason="frozen structured feedback scope is empty",
+        )
+
+    frozen_student_id_set = set(frozen_student_ids)
+    items_by_id: dict[int, str] = {}
+    for item in envelope.items:
+        student_id = int(item.student_id)
+        if student_id <= 0 or student_id not in frozen_student_id_set:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_unknown_student",
+                student_id=student_id if student_id > 0 else None,
+                field="student_id",
+            )
+        if student_id in items_by_id:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_duplicate_student",
+                student_id=student_id,
+                field="student_id",
+            )
+        normalized_text = normalize_class_commentary_feedback_text(item.feedback_text)
+        if not normalized_text:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_empty",
+                student_id=student_id,
+                field="feedback_text",
+            )
+        if len(normalized_text) > CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT:
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_too_long",
+                student_id=student_id,
+                field="feedback_text",
+                limit=CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT,
+            )
+        items_by_id[student_id] = normalized_text
+
+    if set(items_by_id) != frozen_student_id_set:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "student_feedback_coverage_mismatch"
+        )
+    canonical_envelope = {
+        "schema_version": CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+        "items": [
+            {
+                "student_id": student_id,
+                "feedback_text": items_by_id[student_id],
+            }
+            for student_id in frozen_student_ids
+        ],
+    }
+    canonical_json = _canonical_json(canonical_envelope)
+    return {
+        "feedback_schema_version": CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+        "structured_feedback_json": canonical_json,
+        "structured_feedback_hash": _content_hash(canonical_json),
     }
 
 

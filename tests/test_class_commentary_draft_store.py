@@ -1,9 +1,11 @@
 import hashlib
+import json
 import os
 import tempfile
 import unittest
 
 import lesson_manager
+from class_commentary import CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
 
 
 class ClassCommentaryDraftStoreTest(unittest.TestCase):
@@ -103,6 +105,68 @@ class ClassCommentaryDraftStoreTest(unittest.TestCase):
             )
             return int(cursor.lastrowid)
 
+    def _promote_generation_to_structured(self, generation, feedback_by_student_id):
+        roster = json.loads(generation["attending_roster_snapshot_json"])
+        eligible_ids = [
+            int(item["student_id"])
+            for item in roster
+            if int(item["student_id"]) in feedback_by_student_id
+        ]
+        structured_payload = {
+            "schema_version": "class_commentary.student_feedback.v1",
+            "items": [
+                {
+                    "student_id": student_id,
+                    "feedback_text": feedback_by_student_id[student_id],
+                }
+                for student_id in eligible_ids
+            ],
+        }
+        structured_json = json.dumps(
+            structured_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        structured_hash = hashlib.sha256(structured_json.encode("utf-8")).hexdigest()
+        names_by_id = {
+            int(item["student_id"]): str(item["student_name"])
+            for item in roster
+        }
+        derived_text = "\n\n".join(
+            f"{names_by_id[student_id]}:\n{feedback_by_student_id[student_id]}"
+            for student_id in eligible_ids
+        )
+        scope_hash = lesson_manager.build_class_commentary_eligible_scope_hash(
+            transcript_hash=generation["confirmed_transcript_hash"],
+            roster_hash=generation["attending_roster_hash"],
+            eligible_student_ids=eligible_ids,
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version='class_commentary.student_feedback.v1',
+                    structured_feedback_json=?, structured_feedback_hash=?,
+                    generated_feedback_text=?, eligible_student_ids_json=?,
+                    eligible_student_scope_hash=?,
+                    student_mention_matcher_version='class_commentary.student_name_matcher.v1',
+                    response_format_json='{"type":"json_object"}',
+                    student_history_memory_mode='disabled_v1', prompt_version=?
+                WHERE id=?
+                """,
+                (
+                    structured_json,
+                    structured_hash,
+                    derived_text,
+                    json.dumps(eligible_ids, separators=(",", ":")),
+                    scope_hash,
+                    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+                    generation["id"],
+                ),
+            )
+        return lesson_manager.get_class_commentary_generation(generation["id"])
+
     def test_initial_save_and_update_increment_version_and_refresh_hash(self):
         self.assertIsNone(
             lesson_manager.get_class_commentary_feedback_draft(
@@ -173,6 +237,108 @@ class ClassCommentaryDraftStoreTest(unittest.TestCase):
         )
         self.assertEqual(saved, current_draft)
         self.assertEqual(saved["feedback_text"], current_text)
+
+    def test_structured_draft_canonicalizes_items_and_conflicts_without_text_fallback(self):
+        first_id = int(self.roster[0]["student_id"])
+        second_id = int(self.roster[1]["student_id"])
+        generation = self._promote_generation_to_structured(
+            self.generation_a,
+            {
+                first_id: "计算步骤更稳定.",
+                second_id: "验算意识有进步.",
+            },
+        )
+        first = lesson_manager.save_class_commentary_feedback_draft(
+            task_id=self.task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=[
+                {"student_id": second_id, "feedback_text": "继续主动验算.  \n"},
+                {"student_id": first_id, "feedback_text": "计算表达更清晰."},
+            ],
+            expected_draft_version=0,
+        )
+        expected_payload = {
+            "schema_version": "class_commentary.student_feedback.v1",
+            "items": [
+                {"student_id": first_id, "feedback_text": "计算表达更清晰."},
+                {"student_id": second_id, "feedback_text": "继续主动验算."},
+            ],
+        }
+        expected_json = json.dumps(
+            expected_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        expected_hash = hashlib.sha256(expected_json.encode("utf-8")).hexdigest()
+        self.assertEqual(first["feedback_schema_version"], expected_payload["schema_version"])
+        self.assertEqual(first["structured_feedback_json"], expected_json)
+        self.assertEqual(first["content_hash"], expected_hash)
+        self.assertEqual(
+            first["feedback_text"],
+            "小王:\n计算表达更清晰.\n\n小李:\n继续主动验算.",
+        )
+        self.assertEqual(first["draft_version"], 1)
+
+        current = lesson_manager.save_class_commentary_feedback_draft(
+            task_id=self.task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=[
+                {"student_id": first_id, "feedback_text": "计算表达稳定."},
+                {"student_id": second_id, "feedback_text": "继续主动验算."},
+            ],
+            expected_draft_version=1,
+        )
+        with self.assertRaises(lesson_manager.ClassCommentaryDraftVersionConflict) as stale:
+            lesson_manager.save_class_commentary_feedback_draft(
+                task_id=self.task["id"],
+                generation_id=generation["id"],
+                teacher_user_id=self.teacher["id"],
+                feedback_schema_version="class_commentary.student_feedback.v1",
+                student_feedback_items=[
+                    {"student_id": first_id, "feedback_text": "旧标签页内容."},
+                    {"student_id": second_id, "feedback_text": "继续主动验算."},
+                ],
+                expected_draft_version=1,
+            )
+        self.assertEqual(stale.exception.current_draft, current)
+        with self.assertRaises(lesson_manager.ClassCommentaryFeedbackSchemaMismatch):
+            lesson_manager.save_class_commentary_feedback_draft(
+                task_id=self.task["id"],
+                generation_id=generation["id"],
+                teacher_user_id=self.teacher["id"],
+                feedback_text=current["feedback_text"],
+                expected_draft_version=2,
+            )
+        with self.assertRaises(
+            lesson_manager.ClassCommentaryStructuredFeedbackValidationError
+        ) as invalid:
+            lesson_manager.save_class_commentary_feedback_draft(
+                task_id=self.task["id"],
+                generation_id=generation["id"],
+                teacher_user_id=self.teacher["id"],
+                feedback_schema_version="class_commentary.student_feedback.v1",
+                student_feedback_items=[
+                    {
+                        "student_id": first_id,
+                        "student_name": "客户端姓名",
+                        "feedback_text": "不能信任姓名.",
+                    },
+                    {"student_id": second_id, "feedback_text": "继续主动验算."},
+                ],
+                expected_draft_version=2,
+            )
+        self.assertEqual(invalid.exception.code, "structured_feedback_invalid")
+        self.assertEqual(
+            lesson_manager.get_class_commentary_feedback_draft(
+                self.task["id"], generation["id"], self.teacher["id"]
+            ),
+            current,
+        )
 
     def test_generation_drafts_are_independent_and_scope_mismatches_are_rejected(self):
         draft_a = lesson_manager.save_class_commentary_feedback_draft(

@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import lesson_manager
 from class_commentary import CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
@@ -43,6 +44,7 @@ class ClassCommentaryConfirmationStoreTest(unittest.TestCase):
             source_path="/skills/confirmation-store-teacher/SKILL.md",
             content="先写学生本次表现, 再给一条可执行建议.",
         )
+        self.skill_registry_id = imported["registry_id"]
         self.generated_feedback = "小王: 计算过程更稳定, 继续保持."
         self.generation = lesson_manager.reserve_class_commentary_generation(
             task_id=self.task["id"],
@@ -117,6 +119,65 @@ class ClassCommentaryConfirmationStoreTest(unittest.TestCase):
                 ),
             ).fetchone()
         return dict(row) if row else None
+
+    def _promote_generation_to_structured(self, generation, feedback_text):
+        generation = lesson_manager.get_class_commentary_generation(generation["id"])
+        student_id = int(self.roster[0]["student_id"])
+        payload = {
+            "schema_version": "class_commentary.student_feedback.v1",
+            "items": [{"student_id": student_id, "feedback_text": feedback_text}],
+        }
+        structured_json = self._canonical_json(payload)
+        structured_hash = hashlib.sha256(structured_json.encode("utf-8")).hexdigest()
+        derived_text = f"{self.roster[0]['student_name']}:\n{feedback_text}"
+        scope_hash = lesson_manager.build_class_commentary_eligible_scope_hash(
+            transcript_hash=generation["confirmed_transcript_hash"],
+            roster_hash=generation["attending_roster_hash"],
+            eligible_student_ids=[student_id],
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET feedback_schema_version='class_commentary.student_feedback.v1',
+                    structured_feedback_json=?, structured_feedback_hash=?,
+                    generated_feedback_text=?, eligible_student_ids_json=?,
+                    eligible_student_scope_hash=?,
+                    student_mention_matcher_version='class_commentary.student_name_matcher.v1',
+                    response_format_json='{"type":"json_object"}',
+                    student_history_memory_mode='disabled_v1', prompt_version=?
+                WHERE id=?
+                """,
+                (
+                    structured_json,
+                    structured_hash,
+                    derived_text,
+                    self._canonical_json([student_id]),
+                    scope_hash,
+                    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+                    generation["id"],
+                ),
+            )
+        return lesson_manager.get_class_commentary_generation(generation["id"])
+
+    def _create_structured_generation(self, request_id, feedback_text):
+        generation = lesson_manager.reserve_class_commentary_generation(
+            task_id=self.task["id"],
+            generation_request_id=request_id,
+            skill_registry_id=self.skill_registry_id,
+            attending_roster=self.roster,
+            model_provider="deepseek",
+            model_name="deepseek-chat",
+            model_parameters={"temperature": 0.2},
+            prompt_version="class-commentary-v1",
+            prompt_payload={"messages": [{"role": "user", "content": "生成课堂反馈"}]},
+            memory_context={"records": [], "rendered_text": ""},
+        )
+        generation = lesson_manager.complete_class_commentary_generation(
+            generation["id"],
+            f"{self.roster[0]['student_name']}: {feedback_text}",
+        )
+        return self._promote_generation_to_structured(generation, feedback_text)
 
     def test_confirm_without_learning_atomically_creates_revision_draft_and_task_state(self):
         final_feedback = "小王: 计算过程更稳定, 建议每次完成后主动验算."
@@ -282,6 +343,220 @@ class ClassCommentaryConfirmationStoreTest(unittest.TestCase):
         self.assertEqual(second_draft["draft_version"], 2)
         self.assertEqual(second_draft["based_on_revision_id"], second_revision["id"])
         self.assertEqual(second_draft["feedback_text"], revised_feedback)
+
+    def test_structured_confirmation_replays_before_both_cas_and_reports_task_conflict(self):
+        student_id = int(self.roster[0]["student_id"])
+        generation = self._promote_generation_to_structured(
+            self.generation,
+            "计算过程更稳定.",
+        )
+        first_items = [
+            {"student_id": student_id, "feedback_text": "继续保持主动验算.  \n"}
+        ]
+        first = lesson_manager.confirm_class_commentary_feedback(
+            task_id=self.task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=first_items,
+            learn_requested=False,
+            expected_draft_version=0,
+            expected_latest_revision_id=None,
+            confirmation_request_id="structured-confirmation-first",
+        )
+        first_draft_snapshot = dict(first["draft"])
+        self.assertEqual(first["feedback_schema_version"], "class_commentary.student_feedback.v1")
+        self.assertEqual(first["final_feedback_text"], "小王:\n继续保持主动验算.")
+        self.assertEqual(first["structured_feedback_hash"], first["draft"]["content_hash"])
+        self.assertEqual(first["confirmed_draft_version"], 1)
+
+        edited = lesson_manager.save_class_commentary_feedback_draft(
+            task_id=self.task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=[
+                {"student_id": student_id, "feedback_text": "确认后继续编辑的草稿."}
+            ],
+            expected_draft_version=1,
+            based_on_revision_id=first["id"],
+        )
+        self.assertEqual(edited["draft_version"], 2)
+
+        second_generation = self._create_structured_generation(
+            "structured-confirmation-second-generation",
+            "新的生成反馈.",
+        )
+        second = lesson_manager.confirm_class_commentary_feedback(
+            task_id=self.task["id"],
+            generation_id=second_generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=[
+                {"student_id": student_id, "feedback_text": "第二次确认终稿."}
+            ],
+            learn_requested=False,
+            expected_draft_version=0,
+            expected_latest_revision_id=first["id"],
+            confirmation_request_id="structured-confirmation-second",
+        )
+        self.assertEqual(second["previous_revision_id"], first["id"])
+
+        replayed = lesson_manager.confirm_class_commentary_feedback(
+            task_id=self.task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=[
+                {"student_id": student_id, "feedback_text": "继续保持主动验算."}
+            ],
+            learn_requested=False,
+            expected_draft_version=0,
+            expected_latest_revision_id=None,
+            confirmation_request_id="structured-confirmation-first",
+        )
+        self.assertEqual(replayed["id"], first["id"])
+        self.assertEqual(replayed["draft"], first_draft_snapshot)
+        self.assertEqual(self._draft_row()["draft_version"], 2)
+        with self.assertRaises(lesson_manager.ClassCommentaryConfirmationRequestConflict):
+            lesson_manager.confirm_class_commentary_feedback(
+                task_id=self.task["id"],
+                generation_id=generation["id"],
+                teacher_user_id=self.teacher["id"],
+                feedback_schema_version="class_commentary.student_feedback.v1",
+                student_feedback_items=[
+                    {"student_id": student_id, "feedback_text": "同 key 的不同终稿."}
+                ],
+                learn_requested=False,
+                expected_draft_version=0,
+                expected_latest_revision_id=None,
+                confirmation_request_id="structured-confirmation-first",
+            )
+
+        with self.assertRaises(
+            lesson_manager.ClassCommentaryRevisionVersionConflict
+        ) as conflict:
+            lesson_manager.confirm_class_commentary_feedback(
+                task_id=self.task["id"],
+                generation_id=generation["id"],
+                teacher_user_id=self.teacher["id"],
+                feedback_schema_version="class_commentary.student_feedback.v1",
+                student_feedback_items=[
+                    {"student_id": student_id, "feedback_text": "基于旧 task revision."}
+                ],
+                learn_requested=False,
+                expected_draft_version=2,
+                expected_latest_revision_id=first["id"],
+                confirmation_request_id="structured-confirmation-stale-task",
+            )
+        self.assertEqual(conflict.exception.current_latest_revision_id, second["id"])
+        self.assertEqual(
+            conflict.exception.current_latest_revision["final_feedback_text"],
+            second["final_feedback_text"],
+        )
+        self.assertEqual(len(self._revision_rows()), 2)
+        self.assertEqual(self._draft_row()["draft_version"], 2)
+
+    def test_structured_confirmation_exact_replay_ignores_later_generation_corruption(self):
+        student_id = int(self.roster[0]["student_id"])
+        generation = self._promote_generation_to_structured(
+            self.generation,
+            "计算过程更稳定.",
+        )
+        request_items = [
+            {"student_id": student_id, "feedback_text": "继续保持主动验算.  \n"}
+        ]
+        first = lesson_manager.confirm_class_commentary_feedback(
+            task_id=self.task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=request_items,
+            learn_requested=False,
+            expected_draft_version=0,
+            expected_latest_revision_id=None,
+            confirmation_request_id="structured-confirmation-corrupt-generation-replay",
+        )
+        first_draft_snapshot = dict(first["draft"])
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET structured_feedback_hash='tampered',
+                    generated_feedback_text='tampered derived text',
+                    eligible_student_scope_hash='tampered'
+                WHERE id=?
+                """,
+                (generation["id"],),
+            )
+
+        replayed = lesson_manager.confirm_class_commentary_feedback(
+            task_id=self.task["id"],
+            generation_id=generation["id"],
+            teacher_user_id=self.teacher["id"],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            student_feedback_items=[
+                {"student_id": student_id, "feedback_text": "继续保持主动验算."}
+            ],
+            learn_requested=False,
+            expected_draft_version=0,
+            expected_latest_revision_id=None,
+            confirmation_request_id="structured-confirmation-corrupt-generation-replay",
+        )
+
+        self.assertEqual(replayed["id"], first["id"])
+        self.assertEqual(replayed["draft"], first_draft_snapshot)
+        self.assertEqual(len(self._revision_rows()), 1)
+        with self.assertRaises(lesson_manager.ClassCommentaryConfirmationRequestConflict):
+            lesson_manager.confirm_class_commentary_feedback(
+                task_id=self.task["id"],
+                generation_id=generation["id"],
+                teacher_user_id=self.teacher["id"],
+                feedback_schema_version="class_commentary.student_feedback.v1",
+                student_feedback_items=[
+                    {"student_id": student_id, "feedback_text": "同 key 的不同终稿."}
+                ],
+                learn_requested=False,
+                expected_draft_version=0,
+                expected_latest_revision_id=None,
+                confirmation_request_id="structured-confirmation-corrupt-generation-replay",
+            )
+
+    def test_structured_learning_job_failure_rolls_back_revision_draft_and_task(self):
+        student_id = int(self.roster[0]["student_id"])
+        generation = self._promote_generation_to_structured(
+            self.generation,
+            "计算过程更稳定.",
+        )
+        with patch.object(
+            lesson_manager,
+            "_class_commentary_memory_enabled",
+            return_value=True,
+        ), patch.object(
+            lesson_manager,
+            "_create_class_commentary_memory_extraction_job_conn",
+            side_effect=RuntimeError("forced memory job failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "forced memory job failure"):
+                lesson_manager.confirm_class_commentary_feedback(
+                    task_id=self.task["id"],
+                    generation_id=generation["id"],
+                    teacher_user_id=self.teacher["id"],
+                    feedback_schema_version="class_commentary.student_feedback.v1",
+                    student_feedback_items=[
+                        {"student_id": student_id, "feedback_text": "老师确认终稿."}
+                    ],
+                    learn_requested=True,
+                    expected_draft_version=0,
+                    expected_latest_revision_id=None,
+                    confirmation_request_id="structured-confirmation-memory-rollback",
+                )
+        self.assertEqual(self._revision_rows(), [])
+        self.assertIsNone(self._draft_row())
+        task = lesson_manager.get_class_commentary_task(self.task["id"])
+        self.assertIsNone(task["latest_revision_id"])
+        self.assertEqual(task["feedback_revision_no"], 0)
+        self.assertEqual(task["final_feedback_text"], "")
 
     def test_legacy_confirmation_rejects_task_with_structured_latest_revision(self):
         self._confirm(
