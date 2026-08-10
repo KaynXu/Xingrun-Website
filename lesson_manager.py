@@ -32,11 +32,13 @@ from typing import Optional
 
 from config_runtime import get_runtime_config
 from class_commentary import (
-    CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES,
-    CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+    get_class_commentary_structured_prompt_contract,
     read_class_commentary_skill_package_content,
 )
 from class_commentary_feedback_schema import (
+    CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
     CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1,
@@ -48,6 +50,7 @@ from class_commentary_feedback_schema import (
     canonicalize_class_commentary_structured_feedback,
     canonicalize_class_commentary_structured_feedback_replay,
     match_class_commentary_eligible_student_ids,
+    resolve_class_commentary_attending_roster_student_ids,
     validate_class_commentary_structured_generation_contract,
 )
 from class_commentary_memory_privacy import validate_class_commentary_memory_privacy
@@ -11026,13 +11029,18 @@ def _validate_class_commentary_generation_execution_contract(
         "temperature",
     }
     messages = prompt_payload.get("messages")
+    structured_system_prompt, structured_output_rules = (
+        get_class_commentary_structured_prompt_contract(
+            str(generation_record["prompt_version"] or "")
+        )
+    )
     if (
         set(prompt_payload) != expected_keys
         or not isinstance(messages, list)
         or len(messages) != 2
         or messages[0] != {
             "role": "system",
-            "content": CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT,
+            "content": structured_system_prompt,
         }
         or not isinstance(messages[1], dict)
         or set(messages[1]) != {"role", "content"}
@@ -11069,7 +11077,7 @@ def _validate_class_commentary_generation_execution_contract(
         if type(student_id) is int
     ]
     expected_output_rules = "\n".join(
-        f"- {rule}" for rule in CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES
+        f"- {rule}" for rule in structured_output_rules
     )
     if (
         not isinstance(current_task_facts, dict)
@@ -11252,15 +11260,36 @@ def reserve_class_commentary_generation(
         student_history_memory_mode = ""
         if structured_feedback_enabled:
             feedback_schema_version = CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
-            student_mention_matcher_version = CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1
             response_format = dict(CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT)
             student_history_memory_mode = (
                 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
             )
-            eligible_student_ids = match_class_commentary_eligible_student_ids(
-                transcript_text=transcript_snapshot,
-                roster=roster_snapshot,
-            )
+            if normalized_prompt_version == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION:
+                student_mention_matcher_version = (
+                    CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1
+                )
+                eligible_student_ids = match_class_commentary_eligible_student_ids(
+                    transcript_text=transcript_snapshot,
+                    roster=roster_snapshot,
+                )
+            elif (
+                normalized_prompt_version
+                == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2
+            ):
+                if not attending_roster_explicit:
+                    raise ValueError(
+                        "structured feedback attending roster scope must be explicit"
+                    )
+                student_mention_matcher_version = (
+                    CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
+                )
+                eligible_student_ids = (
+                    resolve_class_commentary_attending_roster_student_ids(
+                        roster=roster_snapshot,
+                    )
+                )
+            else:
+                raise ValueError("structured feedback prompt version is invalid")
             eligible_student_scope_hash = build_class_commentary_eligible_scope_hash(
                 transcript_hash=transcript_hash,
                 roster_hash=roster_hash,
@@ -11272,6 +11301,7 @@ def reserve_class_commentary_generation(
                     {
                         "class_id": class_id,
                         "attending_roster_hash": roster_hash,
+                        "attending_roster_explicit": attending_roster_explicit,
                         "attending_roster_snapshot_json": roster_snapshot_json,
                         "confirmed_transcript_hash": transcript_hash,
                         "confirmed_transcript_snapshot": transcript_snapshot,

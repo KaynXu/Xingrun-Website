@@ -251,8 +251,11 @@ function getClassCommentaryGenerationErrorMessage(error: unknown): string {
     if (error.payload?.error === 'structured_feedback_invalid') {
       return '反馈结构校验失败, 请重新生成';
     }
+    if (error.payload?.error === 'attending_student_ids is required') {
+      return '请至少选择一名到课学生后重新生成';
+    }
     if (error.payload?.error === 'student_feedback_no_eligible_students') {
-      return '转写中没有识别到到课学生全名, 请补充学生全名后重新生成';
+      return '没有可生成的到课学生, 请检查到课名单后重新生成';
     }
     if (error.payload?.error === 'student_roster_name_ambiguous') {
       return '到课名单存在无法区分的重名, 请调整到课名单后重新生成';
@@ -908,7 +911,10 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const canCreateManualTextTask = !task || task.status === 'uploaded' || task.status === 'transcribing';
   const canCreateTask = !loadingInitial && !busy && !generationLoading && Boolean(selectedClassId && audioFile);
   const canSaveTranscript = !isTaskReadOnly && !busy && !generationLoading && canUseTranscript && hasTranscriptText;
-  const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && (!classStudents.length || attendingStudentIds.length > 0);
+  const attendanceReadyForGeneration = capabilities.structured_feedback_enabled
+    ? attendingStudentIds.length > 0
+    : !classStudents.length || attendingStudentIds.length > 0;
+  const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && attendanceReadyForGeneration;
   const hasSucceededGeneration = selectedGeneration?.status === 'succeeded';
   const feedbackContentValid = structuredFeedbackMode
     ? Boolean(
@@ -1208,7 +1214,10 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setErrorMessage('请先确认转写文本');
       return;
     }
-    if (classStudents.length && !attendingStudentIds.length) {
+    if (
+      !attendingStudentIds.length
+      && (capabilities.structured_feedback_enabled || classStudents.length)
+    ) {
       setErrorMessage('请选择到课学生');
       return;
     }

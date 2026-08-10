@@ -11,12 +11,14 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationErro
 
 from class_commentary import (
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
     normalize_class_commentary_feedback_text,
 )
 
 
 CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1 = "class_commentary.student_feedback.v1"
 CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1 = "class_commentary.student_name_matcher.v1"
+CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1 = "class_commentary.attending_roster_scope.v1"
 CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT = {"type": "json_object"}
 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1 = "disabled_v1"
 CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT = 2000
@@ -121,11 +123,9 @@ def _match_normalized_student_name_spans(
     return accepted_spans
 
 
-def match_class_commentary_eligible_student_ids(
-    *,
-    transcript_text: object,
+def _normalize_class_commentary_scope_roster(
     roster: object,
-) -> list[int]:
+) -> list[tuple[int, int, str]]:
     if not isinstance(roster, list):
         raise ValueError("structured feedback roster must be a list")
     normalized_roster: list[tuple[int, int, str]] = []
@@ -145,6 +145,15 @@ def match_class_commentary_eligible_student_ids(
         student_ids_seen.add(student_id)
         names_seen.add(student_name)
         normalized_roster.append((position, student_id, student_name))
+    return normalized_roster
+
+
+def match_class_commentary_eligible_student_ids(
+    *,
+    transcript_text: object,
+    roster: object,
+) -> list[int]:
+    normalized_roster = _normalize_class_commentary_scope_roster(roster)
 
     transcript = _normalize_match_text(transcript_text)
     accepted_ids = {
@@ -160,6 +169,17 @@ def match_class_commentary_eligible_student_ids(
         for _, student_id, _ in normalized_roster
         if student_id in accepted_ids
     ]
+    if not eligible_ids:
+        raise ClassCommentaryStudentScopeError("student_feedback_no_eligible_students")
+    return eligible_ids
+
+
+def resolve_class_commentary_attending_roster_student_ids(
+    *,
+    roster: object,
+) -> list[int]:
+    normalized_roster = _normalize_class_commentary_scope_roster(roster)
+    eligible_ids = [student_id for _, student_id, _ in normalized_roster]
     if not eligible_ids:
         raise ClassCommentaryStudentScopeError("student_feedback_no_eligible_students")
     return eligible_ids
@@ -236,10 +256,25 @@ def validate_class_commentary_structured_generation_contract(
         for snapshot_field, hash_field in snapshot_hash_fields
     ):
         raise ValueError("structured feedback core snapshot hash is invalid")
-    eligible_ids, _ = _parse_frozen_scope(generation)
+    eligible_ids, names_by_id = _parse_frozen_scope(generation)
     matcher_version = str(generation.get("student_mention_matcher_version") or "")
-    if matcher_version != CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1:
-        raise ValueError("structured feedback matcher contract is invalid")
+    prompt_version = str(generation.get("prompt_version") or "")
+    contract_pair = (matcher_version, prompt_version)
+    if contract_pair == (
+        CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1,
+        CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    ):
+        pass
+    elif contract_pair == (
+        CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
+        CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+    ):
+        if eligible_ids != list(names_by_id):
+            raise ValueError("structured feedback attending roster scope is invalid")
+        if not bool(generation.get("attending_roster_explicit")):
+            raise ValueError("structured feedback attending roster scope must be explicit")
+    else:
+        raise ValueError("structured feedback prompt and scope contract is invalid")
     response_format = _parse_json(generation.get("response_format_json"))
     if response_format != CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT:
         raise ValueError("structured feedback response format contract is invalid")
@@ -248,11 +283,6 @@ def validate_class_commentary_structured_generation_contract(
         != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
     ):
         raise ValueError("structured feedback memory contract is invalid")
-    if (
-        str(generation.get("prompt_version") or "")
-        != CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
-    ):
-        raise ValueError("structured feedback prompt contract is invalid")
     expected_scope_hash = build_class_commentary_eligible_scope_hash(
         transcript_hash=str(generation.get("confirmed_transcript_hash") or ""),
         roster_hash=str(generation.get("attending_roster_hash") or ""),
