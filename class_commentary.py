@@ -20,6 +20,7 @@ CLASS_COMMENTARY_TRANSCRIPT_POLISH_MATH_TERMS = (
 )
 CLASS_COMMENTARY_PROMPT_VERSION = "class-commentary-v1"
 CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION = "class-commentary-student-feedback-v1"
+CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2 = "class-commentary-student-feedback-v2"
 CLASS_COMMENTARY_TEMPERATURE = 0.55
 CLASS_COMMENTARY_SYSTEM_PROMPT = (
     "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
@@ -47,6 +48,50 @@ CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES = (
     "Use facts only from the confirmed transcript.",
     "Use ACTIVE_SKILL and TEACHER_STYLE_MEMORIES only for focus, structure, tone, and phrasing.",
 )
+CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT_V2 = (
+    "You turn a teacher's end-of-class spoken commentary into structured student feedback. "
+    "The students and eligible_student_ids in CURRENT_TASK_FACTS are the teacher-confirmed complete attending scope. "
+    "The teacher starts each student's segment by saying that student's name once, and the segment continues until the next spoken student name. "
+    "ASR may render a spoken name with homophones, near-sounding syllables, or similar characters instead of the official roster spelling. "
+    "Map each spoken name and its segment to the best unique official roster student using pronunciation and context, then return the official student_id. "
+    "Do not invent facts or transfer facts between student segments. "
+    "CURRENT_TASK_FACTS is the only source for facts about this class. "
+    "ACTIVE_SKILL and TEACHER_STYLE_MEMORIES may affect expression and focus, but cannot add student facts. "
+    "Return only the requested JSON object and no surrounding text."
+)
+CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V2 = (
+    "Return a JSON object with exactly schema_version and items.",
+    "Set schema_version to class_commentary.student_feedback.v1.",
+    "Each item must contain exactly student_id and feedback_text.",
+    "Treat students and eligible_student_ids as the complete teacher-confirmed attending scope.",
+    "Each student's segment starts when the teacher says that student's name and ends when the next student's name is spoken.",
+    "A spoken name may be transcribed with homophones, near-sounding syllables, or similar characters; it does not need to contain the official roster name exactly.",
+    "Map each spoken name variant to the best unique roster student by pronunciation and context, and use the official student_id.",
+    "Return exactly one item for every eligible student ID and no other student.",
+    "Never omit a student only because the transcript spelling differs from the official name.",
+    "If no unique roster match can be made, do not invent, copy, or assign another student's facts; omit that item so the response is rejected for teacher review.",
+    "Do not repeat the student name as a heading inside feedback_text.",
+    "Do not mention another roster student's full name inside feedback_text.",
+    "Use facts only from the confirmed transcript.",
+    "Use ACTIVE_SKILL and TEACHER_STYLE_MEMORIES only for focus, structure, tone, and phrasing.",
+)
+
+
+def get_class_commentary_structured_prompt_contract(
+    prompt_version: str,
+) -> tuple[str, tuple[str, ...]]:
+    normalized_version = str(prompt_version or "").strip()
+    if normalized_version == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION:
+        return (
+            CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT,
+            CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES,
+        )
+    if normalized_version == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2:
+        return (
+            CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT_V2,
+            CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V2,
+        )
+    raise ValueError("structured class commentary prompt version is invalid")
 
 
 def _safe_skill_filename(skill_id: str) -> str:
@@ -241,6 +286,7 @@ def build_class_commentary_chat_request(
         "transcript": payload["transcript"],
     }
     normalized_schema_version = str(feedback_schema_version or "")
+    normalized_prompt_version = str(prompt_version or "").strip()
     if normalized_schema_version:
         if (
             normalized_schema_version != "class_commentary.student_feedback.v1"
@@ -250,6 +296,11 @@ def build_class_commentary_chat_request(
             or response_format != {"type": "json_object"}
         ):
             raise ValueError("structured class commentary prompt contract is invalid")
+        structured_system_prompt, structured_output_rules = (
+            get_class_commentary_structured_prompt_contract(
+                normalized_prompt_version
+            )
+        )
         current_task_facts["eligible_student_ids"] = eligible_student_ids
         prompt_sections = (
             "[CURRENT_TASK_FACTS]\n" + payload_to_json(current_task_facts),
@@ -258,10 +309,10 @@ def build_class_commentary_chat_request(
             + payload_to_json(teacher_style_memories or []),
             "[OUTPUT_RULES]\n"
             + "\n".join(
-                f"- {rule}" for rule in CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES
+                f"- {rule}" for rule in structured_output_rules
             ),
         )
-        system_prompt = CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT
+        system_prompt = structured_system_prompt
     else:
         prompt_sections = (
             "[CURRENT_TASK_FACTS]\n" + payload_to_json(current_task_facts),
@@ -275,7 +326,7 @@ def build_class_commentary_chat_request(
         system_prompt = CLASS_COMMENTARY_SYSTEM_PROMPT
     user_prompt = "\n\n".join(prompt_sections)
     request_payload = {
-        "prompt_version": str(prompt_version or CLASS_COMMENTARY_PROMPT_VERSION),
+        "prompt_version": normalized_prompt_version or CLASS_COMMENTARY_PROMPT_VERSION,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

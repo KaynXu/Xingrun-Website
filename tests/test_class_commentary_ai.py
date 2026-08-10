@@ -221,6 +221,58 @@ class ClassCommentaryAiTest(unittest.TestCase):
         ]:
             self.assertEqual(user_prompt.count(f"[{section}]"), 1)
 
+    def test_structured_v2_prompt_maps_spoken_asr_names_to_complete_attending_roster(self):
+        request_payload = class_commentary.build_class_commentary_chat_request(
+            class_record={"id": 7, "name": "数学七年级四班"},
+            students=[
+                {"id": 1, "name": "陈致丹"},
+                {"id": 2, "name": "严岚"},
+            ],
+            transcript_text="陈志丹今天计算更稳. 严兰下一步要继续验算.",
+            skill={
+                "id": "teacher-a",
+                "name": "Teacher A",
+                "content": "warm concise style",
+            },
+            teacher_style_memories=[],
+            student_history_memories=[],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            eligible_student_ids=[1, 2],
+            prompt_version=(
+                class_commentary.CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2
+            ),
+            response_format={"type": "json_object"},
+            student_history_memory_mode="disabled_v1",
+        )
+
+        system_prompt = request_payload["messages"][0]["content"]
+        user_prompt = request_payload["messages"][1]["content"]
+        self.assertEqual(
+            request_payload["prompt_version"],
+            class_commentary.CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+        )
+        self.assertIn("complete attending scope", system_prompt)
+        self.assertIn("homophones", system_prompt)
+        self.assertIn("starts each student's segment", system_prompt)
+        self.assertIn('"name": "陈致丹"', user_prompt)
+        self.assertIn('"eligible_student_ids": [', user_prompt)
+        self.assertIn("does not need to contain the official roster name exactly", user_prompt)
+        self.assertNotIn("[STUDENT_HISTORY_MEMORIES]", user_prompt)
+
+    def test_structured_prompt_rejects_unknown_prompt_version(self):
+        with self.assertRaisesRegex(ValueError, "prompt version is invalid"):
+            class_commentary.build_class_commentary_chat_request(
+                class_record={"id": 7, "name": "数学七年级四班"},
+                students=[{"id": 1, "name": "陈致丹"}],
+                transcript_text="陈志丹今天计算更稳.",
+                skill={"id": "teacher-a", "name": "Teacher A", "content": ""},
+                feedback_schema_version="class_commentary.student_feedback.v1",
+                eligible_student_ids=[1],
+                prompt_version="class-commentary-student-feedback-unknown",
+                response_format={"type": "json_object"},
+                student_history_memory_mode="disabled_v1",
+            )
+
     def test_sanitize_class_commentary_roster_keeps_only_id_and_name(self):
         roster = class_commentary.sanitize_class_commentary_roster([
             {

@@ -317,7 +317,7 @@ from lesson_manager import (
 from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import (
     CLASS_COMMENTARY_PROMPT_VERSION,
-    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_TEMPERATURE,
     build_class_commentary_chat_request,
     list_colleague_skills,
@@ -10441,6 +10441,14 @@ def api_class_commentary_task_generate(task_id: int):
         for student in current_class_students
         if int(student.get("id") or 0) > 0
     ]
+    structured_feedback_enabled = bool(
+        get_config().get("class_commentary_structured_feedback_enabled")
+    )
+    if (
+        structured_feedback_enabled
+        and "attending_student_ids" not in (data or {})
+    ):
+        return jsonify({"error": "attending_student_ids is required"}), 400
     class_students, attendance_error = _filter_class_commentary_students_by_attendance(
         current_class_students,
         data or {},
@@ -10456,11 +10464,8 @@ def api_class_commentary_task_generate(task_id: int):
         return jsonify({"error": "skill not found"}), 404
     chat_provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
     chat_model = _class_commentary_chat_model_name(chat_provider, fallback_model=_default_chat_model_name())
-    structured_feedback_enabled = bool(
-        get_config().get("class_commentary_structured_feedback_enabled")
-    )
     prompt_version = (
-        CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
+        CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2
         if structured_feedback_enabled
         else CLASS_COMMENTARY_PROMPT_VERSION
     )
