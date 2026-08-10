@@ -8,6 +8,7 @@ import unittest
 import lesson_manager
 from class_commentary import (
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_TEMPERATURE,
     build_class_commentary_chat_request,
 )
@@ -15,7 +16,9 @@ from class_commentary import (
 
 STRUCTURED_SCHEMA_VERSION = "class_commentary.student_feedback.v1"
 STRUCTURED_MATCHER_VERSION = "class_commentary.student_name_matcher.v1"
+STRUCTURED_ATTENDING_SCOPE_VERSION = "class_commentary.attending_roster_scope.v1"
 STRUCTURED_PROMPT_VERSION = CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
+STRUCTURED_PROMPT_VERSION_V2 = CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2
 STRUCTURED_RESPONSE_FORMAT = {"type": "json_object"}
 STRUCTURED_MEMORY_MODE = "disabled_v1"
 STRUCTURED_MODEL_PARAMETERS = {"temperature": CLASS_COMMENTARY_TEMPERATURE}
@@ -341,6 +344,101 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
         self.assertEqual(
             repeated["student_history_memory_mode"],
             STRUCTURED_MEMORY_MODE,
+        )
+
+    def test_structured_v2_reservation_uses_complete_roster_for_asr_name_variants(self):
+        asr_transcript = "小汪计算更稳了, 小黎需要继续练习验算."
+        lesson_manager.save_class_commentary_transcript(
+            self.task["id"],
+            asr_transcript,
+        )
+
+        generation = lesson_manager.reserve_class_commentary_generation(
+            task_id=self.task["id"],
+            generation_request_id="generation-request-v2-asr-names",
+            skill_registry_id=self.skill_registry_id,
+            attending_roster=self.roster,
+            model_provider="deepseek",
+            model_name="deepseek-chat",
+            model_parameters=STRUCTURED_MODEL_PARAMETERS,
+            prompt_version=STRUCTURED_PROMPT_VERSION_V2,
+            structured_feedback_enabled=True,
+        )
+
+        expected_ids = [item["student_id"] for item in self.roster]
+        self.assertEqual(
+            json.loads(generation["eligible_student_ids_json"]),
+            expected_ids,
+        )
+        self.assertEqual(
+            generation["student_mention_matcher_version"],
+            STRUCTURED_ATTENDING_SCOPE_VERSION,
+        )
+        self.assertEqual(
+            generation["prompt_version"],
+            STRUCTURED_PROMPT_VERSION_V2,
+        )
+        self.assertEqual(generation["attending_roster_explicit"], 1)
+        self.assertEqual(generation["execution_snapshot_status"], "pending")
+
+        structured_memory = {
+            "records": [],
+            "rendered_text": "",
+            "student_history_memories": [],
+            "teacher_style_memories": [],
+            "student_history_memory_mode": STRUCTURED_MEMORY_MODE,
+        }
+        structured_prompt = build_class_commentary_chat_request(
+            class_record=lesson_manager.get_class(self.class_id),
+            students=[
+                {"id": item["student_id"], "name": item["student_name"]}
+                for item in self.roster
+            ],
+            transcript_text=asr_transcript,
+            skill={
+                "id": "generation-store-teacher",
+                "name": "",
+                "content": self.skill_content,
+            },
+            teacher_style_memories=[],
+            student_history_memories=[],
+            feedback_schema_version=STRUCTURED_SCHEMA_VERSION,
+            eligible_student_ids=expected_ids,
+            prompt_version=STRUCTURED_PROMPT_VERSION_V2,
+            response_format=copy.deepcopy(STRUCTURED_RESPONSE_FORMAT),
+            student_history_memory_mode=STRUCTURED_MEMORY_MODE,
+        )
+        finalized = (
+            lesson_manager.finalize_class_commentary_generation_execution_snapshot(
+                generation["id"],
+                prompt_payload=structured_prompt,
+                memory_context=structured_memory,
+            )
+        )
+        self.assertEqual(finalized["execution_snapshot_status"], "ready")
+
+    def test_structured_v2_reservation_requires_explicit_attendance(self):
+        count_before = self._generation_count()
+        task_before = lesson_manager.get_class_commentary_task(self.task["id"])
+
+        with self.assertRaisesRegex(ValueError, "scope must be explicit"):
+            lesson_manager.reserve_class_commentary_generation(
+                task_id=self.task["id"],
+                generation_request_id="generation-request-v2-implicit-attendance",
+                skill_registry_id=self.skill_registry_id,
+                attending_roster=self.roster,
+                model_provider="deepseek",
+                model_name="deepseek-chat",
+                model_parameters=STRUCTURED_MODEL_PARAMETERS,
+                prompt_version=STRUCTURED_PROMPT_VERSION_V2,
+                attending_roster_explicit=False,
+                structured_feedback_enabled=True,
+            )
+
+        self.assertEqual(self._generation_count(), count_before)
+        self.assertEqual(
+            lesson_manager.get_class_commentary_task(self.task["id"]),
+            task_before,
         )
 
     def test_structured_reservation_scope_failures_do_not_insert_or_mutate_task(self):

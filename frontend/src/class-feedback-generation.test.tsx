@@ -97,7 +97,8 @@ test('class feedback generation page does not trim undefined persisted transcrip
 
 test('class feedback generation page allows manual transcript generation without audio task', () => {
   assert.match(source, /const canCreateManualTextTask = !task \|\| task\.status === 'uploaded' \|\| task\.status === 'transcribing';/);
-  assert.match(source, /const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && \(!classStudents\.length \|\| attendingStudentIds\.length > 0\);/);
+  assert.match(source, /const attendanceReadyForGeneration = capabilities\.structured_feedback_enabled[\s\S]*\? attendingStudentIds\.length > 0[\s\S]*: !classStudents\.length \|\| attendingStudentIds\.length > 0;/);
+  assert.match(source, /const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && attendanceReadyForGeneration;/);
   assert.match(source, /disabled=\{loadingInitial \|\| isTaskReadOnly\}/);
   assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
 });
@@ -211,7 +212,8 @@ test('generation failures consume the complete envelope and localize reservation
   assertSourceMatches(generationHandler, /setTask\(failedTask\);[\s\S]*setGenerations\([\s\S]*failedGeneration/, 'the complete failed envelope must replace the visible task and generation state');
   assertSourceMatches(generationHandler, /setErrorMessage\(getClassCommentaryGenerationErrorMessage\(error\)\);/, 'generation errors must use the localized mapper');
   assertSourceMatches(generationErrorHelper, /structured_feedback_invalid[\s\S]*反馈结构校验失败, 请重新生成/, 'invalid structured output must keep its stable actionable message');
-  assertSourceMatches(generationErrorHelper, /student_feedback_no_eligible_students[\s\S]*转写中没有识别到到课学生全名, 请补充学生全名后重新生成/, 'an empty eligible scope must explain how to correct the transcript');
+  assertSourceMatches(generationErrorHelper, /attending_student_ids is required[\s\S]*请至少选择一名到课学生后重新生成/, 'an empty explicit attendance request must stay localized');
+  assertSourceMatches(generationErrorHelper, /student_feedback_no_eligible_students[\s\S]*没有可生成的到课学生, 请检查到课名单后重新生成/, 'an empty eligible scope must explain how to correct the attendance roster');
   assertSourceMatches(generationErrorHelper, /student_roster_name_ambiguous[\s\S]*到课名单存在无法区分的重名, 请调整到课名单后重新生成/, 'ambiguous roster names must explain how to correct the attendance scope');
 });
 

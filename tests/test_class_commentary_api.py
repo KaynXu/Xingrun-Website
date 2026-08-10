@@ -15,7 +15,10 @@ if str(ROOT) not in sys.path:
 
 import config_runtime
 import lesson_manager
-from class_commentary import CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
+from class_commentary import (
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+)
 
 
 class ClassCommentaryApiTestCase(unittest.TestCase):
@@ -747,10 +750,10 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         students_by_name = {student["name"]: student for student in students}
         first_student = students_by_name["小王"]
         second_student = students_by_name["小李"]
-        unmentioned_student = students_by_name["小张"]
+        unselected_student = students_by_name["小张"]
         task = self._create_transcribed_task(
             class_id,
-            "小李先完成计算, 小王随后补充了验算过程.",
+            "小黎先完成计算, 小汪随后补充了验算过程.",
         )
         skill = self._register_skill(
             "structured-style",
@@ -827,6 +830,10 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
                 json={
                     "request_id": "structured-generation-success",
                     "skill_id": skill["skill_id"],
+                    "attending_student_ids": [
+                        first_student["id"],
+                        second_student["id"],
+                    ],
                 },
             )
 
@@ -876,32 +883,33 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertTrue(payload["eligible_student_scope_hash"])
         self.assertEqual(
             payload["student_mention_matcher_version"],
-            "class_commentary.student_name_matcher.v1",
+            "class_commentary.attending_roster_scope.v1",
         )
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual(payload["student_history_memory_mode"], "disabled_v1")
         self.assertEqual(
             payload["prompt_version"],
-            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
         )
 
         saved = lesson_manager.get_class_commentary_generation(payload["generation_id"])
         self.assertEqual(saved["structured_feedback_json"], expected_json)
         self.assertEqual(saved["structured_feedback_hash"], expected_hash)
         self.assertEqual(saved["generated_feedback_text"], expected_text)
+        self.assertEqual(saved["attending_roster_explicit"], 1)
         self.assertEqual(
             saved["prompt_version"],
-            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
         )
         self.assertEqual(
             json.loads(saved["prompt_payload_snapshot_json"])["prompt_version"],
-            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
         )
         self.assertEqual(json.loads(saved["eligible_student_ids_json"]), eligible_ids)
         saved_roster = json.loads(saved["attending_roster_snapshot_json"])
         self.assertEqual(
             [item["student_id"] for item in saved_roster],
-            [student["id"] for student in students],
+            eligible_ids,
         )
         saved_memory_context = json.loads(saved["memory_context_snapshot_json"])
         self.assertEqual(saved_memory_context, memory_context)
@@ -922,19 +930,20 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
             eligible_ids,
         )
         self.assertNotIn(
-            unmentioned_student["id"],
+            unselected_student["id"],
             [student["id"] for student in model_call["students"]],
         )
         chat_request = model_call["chat_request"]
         self.assertEqual(chat_request["response_format"], {"type": "json_object"})
         self.assertEqual(chat_request["student_history_memory_mode"], "disabled_v1")
         self.assertIn("Use short sentences.", chat_request["messages"][1]["content"])
+        self.assertIn("homophones", chat_request["messages"][0]["content"])
         self.assertNotIn(
             "[STUDENT_HISTORY_MEMORIES]",
             chat_request["messages"][1]["content"],
         )
 
-    def test_structured_generate_precondition_failure_returns_400_without_reservation(self):
+    def test_structured_generate_requires_explicit_attendance_without_reservation(self):
         config_runtime.write_file_config({
             "colleague_skill_dir": str(self.skill_dir),
             "class_commentary_structured_feedback_enabled": True,
@@ -966,7 +975,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.get_json(),
-            {"error": "student_feedback_no_eligible_students"},
+            {"error": "attending_student_ids is required"},
         )
         with lesson_manager.get_conn() as conn:
             generation_count = conn.execute(
@@ -1027,6 +1036,9 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
                 json={
                     "request_id": "structured-tampered-core-snapshot",
                     "skill_id": skill["skill_id"],
+                    "attending_student_ids": [
+                        lesson_manager.list_students_for_class(class_id)[0]["id"]
+                    ],
                 },
             )
 
@@ -1043,15 +1055,31 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
             "structured feedback core snapshot hash is invalid",
         )
 
-    def test_structured_generate_rejects_malformed_model_output_without_raw_leak(self):
+    def test_structured_generate_rejects_missing_student_output_without_raw_leak(self):
         config_runtime.write_file_config({
             "colleague_skill_dir": str(self.skill_dir),
             "class_commentary_structured_feedback_enabled": True,
         })
         class_id = self._create_class_with_student()
-        task = self._create_transcribed_task(class_id, "小王今天完成了计算.")
+        lesson_manager.create_student_for_class(class_id, "小李")
+        students = lesson_manager.list_students_for_class(class_id)
+        task = self._create_transcribed_task(
+            class_id,
+            "小汪今天完成了计算. 小黎需要继续练习验算.",
+        )
         skill = self._register_skill("structured-invalid-model")
-        raw_model_output = "RAW_MODEL_SECRET: not valid structured feedback"
+        raw_model_output = json.dumps(
+            {
+                "schema_version": "class_commentary.student_feedback.v1",
+                "items": [
+                    {
+                        "student_id": students[0]["id"],
+                        "feedback_text": "RAW_MODEL_SECRET: 只返回了一名学生.",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
         memory_context = {
             "records": [],
             "rendered_text": "",
@@ -1092,6 +1120,9 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
                 json={
                     "request_id": "structured-invalid-model-output",
                     "skill_id": skill["skill_id"],
+                    "attending_student_ids": [
+                        student["id"] for student in students
+                    ],
                 },
             )
 

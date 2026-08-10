@@ -3,11 +3,14 @@ import json
 import unittest
 
 from class_commentary_feedback_schema import (
+    CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
     ClassCommentaryStudentScopeError,
     ClassCommentaryStructuredFeedbackValidationError,
     build_class_commentary_feedback_read_envelope,
     canonicalize_class_commentary_structured_feedback,
     match_class_commentary_eligible_student_ids,
+    resolve_class_commentary_attending_roster_student_ids,
+    validate_class_commentary_structured_generation_contract,
 )
 
 
@@ -80,6 +83,108 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
             )
 
         self.assertEqual(caught.exception.code, "student_feedback_no_eligible_students")
+
+    def test_attending_roster_scope_returns_every_student_without_transcript_matching(self):
+        roster = [
+            {"student_id": 20, "student_name": "陈致丹"},
+            {"student_id": 10, "student_name": "严岚"},
+        ]
+
+        eligible_ids = resolve_class_commentary_attending_roster_student_ids(
+            roster=roster,
+        )
+
+        self.assertEqual(eligible_ids, [20, 10])
+
+    def test_attending_roster_scope_rejects_empty_and_ambiguous_rosters(self):
+        cases = (
+            ("empty", [], "student_feedback_no_eligible_students"),
+            (
+                "ambiguous",
+                [
+                    {"student_id": 1, "student_name": "Ａ 同学"},
+                    {"student_id": 2, "student_name": "A 同学"},
+                ],
+                "student_roster_name_ambiguous",
+            ),
+        )
+        for label, roster, expected_code in cases:
+            with self.subTest(label=label):
+                with self.assertRaises(ClassCommentaryStudentScopeError) as caught:
+                    resolve_class_commentary_attending_roster_student_ids(
+                        roster=roster,
+                    )
+                self.assertEqual(caught.exception.code, expected_code)
+
+    def test_structured_contract_accepts_v1_subset_and_v2_full_roster_only(self):
+        legacy_generation = self._generation()
+        validate_class_commentary_structured_generation_contract(
+            legacy_generation
+        )
+
+        roster = [
+            {"student_id": 11, "student_name": "陈致丹"},
+            {"student_id": 22, "student_name": "严岚"},
+        ]
+        full_ids = [11, 22]
+        current_generation = self._generation_for_roster(
+            roster,
+            eligible_ids=full_ids,
+        )
+        current_generation.update(
+            {
+                "attending_roster_explicit": 1,
+                "prompt_version": "class-commentary-student-feedback-v2",
+                "student_mention_matcher_version": (
+                    CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
+                ),
+            }
+        )
+        current_generation["eligible_student_scope_hash"] = _sha256(
+            _canonical_json(
+                {
+                    "attending_roster_hash": current_generation[
+                        "attending_roster_hash"
+                    ],
+                    "confirmed_transcript_hash": current_generation[
+                        "confirmed_transcript_hash"
+                    ],
+                    "eligible_student_ids": full_ids,
+                    "student_mention_matcher_version": (
+                        CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
+                    ),
+                }
+            )
+        )
+        validate_class_commentary_structured_generation_contract(
+            current_generation
+        )
+
+        mutations = (
+            (
+                "v2_subset",
+                {
+                    "eligible_student_ids_json": _canonical_json([11]),
+                },
+            ),
+            (
+                "v2_legacy_matcher",
+                {"student_mention_matcher_version": MATCHER_VERSION},
+            ),
+            (
+                "v1_current_scope",
+                {
+                    "prompt_version": "class-commentary-student-feedback-v1",
+                },
+            ),
+            ("v2_implicit_roster", {"attending_roster_explicit": 0}),
+        )
+        for label, mutation in mutations:
+            with self.subTest(label=label):
+                with self.assertRaises(ValueError):
+                    validate_class_commentary_structured_generation_contract(
+                        {**current_generation, **mutation}
+                    )
 
     def test_canonicalization_reorders_items_and_derives_frozen_names(self):
         generation = self._generation()
