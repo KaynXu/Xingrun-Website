@@ -503,6 +503,24 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
                 model_name="different-model",
             )
 
+    def test_isolated_replay_uses_frozen_mode_after_kill_switch_change(self):
+        first = self._reserve("isolated-replay-after-kill-switch")
+
+        repeated = self._reserve(
+            "isolated-replay-after-kill-switch",
+            prompt_version="class-commentary-v1",
+            structured_feedback_enabled=False,
+            student_history_memory_mode="disabled_v1",
+        )
+
+        self.assertEqual(repeated["id"], first["id"])
+        self.assertTrue(repeated["is_idempotent"])
+        self.assertEqual(repeated["student_history_memory_mode"], "isolated_v2")
+        self.assertEqual(
+            repeated["prompt_version"],
+            CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+        )
+
     def test_student_access_loss_fails_closed_before_memory_or_provider(self):
         generation = self._reserve("access-revoked", students=[self.students[0]])
         run = lesson_manager.list_class_commentary_student_generation_runs(

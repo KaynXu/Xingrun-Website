@@ -12406,6 +12406,56 @@ def reserve_class_commentary_generation(
 
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_generations
+            WHERE task_id=? AND generation_request_id=?
+            """,
+            (task_id, normalized_request_id),
+        ).fetchone()
+        if existing:
+            try:
+                saved_roster = json.loads(
+                    str(existing["attending_roster_snapshot_json"] or "[]")
+                )
+            except (TypeError, json.JSONDecodeError):
+                saved_roster = []
+            saved_roster_ids = sorted(
+                int(item.get("student_id") or 0)
+                for item in saved_roster
+                if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
+            )
+            frozen_memory_mode = str(
+                existing["student_history_memory_mode"] or ""
+            )
+            isolated_model_changed = (
+                frozen_memory_mode
+                == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+                and (
+                    str(existing["model_provider"] or "") != normalized_provider
+                    or str(existing["model_name"] or "") != normalized_model
+                    or str(existing["model_parameters_json"] or "")
+                    != model_parameters_json
+                )
+            )
+            if (
+                int(existing["skill_registry_id"] or 0) != int(skill_registry_id)
+                or (
+                    attending_roster_explicit
+                    and saved_roster_ids != requested_roster_ids
+                )
+                or bool(existing["attending_roster_explicit"])
+                != attending_roster_explicit
+                or isolated_model_changed
+            ):
+                raise ClassCommentaryGenerationRequestConflict(
+                    "generation request_id was already used with a different payload"
+                )
+            item = _serialize_class_commentary_generation_row(existing)
+            item["is_idempotent"] = True
+            return item
+
         task = conn.execute(
             """
             SELECT task.*, class.organization_id AS class_organization_id,
@@ -12571,24 +12621,6 @@ def reserve_class_commentary_generation(
         request_payload_hash = _class_commentary_content_hash(
             _class_commentary_canonical_json(request_payload)
         )
-        existing = conn.execute(
-            """
-            SELECT *
-            FROM class_commentary_generations
-            WHERE task_id=? AND generation_request_id=?
-            """,
-            (task_id, normalized_request_id),
-        ).fetchone()
-        if existing:
-            if str(existing["generation_request_payload_hash"] or "") != (
-                request_payload_hash
-            ):
-                raise ClassCommentaryGenerationRequestConflict(
-                    "generation request_id was already used with a different payload"
-                )
-            item = _serialize_class_commentary_generation_row(existing)
-            item["is_idempotent"] = True
-            return item
         generation_no = int(task["generation_seq"] or 0) + 1
         cursor = conn.execute(
             """
