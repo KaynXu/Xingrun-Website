@@ -4,6 +4,7 @@ import unittest
 from class_commentary_memory_queue import (
     class_commentary_memory_queue_healthcheck,
     dispatch_class_commentary_memory_work,
+    enqueue_class_commentary_student_generation_run,
     enqueue_class_commentary_skill_candidate_build,
     enqueue_class_commentary_memory_extraction_job,
     ensure_class_commentary_memory_reconciliation_scheduled,
@@ -47,10 +48,10 @@ class FakeQueue:
         self.enqueue_calls.append((function, args, job_id, kwargs))
         return job
 
-    def enqueue_in(self, delay, function, *, job_id, **kwargs):
+    def enqueue_in(self, delay, function, *args, job_id, **kwargs):
         job = FakeJob(job_id, status="scheduled")
         self.jobs[job_id] = job
-        self.enqueue_in_calls.append((delay, function, job_id, kwargs))
+        self.enqueue_in_calls.append((delay, function, args, job_id, kwargs))
         return job
 
 
@@ -105,9 +106,41 @@ class ClassCommentaryMemoryQueueTests(unittest.TestCase):
                 "extractions": 0,
                 "operations": 0,
                 "candidates": 0,
+                "student_generations": 0,
                 "errors": [],
             },
         )
+
+    def test_student_run_enqueue_is_idempotent_and_supports_delayed_retry(self):
+        queue = FakeQueue()
+        config = {
+            **ENABLED_CONFIG,
+            "class_commentary_student_generation_timeout": 240,
+        }
+        run = {"id": 41, "attempt_count": 1, "status": "retry_wait"}
+
+        first, first_created = enqueue_class_commentary_student_generation_run(
+            run,
+            queue=queue,
+            runtime_config=config,
+            delay_seconds=90,
+        )
+        second, second_created = enqueue_class_commentary_student_generation_run(
+            run,
+            queue=queue,
+            runtime_config=config,
+            delay_seconds=90,
+        )
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertIs(first, second)
+        self.assertEqual(first.id, "cc-student-generation-41-a2")
+        self.assertEqual(len(queue.enqueue_in_calls), 1)
+        delay, _, args, _, kwargs = queue.enqueue_in_calls[0]
+        self.assertEqual(int(delay.total_seconds()), 90)
+        self.assertEqual(args, (41,))
+        self.assertEqual(kwargs["job_timeout"], 240)
 
     def test_candidate_build_uses_dedicated_timeout_and_retry_schedule(self):
         queue = FakeQueue()

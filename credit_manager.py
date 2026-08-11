@@ -39,9 +39,15 @@ def max_configured_charge_for_feature(feature_key: str) -> int:
 
 def get_credit_overview(organization_id: int) -> dict:
     account = lesson_manager.ensure_credit_account(organization_id)
+    reserved_credits = lesson_manager.get_active_credit_hold_total(organization_id)
     return {
         "organization_id": organization_id,
         "credit_balance": account["credit_balance"],
+        "reserved_credits": reserved_credits,
+        "available_credits": max(
+            0,
+            int(account["credit_balance"] or 0) - reserved_credits,
+        ),
         "total_recharged": account["total_recharged"],
         "total_consumed": account["total_consumed"],
         "updated_at": account["updated_at"],
@@ -75,6 +81,8 @@ def record_ai_charge(
     source_record_type: str,
     source_record_id: int | str,
     request_id: str,
+    request_payload_hash: str = "",
+    credit_hold_student_run_id: int | None = None,
 ) -> dict:
     _pricing_for_feature(feature_key)
     if int(credit_cost_final) <= 0:
@@ -91,13 +99,28 @@ def record_ai_charge(
         source_record_type=source_record_type,
         source_record_id=str(source_record_id),
         request_id=request_id,
+        request_payload_hash=request_payload_hash,
+        credit_hold_student_run_id=credit_hold_student_run_id,
     )
 
 
 def ensure_feature_credits_available(*, organization_id: int, feature_key: str) -> None:
     overview = get_credit_overview(organization_id)
     minimum = max_configured_charge_for_feature(feature_key)
-    if int(overview["credit_balance"] or 0) < minimum:
+    if int(overview["available_credits"] or 0) < minimum:
+        raise CreditBalanceError("机构积分不足，请先充值后再使用 AI 功能")
+
+
+def ensure_feature_credits_available_for_count(
+    *,
+    organization_id: int,
+    feature_key: str,
+    call_count: int,
+) -> None:
+    normalized_count = max(0, int(call_count))
+    overview = get_credit_overview(organization_id)
+    maximum = max_configured_charge_for_feature(feature_key) * normalized_count
+    if int(overview["available_credits"] or 0) < maximum:
         raise CreditBalanceError("机构积分不足，请先充值后再使用 AI 功能")
 
 
@@ -110,6 +133,8 @@ def finalize_ai_charge(
     source_record_type: str,
     source_record_id: int | str,
     request_id: str,
+    request_payload_hash: str = "",
+    credit_hold_student_run_id: int | None = None,
 ) -> dict:
     pricing = _pricing_for_feature(feature_key)
     normalized_usage = usage if isinstance(usage, dict) else {}
@@ -133,6 +158,8 @@ def finalize_ai_charge(
             source_record_type=source_record_type,
             source_record_id=source_record_id,
             request_id=request_id,
+            request_payload_hash=request_payload_hash,
+            credit_hold_student_run_id=credit_hold_student_run_id,
         )
     except ValueError as exc:
         if str(exc) == "insufficient credit balance":

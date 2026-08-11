@@ -2394,6 +2394,7 @@ def generate_class_commentary_feedback(
     openai_base_url: str = "",
     openai_headers: str = "",
     chat_request: dict | None = None,
+    request_id: str = "",
     include_usage: bool = False,
 ):
     provider = normalize_chat_provider(provider or _provider_name())
@@ -2412,6 +2413,10 @@ def generate_class_commentary_feedback(
     }
     if "response_format" in request_payload:
         completion_kwargs["response_format"] = request_payload["response_format"]
+    if str(request_id or "").strip():
+        completion_kwargs["extra_headers"] = {
+            "Idempotency-Key": str(request_id).strip(),
+        }
     response = client.chat.completions.create(**completion_kwargs)
     response_text = response.choices[0].message.content or ""
     text = (

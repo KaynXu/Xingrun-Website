@@ -1083,6 +1083,21 @@ def run_class_commentary_memory_reconciliation(
         if callable(candidate_recoverer)
         else []
     )
+    student_run_recoverer = getattr(
+        target_store,
+        "recover_stale_class_commentary_student_generation_runs",
+        None,
+    )
+    recovered_student_runs = (
+        student_run_recoverer(
+            now=now,
+            max_attempts=int(
+                config.get("class_commentary_student_generation_max_attempts") or 3
+            ),
+        )
+        if callable(student_run_recoverer)
+        else []
+    )
     try:
         dispatched = dispatch_class_commentary_memory_work(
             store=target_store,
@@ -1097,5 +1112,6 @@ def run_class_commentary_memory_reconciliation(
         "scheduled": scheduled,
         "reconciled": reconciled,
         "recovered_candidates": recovered_candidates,
+        "recovered_student_runs": recovered_student_runs,
         "dispatched": dispatched,
     }

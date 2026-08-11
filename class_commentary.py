@@ -22,6 +22,9 @@ CLASS_COMMENTARY_PROMPT_VERSION = "class-commentary-v1"
 CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION = "class-commentary-student-feedback-v1"
 CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2 = "class-commentary-student-feedback-v2"
 CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3 = "class-commentary-student-feedback-v3"
+CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2 = (
+    "class-commentary-student-feedback-isolated-v2"
+)
 CLASS_COMMENTARY_TEMPERATURE = 0.55
 CLASS_COMMENTARY_SYSTEM_PROMPT = (
     "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
