@@ -28,6 +28,9 @@ ENV_VAR_MAP = {
     "class_commentary_openai_headers": "XR_CLASS_COMMENTARY_OPENAI_HEADERS",
     "class_commentary_memory_enabled": "XR_CLASS_COMMENTARY_MEMORY_ENABLED",
     "class_commentary_structured_feedback_enabled": "XR_CLASS_COMMENTARY_STRUCTURED_FEEDBACK_ENABLED",
+    "class_commentary_student_memory_v2_enabled": "XR_CLASS_COMMENTARY_STUDENT_MEMORY_V2_ENABLED",
+    "class_commentary_student_generation_timeout": "XR_CLASS_COMMENTARY_STUDENT_GENERATION_TIMEOUT",
+    "class_commentary_student_generation_max_attempts": "XR_CLASS_COMMENTARY_STUDENT_GENERATION_MAX_ATTEMPTS",
     "redis_url": "XR_REDIS_URL",
     "class_commentary_memory_queue": "XR_CLASS_COMMENTARY_MEMORY_QUEUE",
     "class_commentary_memory_extraction_timeout": "XR_CLASS_COMMENTARY_MEMORY_EXTRACTION_TIMEOUT",
@@ -94,6 +97,9 @@ DEFAULTS = {
     "class_commentary_openai_headers": "",
     "class_commentary_memory_enabled": False,
     "class_commentary_structured_feedback_enabled": False,
+    "class_commentary_student_memory_v2_enabled": False,
+    "class_commentary_student_generation_timeout": 300,
+    "class_commentary_student_generation_max_attempts": 3,
     "redis_url": "redis://127.0.0.1:6379/0",
     "class_commentary_memory_queue": "class_commentary_memory",
     "class_commentary_memory_extraction_timeout": 300,
@@ -252,6 +258,15 @@ def get_runtime_config() -> dict:
     )
     cfg["class_commentary_structured_feedback_enabled"] = normalize_bool_flag(
         cfg.get("class_commentary_structured_feedback_enabled")
+    )
+    cfg["class_commentary_student_memory_v2_enabled"] = normalize_bool_flag(
+        cfg.get("class_commentary_student_memory_v2_enabled")
+    )
+    cfg["class_commentary_student_generation_timeout"] = normalize_positive_int(
+        cfg.get("class_commentary_student_generation_timeout"), 300
+    )
+    cfg["class_commentary_student_generation_max_attempts"] = normalize_positive_int(
+        cfg.get("class_commentary_student_generation_max_attempts"), 3
     )
     cfg["redis_url"] = str(cfg.get("redis_url") or "redis://127.0.0.1:6379/0").strip()
     cfg["class_commentary_memory_queue"] = (

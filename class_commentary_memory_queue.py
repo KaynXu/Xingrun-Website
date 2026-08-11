@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Mapping, Optional
 
@@ -184,6 +185,60 @@ def enqueue_class_commentary_skill_candidate_build(
     )
 
 
+def enqueue_class_commentary_student_generation_run(
+    run: Mapping[str, object],
+    *,
+    queue: Queue,
+    runtime_config: Optional[Mapping[str, object]] = None,
+    delay_seconds: int = 0,
+):
+    from class_commentary_student_generation_jobs import (
+        process_class_commentary_student_generation_run,
+    )
+
+    config = _runtime_config(runtime_config)
+    run_id = int(run["id"])
+    attempt = int(run.get("attempt_count") or 0) + 1
+    status = str(run.get("status") or "")
+    if status == "response_received":
+        marker_source = str(run.get("next_attempt_at") or run.get("response_hash") or "charge")
+        marker = hashlib.sha256(marker_source.encode("utf-8")).hexdigest()[:12]
+        rq_job_id = f"cc-student-generation-{run_id}-charge-{marker}"
+    else:
+        rq_job_id = f"cc-student-generation-{run_id}-a{attempt}"
+    existing = queue.fetch_job(rq_job_id)
+    if existing is not None and _job_status(existing) in ACTIVE_RQ_STATUSES:
+        return existing, False
+    if existing is not None:
+        delete = getattr(existing, "delete", None)
+        if callable(delete):
+            delete()
+        else:
+            return existing, False
+    enqueue_kwargs = {
+        "job_id": rq_job_id,
+        "job_timeout": int(
+            config.get("class_commentary_student_generation_timeout") or 300
+        ),
+        "result_ttl": RESULT_TTL_SECONDS,
+        "failure_ttl": FAILURE_TTL_SECONDS,
+    }
+    if int(delay_seconds) > 0:
+        job = queue.enqueue_in(
+            timedelta(seconds=max(1, int(delay_seconds))),
+            process_class_commentary_student_generation_run,
+            run_id,
+            **enqueue_kwargs,
+        )
+    else:
+        job = queue.enqueue(
+            process_class_commentary_student_generation_run,
+            run_id,
+            **enqueue_kwargs,
+        )
+    return job, True
+
+
 def dispatch_class_commentary_memory_work(
     *,
     store=None,
@@ -198,6 +253,7 @@ def dispatch_class_commentary_memory_work(
             "extractions": 0,
             "operations": 0,
             "candidates": 0,
+            "student_generations": 0,
             "errors": [],
         }
 
@@ -210,6 +266,7 @@ def dispatch_class_commentary_memory_work(
         "extractions": 0,
         "operations": 0,
         "candidates": 0,
+        "student_generations": 0,
         "errors": [],
     }
     extraction_jobs = store.list_dispatchable_class_commentary_memory_extraction_jobs(limit=limit)
@@ -220,6 +277,27 @@ def dispatch_class_commentary_memory_work(
         None,
     )
     candidates = candidate_lister(limit=limit) if callable(candidate_lister) else []
+    student_run_lister = getattr(
+        store,
+        "list_dispatchable_class_commentary_student_generation_runs",
+        None,
+    )
+    student_runs = (
+        student_run_lister(limit=limit) if callable(student_run_lister) else []
+    )
+
+    for run in student_runs:
+        try:
+            _, created = enqueue_class_commentary_student_generation_run(
+                run,
+                queue=target_queue,
+                runtime_config=config,
+            )
+            result["student_generations"] += int(created)
+        except Exception as exc:
+            result["errors"].append(
+                f"student_generation:{int(run['id'])}:{exc.__class__.__name__}"
+            )
 
     for job in extraction_jobs:
         try:
