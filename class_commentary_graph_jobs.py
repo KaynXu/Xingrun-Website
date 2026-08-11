@@ -249,7 +249,15 @@ def process_class_commentary_graph_sync_operation(
         frozen = target_store.get_graph_sync_payload(int(operation_id))
         if not frozen or frozen.get("integrity_valid") is not True:
             raise ValueError("graph sync payload failed integrity")
-        result = _adapter(config, adapter=adapter).apply_event(frozen["event"])
+        curriculum_snapshot = (
+            target_store.get_semantica_curriculum_snapshot()
+            if hasattr(target_store, "get_semantica_curriculum_snapshot")
+            else None
+        )
+        result = _adapter(config, adapter=adapter).apply_event(
+            frozen["event"],
+            curriculum_snapshot=curriculum_snapshot,
+        )
         completed = target_store.complete_graph_sync_operation(
             int(operation_id), claim_token=token, result_snapshot=result
         )
@@ -293,10 +301,37 @@ def run_class_commentary_graph_reconciliation(
         reconciliation = target_store.reconcile_class_commentary_graph_store(
             limit=int(config.get("class_commentary_graph_reconcile_limit") or 100)
         )
+        resumed_mappings = []
+        mapping_failures = []
+        if hasattr(target_store, "list_resumable_graph_mapping_actions") and hasattr(
+            target_store, "resume_graph_mapping_action"
+        ):
+            for mapping in target_store.list_resumable_graph_mapping_actions(
+                limit=int(config.get("class_commentary_graph_reconcile_limit") or 100)
+            ):
+                try:
+                    resumed_mappings.append(
+                        target_store.resume_graph_mapping_action(int(mapping["id"]))
+                    )
+                except Exception as exc:
+                    mapping_failures.append(
+                        {
+                            "action_id": int(mapping["id"]),
+                            "error": exc.__class__.__name__,
+                        }
+                    )
+        reconciliation["resumed_mapping_count"] = len(resumed_mappings)
+        reconciliation["mapping_failure_count"] = len(mapping_failures)
         if derived_recovery is None:
+            trusted_events = target_store.list_trusted_graph_events()
+            curriculum_snapshot = (
+                target_store.get_semantica_curriculum_snapshot()
+                if hasattr(target_store, "get_semantica_curriculum_snapshot")
+                else None
+            )
             expected_event_ids = {
                 str(event["event_id"])
-                for event in target_store.list_trusted_graph_events()
+                for event in trusted_events
             }
             derived_event_ids = graph_adapter.trusted_learning_event_ids()
             if derived_event_ids != expected_event_ids:
@@ -308,6 +343,12 @@ def run_class_commentary_graph_reconciliation(
                 derived_recovery["unknown_event_count"] = len(
                     derived_event_ids.difference(expected_event_ids)
                 )
+            elif graph_adapter.store_hash() != graph_adapter.expected_store_hash(
+                trusted_events,
+                curriculum_snapshot=curriculum_snapshot,
+            ):
+                derived_recovery = target_store.rebuild_semantica_graph(graph_adapter)
+                derived_recovery["reason"] = "derived_store_hash_mismatch"
         dispatch = dispatcher(store=target_store, runtime_config=config)
     finally:
         schedule = scheduler(runtime_config=config, now=datetime.now(timezone.utc))

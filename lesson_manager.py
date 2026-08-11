@@ -87,6 +87,7 @@ MEMBER_ROLE = "member"
 CONFIGURABLE_VISIBLE_PAGES = (
     "review-generation",
     "class-feedback-generation",
+    "curriculum-knowledge",
     "consultation",
     "calendar",
     "smartWrongQuestions",
@@ -4647,6 +4648,9 @@ def init_db():
         from class_commentary_learning_graph import ensure_class_commentary_graph_schema
 
         ensure_class_commentary_graph_schema(conn)
+        from curriculum_registry import ensure_curriculum_schema
+
+        ensure_curriculum_schema(conn)
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
         _ensure_review_plan_versions_schema(conn)
@@ -8114,7 +8118,8 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                  stage: str = "", current_grade: str = "", class_number: str = "",
                  class_type: str = "group",
                  cohort_year: int | None = None, show_cohort_year: bool | None = None, is_bridge: bool = False, bridge_target: str = "",
-                 content_track: str = "", today: str | None = None):
+                 content_track: str = "", today: str | None = None,
+                 actor_user_id: int | None = None):
     before = get_class(class_id)
     with get_conn() as conn:
         student_rows = conn.execute(
@@ -8143,6 +8148,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
         content_track=content_track or (before or {}).get("content_track", ""),
         today=today,
     )
+    next_subject_key = canonicalize_class_subject_key(payload["subject"])
     with get_conn() as conn:
         bound_teacher_row = conn.execute(
             "SELECT user_id FROM user_classes WHERE class_id=? ORDER BY user_id LIMIT 1",
@@ -8158,7 +8164,7 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                 WHERE id=?
                 """,
                 (
-                    payload["name"], payload["subject"], canonicalize_class_subject_key(payload["subject"]), payload["grade"],
+                    payload["name"], payload["subject"], next_subject_key, payload["grade"],
                     payload["stage"], payload["class_type"], payload["current_grade"],
                     payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                     payload["content_track"], class_id,
@@ -8187,13 +8193,55 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
             WHERE id=?
             """,
             (
-                payload["name"], payload["subject"], canonicalize_class_subject_key(payload["subject"]), payload["grade"],
+                payload["name"], payload["subject"], next_subject_key, payload["grade"],
                 payload["stage"], payload["class_type"], payload["current_grade"],
                 payload["class_number"], payload["cohort_year"], payload["show_cohort_year"], payload["is_bridge"], payload["bridge_target"],
                 payload["content_track"], teacher_name, teacher_email, class_id,
             )
             )
-    record_class_history(class_id, "updated", before=before, after=get_class(class_id))
+        assignment = conn.execute(
+            """
+            SELECT assignment.*, package.subject_key AS curriculum_subject_key,
+                   version.package_id, version.version_key
+            FROM curriculum_class_assignments assignment
+            JOIN curriculum_versions version ON version.id=assignment.version_id
+            JOIN curriculum_packages package ON package.id=version.package_id
+            WHERE assignment.class_id=? AND assignment.status='active'
+            """,
+            (int(class_id),),
+        ).fetchone()
+        if assignment and str(assignment["curriculum_subject_key"] or "") != str(next_subject_key or ""):
+            ended_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            conn.execute(
+                """
+                UPDATE curriculum_class_assignments
+                SET status='removed', ended_at=? WHERE id=? AND status='active'
+                """,
+                (ended_at, int(assignment["id"])),
+            )
+            from curriculum_registry import _audit as _audit_curriculum
+
+            _audit_curriculum(
+                conn,
+                action="remove_incompatible_assignment",
+                target_type="class_curriculum",
+                target_key=str(class_id),
+                actor_user_id=actor_user_id,
+                organization_id=int(assignment["organization_id"]),
+                package_id=int(assignment["package_id"]),
+                version_id=int(assignment["version_id"]),
+                class_id=int(class_id),
+                before=dict(assignment),
+                after={"status": "removed", "subject_key": next_subject_key},
+                note="Class subject changed; no replacement curriculum was guessed.",
+            )
+    record_class_history(
+        class_id,
+        "updated",
+        before=before,
+        after=get_class(class_id),
+        actor_user_id=actor_user_id,
+    )
 
 
 def record_class_history(class_id: int, action: str, before: dict | None = None, after: dict | None = None,

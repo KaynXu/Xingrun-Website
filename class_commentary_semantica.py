@@ -185,6 +185,144 @@ class SemanticaGraphAdapter:
             raise
 
     @staticmethod
+    def _merge_node(existing: Mapping[str, object], incoming: Mapping[str, object]) -> dict:
+        if str(existing.get("id") or "") != str(incoming.get("id") or ""):
+            raise SemanticaGraphIntegrityError("cannot merge different graph nodes")
+        if str(existing.get("type") or "") != str(incoming.get("type") or ""):
+            raise SemanticaGraphIntegrityError("graph node type changed for a stable identity")
+        properties = dict(existing.get("properties") or existing.get("metadata") or {})
+        for key, value in dict(incoming.get("properties") or {}).items():
+            previous = properties.get(key)
+            if previous not in (None, "", 0) and value not in (None, "", 0) and previous != value:
+                raise SemanticaGraphIntegrityError(
+                    f"graph node property changed for a stable identity: {key}"
+                )
+            if value not in (None, "", 0) or key not in properties:
+                properties[key] = value
+        return {
+            "id": str(incoming["id"]),
+            "type": str(incoming["type"]),
+            "content": str(incoming.get("content") or existing.get("content") or incoming["id"]),
+            "properties": properties,
+        }
+
+    @classmethod
+    def _upsert_nodes(cls, target: dict[str, dict], nodes: Iterable[Mapping[str, object]]) -> None:
+        for node in nodes:
+            node_id = str(node.get("id") or "")
+            if not node_id:
+                raise SemanticaGraphIntegrityError("graph node identity is missing")
+            existing = target.get(node_id)
+            target[node_id] = cls._merge_node(existing, node) if existing else dict(node)
+
+    @staticmethod
+    def _curriculum_graph(
+        snapshot: Optional[Mapping[str, object]],
+    ) -> tuple[list[dict], list[dict]]:
+        if not snapshot:
+            return [], []
+        if str(snapshot.get("schema_version") or "") != "xingrun.semantica-curriculum.v1":
+            raise SemanticaGraphIntegrityError("curriculum graph snapshot schema is invalid")
+        raw_nodes = snapshot.get("nodes")
+        raw_edges = snapshot.get("edges")
+        if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
+            raise SemanticaGraphIntegrityError("curriculum graph snapshot is invalid")
+        nodes = []
+        known = set()
+        for raw in raw_nodes:
+            if not isinstance(raw, Mapping):
+                raise SemanticaGraphIntegrityError("curriculum graph node is invalid")
+            package_key = str(raw.get("package_key") or "").strip()
+            version_key = str(raw.get("version_key") or "").strip()
+            node_key = str(raw.get("node_key") or "").strip()
+            subject_key = str(raw.get("subject_key") or "").strip()
+            node_type = str(raw.get("node_type") or "").strip()
+            if not all((package_key, version_key, node_key, subject_key, node_type)):
+                raise SemanticaGraphIntegrityError("curriculum graph node identity is missing")
+            node_id = _stable_id("curriculum-base", package_key, version_key, node_key)
+            if node_id in known:
+                raise SemanticaGraphIntegrityError("curriculum graph node is duplicated")
+            known.add(node_id)
+            nodes.append(
+                {
+                    "id": node_id,
+                    "type": "KnowledgePoint" if node_type in {"Concept", "Skill"} else node_type,
+                    "content": str(raw.get("canonical_name") or node_key),
+                    "properties": {
+                        "scope_type": "curriculum",
+                        "package_key": package_key,
+                        "version_key": version_key,
+                        "version_status": str(raw.get("version_status") or ""),
+                        "subject_key": subject_key,
+                        "node_key": node_key,
+                        "curriculum_node_type": node_type,
+                        "knowledge_point_kind": str(raw.get("knowledge_point_kind") or ""),
+                        "source_revision": str(raw.get("source_revision") or ""),
+                        "source_sha256": str(raw.get("source_sha256") or ""),
+                        "curriculum_content_hash": str(raw.get("curriculum_content_hash") or ""),
+                        "description": str(raw.get("description") or ""),
+                        "importance": str(raw.get("importance") or ""),
+                        "stage_key": str(raw.get("stage_key") or ""),
+                        "grade_key": str(raw.get("grade_key") or ""),
+                        "semester_key": str(raw.get("semester_key") or ""),
+                        "book_upstream_id": str(raw.get("book_upstream_id") or ""),
+                    },
+                }
+            )
+        relation_types = {
+            "is_part_of": "IS_PART_OF",
+            "appears_in": "APPEARS_IN",
+            "is_a": "IS_A",
+            "prerequisites_for": "PREREQUISITE_FOR",
+            "relates_to": "RELATES_TO",
+        }
+        edges = []
+        seen_edges = set()
+        for raw in raw_edges:
+            if not isinstance(raw, Mapping):
+                raise SemanticaGraphIntegrityError("curriculum graph edge is invalid")
+            package_key = str(raw.get("package_key") or "").strip()
+            version_key = str(raw.get("version_key") or "").strip()
+            relation = str(raw.get("relation_type") or "").strip()
+            edge_type = relation_types.get(relation)
+            source_id = _stable_id(
+                "curriculum-base", package_key, version_key, raw.get("source_node_key")
+            )
+            target_id = _stable_id(
+                "curriculum-base", package_key, version_key, raw.get("target_node_key")
+            )
+            if not edge_type or source_id not in known or target_id not in known:
+                raise SemanticaGraphIntegrityError("curriculum graph edge scope is invalid")
+            edge_id = _stable_id("curriculum-edge", version_key, relation, source_id, target_id)
+            if edge_id in seen_edges:
+                raise SemanticaGraphIntegrityError("curriculum graph edge is duplicated")
+            seen_edges.add(edge_id)
+            edges.append(
+                {
+                    "id": edge_id,
+                    "source": source_id,
+                    "target": target_id,
+                    "type": edge_type,
+                    "metadata": {
+                        "scope_type": "curriculum",
+                        "package_key": package_key,
+                        "version_key": version_key,
+                        "subject_key": str(raw.get("subject_key") or ""),
+                    },
+                }
+            )
+        expected_node_count = snapshot.get("node_count")
+        expected_edge_count = snapshot.get("edge_count")
+        if (
+            not isinstance(expected_node_count, int)
+            or not isinstance(expected_edge_count, int)
+            or len(nodes) != expected_node_count
+            or len(edges) != expected_edge_count
+        ):
+            raise SemanticaGraphIntegrityError("curriculum graph snapshot count mismatch")
+        return nodes, edges
+
+    @staticmethod
     def _event_graph(event: Mapping[str, object]) -> tuple[list[dict], list[dict]]:
         organization_id, student_id, subject_key = _scope(event)
         event_id = str(event.get("event_id") or "").strip()
@@ -207,7 +345,19 @@ class SemanticaGraphAdapter:
         revision_node = _stable_id(
             "revision", organization_id, student_id, subject_key, event.get("revision_id")
         )
-        kp_node = _stable_id("knowledge-point", organization_id, subject_key, knowledge_point_key)
+        curriculum_package_key = str(event.get("curriculum_package_key") or "").strip()
+        curriculum_version_key = str(event.get("curriculum_version_key") or "").strip()
+        if curriculum_package_key and curriculum_version_key:
+            kp_node = _stable_id(
+                "curriculum-knowledge-point",
+                organization_id,
+                subject_key,
+                curriculum_package_key,
+                curriculum_version_key,
+                knowledge_point_key,
+            )
+        else:
+            kp_node = _stable_id("knowledge-point", organization_id, subject_key, knowledge_point_key)
         event_node = _stable_id("learning-event", event_id)
         state_node = _stable_id("learning-state", event_id, event.get("observed_state"))
         evidence_node = _stable_id("evidence", event.get("evidence_id"))
@@ -236,10 +386,19 @@ class SemanticaGraphAdapter:
                 "type": "KnowledgePoint",
                 "content": str(event.get("knowledge_point_name") or knowledge_point_key),
                 "properties": {
-                    "organization_id": organization_id,
                     "subject_key": subject_key,
                     "knowledge_point_key": knowledge_point_key,
                     "registry_version": int(event.get("registry_version") or 1),
+                    "organization_id": organization_id,
+                    "curriculum_package_key": curriculum_package_key,
+                    "curriculum_version_key": curriculum_version_key,
+                    "curriculum_source_revision": str(event.get("curriculum_source_revision") or ""),
+                    "curriculum_content_hash": str(event.get("curriculum_content_hash") or ""),
+                    "curriculum_node_content_hash": str(event.get("curriculum_node_content_hash") or ""),
+                    "curriculum_node_id": int(event.get("curriculum_node_id") or 0),
+                    "organization_knowledge_point_id": int(
+                        event.get("organization_knowledge_point_id") or 0
+                    ),
                 },
             },
             {
@@ -300,6 +459,90 @@ class SemanticaGraphAdapter:
             edge(state_node, kp_node, "ABOUT_KNOWLEDGE_POINT", event_id),
         ]
 
+        if int(event.get("curriculum_node_id") or 0) and curriculum_package_key and curriculum_version_key:
+            curriculum_base_node = _stable_id(
+                "curriculum-base",
+                curriculum_package_key,
+                curriculum_version_key,
+                knowledge_point_key,
+            )
+            edges.append(
+                edge(kp_node, curriculum_base_node, "MAPS_TO_CURRICULUM", event_id)
+            )
+
+        curriculum_context = event.get("curriculum_context")
+        if isinstance(curriculum_context, Mapping) and curriculum_package_key and curriculum_version_key:
+            def curriculum_node(item: Mapping[str, object]) -> str:
+                node_key = str(item.get("node_key") or "").strip()
+                node_type = str(item.get("node_type") or "KnowledgePoint").strip()
+                name = str(item.get("name") or item.get("canonical_name") or node_key)
+                if not node_key:
+                    raise SemanticaGraphIntegrityError("curriculum context node identity is missing")
+                # The path includes the leaf knowledge point. It is already
+                # represented by kp_node with frozen registry/source hashes;
+                # appending a second node with the same ID would overwrite
+                # those provenance properties during adapter deduplication.
+                if node_key == knowledge_point_key:
+                    return kp_node
+                if node_type in {"Concept", "Skill", "KnowledgePoint"}:
+                    node_id = _stable_id(
+                        "curriculum-knowledge-point",
+                        organization_id,
+                        subject_key,
+                        curriculum_package_key,
+                        curriculum_version_key,
+                        node_key,
+                    )
+                    properties = {
+                        "organization_id": organization_id,
+                        "subject_key": subject_key,
+                        "knowledge_point_key": node_key,
+                        "curriculum_package_key": curriculum_package_key,
+                        "curriculum_version_key": curriculum_version_key,
+                        "knowledge_point_kind": node_type,
+                    }
+                    graph_type = "KnowledgePoint"
+                else:
+                    node_id = _stable_id(
+                        "curriculum-context",
+                        organization_id,
+                        student_id,
+                        subject_key,
+                        curriculum_version_key,
+                        node_key,
+                    )
+                    properties = {
+                        **scope,
+                        "node_key": node_key,
+                        "curriculum_package_key": curriculum_package_key,
+                        "curriculum_version_key": curriculum_version_key,
+                    }
+                    graph_type = node_type
+                nodes.append({"id": node_id, "type": graph_type, "content": name, "properties": properties})
+                return node_id
+
+            path = [item for item in curriculum_context.get("path") or [] if isinstance(item, Mapping)]
+            path_ids = [curriculum_node(item) for item in path]
+            for index in range(1, len(path_ids)):
+                child_id = kp_node if index == len(path_ids) - 1 else path_ids[index]
+                parent_id = path_ids[index - 1]
+                relation = "APPEARS_IN" if index == len(path_ids) - 1 else "IS_PART_OF"
+                edges.append(edge(child_id, parent_id, relation, event_id, index))
+            for relation_key, edge_type, reverse in (
+                ("prerequisites", "PREREQUISITE_FOR", False),
+                ("follow_ups", "PREREQUISITE_FOR", True),
+                ("related", "RELATES_TO", True),
+            ):
+                for index, item in enumerate(curriculum_context.get(relation_key) or []):
+                    if not isinstance(item, Mapping):
+                        continue
+                    related_id = curriculum_node(item)
+                    if relation_key == "prerequisites":
+                        source_id, target_id = related_id, kp_node
+                    else:
+                        source_id, target_id = kp_node, related_id
+                    edges.append(edge(source_id, target_id, edge_type, event_id, relation_key, index))
+
         previous_event_id = str(event.get("previous_event_id") or "").strip()
         if previous_event_id:
             previous_state = _stable_id(
@@ -351,9 +594,16 @@ class SemanticaGraphAdapter:
                 }
             )
             edges.append(edge(event_node, next_node, "RECOMMENDS_NEXT", event_id, index))
-        return nodes, edges
+        deduplicated_nodes: dict[str, dict] = {}
+        SemanticaGraphAdapter._upsert_nodes(deduplicated_nodes, nodes)
+        return list(deduplicated_nodes.values()), edges
 
-    def apply_event(self, event: Mapping[str, object]) -> dict:
+    def apply_event(
+        self,
+        event: Mapping[str, object],
+        *,
+        curriculum_snapshot: Optional[Mapping[str, object]] = None,
+    ) -> dict:
         event_id = str(event.get("event_id") or "").strip()
         if not event_id:
             raise SemanticaGraphIntegrityError("trusted learning event identity is missing")
@@ -363,6 +613,7 @@ class SemanticaGraphAdapter:
             and not str(event.get("superseded_by_event_id") or "").strip()
         )
         event_nodes, event_edges = ([], []) if delete_event else self._event_graph(event)
+        curriculum_nodes, curriculum_edges = self._curriculum_graph(curriculum_snapshot)
         with self._exclusive_lock():
             existing = self._read_payload()
             edges_by_id = {
@@ -371,6 +622,7 @@ class SemanticaGraphAdapter:
                 if str((edge.get("metadata") or {}).get("event_id") or "")
                 != event_id
             }
+            edges_by_id.update({str(edge["id"]): edge for edge in curriculum_edges})
             edges_by_id.update({str(edge["id"]): edge for edge in event_edges})
             referenced_node_ids = {
                 str(endpoint)
@@ -382,7 +634,8 @@ class SemanticaGraphAdapter:
                 for node in existing["nodes"]
                 if str(node["id"]) in referenced_node_ids
             }
-            nodes_by_id.update({str(node["id"]): node for node in event_nodes})
+            self._upsert_nodes(nodes_by_id, curriculum_nodes)
+            self._upsert_nodes(nodes_by_id, event_nodes)
             payload = self._canonicalize_with_semantica(nodes_by_id.values(), edges_by_id.values())
             self._atomic_write(payload)
         return {
@@ -393,13 +646,21 @@ class SemanticaGraphAdapter:
             "store_hash": hashlib.sha256(_canonical_json(payload).encode()).hexdigest(),
         }
 
-    def rebuild(self, events: Iterable[Mapping[str, object]]) -> dict:
+    def rebuild(
+        self,
+        events: Iterable[Mapping[str, object]],
+        *,
+        curriculum_snapshot: Optional[Mapping[str, object]] = None,
+    ) -> dict:
         nodes_by_id: dict[str, dict] = {}
         edges_by_id: dict[str, dict] = {}
+        curriculum_nodes, curriculum_edges = self._curriculum_graph(curriculum_snapshot)
+        self._upsert_nodes(nodes_by_id, curriculum_nodes)
+        edges_by_id.update({str(edge["id"]): edge for edge in curriculum_edges})
         event_count = 0
         for event in events:
             event_nodes, event_edges = self._event_graph(event)
-            nodes_by_id.update({str(node["id"]): node for node in event_nodes})
+            self._upsert_nodes(nodes_by_id, event_nodes)
             edges_by_id.update({str(edge["id"]): edge for edge in event_edges})
             event_count += 1
         payload = self._canonicalize_with_semantica(nodes_by_id.values(), edges_by_id.values())
@@ -411,6 +672,29 @@ class SemanticaGraphAdapter:
             "edge_count": len(payload["edges"]),
             "store_hash": hashlib.sha256(_canonical_json(payload).encode()).hexdigest(),
         }
+
+    def expected_store_hash(
+        self,
+        events: Iterable[Mapping[str, object]],
+        *,
+        curriculum_snapshot: Optional[Mapping[str, object]] = None,
+    ) -> str:
+        nodes_by_id: dict[str, dict] = {}
+        edges_by_id: dict[str, dict] = {}
+        curriculum_nodes, curriculum_edges = self._curriculum_graph(curriculum_snapshot)
+        self._upsert_nodes(nodes_by_id, curriculum_nodes)
+        edges_by_id.update({str(edge["id"]): edge for edge in curriculum_edges})
+        for event in events:
+            event_nodes, event_edges = self._event_graph(event)
+            self._upsert_nodes(nodes_by_id, event_nodes)
+            edges_by_id.update({str(edge["id"]): edge for edge in event_edges})
+        payload = self._canonicalize_with_semantica(nodes_by_id.values(), edges_by_id.values())
+        return hashlib.sha256(_canonical_json(payload).encode()).hexdigest()
+
+    def store_hash(self) -> str:
+        payload = self._read_payload()
+        self._trusted_learning_event_ids_from_payload(payload)
+        return hashlib.sha256(_canonical_json(payload).encode()).hexdigest()
 
     @staticmethod
     def _trusted_learning_event_ids_from_payload(payload: Mapping[str, object]) -> set[str]:
@@ -471,7 +755,10 @@ class SemanticaGraphAdapter:
         edges = []
         for raw_edge in payload["edges"]:
             edge = dict(raw_edge)
-            if _scope(dict(edge.get("metadata") or {})) != expected:
+            metadata = dict(edge.get("metadata") or {})
+            if str(metadata.get("scope_type") or "") == "curriculum":
+                continue
+            if _scope(metadata) != expected:
                 continue
             source_id = str(edge.get("source") or "")
             target_id = str(edge.get("target") or "")
@@ -480,6 +767,12 @@ class SemanticaGraphAdapter:
                 raise SemanticaGraphScopeError("Semantica scoped edge endpoint is missing")
             for node in endpoints:
                 properties = dict(node.get("properties") or node.get("metadata") or {})
+                if str(properties.get("scope_type") or "") == "curriculum":
+                    if str(properties.get("subject_key") or "") != expected[2]:
+                        raise SemanticaGraphScopeError(
+                            "Semantica curriculum node subject scope mismatch"
+                        )
+                    continue
                 if str(node.get("type") or "") == "KnowledgePoint":
                     if (
                         int(properties.get("organization_id") or 0) != expected[0]
@@ -513,10 +806,27 @@ class SemanticaGraphAdapter:
             event_ids = self._trusted_learning_event_ids_from_payload(payload)
         except (SemanticaGraphError, OSError, TypeError, ValueError):
             return {"healthy": False, "error": "store_unreadable"}
+        curriculum_node_count = sum(
+            1
+            for node in payload["nodes"]
+            if str(
+                (node.get("properties") or node.get("metadata") or {}).get("scope_type")
+                or ""
+            )
+            == "curriculum"
+        )
+        curriculum_edge_count = sum(
+            1
+            for edge in payload["edges"]
+            if str((edge.get("metadata") or {}).get("scope_type") or "")
+            == "curriculum"
+        )
         return {
             "healthy": True,
             "semantica_version": SEMANTICA_REQUIRED_VERSION,
             "node_count": len(payload["nodes"]),
             "edge_count": len(payload["edges"]),
             "event_count": len(event_ids),
+            "curriculum_node_count": curriculum_node_count,
+            "curriculum_edge_count": curriculum_edge_count,
         }

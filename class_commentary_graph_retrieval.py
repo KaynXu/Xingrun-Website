@@ -123,12 +123,47 @@ def _bounded_context(
         )
     )
     for item in raw_current_states[: min(bounded_event_limit, 8)]:
+        curriculum = item.get("curriculum") if isinstance(item.get("curriculum"), Mapping) else {}
         state = {
             "knowledge_point_key": clipped(item.get("knowledge_point_key"), 160),
             "knowledge_point_name": clipped(item.get("knowledge_point_name"), 160),
             "state": clipped(item.get("state") or "unknown", 32),
             "observed_at": clipped(item.get("observed_at"), 64),
+            "curriculum": {
+                "path": [
+                    {
+                        "node_type": clipped(path_item.get("node_type"), 32),
+                        "name": clipped(path_item.get("name"), 120),
+                    }
+                    for path_item in list(curriculum.get("path") or [])[:6]
+                    if isinstance(path_item, Mapping)
+                ],
+                "prerequisites": [
+                    {
+                        "knowledge_point_key": clipped(related.get("node_key"), 160),
+                        "name": clipped(related.get("canonical_name"), 120),
+                    }
+                    for related in list(curriculum.get("prerequisites") or [])[:4]
+                    if isinstance(related, Mapping)
+                ],
+                "follow_ups": [
+                    {
+                        "knowledge_point_key": clipped(related.get("node_key"), 160),
+                        "name": clipped(related.get("canonical_name"), 120),
+                    }
+                    for related in list(curriculum.get("follow_ups") or [])[:4]
+                    if isinstance(related, Mapping)
+                ],
+                "source_revision": clipped(
+                    (curriculum.get("source") or {}).get("dataset_revision")
+                    if isinstance(curriculum.get("source"), Mapping)
+                    else "",
+                    64,
+                ),
+            },
         }
+        if not curriculum:
+            state.pop("curriculum", None)
         if within_budget([*current_states, state], [], []):
             current_states.append(state)
         else:
@@ -148,6 +183,7 @@ def _bounded_context(
             remaining = max(0, bounded_char_limit - used_chars)
             quote = quote[:remaining]
         evidence_ref = clipped(evidence.get("evidence_ref"), 160)
+        curriculum = item.get("curriculum") if isinstance(item.get("curriculum"), Mapping) else {}
         change = {
             "event_ref": clipped(item.get("event_ref"), 160),
             "knowledge_point_key": clipped(item.get("knowledge_point_key"), 160),
@@ -173,7 +209,26 @@ def _bounded_context(
             "next_steps": [
                 clipped(value, 240) for value in list(item.get("next_steps") or [])[:4]
             ],
+            "curriculum": {
+                "path": [
+                    clipped(path_item.get("name"), 120)
+                    for path_item in list(curriculum.get("path") or [])[:6]
+                    if isinstance(path_item, Mapping)
+                ],
+                "prerequisites": [
+                    clipped(related.get("canonical_name"), 120)
+                    for related in list(curriculum.get("prerequisites") or [])[:4]
+                    if isinstance(related, Mapping)
+                ],
+                "follow_ups": [
+                    clipped(related.get("canonical_name"), 120)
+                    for related in list(curriculum.get("follow_ups") or [])[:4]
+                    if isinstance(related, Mapping)
+                ],
+            },
         }
+        if not curriculum:
+            change.pop("curriculum", None)
         next_refs = [*allowed_refs, evidence_ref] if evidence_ref else list(allowed_refs)
         if within_budget(current_states, [*changes, change], next_refs):
             changes.append(change)
