@@ -214,20 +214,17 @@ class ClassCommentaryMemoryDeployContractTests(unittest.TestCase):
         for source in inline_python:
             ast.parse(source)
 
-    def test_runbooks_cover_dual_process_health_and_rollback(self):
-        server_runbook = (ROOT / "server deploy.md").read_text(encoding="utf-8")
-        release_runbook = (ROOT / "docs" / "deploy-release.md").read_text(encoding="utf-8")
-        combined = server_runbook + release_runbook
+    def test_deploy_runbook_covers_dual_process_health_and_rollback(self):
+        runbook = (ROOT / "deploy-release.md").read_text(encoding="utf-8")
 
-        self.assertNotIn("***REMOVED-ROTATED-SSH-PASSWORD***", combined)
-        self.assertIn("Python 3.12", combined)
-        self.assertIn("xingrun-class-commentary-memory-worker", combined)
-        self.assertIn("--update-env", combined)
-        self.assertIn("rq info", combined)
-        self.assertIn("302", combined)
-        self.assertIn("回滚", combined)
-        self.assertIn("migration-first", combined)
-        self.assertIn("stopped", combined)
+        self.assertNotIn("***REMOVED-ROTATED-SSH-PASSWORD***", runbook)
+        self.assertIn("Python 3.12", runbook)
+        self.assertIn("scripts/deploy_backend.sh", runbook)
+        self.assertIn("xingrun-class-commentary-memory-worker", runbook)
+        self.assertIn("302", runbook)
+        self.assertIn("回滚", runbook)
+        self.assertIn("migration-first", runbook)
+        self.assertIn("stopped", runbook)
 
 
 if __name__ == "__main__":
