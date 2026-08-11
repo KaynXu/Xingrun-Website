@@ -262,6 +262,7 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
                 "attending_roster_explicit": True,
                 "confirmed_transcript_hash": expected_transcript_hash,
                 "confirmed_transcript_version": 1,
+                "credit_hold_amount_per_student": 0,
                 "eligible_student_ids": expected_eligible_ids,
                 "eligible_student_scope_hash": expected_scope_hash,
                 "feedback_schema_version": STRUCTURED_SCHEMA_VERSION,

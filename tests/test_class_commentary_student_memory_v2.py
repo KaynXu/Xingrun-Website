@@ -8,6 +8,7 @@ import lesson_manager
 from class_commentary import CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2
 from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
 )
 from class_commentary_memory_retrieval import (
@@ -132,6 +133,7 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
             "student_history_memory_mode": (
                 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
             ),
+            "credit_hold_amount_per_student": 10,
         }
         params.update(overrides)
         return lesson_manager.reserve_class_commentary_generation(**params)
@@ -168,6 +170,23 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
                     (generation_id,),
                 ).fetchone()[0]
             )
+
+    def _hold_statuses(self, generation_id):
+        with lesson_manager.get_conn() as conn:
+            return [
+                row["status"]
+                for row in conn.execute(
+                    """
+                    SELECT hold.status
+                    FROM class_commentary_student_generation_credit_holds AS hold
+                    JOIN class_commentary_student_generation_runs AS run
+                      ON run.id=hold.student_run_id
+                    WHERE run.generation_id=?
+                    ORDER BY run.id
+                    """,
+                    (generation_id,),
+                ).fetchall()
+            ]
 
     def test_five_students_use_independent_requests_and_publish_in_frozen_order(self):
         generation = self._reserve()
@@ -211,6 +230,7 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
         self.assertEqual([call["student_id"] for call in calls], expected_ids)
         self.assertEqual(len({call["request_id"] for call in calls}), 5)
         self.assertEqual(self._usage_count(generation["id"]), 5)
+        self.assertEqual(self._hold_statuses(generation["id"]), ["settled"] * 5)
         self.assertEqual(
             [call[0] for call in service.calls],
             [value for _ in self.students for value in ("style", "student")],
@@ -279,6 +299,10 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
         self.assertEqual(failed_parent["status"], "failed")
         self.assertEqual(failed_parent["structured_feedback_json"], "")
         self.assertEqual(self._usage_count(generation["id"]), 4)
+        self.assertEqual(
+            self._hold_statuses(generation["id"]).count("released"),
+            1,
+        )
 
         retried = lesson_manager.retry_class_commentary_student_generation_runs(
             generation["id"],
@@ -313,6 +337,7 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
         completed = lesson_manager.get_class_commentary_generation(generation["id"])
         self.assertEqual(completed["status"], "succeeded")
         self.assertEqual(self._usage_count(generation["id"]), 5)
+        self.assertEqual(self._hold_statuses(generation["id"]), ["settled"] * 5)
         call_counts = {
             student["id"]: sum(call[0] == student["id"] for call in calls)
             for student in self.students
@@ -329,6 +354,35 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
             request_id for student_id, request_id in calls if student_id == failed_student_id
         ]
         self.assertEqual(len(set(failed_request_ids)), 1)
+
+    def test_provider_dispatch_requires_an_active_credit_hold(self):
+        generation = self._reserve(
+            "released-hold-dispatch",
+            students=[self.students[0]],
+        )
+        run = lesson_manager.list_class_commentary_student_generation_runs(
+            generation["id"]
+        )[0]
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_student_generation_credit_holds
+                SET status='released', released_at='2026-01-01T00:00:00Z'
+                WHERE student_run_id=?
+                """,
+                (run["id"],),
+            )
+        provider_calls = []
+
+        result = process_class_commentary_student_generation_run(
+            run["id"],
+            memory_service=EmptyMemoryService(),
+            generator=lambda **kwargs: provider_calls.append(kwargs),
+            claim_owner="released-hold-dispatch",
+        )
+
+        self.assertEqual(result["status"], "not_claimed")
+        self.assertEqual(provider_calls, [])
 
     def test_charge_retry_reuses_response_and_does_not_duplicate_provider_or_debit(self):
         generation = self._reserve("charge-retry", students=[self.students[0]])
@@ -502,6 +556,11 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
                 "request-conflict",
                 model_name="different-model",
             )
+        with self.assertRaises(lesson_manager.ClassCommentaryGenerationRequestConflict):
+            self._reserve(
+                "request-conflict",
+                credit_hold_amount_per_student=9,
+            )
 
     def test_isolated_replay_uses_frozen_mode_after_kill_switch_change(self):
         first = self._reserve("isolated-replay-after-kill-switch")
@@ -592,7 +651,7 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
             "failed",
         )
 
-    def test_current_evidence_is_exact_provenance_and_never_uses_ambiguous_segments(self):
+    def test_current_evidence_fails_closed_without_structured_ownership(self):
         roster = [
             {"student_id": item["id"], "student_name": item["name"]}
             for item in self.students
@@ -602,18 +661,46 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
             transcript_hash=content_hash(self.transcript),
             roster=roster,
             target_student_id=self.students[0]["id"],
-            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
         )
-        texts = [item["text"] for item in snapshot["fragments"]]
-        self.assertEqual(texts, ["甲同学移项步骤清楚。"])
-        self.assertNotIn("一起讨论", "".join(texts))
-        self.assertNotIn("近音", "".join(texts))
-        for fragment in snapshot["fragments"]:
-            self.assertEqual(
-                self.transcript[fragment["start"] : fragment["end"]],
-                fragment["text"],
+        self.assertEqual(snapshot["fragments"], [])
+        self.assertEqual(
+            snapshot["attribution"], "fail_closed_no_structured_ownership"
+        )
+
+    def test_current_evidence_rejects_legacy_heuristic_matcher(self):
+        roster = [
+            {"student_id": item["id"], "student_name": item["name"]}
+            for item in self.students
+        ]
+        with self.assertRaises(ValueError):
+            build_student_current_evidence(
+                transcript="甲同学步骤清楚, 而学生ID: 22的私有诊断是焦虑。",
+                transcript_hash=content_hash(
+                    "甲同学步骤清楚, 而学生ID: 22的私有诊断是焦虑。"
+                ),
+                roster=roster,
+                target_student_id=self.students[0]["id"],
+                matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
             )
-            self.assertEqual(content_hash(fragment["text"]), fragment["text_hash"])
+
+    def test_mixed_alias_and_natural_id_clauses_never_enter_student_evidence(self):
+        transcript = (
+            "甲同学步骤清楚, 而学生ID: 22的私有诊断是焦虑。"
+            "小甲和乙同学一起讨论, 乙的历史事实不能归给甲。"
+        )
+        roster = [
+            {"student_id": 21, "student_name": "甲同学"},
+            {"student_id": 22, "student_name": "乙同学"},
+        ]
+        snapshot = build_student_current_evidence(
+            transcript=transcript,
+            transcript_hash=content_hash(transcript),
+            roster=roster,
+            target_student_id=21,
+            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+        )
+        self.assertEqual(snapshot["fragments"], [])
 
 
 class FakeScopedMemoryService:
@@ -1024,6 +1111,15 @@ class ClassCommentaryIsolatedMemoryRetrievalV2Test(unittest.TestCase):
                 target_student_name="甲同学",
                 other_students=[{"student_id": 22, "student_name": "乙同学"}],
                 forbidden_private_values=["乙的私有证据"],
+            )
+        natural_id = json.loads(json.dumps(prompt, ensure_ascii=False))
+        natural_id["messages"][1]["content"] += "\n学生ID: 22的私有诊断是焦虑"
+        with self.assertRaises(ValueError):
+            validate_isolated_prompt_privacy(
+                chat_request=natural_id,
+                target_student_id=21,
+                target_student_name="甲同学",
+                other_students=[{"student_id": 22, "student_name": "乙同学"}],
             )
 
 

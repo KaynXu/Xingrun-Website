@@ -12,7 +12,7 @@ from class_commentary import (
     normalize_class_commentary_feedback_text,
 )
 from class_commentary_feedback_schema import (
-    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT,
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
@@ -69,60 +69,15 @@ def _roster_entries(roster: Iterable[Mapping[str, object]]) -> list[dict]:
     entries = []
     names = set()
     student_ids = set()
-    for position, item in enumerate(roster):
+    for item in roster:
         student_id = int(item.get("student_id") or item.get("id") or 0)
         name = _normalized_name(item.get("student_name") or item.get("name"))
         if student_id <= 0 or not name or student_id in student_ids or name in names:
             raise ValueError("student evidence roster is invalid or ambiguous")
         student_ids.add(student_id)
         names.add(name)
-        entries.append({"position": position, "student_id": student_id, "name": name})
+        entries.append({"student_id": student_id, "name": name})
     return entries
-
-
-def _accepted_name_mentions(transcript: str, roster: list[dict]) -> list[dict]:
-    candidates = []
-    for item in roster:
-        start = transcript.find(item["name"])
-        while start >= 0:
-            candidates.append(
-                {
-                    "start": start,
-                    "end": start + len(item["name"]),
-                    "student_id": item["student_id"],
-                    "position": item["position"],
-                }
-            )
-            start = transcript.find(item["name"], start + 1)
-    accepted = []
-    for item in sorted(
-        candidates,
-        key=lambda value: (
-            -(value["end"] - value["start"]),
-            value["start"],
-            value["position"],
-        ),
-    ):
-        if any(
-            item["start"] < existing["end"] and item["end"] > existing["start"]
-            for existing in accepted
-        ):
-            continue
-        accepted.append(item)
-    return sorted(accepted, key=lambda value: (value["start"], value["position"]))
-
-
-def _transcript_segments(transcript: str) -> list[tuple[int, int]]:
-    segments = []
-    start = 0
-    for match in re.finditer(r"[\n\r。！？!?；;]+", transcript):
-        end = match.end()
-        if transcript[start:end].strip():
-            segments.append((start, end))
-        start = end
-    if transcript[start:].strip():
-        segments.append((start, len(transcript)))
-    return segments
 
 
 def build_student_current_evidence(
@@ -131,49 +86,23 @@ def build_student_current_evidence(
     transcript_hash: str,
     roster: Iterable[Mapping[str, object]],
     target_student_id: int,
-    matcher_version: str = CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+    matcher_version: str = CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
 ) -> dict:
     frozen_transcript = str(transcript or "")
     if content_hash(frozen_transcript) != str(transcript_hash or ""):
         raise ValueError("confirmed transcript hash mismatch")
-    if matcher_version != CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1:
+    if matcher_version != CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2:
         raise ValueError("student evidence matcher version is unsupported")
     normalized_roster = _roster_entries(roster)
     target_ids = {item["student_id"] for item in normalized_roster}
     if int(target_student_id) not in target_ids:
         raise ValueError("target student is outside the frozen roster")
-    mentions = _accepted_name_mentions(frozen_transcript, normalized_roster)
-    fragments = []
-    for segment_start, segment_end in _transcript_segments(frozen_transcript):
-        segment_mentions = [
-            mention
-            for mention in mentions
-            if mention["start"] >= segment_start and mention["end"] <= segment_end
-        ]
-        mentioned_student_ids = {
-            int(mention["student_id"]) for mention in segment_mentions
-        }
-        if mentioned_student_ids != {int(target_student_id)}:
-            continue
-        text = frozen_transcript[segment_start:segment_end].strip()
-        if not text:
-            continue
-        start = frozen_transcript.find(text, segment_start, segment_end)
-        fragment_end = start + len(text)
-        fragments.append(
-            {
-                "start": start,
-                "end": fragment_end,
-                "text": text,
-                "text_hash": content_hash(text),
-            }
-        )
     snapshot = {
         "schema_version": "class_commentary.student_current_evidence.v1",
         "matcher_version": matcher_version,
         "transcript_hash": str(transcript_hash),
-        "attribution": "exact_frozen_roster_name",
-        "fragments": fragments,
+        "attribution": "fail_closed_no_structured_ownership",
+        "fragments": [],
     }
     return {**snapshot, "snapshot_hash": canonical_hash(snapshot)}
 
@@ -320,8 +249,13 @@ def validate_isolated_prompt_privacy(
     for item in other_students:
         other_id = int(item.get("student_id") or item.get("id") or 0)
         other_name = str(item.get("student_name") or item.get("name") or "").strip()
-        if other_id > 0 and other_id != int(target_student_id) and _contains_student_id_field(
-            visible_prompt, other_id
+        if (
+            other_id > 0
+            and other_id != int(target_student_id)
+            and (
+                _contains_student_id_field(visible_prompt, other_id)
+                or _contains_student_id_reference(visible_prompt, other_id)
+            )
         ):
             raise ValueError("isolated prompt contains another student_id")
         if other_name and other_name != str(target_student_name) and other_name in serialized:

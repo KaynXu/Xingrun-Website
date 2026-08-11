@@ -27,6 +27,9 @@ CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2 = "isolated_v2"
 CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1 = (
     "class_commentary.student_evidence_matcher.v1"
 )
+CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2 = (
+    "class_commentary.student_evidence_fail_closed.v2"
+)
 CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT = 2000
 CLASS_COMMENTARY_STUDENT_FEEDBACK_TOTAL_LIMIT = 30000
 
@@ -285,10 +288,16 @@ def validate_class_commentary_structured_generation_contract(
             raise ValueError("structured feedback attending roster scope is invalid")
         if not bool(generation.get("attending_roster_explicit")):
             raise ValueError("structured feedback attending roster scope must be explicit")
-    elif contract_pair == (
-        CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
-        CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
-    ):
+    elif contract_pair in {
+        (
+            CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+            CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+        ),
+        (
+            CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+            CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+        ),
+    }:
         if eligible_ids != list(names_by_id):
             raise ValueError("isolated feedback attending roster scope is invalid")
         if not bool(generation.get("attending_roster_explicit")):

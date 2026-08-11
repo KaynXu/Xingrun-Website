@@ -243,6 +243,58 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         self.assertEqual(generation_count, 0)
         dispatch.assert_not_called()
 
+    def test_credit_holds_block_a_second_full_balance_generation_atomically(self):
+        lesson_manager.insert_credit_ledger_entry(
+            organization_id=self.user["organization_id"],
+            direction="debit",
+            amount=80,
+            source_type="manual_adjustment",
+            source_id="reduce-to-one-generation",
+            note="leave twenty credits",
+            operator_user_id=self.user["id"],
+        )
+        with patch.object(
+            self.app_module,
+            "_class_commentary_capabilities",
+            return_value=self._enabled_capabilities(),
+        ), patch.object(
+            self.app_module, "has_class_commentary_api_key", return_value=True
+        ), patch.object(
+            self.app_module,
+            "_dispatch_class_commentary_memory_best_effort",
+            return_value={"enabled": True},
+        ):
+            first = self.client.post(
+                f"/api/class-commentary/tasks/{self.task['id']}/generate",
+                headers=self.headers,
+                json=self._request_payload("credit-hold-first"),
+            )
+            second = self.client.post(
+                f"/api/class-commentary/tasks/{self.task['id']}/generate",
+                headers=self.headers,
+                json=self._request_payload("credit-hold-second"),
+            )
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 402)
+        with lesson_manager.get_conn() as conn:
+            generation_count = conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_generations WHERE task_id=?",
+                (self.task["id"],),
+            ).fetchone()[0]
+            holds = conn.execute(
+                """
+                SELECT status, amount
+                FROM class_commentary_student_generation_credit_holds
+                ORDER BY student_run_id
+                """
+            ).fetchall()
+        self.assertEqual(generation_count, 1)
+        self.assertEqual(
+            [(row["status"], row["amount"]) for row in holds],
+            [("active", 10), ("active", 10)],
+        )
+
     def test_kill_switch_off_keeps_disabled_v1_synchronous_contract(self):
         disabled_capabilities = {
             **self._enabled_capabilities(),
@@ -350,6 +402,14 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
                 "UPDATE class_commentary_tasks SET status='failed' WHERE id=?",
                 (self.task["id"],),
             )
+            conn.execute(
+                """
+                UPDATE class_commentary_student_generation_credit_holds
+                SET status='released', released_at='2026-01-01T00:00:00Z'
+                WHERE student_run_id=?
+                """,
+                (runs[0]["id"],),
+            )
 
         retry_payload = {
             "request_id": "retry-api-request",
@@ -379,6 +439,16 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         self.assertEqual(after[0]["status"], "retry_wait")
         self.assertEqual(after[1]["status"], "queued")
         self.assertEqual(after[1]["attempt_count"], 0)
+        with lesson_manager.get_conn() as conn:
+            hold_status = conn.execute(
+                """
+                SELECT status
+                FROM class_commentary_student_generation_credit_holds
+                WHERE student_run_id=?
+                """,
+                (runs[0]["id"],),
+            ).fetchone()["status"]
+        self.assertEqual(hold_status, "active")
         self.assertEqual(dispatch.call_count, 2)
 
 

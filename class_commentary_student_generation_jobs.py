@@ -9,6 +9,7 @@ from rq import get_current_job
 import config_runtime
 from ai_processor import generate_class_commentary_feedback
 from class_commentary_feedback_schema import (
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
     ClassCommentaryStructuredFeedbackValidationError,
 )
@@ -100,6 +101,8 @@ def _validate_run_contract(run: Mapping[str, object], generation: Mapping[str, o
         == str(generation.get("eligible_student_scope_hash") or ""),
         str(run.get("student_mention_matcher_version") or "")
         == str(generation.get("student_mention_matcher_version") or ""),
+        str(run.get("student_mention_matcher_version") or "")
+        == CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     )
     if not all(checks):
         raise ValueError("student generation frozen contract mismatch")
@@ -125,6 +128,12 @@ def _validate_evidence_snapshot(
     fragments = evidence_snapshot.get("fragments")
     if not isinstance(fragments, list):
         raise ValueError("student evidence fragments are invalid")
+    if (
+        str(evidence_snapshot.get("attribution") or "")
+        != "fail_closed_no_structured_ownership"
+        or fragments
+    ):
+        raise ValueError("student evidence ownership is not safely attributable")
     for fragment in fragments:
         if not isinstance(fragment, Mapping):
             raise ValueError("student evidence fragment is invalid")
@@ -510,6 +519,7 @@ def process_class_commentary_student_generation_run(
             source_record_id=int(claimed["id"]),
             request_id=str(claimed["charge_request_key"]),
             request_payload_hash=charge_payload_hash,
+            credit_hold_student_run_id=int(claimed["id"]),
         )
         completed = target_store.complete_class_commentary_student_generation_run(
             int(run_id),

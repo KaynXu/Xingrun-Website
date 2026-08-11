@@ -83,6 +83,7 @@ from lesson_manager import (
     ClassCommentaryFeedbackSchemaMismatch,
     ClassCommentaryFeedbackSchemaUnsupported,
     ClassCommentaryGenerationRequestConflict,
+    ClassCommentaryCreditReservationError,
     ClassCommentaryStudentGenerationRetryRequestConflict,
     ClassCommentaryMemoryEvidenceNotRevocable,
     ClassCommentaryMemoryEvidenceRequestConflict,
@@ -10129,6 +10130,8 @@ def api_class_commentary_student_generation_retry(
             retry_request_id=request_id,
             student_ids=raw_student_ids,
         )
+    except ClassCommentaryCreditReservationError as exc:
+        return jsonify({"error": str(exc)}), 402
     except ClassCommentaryStudentGenerationRetryRequestConflict:
         return jsonify({"error": "student_generation_retry_request_conflict"}), 409
     except ValueError as exc:
@@ -10643,7 +10646,14 @@ def api_class_commentary_task_generate(task_id: int):
                 if structured_feedback_enabled
                 else ""
             ),
+            credit_hold_amount_per_student=(
+                max_configured_charge_for_feature("class_commentary_generate")
+                if isolated_v2_enabled
+                else 0
+            ),
         )
+    except ClassCommentaryCreditReservationError as exc:
+        return jsonify({"error": str(exc)}), 402
     except ClassCommentaryStudentScopeError as exc:
         return jsonify({"error": exc.code}), 400
     except ClassCommentaryGenerationRequestConflict:

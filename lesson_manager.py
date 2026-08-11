@@ -44,7 +44,7 @@ from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
-    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1,
     CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT,
     ClassCommentaryStudentScopeError,
@@ -2826,6 +2826,27 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             CHECK(retry_payload_hash<>'')
         );
 
+        CREATE TABLE IF NOT EXISTS class_commentary_student_generation_credit_holds (
+            student_run_id INTEGER PRIMARY KEY REFERENCES class_commentary_student_generation_runs(id) ON DELETE CASCADE,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            amount INTEGER NOT NULL,
+            request_id TEXT NOT NULL,
+            request_payload_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            usage_id INTEGER REFERENCES ai_usage_ledger(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            settled_at TEXT,
+            released_at TEXT,
+            UNIQUE(organization_id, request_id),
+            CHECK(amount > 0),
+            CHECK(request_id<>''),
+            CHECK(request_payload_hash<>''),
+            CHECK(status IN ('active','settled','released'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_student_credit_holds_org_status
+        ON class_commentary_student_generation_credit_holds (organization_id, status);
+
         CREATE TABLE IF NOT EXISTS class_commentary_feedback_drafts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -4825,6 +4846,27 @@ def ensure_credit_account(organization_id: int) -> dict:
         return dict(_ensure_credit_account_row(conn, organization_id))
 
 
+def _active_credit_hold_total_conn(
+    conn: sqlite3.Connection,
+    organization_id: int,
+) -> int:
+    row = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM class_commentary_student_generation_credit_holds
+        WHERE organization_id=? AND status='active'
+        """,
+        (int(organization_id),),
+    ).fetchone()
+    return int(row["total"] or 0)
+
+
+def get_active_credit_hold_total(organization_id: int) -> int:
+    with get_conn() as conn:
+        _ensure_credit_account_row(conn, organization_id)
+        return _active_credit_hold_total_conn(conn, organization_id)
+
+
 def _ensure_user_in_organization(conn: sqlite3.Connection, user_id: int, organization_id: int, label: str) -> None:
     row = conn.execute(
         "SELECT organization_id FROM users WHERE id=?",
@@ -4865,7 +4907,11 @@ def _insert_credit_ledger_entry_with_conn(
         total_recharged = recharge_before + amount
         total_consumed = consumed_before
     else:
-        if balance_before < amount:
+        available_before = balance_before - _active_credit_hold_total_conn(
+            conn,
+            organization_id,
+        )
+        if available_before < amount:
             raise ValueError("insufficient credit balance")
         balance_after = balance_before - amount
         total_recharged = recharge_before
@@ -4917,6 +4963,7 @@ def insert_credit_ledger_entry(
     operator_user_id: Optional[int] = None,
 ) -> dict:
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         return _insert_credit_ledger_entry_with_conn(
             conn,
             organization_id=organization_id,
@@ -5034,12 +5081,37 @@ def insert_ai_usage_and_debit(
     request_id: str,
     request_payload_hash: str = "",
     token_cost_raw: float = 0.0,
+    credit_hold_student_run_id: Optional[int] = None,
 ) -> dict:
     normalized_request_id = (request_id or "").strip()
     normalized_payload_hash = str(request_payload_hash or "").strip()
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         _ensure_credit_account_row(conn, organization_id)
         _ensure_user_in_organization(conn, user_id, organization_id, "usage")
+        credit_hold = None
+        if credit_hold_student_run_id is not None:
+            credit_hold = conn.execute(
+                """
+                SELECT hold.*, run.charge_request_key
+                FROM class_commentary_student_generation_credit_holds AS hold
+                JOIN class_commentary_student_generation_runs AS run
+                  ON run.id=hold.student_run_id
+                WHERE hold.student_run_id=?
+                """,
+                (int(credit_hold_student_run_id),),
+            ).fetchone()
+            if (
+                not credit_hold
+                or int(credit_hold["organization_id"] or 0) != int(organization_id)
+                or str(credit_hold["request_id"] or "") != normalized_request_id
+                or str(credit_hold["charge_request_key"] or "")
+                != normalized_request_id
+                or str(source_record_type or "")
+                != "class_commentary_student_generation_run"
+                or str(source_record_id) != str(int(credit_hold_student_run_id))
+            ):
+                raise ValueError("student generation credit hold scope mismatch")
 
         if normalized_request_id:
             existing = conn.execute(
@@ -5061,7 +5133,18 @@ def insert_ai_usage_and_debit(
                     raise AiUsageRequestConflict(
                         "ai usage request_id was already used with a different payload"
                     )
+                if credit_hold is not None and (
+                    str(credit_hold["status"] or "") != "settled"
+                    or int(credit_hold["usage_id"] or 0) != int(existing["id"])
+                ):
+                    raise ValueError("student generation credit hold settlement mismatch")
                 return dict(existing)
+
+        if credit_hold is not None:
+            if str(credit_hold["status"] or "") != "active":
+                raise ValueError("student generation credit hold is not active")
+            if int(credit_hold["amount"] or 0) < int(credit_cost_final):
+                raise ValueError("student generation credit hold is insufficient")
 
         try:
             usage_row = _insert_ai_usage_row_with_conn(
@@ -5103,7 +5186,26 @@ def insert_ai_usage_and_debit(
                 raise AiUsageRequestConflict(
                     "ai usage request_id was already used with a different payload"
                 )
+            if credit_hold is not None and (
+                str(credit_hold["status"] or "") != "settled"
+                or int(credit_hold["usage_id"] or 0) != int(existing["id"])
+            ):
+                raise ValueError("student generation credit hold settlement mismatch")
             return dict(existing)
+
+        if credit_hold is not None:
+            settled = conn.execute(
+                """
+                UPDATE class_commentary_student_generation_credit_holds
+                SET status='settled', usage_id=?,
+                    settled_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                    released_at=NULL
+                WHERE student_run_id=? AND status='active' AND usage_id IS NULL
+                """,
+                (int(usage_row["id"]), int(credit_hold_student_run_id)),
+            )
+            if settled.rowcount != 1:
+                raise ValueError("student generation credit hold settlement conflict")
 
         _insert_credit_ledger_entry_with_conn(
             conn,
@@ -8885,6 +8987,10 @@ class ClassCommentaryStudentGenerationRetryRequestConflict(ValueError):
     pass
 
 
+class ClassCommentaryCreditReservationError(ValueError):
+    pass
+
+
 class AiUsageRequestConflict(ValueError):
     pass
 
@@ -11265,8 +11371,14 @@ def list_dispatchable_class_commentary_student_generation_runs(
             FROM class_commentary_student_generation_runs AS run
             JOIN class_commentary_generations AS generation
               ON generation.id=run.generation_id
+            JOIN class_commentary_student_generation_credit_holds AS hold
+              ON hold.student_run_id=run.id
             WHERE generation.status='generating'
               AND run.claim_token IS NULL
+              AND (
+                    (run.status='response_received' AND hold.status IN ('active','settled'))
+                    OR (run.status<>'response_received' AND hold.status='active')
+              )
               AND (
                     run.status='queued'
                     OR (
@@ -11302,7 +11414,13 @@ def claim_class_commentary_student_generation_run(
             FROM class_commentary_student_generation_runs AS run
             JOIN class_commentary_generations AS generation
               ON generation.id=run.generation_id
+            JOIN class_commentary_student_generation_credit_holds AS hold
+              ON hold.student_run_id=run.id
             WHERE run.id=?
+              AND (
+                    (run.status='response_received' AND hold.status IN ('active','settled'))
+                    OR (run.status<>'response_received' AND hold.status='active')
+              )
             """,
             (int(run_id),),
         ).fetchone()
@@ -11577,8 +11695,20 @@ def complete_class_commentary_student_generation_run(
                 error_code=NULL, completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
             WHERE id=? AND status='response_received' AND claim_token=?
               AND response_hash<>'' AND structured_feedback_hash<>''
+              AND EXISTS (
+                  SELECT 1
+                  FROM class_commentary_student_generation_credit_holds AS hold
+                  WHERE hold.student_run_id=class_commentary_student_generation_runs.id
+                    AND hold.status='settled'
+                    AND hold.usage_id=?
+              )
             """,
-            (int(charge_usage_id), int(run_id), str(claim_token)),
+            (
+                int(charge_usage_id),
+                int(run_id),
+                str(claim_token),
+                int(charge_usage_id),
+            ),
         )
         if updated.rowcount != 1:
             run = conn.execute(
@@ -11633,6 +11763,7 @@ def fail_class_commentary_student_generation_charge(
     error_code: str,
 ) -> dict:
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         updated = conn.execute(
             """
             UPDATE class_commentary_student_generation_runs
@@ -11648,6 +11779,14 @@ def fail_class_commentary_student_generation_charge(
             raise ClassCommentaryGenerationRequestConflict(
                 "student generation charge failure claim changed"
             )
+        conn.execute(
+            """
+            UPDATE class_commentary_student_generation_credit_holds
+            SET status='released', released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE student_run_id=? AND status='active'
+            """,
+            (int(run_id),),
+        )
         saved = conn.execute(
             "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
             (int(run_id),),
@@ -11711,6 +11850,16 @@ def fail_class_commentary_student_generation_run(
                 str(claim_token),
             ),
         )
+        if next_status == "failed":
+            conn.execute(
+                """
+                UPDATE class_commentary_student_generation_credit_holds
+                SET status='released',
+                    released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE student_run_id=? AND status='active'
+                """,
+                (int(run_id),),
+            )
         saved = conn.execute(
             "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
             (int(run_id),),
@@ -11727,6 +11876,7 @@ def recover_stale_class_commentary_student_generation_runs(
     normalized_max_attempts = max(1, int(max_attempts))
     failed_generation_ids: set[int] = set()
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         stale_rows = conn.execute(
             """
             SELECT id, generation_id, status, attempt_count
@@ -11769,6 +11919,15 @@ def recover_stale_class_commentary_student_generation_runs(
                 ),
             )
             if exhausted:
+                conn.execute(
+                    """
+                    UPDATE class_commentary_student_generation_credit_holds
+                    SET status='released',
+                        released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                    WHERE student_run_id=? AND status='active'
+                    """,
+                    (int(row["id"]),),
+                )
                 failed_generation_ids.add(int(row["generation_id"]))
     for generation_id in sorted(failed_generation_ids):
         finalize_class_commentary_student_generation_parent(generation_id)
@@ -11947,6 +12106,38 @@ def retry_class_commentary_student_generation_runs(
         target_ids = requested_ids if requested_ids is not None else failed_ids
         if not target_ids or not set(target_ids).issubset(set(failed_ids)):
             raise ValueError("student generation retry target is not failed")
+        placeholders = ",".join("?" for _ in target_ids)
+        hold_rows = conn.execute(
+            f"""
+            SELECT hold.*
+            FROM class_commentary_student_generation_credit_holds AS hold
+            JOIN class_commentary_student_generation_runs AS run
+              ON run.id=hold.student_run_id
+            WHERE run.generation_id=? AND run.student_id IN ({placeholders})
+            ORDER BY run.id
+            """,
+            (int(generation_id), *target_ids),
+        ).fetchall()
+        if (
+            len(hold_rows) != len(target_ids)
+            or any(str(hold["status"] or "") != "released" for hold in hold_rows)
+        ):
+            raise ValueError("student generation credit hold is not retryable")
+        account = _ensure_credit_account_row(
+            conn,
+            int(generation["organization_id"]),
+        )
+        required_credits = sum(int(hold["amount"] or 0) for hold in hold_rows)
+        available_credits = int(account["credit_balance"] or 0) - (
+            _active_credit_hold_total_conn(
+                conn,
+                int(generation["organization_id"]),
+            )
+        )
+        if available_credits < required_credits:
+            raise ClassCommentaryCreditReservationError(
+                "机构积分不足，请先充值后再使用 AI 功能"
+            )
         payload = {
             "generation_id": int(generation_id),
             "student_ids": target_ids,
@@ -11968,7 +12159,17 @@ def retry_class_commentary_student_generation_runs(
                 class_commentary_student_canonical_json(target_ids),
             ),
         )
-        placeholders = ",".join("?" for _ in target_ids)
+        conn.execute(
+            f"""
+            UPDATE class_commentary_student_generation_credit_holds
+            SET status='active', usage_id=NULL, settled_at=NULL, released_at=NULL
+            WHERE student_run_id IN (
+                SELECT id FROM class_commentary_student_generation_runs
+                WHERE generation_id=? AND student_id IN ({placeholders})
+            ) AND status='released'
+            """,
+            (int(generation_id), *target_ids),
+        )
         conn.execute(
             f"""
             UPDATE class_commentary_student_generation_runs
@@ -12253,7 +12454,18 @@ def _reserve_class_commentary_student_runs_conn(
     provider: str,
     model: str,
     model_parameters_json: str,
+    credit_hold_amount_per_student: int,
 ) -> list[dict]:
+    normalized_hold_amount = int(credit_hold_amount_per_student)
+    if normalized_hold_amount <= 0:
+        raise ValueError("student generation credit hold amount must be positive")
+    account = _ensure_credit_account_row(conn, organization_id)
+    active_holds = _active_credit_hold_total_conn(conn, organization_id)
+    required_credits = normalized_hold_amount * len(attending_roster)
+    if int(account["credit_balance"] or 0) - active_holds < required_credits:
+        raise ClassCommentaryCreditReservationError(
+            "机构积分不足，请先充值后再使用 AI 功能"
+        )
     class_roster_rows = conn.execute(
         """
         SELECT student.id AS student_id, student.name AS student_name
@@ -12282,7 +12494,7 @@ def _reserve_class_commentary_student_runs_conn(
             transcript_hash=confirmed_transcript_hash,
             roster=privacy_roster,
             target_student_id=student_id,
-            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
         )
         evidence_hash = str(evidence_snapshot.pop("snapshot_hash"))
         request_payload = {
@@ -12355,6 +12567,21 @@ def _reserve_class_commentary_student_runs_conn(
             "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
             (cursor.lastrowid,),
         ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO class_commentary_student_generation_credit_holds (
+                student_run_id, organization_id, amount,
+                request_id, request_payload_hash
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                int(cursor.lastrowid),
+                organization_id,
+                normalized_hold_amount,
+                charge_request_key,
+                request_payload_hash,
+            ),
+        )
         run_rows.append(dict(row))
     return run_rows
 
@@ -12374,6 +12601,7 @@ def reserve_class_commentary_generation(
     attending_roster_explicit: bool = True,
     structured_feedback_enabled: bool = False,
     student_history_memory_mode: str = "",
+    credit_hold_amount_per_student: int = 0,
 ) -> dict:
     normalized_request_id = str(generation_request_id or "").strip()
     normalized_provider = str(model_provider or "").strip()
@@ -12439,6 +12667,24 @@ def reserve_class_commentary_generation(
                     != model_parameters_json
                 )
             )
+            isolated_hold_changed = False
+            if frozen_memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2:
+                hold_amounts = {
+                    int(row["amount"] or 0)
+                    for row in conn.execute(
+                        """
+                        SELECT hold.amount
+                        FROM class_commentary_student_generation_credit_holds AS hold
+                        JOIN class_commentary_student_generation_runs AS run
+                          ON run.id=hold.student_run_id
+                        WHERE run.generation_id=?
+                        """,
+                        (int(existing["id"]),),
+                    ).fetchall()
+                }
+                isolated_hold_changed = hold_amounts != {
+                    int(credit_hold_amount_per_student)
+                }
             if (
                 int(existing["skill_registry_id"] or 0) != int(skill_registry_id)
                 or (
@@ -12448,6 +12694,7 @@ def reserve_class_commentary_generation(
                 or bool(existing["attending_roster_explicit"])
                 != attending_roster_explicit
                 or isolated_model_changed
+                or isolated_hold_changed
             ):
                 raise ClassCommentaryGenerationRequestConflict(
                     "generation request_id was already used with a different payload"
@@ -12529,7 +12776,7 @@ def reserve_class_commentary_generation(
                         "isolated memory attending roster scope must be explicit"
                     )
                 student_mention_matcher_version = (
-                    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1
+                    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
                 )
                 eligible_student_ids = resolve_class_commentary_attending_roster_student_ids(
                     roster=roster_snapshot,
@@ -12617,6 +12864,12 @@ def reserve_class_commentary_generation(
             "student_mention_matcher_version": student_mention_matcher_version,
             "subject_key": task["subject_key"],
             "task_id": int(task_id),
+            "credit_hold_amount_per_student": (
+                int(credit_hold_amount_per_student)
+                if frozen_memory_mode
+                == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+                else 0
+            ),
         }
         request_payload_hash = _class_commentary_content_hash(
             _class_commentary_canonical_json(request_payload)
@@ -12710,6 +12963,7 @@ def reserve_class_commentary_generation(
                 provider=normalized_provider,
                 model=normalized_model,
                 model_parameters_json=model_parameters_json,
+                credit_hold_amount_per_student=credit_hold_amount_per_student,
             )
             orchestration_snapshot = {
                 "kind": "class_commentary.student_generation_orchestration.v1",
