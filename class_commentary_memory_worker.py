@@ -11,6 +11,10 @@ from class_commentary_memory_queue import (
     get_class_commentary_memory_redis_connection,
     memory_feature_enabled,
 )
+from class_commentary_graph_queue import (
+    ensure_class_commentary_graph_reconciliation_scheduled,
+    graph_feature_enabled,
+)
 
 
 def run_worker(
@@ -22,17 +26,25 @@ def run_worker(
     config = dict(
         runtime_config if runtime_config is not None else config_runtime.get_runtime_config()
     )
-    if not memory_feature_enabled(config):
+    memory_enabled = memory_feature_enabled(config)
+    graph_enabled = graph_feature_enabled(config)
+    if not memory_enabled and not graph_enabled:
         return 0
     redis_connection = connection or get_class_commentary_memory_redis_connection(config)
     queue = get_class_commentary_memory_queue(
         runtime_config=config,
         connection=redis_connection,
     )
-    ensure_class_commentary_memory_reconciliation_scheduled(
-        queue=queue,
-        runtime_config=config,
-    )
+    if memory_enabled:
+        ensure_class_commentary_memory_reconciliation_scheduled(
+            queue=queue,
+            runtime_config=config,
+        )
+    if graph_enabled:
+        ensure_class_commentary_graph_reconciliation_scheduled(
+            queue=queue,
+            runtime_config=config,
+        )
     worker = worker_factory([queue], connection=redis_connection)
     worker.work(with_scheduler=True)
     return 0

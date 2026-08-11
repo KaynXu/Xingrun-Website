@@ -24,7 +24,10 @@ ISOLATED_STUDENT_SYSTEM_PROMPT = (
     "Generate feedback for exactly one CURRENT_STUDENT. "
     "CURRENT_STUDENT_EVIDENCE contains verified excerpts from this lesson. "
     "STUDENT_HISTORY_MEMORIES is historical context only and must never be described "
-    "as something newly observed in this lesson. Current evidence and the confirmed "
+    "as something newly observed in this lesson. STUDENT_LEARNING_GRAPH contains only "
+    "server-validated history for this same student and subject. Cite graph history only "
+    "through used_graph_evidence_refs from the supplied allowlist. "
+    "Current evidence and the confirmed "
     "attendance scope override history whenever they differ. TEACHER_STYLE_MEMORIES may "
     "change expression and focus only. Never infer, mention, or output another student. "
     "Return only the requested JSON object."
@@ -35,9 +38,10 @@ CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1 = (
 )
 
 ISOLATED_STUDENT_OUTPUT_RULES = (
-    "Return a JSON object with exactly schema_version and items.",
+    "Return a JSON object with schema_version, items, and used_graph_evidence_refs.",
     "Set schema_version to class_commentary.student_feedback.v1.",
     "Return exactly one item with exactly student_id and feedback_text.",
+    "Set used_graph_evidence_refs to only evidence_ref values actually used from STUDENT_LEARNING_GRAPH; otherwise return an empty array.",
     "Use only CURRENT_STUDENT.student_id as student_id.",
     "Write as the teacher speaking directly to CURRENT_STUDENT.",
     "Do not output any student name; the server supplies display names.",
@@ -162,6 +166,7 @@ def build_isolated_student_chat_request(
     teacher_style_memories: object,
     skill_content: str,
     model_parameters: Mapping[str, object],
+    graph_context: object = None,
 ) -> dict:
     evidence_for_prompt = {
         "verified_fragments": [
@@ -189,6 +194,10 @@ def build_isolated_student_chat_request(
         "[STUDENT_HISTORY_MEMORIES]\n"
         + canonical_json(
             _prompt_memory_items(student_history_memories, historical=True)
+        ),
+        "[STUDENT_LEARNING_GRAPH]\n"
+        + canonical_json(
+            dict(graph_context) if isinstance(graph_context, Mapping) else {}
         ),
         "[TEACHER_STYLE_MEMORIES]\n"
         + canonical_json(style_rules),
@@ -282,7 +291,10 @@ def validate_single_student_response(
             student_id=int(target_student_id),
             reason="student response is not valid JSON",
         ) from exc
-    if not isinstance(payload, dict) or set(payload) != {"schema_version", "items"}:
+    allowed_top_level = {"schema_version", "items"}
+    if isinstance(payload, dict) and "used_graph_evidence_refs" in payload:
+        allowed_top_level.add("used_graph_evidence_refs")
+    if not isinstance(payload, dict) or set(payload) != allowed_top_level:
         raise ClassCommentaryStructuredFeedbackValidationError(
             "structured_feedback_invalid", student_id=int(target_student_id)
         )
@@ -345,9 +357,17 @@ def validate_single_student_response(
         "items": [{"student_id": int(target_student_id), "feedback_text": feedback_text}],
     }
     canonical_text = canonical_json(canonical)
+    used_graph_evidence_refs = payload.get("used_graph_evidence_refs", [])
+    if not isinstance(used_graph_evidence_refs, list) or any(
+        not isinstance(value, str) or not value for value in used_graph_evidence_refs
+    ):
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid", student_id=int(target_student_id)
+        )
     return {
         "student_id": int(target_student_id),
         "feedback_text": feedback_text,
         "structured_feedback_json": canonical_text,
         "structured_feedback_hash": content_hash(canonical_text),
+        "used_graph_evidence_refs": list(dict.fromkeys(used_graph_evidence_refs)),
     }
