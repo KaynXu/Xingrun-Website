@@ -88,6 +88,7 @@ import {
   readClassCommentarySkillPreference,
   rollbackClassCommentarySkillVersion,
   retryClassCommentaryRevisionMemory,
+  retryClassCommentaryStudentGenerationRuns,
   resolveClassCommentaryCopyText,
   resolveClassCommentaryStudentFeedbackItems,
   revokeClassCommentaryMemoryEvidence,
@@ -169,6 +170,8 @@ const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   memory_learning_enabled: false,
   skill_evolution_enabled: false,
   structured_feedback_enabled: false,
+  student_history_memory_v2_enabled: false,
+  student_history_memory_v2_max_credits_per_student: 0,
 };
 
 function createClassCommentaryRequestId(prefix: string): string {
@@ -262,6 +265,13 @@ function getClassCommentaryGenerationErrorMessage(error: unknown): string {
     }
   }
   return error instanceof Error ? error.message : '生成失败';
+}
+
+function classCommentaryStudentGenerationFailureMessage(errorCode: string): string {
+  if (errorCode === 'student_run_failed') {
+    return '部分学生反馈生成失败, 已完成内容不会作为完整结果发布. 可安全重试失败项.';
+  }
+  return errorCode || '学生反馈生成失败, 已完成内容不会作为完整结果发布.';
 }
 
 function formatClassCommentaryTime(value: string): string {
@@ -452,6 +462,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [task, setTask] = useState<ClassCommentaryTask | null>(null);
   const [confirmedTranscript, setConfirmedTranscript] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [generationProgressError, setGenerationProgressError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingClassStudents, setLoadingClassStudents] = useState(false);
@@ -494,11 +505,14 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const feedbackMutationTokenRef = useRef(0);
   const currentTaskIdRef = useRef<number | null>(null);
   const selectedGenerationIdRef = useRef('');
+  const generationPollRequestTokenRef = useRef(0);
   const memoryLoadRequestTokenRef = useRef(0);
   const memoryActionRequestTokenRef = useRef(0);
   const skillEvolutionLoadRequestTokenRef = useRef(0);
   const skillEvolutionActionRequestTokenRef = useRef(0);
   const confirmationRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const generationRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
+  const studentGenerationRetryRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
   const memoryRetryRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
   const memoryRevokeRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
   const skillCandidateRequestRef = useRef<PendingClassCommentaryRequest | null>(null);
@@ -540,6 +554,8 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setCopiedStudentId(null);
     setCopyNotice('');
     setStudentFeedbackErrors({});
+    generationPollRequestTokenRef.current += 1;
+    setGenerationProgressError('');
     memoryLoadRequestTokenRef.current += 1;
     memoryActionRequestTokenRef.current += 1;
     setRevisionMemorySummary(null);
@@ -547,6 +563,8 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setMemoryRefreshVersion(0);
     setMemoryActionKey('');
     confirmationRequestRef.current = null;
+    generationRequestRef.current = null;
+    studentGenerationRetryRequestRef.current = null;
     memoryRetryRequestRef.current = null;
     memoryRevokeRequestRef.current = null;
     setLoadingGenerationId(null);
@@ -894,7 +912,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       )
       : selectedEditorState.feedbackText === selectedRevision.final_feedback_text),
   );
-  const taskErrorMessage = getTaskErrorMessage(task, errorMessage);
+  const taskErrorMessage = getTaskErrorMessage(task, errorMessage || generationProgressError);
   const taskStatusMessage = errorMessage === '已同步最新终稿版本, 本地修改仍保留. 请重新确认.';
   const taskProgress = getTaskProgress(task, uploadProgress);
   const trimmedConfirmedTranscript = confirmedTranscript.trim();
@@ -954,6 +972,23 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     && localEditorContentValid
     && feedbackDirty;
   const attendanceListHeight = Math.min(224, Math.max(32, classStudents.length * 40 - 8));
+  const activeStudentGeneration = generations.find((generation) => (
+    generation.status === 'generating'
+    && generation.student_history_memory_mode === 'isolated_v2'
+  )) || null;
+  const studentProgressGeneration = activeStudentGeneration
+    || (selectedGeneration?.student_history_memory_mode === 'isolated_v2' ? selectedGeneration : null);
+  const studentRunProgress = studentProgressGeneration?.student_run_progress || null;
+  const failedStudentRunIds = selectedGeneration?.student_history_memory_mode === 'isolated_v2'
+    ? selectedGeneration.student_run_progress.runs
+      .filter((run) => run.status === 'failed')
+      .map((run) => run.student_id)
+    : [];
+  const isolatedGenerationCallCount = capabilities.student_history_memory_v2_enabled
+    ? attendingStudentIds.length
+    : attendingStudentIds.length > 0 ? 1 : 0;
+  const isolatedGenerationMaxCredits = isolatedGenerationCallCount
+    * capabilities.student_history_memory_v2_max_credits_per_student;
   const activeSkillVersion = skillEvolution?.versions.find((version) => version.is_active)
     || skillEvolution?.versions.find((version) => version.id === skillEvolution.skill.active_version_id)
     || null;
@@ -992,6 +1027,110 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     && expectedActiveSkillVersionId > 0
     && !skillEvolutionActionKey,
   );
+
+  useEffect(() => {
+    if (!task || !activeStudentGeneration) {
+      return undefined;
+    }
+    const polledTaskId = task.id;
+    const polledGenerationId = activeStudentGeneration.id;
+    const requestToken = ++generationPollRequestTokenRef.current;
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    let pollingDelayMs = 1500;
+
+    const loadGenerationProgress = async () => {
+      try {
+        const nextGeneration = await fetchClassCommentaryGeneration(
+          polledTaskId,
+          polledGenerationId,
+        );
+        if (
+          cancelled
+          || requestToken !== generationPollRequestTokenRef.current
+          || currentTaskIdRef.current !== polledTaskId
+          || !isClassCommentaryFeedbackRecordInScope(
+            nextGeneration,
+            polledTaskId,
+            polledGenerationId,
+          )
+        ) {
+          return;
+        }
+        let nextTask: ClassCommentaryTask | null = null;
+        if (nextGeneration.status !== 'generating') {
+          nextTask = await fetchClassCommentaryTask(polledTaskId);
+          if (
+            cancelled
+            || requestToken !== generationPollRequestTokenRef.current
+            || currentTaskIdRef.current !== polledTaskId
+            || nextTask.id !== polledTaskId
+          ) {
+            return;
+          }
+        }
+        setGenerations((current) => current.map((generation) => (
+          generation.id === polledGenerationId ? nextGeneration : generation
+        )));
+        setGenerationProgressError('');
+        pollingDelayMs = 1500;
+        if (nextGeneration.status === 'generating') {
+          pollTimer = window.setTimeout(loadGenerationProgress, pollingDelayMs);
+          return;
+        }
+        if (nextTask) {
+          setTask(nextTask);
+          setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
+        }
+        if (selectedGenerationIdRef.current !== String(polledGenerationId)) {
+          return;
+        }
+        setFeedbackDraft(null);
+        setRevisionPreview(null);
+        setExpandedStudentIds([]);
+        if (nextGeneration.status === 'failed') {
+          setFeedbackEditorText('');
+          setGenerationProgressError(
+            classCommentaryStudentGenerationFailureMessage(nextGeneration.error_code),
+          );
+          return;
+        }
+        const nextEditor = createGenerationEditorState(
+          polledTaskId,
+          nextGeneration,
+          null,
+          null,
+          nextTask?.latest_revision_id || null,
+        );
+        setFeedbackEditorText(nextEditor.feedbackText);
+        setGenerationEditors((current) => ({
+          ...current,
+          [nextEditor.workspaceKey]: nextEditor,
+        }));
+        setCopiedStudentId(null);
+        setCopyNotice('');
+        setStudentFeedbackErrors({});
+      } catch {
+        if (
+          !cancelled
+          && requestToken === generationPollRequestTokenRef.current
+          && currentTaskIdRef.current === polledTaskId
+        ) {
+          setGenerationProgressError('学生反馈生成进度暂时不可用, 正在重试.');
+          pollingDelayMs = Math.min(pollingDelayMs * 2, 15000);
+          pollTimer = window.setTimeout(loadGenerationProgress, pollingDelayMs);
+        }
+      }
+    };
+
+    void loadGenerationProgress();
+    return () => {
+      cancelled = true;
+      if (pollTimer !== undefined) {
+        window.clearTimeout(pollTimer);
+      }
+    };
+  }, [activeStudentGeneration?.id, task?.id]);
 
   useEffect(() => {
     feedbackDirtyRef.current = feedbackDirty;
@@ -1226,7 +1365,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     }
     setBusy(true);
     setErrorMessage('');
+    setGenerationProgressError('');
     let generationTaskId = task?.id || 0;
+    let generationRequest: PendingClassCommentaryRequest | null = null;
     try {
       const savedTask = task && canUseTranscript
         ? (transcriptDirty ? await saveClassCommentaryTranscript(task.id, trimmedConfirmedTranscript) : task)
@@ -1238,11 +1379,28 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setTask(savedTask);
       setHistoryTasks((current) => mergeHistoryTask(current, savedTask));
       setConfirmedTranscript(savedTask.confirmed_transcript_text || savedTask.transcript_text || '');
+      const generationScopeKey = [
+        savedTask.id,
+        savedTask.confirmed_transcript_version,
+        selectedSkillId,
+        [...attendingStudentIds].sort((left, right) => left - right).join(','),
+      ].join(':');
+      generationRequest = claimClassCommentaryRequest(
+        generationRequestRef.current,
+        generationScopeKey,
+        'generation',
+      );
+      generationRequestRef.current = generationRequest;
       const result = await generateClassCommentaryFeedback(
         savedTask.id,
         selectedSkillId,
         attendingStudentIds,
-        createClassCommentaryRequestId('generation'),
+        generationRequest.requestId,
+      );
+      generationRequestRef.current = settleClassCommentaryRequest(
+        generationRequestRef.current,
+        generationRequest.requestId,
+        true,
       );
       const nextTask = result.task;
       const nextGeneration = result.generation;
@@ -1279,6 +1437,13 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setCopyNotice('');
       setStudentFeedbackErrors({});
     } catch (error) {
+      if (generationRequest) {
+        generationRequestRef.current = settleClassCommentaryRequest(
+          generationRequestRef.current,
+          generationRequest.requestId,
+          error instanceof ApiFetchError,
+        );
+      }
       if (error instanceof ApiFetchError) {
         const rawFailedTask = error.payload.task;
         const rawFailedGeneration = error.payload.generation;
@@ -1324,6 +1489,86 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         }
       }
       setErrorMessage(getClassCommentaryGenerationErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRetryFailedStudentRuns() {
+    if (
+      !task
+      || !selectedGeneration
+      || selectedGeneration.status !== 'failed'
+      || selectedGeneration.student_history_memory_mode !== 'isolated_v2'
+      || !failedStudentRunIds.length
+      || busy
+    ) {
+      return;
+    }
+    const retryTaskId = task.id;
+    const retryGenerationId = selectedGeneration.id;
+    const retryStudentIds = [...failedStudentRunIds].sort((left, right) => left - right);
+    const retryScopeKey = `${retryTaskId}:${retryGenerationId}:${retryStudentIds.join(',')}`;
+    const retryRequest = claimClassCommentaryRequest(
+      studentGenerationRetryRequestRef.current,
+      retryScopeKey,
+      'student-generation-retry',
+    );
+    studentGenerationRetryRequestRef.current = retryRequest;
+    setBusy(true);
+    setErrorMessage('');
+    setGenerationProgressError('');
+    try {
+      const result = await retryClassCommentaryStudentGenerationRuns(
+        retryTaskId,
+        retryGenerationId,
+        retryStudentIds,
+        retryRequest.requestId,
+      );
+      studentGenerationRetryRequestRef.current = settleClassCommentaryRequest(
+        studentGenerationRetryRequestRef.current,
+        retryRequest.requestId,
+        true,
+      );
+      if (
+        result.task.id !== retryTaskId
+        || !isClassCommentaryFeedbackRecordInScope(
+          result.generation,
+          retryTaskId,
+          retryGenerationId,
+        )
+      ) {
+        throw new Error('重试响应范围不一致');
+      }
+      setTask(result.task);
+      setHistoryTasks((current) => mergeHistoryTask(current, result.task));
+      setGenerations((current) => current.map((generation) => (
+        generation.id === retryGenerationId ? result.generation : generation
+      )));
+      selectedGenerationIdRef.current = String(retryGenerationId);
+      setSelectedGenerationId(String(retryGenerationId));
+      setFeedbackEditorText('');
+      setFeedbackDraft(null);
+      setRevisionPreview(null);
+      setExpandedStudentIds([]);
+      const retryEditor = createGenerationEditorState(
+        retryTaskId,
+        result.generation,
+        null,
+        null,
+        result.task.latest_revision_id,
+      );
+      setGenerationEditors((current) => ({
+        ...current,
+        [retryEditor.workspaceKey]: retryEditor,
+      }));
+    } catch (error) {
+      studentGenerationRetryRequestRef.current = settleClassCommentaryRequest(
+        studentGenerationRetryRequestRef.current,
+        retryRequest.requestId,
+        error instanceof ApiFetchError,
+      );
+      setErrorMessage(error instanceof Error ? error.message : '重试失败学生反馈失败');
     } finally {
       setBusy(false);
     }
@@ -2639,6 +2884,20 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                       生成 {task?.status === 'generating' ? '进行中' : task?.status === 'ready' ? '已完成' : '未开始'}
                     </div>
                   </div>
+                  {studentRunProgress && studentRunProgress.total > 0 ? (
+                    <div
+                      className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-5"
+                      role="status"
+                      aria-live="polite"
+                      data-testid="student-generation-progress"
+                    >
+                      <div className="rounded-lg border border-border/70 px-3 py-2">总计 {studentRunProgress.total}</div>
+                      <div className="rounded-lg border border-border/70 px-3 py-2">等待 {studentRunProgress.queued}</div>
+                      <div className="rounded-lg border border-border/70 px-3 py-2">生成中 {studentRunProgress.generating}</div>
+                      <div className="rounded-lg border border-border/70 px-3 py-2">已完成 {studentRunProgress.succeeded}</div>
+                      <div className="rounded-lg border border-border/70 px-3 py-2">失败 {studentRunProgress.failed}</div>
+                    </div>
+                  ) : null}
                 </div>
 
                 <Separator />
@@ -2656,11 +2915,20 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     disabled={loadingInitial || isTaskReadOnly}
                   />
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-muted-foreground">
-                      {hasSucceededGeneration && !transcriptDirty
-                        ? '转写已保存, 修改后可重新生成反馈包.'
-                        : '可直接输入文本生成反馈包; 已有录音任务时也可以先保存确认文本.'}
-                    </p>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm text-muted-foreground">
+                        {hasSucceededGeneration && !transcriptDirty
+                          ? '转写已保存, 修改后可重新生成反馈包.'
+                          : '可直接输入文本生成反馈包; 已有录音任务时也可以先保存确认文本.'}
+                      </p>
+                      {!loadingInitial && selectedClassId ? (
+                        <p className="text-xs text-muted-foreground" data-testid="generation-cost-impact">
+                          {capabilities.student_history_memory_v2_enabled
+                            ? `本次将发起 ${isolatedGenerationCallCount} 次独立学生生成, 最多使用 ${isolatedGenerationMaxCredits} 点额度.`
+                            : `当前按 ${isolatedGenerationCallCount} 次班级生成进行额度预检.`}
+                        </p>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button type="button" variant="outline" onClick={handleSaveTranscript} disabled={!canSaveTranscript}>
                         保存转写
@@ -2748,6 +3016,40 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     </Button>
                   </div>
                 </div>
+                {selectedGeneration?.student_history_memory_mode === 'isolated_v2'
+                && selectedGeneration.student_run_progress.total > 0 ? (
+                  <div className="rounded-lg border border-border/70 px-3 py-2.5 text-sm" data-testid="selected-generation-progress">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">学生反馈生成进度</span>
+                      <span className="text-muted-foreground">
+                        {selectedGeneration.student_run_progress.succeeded}/{selectedGeneration.student_run_progress.total} 已完成
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      等待 {selectedGeneration.student_run_progress.queued}, 生成中 {selectedGeneration.student_run_progress.generating}, 失败 {selectedGeneration.student_run_progress.failed}
+                    </p>
+                  </div>
+                ) : null}
+                {selectedGeneration?.status === 'failed' && failedStudentRunIds.length > 0 ? (
+                  <Alert variant="destructive" data-testid="student-generation-partial-failure">
+                    <AlertCircle className="size-4" />
+                    <AlertTitle>反馈包未发布</AlertTitle>
+                    <AlertDescription className="flex flex-col items-start gap-3">
+                      <span>有 {failedStudentRunIds.length} 名学生生成失败. 已完成的学生结果不会被当成完整反馈包.</span>
+                      {!isTaskReadOnly ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleRetryFailedStudentRuns()}
+                          disabled={busy || generationLoading}
+                        >
+                          安全重试失败学生
+                        </Button>
+                      ) : null}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
                 {showStructuredFeedbackEditor ? (
                   displayedStudentFeedbackItems.length >= 5 ? (
                     <ScrollArea

@@ -26,10 +26,12 @@ import {
   isClassCommentaryFeedbackRecordInScope,
   isClassCommentaryTaskLatestSchemaCompatible,
   normalizeClassCommentaryGeneration,
+  normalizeClassCommentaryStudentGenerationProgress,
   normalizeClassCommentaryTask,
   readClassCommentarySkillPreference,
   rollbackClassCommentarySkillVersion,
   retryClassCommentaryRevisionMemory,
+  retryClassCommentaryStudentGenerationRuns,
   revokeClassCommentaryMemoryEvidence,
   resolveClassCommentaryCopyText,
   resolveClassCommentaryStudentFeedbackItems,
@@ -197,6 +199,69 @@ test('class commentary capabilities keep structured feedback disabled by default
     memory_learning_enabled: true,
     skill_evolution_enabled: true,
     structured_feedback_enabled: false,
+    student_history_memory_v2_enabled: false,
+    student_history_memory_v2_max_credits_per_student: 0,
+  });
+});
+
+test('normalizes isolated student generation progress without trusting unknown statuses', () => {
+  const progress = normalizeClassCommentaryStudentGenerationProgress({
+    total: 5,
+    queued: 1,
+    generating: 1,
+    succeeded: 2,
+    failed: 1,
+    runs: [
+      {
+        id: 41,
+        student_id: 11,
+        student_name: '学生 A',
+        status: 'succeeded',
+        attempt_count: 1,
+        memory_retrieval_status: 'ready',
+        charge_status: 'charged',
+      },
+      {
+        id: 42,
+        student_id: 12,
+        student_name: '学生 B',
+        status: 'future_status',
+        attempt_count: -1,
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    {
+      total: progress.total,
+      queued: progress.queued,
+      generating: progress.generating,
+      succeeded: progress.succeeded,
+      failed: progress.failed,
+    },
+    { total: 5, queued: 1, generating: 1, succeeded: 2, failed: 1 },
+  );
+  assert.equal(progress.runs[0].status, 'succeeded');
+  assert.equal(progress.runs[0].charge_status, 'charged');
+  assert.equal(progress.runs[1].status, 'unknown');
+  assert.equal(progress.runs[1].attempt_count, 0);
+});
+
+test('capabilities expose isolated generation call and credit impact', async () => {
+  mockJsonFetch({
+    memory_learning_enabled: true,
+    skill_evolution_enabled: true,
+    structured_feedback_enabled: true,
+    student_history_memory_v2_enabled: true,
+    student_history_memory_v2_max_credits_per_student: 10,
+  });
+
+  assert.deepEqual(await fetchClassCommentaryCapabilities(), {
+    memory_learning_enabled: true,
+    skill_evolution_enabled: true,
+    structured_feedback_enabled: true,
+    student_history_memory_v2_enabled: true,
+    student_history_memory_v2_max_credits_per_student: 10,
   });
 });
 
@@ -392,6 +457,50 @@ test('generateClassCommentaryFeedback sends request id and normalizes nested tas
   assert.equal(result.generation.task_id, 9);
   assert.equal(result.generation.status, 'succeeded');
   assert.equal(result.generation.generated_feedback_text, '第二版反馈');
+});
+
+test('retryClassCommentaryStudentGenerationRuns retries only explicit failed students with one request id', async () => {
+  const calls = mockJsonFetch({
+    task: {
+      id: 9,
+      organization_id: 2,
+      class_id: 3,
+      teacher_user_id: 4,
+      status: 'generating',
+    },
+    generation: {
+      id: 27,
+      task_id: 9,
+      status: 'generating',
+      student_history_memory_mode: 'isolated_v2',
+      prompt_version: 'class-commentary-student-feedback-isolated-v2',
+      student_run_progress: {
+        total: 5,
+        queued: 1,
+        generating: 0,
+        succeeded: 4,
+        failed: 0,
+        runs: [],
+      },
+    },
+  });
+
+  const result = await retryClassCommentaryStudentGenerationRuns(
+    9,
+    27,
+    [12],
+    'student-generation-retry-27',
+  );
+
+  assert.equal(calls[0].path, '/api/class-commentary/tasks/9/generations/27/student-runs/retry');
+  assert.equal(calls[0].options?.method, 'POST');
+  assert.deepEqual(JSON.parse(String(calls[0].options?.body)), {
+    request_id: 'student-generation-retry-27',
+    student_ids: [12],
+  });
+  assert.equal(result.generation.student_history_memory_mode, 'isolated_v2');
+  assert.equal(result.generation.prompt_version, 'class-commentary-student-feedback-isolated-v2');
+  assert.equal(result.generation.student_run_progress.total, 5);
 });
 
 test('fetchClassCommentaryGenerations normalizes the generation list', async () => {

@@ -22,6 +22,8 @@ export type ClassCommentaryCapabilities = {
   memory_learning_enabled: boolean;
   skill_evolution_enabled: boolean;
   structured_feedback_enabled: boolean;
+  student_history_memory_v2_enabled: boolean;
+  student_history_memory_v2_max_credits_per_student: number;
 };
 
 export type ClassCommentaryTask = {
@@ -54,6 +56,38 @@ export type ClassCommentaryTask = {
 };
 
 export type ClassCommentaryGenerationStatus = 'generating' | 'succeeded' | 'failed';
+
+export type ClassCommentaryStudentGenerationRunStatus =
+  | 'queued'
+  | 'retry_wait'
+  | 'generating'
+  | 'response_received'
+  | 'succeeded'
+  | 'failed'
+  | 'unknown';
+
+export type ClassCommentaryStudentGenerationRun = {
+  id: number;
+  student_id: number;
+  student_name: string;
+  status: ClassCommentaryStudentGenerationRunStatus;
+  attempt_count: number;
+  memory_retrieval_status: string;
+  charge_status: string;
+  error_code: string;
+  created_at: string;
+  started_at: string;
+  completed_at: string;
+};
+
+export type ClassCommentaryStudentGenerationProgress = {
+  total: number;
+  queued: number;
+  generating: number;
+  succeeded: number;
+  failed: number;
+  runs: ClassCommentaryStudentGenerationRun[];
+};
 
 export const CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1 = 'class_commentary.student_feedback.v1';
 
@@ -112,6 +146,9 @@ export type ClassCommentaryGeneration = ClassCommentaryFeedbackReadEnvelope & {
   snapshot_completeness: 'complete' | 'partial';
   skill_id: string;
   model_name: string;
+  prompt_version: string;
+  student_history_memory_mode: string;
+  student_run_progress: ClassCommentaryStudentGenerationProgress;
   generated_feedback_text: string;
   missing_snapshot_fields: string[];
   confirmed_transcript_version: number;
@@ -354,6 +391,51 @@ function stringArrayValue(value: unknown): string[] {
 
 function numberArrayValue(value: unknown): number[] {
   return Array.isArray(value) ? value.map((item) => numberValue(item)).filter((item) => item > 0) : [];
+}
+
+function nonNegativeIntegerValue(value: unknown): number {
+  const normalized = numberValue(value);
+  return Number.isInteger(normalized) && normalized >= 0 ? normalized : 0;
+}
+
+const validStudentGenerationRunStatuses = new Set<ClassCommentaryStudentGenerationRunStatus>([
+  'queued',
+  'retry_wait',
+  'generating',
+  'response_received',
+  'succeeded',
+  'failed',
+]);
+
+export function normalizeClassCommentaryStudentGenerationProgress(
+  source: unknown,
+): ClassCommentaryStudentGenerationProgress {
+  const progress = recordValue(source);
+  const runs = (Array.isArray(progress.runs) ? progress.runs : []).map((rawRun) => {
+    const run = recordValue(rawRun);
+    const rawStatus = stringValue(run.status) as ClassCommentaryStudentGenerationRunStatus;
+    return {
+      id: numberValue(run.id),
+      student_id: numberValue(run.student_id),
+      student_name: stringValue(run.student_name),
+      status: validStudentGenerationRunStatuses.has(rawStatus) ? rawStatus : 'unknown',
+      attempt_count: nonNegativeIntegerValue(run.attempt_count),
+      memory_retrieval_status: stringValue(run.memory_retrieval_status),
+      charge_status: stringValue(run.charge_status),
+      error_code: stringValue(run.error_code),
+      created_at: stringValue(run.created_at),
+      started_at: stringValue(run.started_at),
+      completed_at: stringValue(run.completed_at),
+    } satisfies ClassCommentaryStudentGenerationRun;
+  });
+  return {
+    total: nonNegativeIntegerValue(progress.total),
+    queued: nonNegativeIntegerValue(progress.queued),
+    generating: nonNegativeIntegerValue(progress.generating),
+    succeeded: nonNegativeIntegerValue(progress.succeeded),
+    failed: nonNegativeIntegerValue(progress.failed),
+    runs,
+  };
 }
 
 function storageKeyPart(value: unknown, fallback: string): string {
@@ -690,6 +772,9 @@ export function normalizeClassCommentaryGeneration(source: Record<string, unknow
     snapshot_completeness: stringValue(source.snapshot_completeness) === 'partial' ? 'partial' : 'complete',
     skill_id: stringValue(source.skill_id),
     model_name: stringValue(source.model_name),
+    prompt_version: stringValue(source.prompt_version),
+    student_history_memory_mode: stringValue(source.student_history_memory_mode),
+    student_run_progress: normalizeClassCommentaryStudentGenerationProgress(source.student_run_progress),
     generated_feedback_text: generatedFeedbackText || feedbackEnvelope.derived_feedback_text,
     missing_snapshot_fields: stringArrayValue(source.missing_snapshot_fields),
     confirmed_transcript_version: numberValue(source.confirmed_transcript_version),
@@ -983,6 +1068,10 @@ export async function fetchClassCommentaryCapabilities(): Promise<ClassCommentar
     memory_learning_enabled: payload.memory_learning_enabled === true,
     skill_evolution_enabled: payload.skill_evolution_enabled === true,
     structured_feedback_enabled: payload.structured_feedback_enabled === true,
+    student_history_memory_v2_enabled: payload.student_history_memory_v2_enabled === true,
+    student_history_memory_v2_max_credits_per_student: nonNegativeIntegerValue(
+      payload.student_history_memory_v2_max_credits_per_student,
+    ),
   };
 }
 
@@ -1062,6 +1151,28 @@ export async function fetchClassCommentaryGeneration(
     `${buildClassCommentaryTaskPath(taskId)}/generations/${encodeURIComponent(String(generationId))}`,
   );
   return normalizeClassCommentaryGeneration(recordValue(payload.generation || payload));
+}
+
+export async function retryClassCommentaryStudentGenerationRuns(
+  taskId: number,
+  generationId: number,
+  studentIds: number[],
+  requestId: string,
+): Promise<ClassCommentaryGenerationResult> {
+  const payload = await apiFetch<Record<string, unknown>>(
+    `${buildClassCommentaryTaskPath(taskId)}/generations/${encodeURIComponent(String(generationId))}/student-runs/retry`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        request_id: requestId,
+        student_ids: studentIds,
+      }),
+    },
+  );
+  return {
+    task: normalizeClassCommentaryTask(recordValue(payload.task || payload)),
+    generation: normalizeClassCommentaryGeneration(recordValue(payload.generation || payload)),
+  };
 }
 
 function buildClassCommentaryDraftPath(taskId: number, generationId: number): string {
