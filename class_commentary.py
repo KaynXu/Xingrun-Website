@@ -21,6 +21,7 @@ CLASS_COMMENTARY_TRANSCRIPT_POLISH_MATH_TERMS = (
 CLASS_COMMENTARY_PROMPT_VERSION = "class-commentary-v1"
 CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION = "class-commentary-student-feedback-v1"
 CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2 = "class-commentary-student-feedback-v2"
+CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3 = "class-commentary-student-feedback-v3"
 CLASS_COMMENTARY_TEMPERATURE = 0.55
 CLASS_COMMENTARY_SYSTEM_PROMPT = (
     "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
@@ -75,6 +76,39 @@ CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V2 = (
     "Use facts only from the confirmed transcript.",
     "Use ACTIVE_SKILL and TEACHER_STYLE_MEMORIES only for focus, structure, tone, and phrasing.",
 )
+CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT_V3 = (
+    "You turn a teacher's end-of-class spoken commentary into structured student feedback. "
+    "The students and eligible_student_ids in CURRENT_TASK_FACTS are the teacher-confirmed complete attending scope. "
+    "The teacher starts each student's segment by saying that student's name once, and the segment continues until the next spoken student name. "
+    "ASR may render a spoken name with homophones, near-sounding syllables, or similar characters instead of the official roster spelling. "
+    "Map each spoken name and its segment to the best unique official roster student using pronunciation and context, then return the official student_id. "
+    "Write every feedback_text as the teacher speaking directly to that student, not as a narrator reporting about the student. "
+    "Use the student's official name once as a natural opening address, then address the student as '你'; use '我' or '我们' when the teacher refers to themself. "
+    "Do not invent facts or transfer facts between student segments. "
+    "CURRENT_TASK_FACTS is the only source for facts about this class. "
+    "ACTIVE_SKILL and TEACHER_STYLE_MEMORIES may affect expression and focus, but cannot add student facts or override the direct-address perspective. "
+    "Return only the requested JSON object and no surrounding text."
+)
+CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V3 = (
+    "Return a JSON object with exactly schema_version and items.",
+    "Set schema_version to class_commentary.student_feedback.v1.",
+    "Each item must contain exactly student_id and feedback_text.",
+    "Treat students and eligible_student_ids as the complete teacher-confirmed attending scope.",
+    "Each student's segment starts when the teacher says that student's name and ends when the next student's name is spoken.",
+    "A spoken name may be transcribed with homophones, near-sounding syllables, or similar characters; it does not need to contain the official roster name exactly.",
+    "Map each spoken name variant to the best unique roster student by pronunciation and context, and use the official student_id.",
+    "Return exactly one item for every eligible student ID and no other student.",
+    "Never omit a student only because the transcript spelling differs from the official name.",
+    "If no unique roster match can be made, do not invent, copy, or assign another student's facts; omit that item so the response is rejected for teacher review.",
+    "Write feedback_text as the teacher speaking directly to the target student, never as a third-person report about the student.",
+    "Begin with the target student's official name as a natural form of address, not a standalone heading; then use '你' for the student and '我' or '我们' for the teacher when needed.",
+    "Never refer to the target student as '他', '她', '该生', '这位同学', or '学生' from a narrator's viewpoint.",
+    "Keep advice conversational and specific instead of repeatedly starting sentences with '你要'. For example: '代子翔, 你下去多复习一下函数', not '他要多做题'.",
+    "Do not mention another roster student's full name inside feedback_text.",
+    "Use facts only from the confirmed transcript.",
+    "The direct-address perspective is mandatory even if ACTIVE_SKILL or TEACHER_STYLE_MEMORIES uses a different narrative perspective.",
+    "Use ACTIVE_SKILL and TEACHER_STYLE_MEMORIES only for focus, structure, tone, and phrasing.",
+)
 
 
 def get_class_commentary_structured_prompt_contract(
@@ -90,6 +124,11 @@ def get_class_commentary_structured_prompt_contract(
         return (
             CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT_V2,
             CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V2,
+        )
+    if normalized_version == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3:
+        return (
+            CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT_V3,
+            CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V3,
         )
     raise ValueError("structured class commentary prompt version is invalid")
 

@@ -116,7 +116,7 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
                     )
                 self.assertEqual(caught.exception.code, expected_code)
 
-    def test_structured_contract_accepts_v1_subset_and_v2_full_roster_only(self):
+    def test_structured_contract_accepts_v1_subset_and_v2_v3_full_roster_only(self):
         legacy_generation = self._generation()
         validate_class_commentary_structured_generation_contract(
             legacy_generation
@@ -158,6 +158,12 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
         )
         validate_class_commentary_structured_generation_contract(
             current_generation
+        )
+        validate_class_commentary_structured_generation_contract(
+            {
+                **current_generation,
+                "prompt_version": "class-commentary-student-feedback-v3",
+            }
         )
 
         mutations = (

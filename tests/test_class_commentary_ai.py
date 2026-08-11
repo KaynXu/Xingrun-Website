@@ -259,6 +259,43 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("does not need to contain the official roster name exactly", user_prompt)
         self.assertNotIn("[STUDENT_HISTORY_MEMORIES]", user_prompt)
 
+    def test_structured_v3_prompt_requires_teacher_to_speak_directly_to_student(self):
+        request_payload = class_commentary.build_class_commentary_chat_request(
+            class_record={"id": 7, "name": "数学七年级四班"},
+            students=[{"id": 1, "name": "代子翔"}],
+            transcript_text="代子翔下去要多复习函数.",
+            skill={
+                "id": "teacher-a",
+                "name": "Teacher A",
+                "content": "Write a concise third-person parent report.",
+            },
+            teacher_style_memories=[
+                {"memory_id": 11, "content": "Use concise sentences."},
+            ],
+            student_history_memories=[],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            eligible_student_ids=[1],
+            prompt_version=(
+                class_commentary.CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3
+            ),
+            response_format={"type": "json_object"},
+            student_history_memory_mode="disabled_v1",
+        )
+
+        system_prompt = request_payload["messages"][0]["content"]
+        user_prompt = request_payload["messages"][1]["content"]
+        self.assertEqual(
+            request_payload["prompt_version"],
+            class_commentary.CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
+        )
+        self.assertIn("teacher speaking directly to that student", system_prompt)
+        self.assertIn("cannot add student facts or override the direct-address perspective", system_prompt)
+        self.assertIn("Begin with the target student's official name", user_prompt)
+        self.assertIn("Never refer to the target student as '他', '她', '该生'", user_prompt)
+        self.assertIn("instead of repeatedly starting sentences with '你要'", user_prompt)
+        self.assertIn("'代子翔, 你下去多复习一下函数'", user_prompt)
+        self.assertIn("mandatory even if ACTIVE_SKILL", user_prompt)
+
     def test_structured_prompt_rejects_unknown_prompt_version(self):
         with self.assertRaisesRegex(ValueError, "prompt version is invalid"):
             class_commentary.build_class_commentary_chat_request(

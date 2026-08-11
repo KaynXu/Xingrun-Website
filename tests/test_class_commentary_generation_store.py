@@ -9,6 +9,7 @@ import lesson_manager
 from class_commentary import (
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
     CLASS_COMMENTARY_TEMPERATURE,
     build_class_commentary_chat_request,
 )
@@ -19,6 +20,7 @@ STRUCTURED_MATCHER_VERSION = "class_commentary.student_name_matcher.v1"
 STRUCTURED_ATTENDING_SCOPE_VERSION = "class_commentary.attending_roster_scope.v1"
 STRUCTURED_PROMPT_VERSION = CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION
 STRUCTURED_PROMPT_VERSION_V2 = CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2
+STRUCTURED_PROMPT_VERSION_V3 = CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3
 STRUCTURED_RESPONSE_FORMAT = {"type": "json_object"}
 STRUCTURED_MEMORY_MODE = "disabled_v1"
 STRUCTURED_MODEL_PARAMETERS = {"temperature": CLASS_COMMENTARY_TEMPERATURE}
@@ -346,7 +348,7 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
             STRUCTURED_MEMORY_MODE,
         )
 
-    def test_structured_v2_reservation_uses_complete_roster_for_asr_name_variants(self):
+    def test_structured_v3_reservation_uses_complete_roster_for_asr_name_variants(self):
         asr_transcript = "小汪计算更稳了, 小黎需要继续练习验算."
         lesson_manager.save_class_commentary_transcript(
             self.task["id"],
@@ -355,13 +357,13 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
 
         generation = lesson_manager.reserve_class_commentary_generation(
             task_id=self.task["id"],
-            generation_request_id="generation-request-v2-asr-names",
+            generation_request_id="generation-request-v3-asr-names",
             skill_registry_id=self.skill_registry_id,
             attending_roster=self.roster,
             model_provider="deepseek",
             model_name="deepseek-chat",
             model_parameters=STRUCTURED_MODEL_PARAMETERS,
-            prompt_version=STRUCTURED_PROMPT_VERSION_V2,
+            prompt_version=STRUCTURED_PROMPT_VERSION_V3,
             structured_feedback_enabled=True,
         )
 
@@ -376,7 +378,7 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
         )
         self.assertEqual(
             generation["prompt_version"],
-            STRUCTURED_PROMPT_VERSION_V2,
+            STRUCTURED_PROMPT_VERSION_V3,
         )
         self.assertEqual(generation["attending_roster_explicit"], 1)
         self.assertEqual(generation["execution_snapshot_status"], "pending")
@@ -404,7 +406,7 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
             student_history_memories=[],
             feedback_schema_version=STRUCTURED_SCHEMA_VERSION,
             eligible_student_ids=expected_ids,
-            prompt_version=STRUCTURED_PROMPT_VERSION_V2,
+            prompt_version=STRUCTURED_PROMPT_VERSION_V3,
             response_format=copy.deepcopy(STRUCTURED_RESPONSE_FORMAT),
             student_history_memory_mode=STRUCTURED_MEMORY_MODE,
         )

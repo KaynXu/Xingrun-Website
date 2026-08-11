@@ -18,6 +18,7 @@ import lesson_manager
 from class_commentary import (
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
 )
 
 
@@ -889,7 +890,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["student_history_memory_mode"], "disabled_v1")
         self.assertEqual(
             payload["prompt_version"],
-            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
         )
 
         saved = lesson_manager.get_class_commentary_generation(payload["generation_id"])
@@ -899,11 +900,11 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(saved["attending_roster_explicit"], 1)
         self.assertEqual(
             saved["prompt_version"],
-            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
         )
         self.assertEqual(
             json.loads(saved["prompt_payload_snapshot_json"])["prompt_version"],
-            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
         )
         self.assertEqual(json.loads(saved["eligible_student_ids_json"]), eligible_ids)
         saved_roster = json.loads(saved["attending_roster_snapshot_json"])
