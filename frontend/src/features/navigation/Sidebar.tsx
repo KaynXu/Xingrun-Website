@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bell,
+  BookOpen,
   CalendarDays,
   Cpu,
   FileText,
@@ -35,6 +36,7 @@ type SidebarPage =
   | 'consultation'
   | 'calendar'
   | 'smartWrongQuestions'
+  | 'curriculum-knowledge'
   | 'classes'
   | 'accounts'
   | 'credit'
@@ -273,6 +275,7 @@ export function Sidebar({
       : []),
   ] satisfies SidebarEntry[]).filter((item) => canOpenPage(item.id));
   const organizationManagementItems = ([
+    { id: 'curriculum-knowledge', icon: BookOpen, label: '课程知识点' },
     { id: 'classes', icon: Home, label: '学管中心' },
     ...(showCreditCenter
       ? [{ id: 'credit', icon: Bell, label: '积分中心' } satisfies SidebarEntry]

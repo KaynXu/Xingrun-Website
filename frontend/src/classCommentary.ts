@@ -243,11 +243,58 @@ export type ClassCommentaryObservedLearningState = 'unknown' | 'weak' | 'develop
 
 export type ClassCommentaryLearningTrend = 'new_observation' | 'regressed' | 'stable' | 'improved';
 
+export type ClassCommentaryStudentGraphCurriculumPathItem = {
+  node_key: string;
+  node_type: string;
+  name: string;
+};
+
+export type ClassCommentaryStudentGraphCurriculumRelatedNode = {
+  node_key: string;
+  node_type: string;
+  canonical_name: string;
+};
+
+export type ClassCommentaryStudentGraphCurriculumContext = {
+  knowledge_point_key: string;
+  knowledge_point_kind: string;
+  path: ClassCommentaryStudentGraphCurriculumPathItem[];
+  prerequisites: ClassCommentaryStudentGraphCurriculumRelatedNode[];
+  follow_ups: ClassCommentaryStudentGraphCurriculumRelatedNode[];
+  related: ClassCommentaryStudentGraphCurriculumRelatedNode[];
+  source: {
+    package_key: string;
+    version_key: string;
+    dataset_revision: string;
+    content_hash: string;
+    license: string;
+  };
+};
+
+export type ClassCommentaryStudentGraphCurriculumAssignment = {
+  id: number;
+  class_id: number;
+  version_id: number;
+  version_key: string;
+  version_status: string;
+  book_node_id: number;
+  book_name: string;
+  curriculum_name: string;
+  publisher_name: string;
+  edition_name: string;
+  stage_key: string;
+  grade_key: string;
+  semester_key: string;
+  source_dataset_revision: string;
+  data_license: string;
+};
+
 export type ClassCommentaryStudentGraphCurrentState = {
   knowledge_point_key: string;
   knowledge_point_name: string;
   state: ClassCommentaryObservedLearningState;
   observed_at: string;
+  curriculum: ClassCommentaryStudentGraphCurriculumContext | null;
 };
 
 export type ClassCommentaryStudentGraphEvidence = {
@@ -271,6 +318,7 @@ export type ClassCommentaryStudentGraphTimelineEvent = {
   evidence: ClassCommentaryStudentGraphEvidence;
   teaching_methods: string[];
   next_steps: string[];
+  curriculum: ClassCommentaryStudentGraphCurriculumContext | null;
 };
 
 export type ClassCommentaryStudentLearningGraphSummary = {
@@ -280,6 +328,7 @@ export type ClassCommentaryStudentLearningGraphSummary = {
   sync_status: ClassCommentaryGraphLearningStatus;
   can_retry: boolean;
   error: string;
+  curriculum_assignment: ClassCommentaryStudentGraphCurriculumAssignment | null;
   current_states: ClassCommentaryStudentGraphCurrentState[];
   timeline: ClassCommentaryStudentGraphTimelineEvent[];
   used_graph_evidence_refs: string[];
@@ -994,6 +1043,78 @@ export function normalizeClassCommentaryFeedbackRevision(source: Record<string, 
   };
 }
 
+function normalizeClassCommentaryStudentGraphCurriculumContext(
+  value: unknown,
+): ClassCommentaryStudentGraphCurriculumContext | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const source = recordValue(value);
+  const rawPath = Array.isArray(source.path) ? source.path : [];
+  const normalizeRelated = (items: unknown): ClassCommentaryStudentGraphCurriculumRelatedNode[] => (
+    Array.isArray(items) ? items.map((rawItem) => {
+      const item = recordValue(rawItem);
+      return {
+        node_key: stringValue(item.node_key),
+        node_type: stringValue(item.node_type),
+        canonical_name: stringValue(item.canonical_name || item.name),
+      };
+    }).filter((item) => item.node_key && item.canonical_name) : []
+  );
+  const rawSource = recordValue(source.source);
+  return {
+    knowledge_point_key: stringValue(source.knowledge_point_key),
+    knowledge_point_kind: stringValue(source.knowledge_point_kind),
+    path: rawPath.map((rawItem) => {
+      const item = recordValue(rawItem);
+      return {
+        node_key: stringValue(item.node_key),
+        node_type: stringValue(item.node_type),
+        name: stringValue(item.name || item.canonical_name),
+      };
+    }).filter((item) => item.node_key && item.name),
+    prerequisites: normalizeRelated(source.prerequisites),
+    follow_ups: normalizeRelated(source.follow_ups),
+    related: normalizeRelated(source.related),
+    source: {
+      package_key: stringValue(rawSource.package_key),
+      version_key: stringValue(rawSource.version_key),
+      dataset_revision: stringValue(rawSource.dataset_revision),
+      content_hash: stringValue(rawSource.content_hash),
+      license: stringValue(rawSource.license),
+    },
+  };
+}
+
+function normalizeClassCommentaryStudentGraphCurriculumAssignment(
+  value: unknown,
+): ClassCommentaryStudentGraphCurriculumAssignment | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const source = recordValue(value);
+  if (!numberValue(source.id) || !numberValue(source.book_node_id)) {
+    return null;
+  }
+  return {
+    id: numberValue(source.id),
+    class_id: numberValue(source.class_id),
+    version_id: numberValue(source.version_id),
+    version_key: stringValue(source.version_key),
+    version_status: stringValue(source.version_status),
+    book_node_id: numberValue(source.book_node_id),
+    book_name: stringValue(source.book_name),
+    curriculum_name: stringValue(source.curriculum_name),
+    publisher_name: stringValue(source.publisher_name),
+    edition_name: stringValue(source.edition_name),
+    stage_key: stringValue(source.stage_key),
+    grade_key: stringValue(source.grade_key),
+    semester_key: stringValue(source.semester_key),
+    source_dataset_revision: stringValue(source.source_dataset_revision),
+    data_license: stringValue(source.data_license),
+  };
+}
+
 export function normalizeClassCommentaryStudentLearningGraphSummary(
   source: Record<string, unknown>,
 ): ClassCommentaryStudentLearningGraphSummary {
@@ -1012,6 +1133,7 @@ export function normalizeClassCommentaryStudentLearningGraphSummary(
       knowledge_point_name: requiredStringValue(state.knowledge_point_name, 'knowledge_point_name'),
       state: normalizeObservedLearningState(state.state, 'state'),
       observed_at: requiredStringValue(state.observed_at, 'observed_at'),
+      curriculum: normalizeClassCommentaryStudentGraphCurriculumContext(state.curriculum),
     } satisfies ClassCommentaryStudentGraphCurrentState;
   });
 
@@ -1044,6 +1166,7 @@ export function normalizeClassCommentaryStudentLearningGraphSummary(
       },
       teaching_methods: strictStringArrayValue(event.teaching_methods, 'teaching_methods'),
       next_steps: strictStringArrayValue(event.next_steps, 'next_steps'),
+      curriculum: normalizeClassCommentaryStudentGraphCurriculumContext(event.curriculum),
     } satisfies ClassCommentaryStudentGraphTimelineEvent;
   });
 
@@ -1070,6 +1193,7 @@ export function normalizeClassCommentaryStudentLearningGraphSummary(
     sync_status: syncStatus,
     can_retry: booleanValue(source.can_retry),
     error: stringValue(source.error),
+    curriculum_assignment: normalizeClassCommentaryStudentGraphCurriculumAssignment(source.curriculum_assignment),
     current_states: currentStates,
     timeline,
     used_graph_evidence_refs: strictStringArrayValue(

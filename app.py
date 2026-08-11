@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import secrets
+import sqlite3
 import threading
 import webbrowser
 import zipfile
@@ -348,11 +349,16 @@ from class_commentary_memory_queue import (
 )
 from class_commentary_graph_queue import dispatch_class_commentary_graph_work
 from class_commentary_learning_graph import (
+    LearningGraphValidationError,
     LearningGraphRetryConflict,
     get_student_learning_graph_summary,
+    list_graph_candidate_ids_for_proposal,
+    list_graph_unmapped_candidates,
+    resolve_graph_unmapped_candidate,
     retry_graph_revision,
 )
 from class_commentary_semantica import SemanticaGraphAdapter
+import curriculum_registry
 from class_commentary_memory_retrieval import (
     empty_class_commentary_memory_context,
     retrieve_class_commentary_memory_context,
@@ -9214,6 +9220,7 @@ def api_class_update(class_id):
         is_bridge=bool(data.get("is_bridge")),
         bridge_target=(data.get("bridge_target") or "").strip(),
         content_track=(data.get("content_track") or "").strip(),
+        actor_user_id=int(user["id"]),
     )
     return jsonify({"ok": True})
 
@@ -9990,6 +9997,355 @@ def api_class_commentary_capabilities():
     if error:
         return error
     return jsonify(_class_commentary_capabilities())
+
+
+def _curriculum_version_response(version: dict) -> dict:
+    result = dict(version)
+    for field in ("source_counts_json", "import_counts_json"):
+        try:
+            result[field.removesuffix("_json")] = json.loads(str(result.pop(field, "{}")))
+        except json.JSONDecodeError:
+            result[field.removesuffix("_json")] = {}
+    return result
+
+
+def _curriculum_error_response(exc: Exception):
+    if isinstance(exc, LookupError):
+        return jsonify({"error": "not found"}), 404
+    if isinstance(exc, (curriculum_registry.CurriculumConflictError, LearningGraphRetryConflict)):
+        return jsonify({"error": str(exc)}), 409
+    if isinstance(exc, (curriculum_registry.CurriculumValidationError, LearningGraphValidationError, ValueError)):
+        return jsonify({"error": str(exc)}), 400
+    raise exc
+
+
+def _curriculum_version_for_user(user: dict, version_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        version = curriculum_registry.get_curriculum_version(conn, version_id)
+    if not version:
+        return None
+    if str(version.get("status") or "") != "active" and user.get("role") != "super_owner":
+        return None
+    return version
+
+
+@app.route("/api/class-commentary/curriculum/versions", methods=["GET"])
+def api_class_commentary_curriculum_versions():
+    user, error = _require_auth()
+    if error:
+        return error
+    with get_conn() as conn:
+        versions = curriculum_registry.list_curriculum_versions(conn)
+    if user.get("role") != "super_owner":
+        versions = [item for item in versions if str(item.get("status") or "") == "active"]
+    return jsonify({"versions": [_curriculum_version_response(item) for item in versions]})
+
+
+@app.route("/api/class-commentary/curriculum/versions/diff", methods=["GET"])
+def api_class_commentary_curriculum_version_diff():
+    user, error = _require_super_owner()
+    if error:
+        return error
+    from_version_id = request.args.get("from_version_id", type=int) or 0
+    to_version_id = request.args.get("to_version_id", type=int) or 0
+    if from_version_id <= 0 or to_version_id <= 0:
+        return jsonify({"error": "from_version_id and to_version_id are required"}), 400
+    try:
+        with get_conn() as conn:
+            result = curriculum_registry.diff_curriculum_versions(
+                conn, from_version_id, to_version_id
+            )
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    return jsonify({"diff": result})
+
+
+@app.route(
+    "/api/class-commentary/curriculum/versions/<int:version_id>/<string:action>",
+    methods=["POST"],
+)
+def api_class_commentary_curriculum_version_action(version_id: int, action: str):
+    user, error = _require_super_owner()
+    if error:
+        return error
+    if action not in {"review", "activate", "rollback"}:
+        return jsonify({"error": "not found"}), 404
+    try:
+        with get_conn() as conn:
+            if action == "review":
+                version = curriculum_registry.review_curriculum_version(
+                    conn, version_id, actor_user_id=int(user["id"])
+                )
+            elif action == "activate":
+                version = curriculum_registry.activate_curriculum_version(
+                    conn, version_id, actor_user_id=int(user["id"])
+                )
+            else:
+                version = curriculum_registry.rollback_curriculum_version(
+                    conn, version_id, actor_user_id=int(user["id"])
+                )
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    return jsonify({"version": _curriculum_version_response(version)})
+
+
+@app.route("/api/class-commentary/curriculum/books", methods=["GET"])
+def api_class_commentary_curriculum_books():
+    user, error = _require_auth()
+    if error:
+        return error
+    version_id = request.args.get("version_id", type=int) or 0
+    if version_id <= 0 or not _curriculum_version_for_user(user, version_id):
+        return jsonify({"error": "not found"}), 404
+    with get_conn() as conn:
+        books = curriculum_registry.list_curriculum_books(conn, version_id)
+    return jsonify({"books": books})
+
+
+@app.route("/api/class-commentary/curriculum/catalog", methods=["GET"])
+def api_class_commentary_curriculum_catalog():
+    user, error = _require_auth()
+    if error:
+        return error
+    version_id = request.args.get("version_id", type=int) or 0
+    if version_id <= 0 or not _curriculum_version_for_user(user, version_id):
+        return jsonify({"error": "not found"}), 404
+    try:
+        with get_conn() as conn:
+            result = curriculum_registry.list_curriculum_nodes(
+                conn,
+                version_id=version_id,
+                stage_key=str(request.args.get("stage_key") or "").strip(),
+                grade_key=str(request.args.get("grade_key") or "").strip(),
+                book_upstream_id=str(request.args.get("book_upstream_id") or "").strip(),
+                chapter_upstream_id=str(request.args.get("chapter_upstream_id") or "").strip(),
+                query=str(request.args.get("query") or "").strip(),
+                node_type=str(request.args.get("node_type") or "").strip(),
+                page=request.args.get("page", type=int) or 1,
+                page_size=request.args.get("page_size", type=int) or 50,
+            )
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    return jsonify(result)
+
+
+@app.route("/api/class-commentary/curriculum/nodes/<int:node_id>", methods=["GET"])
+def api_class_commentary_curriculum_node(node_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    book_node_id = request.args.get("book_node_id", type=int) or None
+    with get_conn() as conn:
+        node = curriculum_registry.get_curriculum_node_detail(
+            conn, node_id, book_node_id=book_node_id
+        )
+    if not node or not _curriculum_version_for_user(user, int(node["version_id"])):
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"node": node})
+
+
+@app.route(
+    "/api/class-commentary/curriculum/classes/<int:class_id>/assignment",
+    methods=["GET", "PUT"],
+)
+def api_class_commentary_curriculum_class_assignment(class_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    cls = _require_accessible_class(user, class_id)
+    if not cls:
+        return jsonify({"error": "not found"}), 404
+    if request.method == "GET":
+        with get_conn() as conn:
+            assignment = curriculum_registry.get_class_curriculum_assignment(conn, class_id)
+        return jsonify({"assignment": assignment})
+    if user.get("role") not in {"super_owner", "owner", "admin"}:
+        return jsonify({"error": "无权限"}), 403
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    try:
+        version_id = int((data or {}).get("version_id") or 0)
+        book_node_id = int((data or {}).get("book_node_id") or 0)
+        raw_expected = (data or {}).get("expected_assignment_id")
+        expected_assignment_id = int(raw_expected) if raw_expected not in (None, "") else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "assignment identifiers must be integers"}), 400
+    request_id = str((data or {}).get("request_id") or "").strip()
+    try:
+        with get_conn() as conn:
+            assignment = curriculum_registry.assign_curriculum_book(
+                conn,
+                organization_id=int(user["organization_id"]),
+                class_id=class_id,
+                version_id=version_id,
+                book_node_id=book_node_id,
+                actor_user_id=int(user["id"]),
+                request_id=request_id,
+                expected_assignment_id=expected_assignment_id,
+                note=str((data or {}).get("note") or "").strip(),
+            )
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    return jsonify({"assignment": assignment})
+
+
+@app.route("/api/class-commentary/curriculum/unmapped", methods=["GET"])
+def api_class_commentary_curriculum_unmapped():
+    user, error = _require_auth()
+    if error:
+        return error
+    allowed_class_ids = None
+    if user.get("role") not in {"super_owner", "owner", "admin"}:
+        allowed_class_ids = get_user_class_ids(int(user["id"]))
+    try:
+        result = list_graph_unmapped_candidates(
+            organization_id=int(user["organization_id"]),
+            allowed_class_ids=allowed_class_ids,
+            status=str(request.args.get("status") or "pending"),
+            page=request.args.get("page", type=int) or 1,
+            page_size=request.args.get("page_size", type=int) or 50,
+        )
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    return jsonify(result)
+
+
+@app.route(
+    "/api/class-commentary/curriculum/unmapped/<string:candidate_id>/actions",
+    methods=["POST"],
+)
+def api_class_commentary_curriculum_unmapped_action(candidate_id: str):
+    user, error = _require_auth()
+    if error:
+        return error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    action = str((data or {}).get("action") or "").strip()
+    if user.get("role") not in {"super_owner", "owner", "admin"} and action != "propose_new":
+        return jsonify({"error": "无权限"}), 403
+    with get_conn() as conn:
+        candidate_scope = conn.execute(
+            """
+            SELECT generation.class_id
+            FROM class_commentary_graph_unmapped_candidates candidate
+            JOIN class_commentary_graph_extraction_jobs job ON job.id=candidate.extraction_job_id
+            JOIN class_commentary_generations generation ON generation.id=job.generation_id
+            WHERE candidate.candidate_id=? AND candidate.organization_id=?
+            """,
+            (candidate_id, int(user["organization_id"])),
+        ).fetchone()
+    if not candidate_scope or not _require_accessible_class(user, int(candidate_scope["class_id"])):
+        return jsonify({"error": "not found"}), 404
+    try:
+        result = resolve_graph_unmapped_candidate(
+            candidate_id,
+            organization_id=int(user["organization_id"]),
+            actor_user_id=int(user["id"]),
+            request_id=str((data or {}).get("request_id") or "").strip(),
+            action=action,
+            target_knowledge_point_key=str((data or {}).get("target_knowledge_point_key") or "").strip(),
+            proposed_name=str((data or {}).get("proposed_name") or "").strip(),
+            note=str((data or {}).get("note") or "").strip(),
+        )
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    _dispatch_class_commentary_graph_best_effort()
+    return jsonify({"result": result})
+
+
+@app.route("/api/class-commentary/curriculum/audit", methods=["GET"])
+def api_class_commentary_curriculum_audit():
+    user, error = _require_staff()
+    if error:
+        return error
+    with get_conn() as conn:
+        events = curriculum_registry.list_curriculum_audit_events(
+            conn,
+            organization_id=int(user["organization_id"]),
+            include_global=user.get("role") == "super_owner",
+            limit=request.args.get("limit", type=int) or 200,
+        )
+    return jsonify({"events": events})
+
+
+@app.route("/api/class-commentary/curriculum/proposals", methods=["GET"])
+def api_class_commentary_curriculum_proposals():
+    user, error = _require_staff()
+    if error:
+        return error
+    try:
+        with get_conn() as conn:
+            proposals = curriculum_registry.list_organization_knowledge_point_proposals(
+                conn,
+                organization_id=int(user["organization_id"]),
+                status=str(request.args.get("status") or "proposed"),
+            )
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    return jsonify({"proposals": proposals})
+
+
+@app.route(
+    "/api/class-commentary/curriculum/proposals/<int:proposal_id>/review",
+    methods=["POST"],
+)
+def api_class_commentary_curriculum_proposal_review(proposal_id: int):
+    user, error = _require_staff()
+    if error:
+        return error
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    if not isinstance((data or {}).get("approve"), bool):
+        return jsonify({"error": "approve must be a boolean"}), 400
+    request_id = str((data or {}).get("request_id") or "").strip()
+    try:
+        with get_conn() as conn:
+            review = curriculum_registry.review_organization_knowledge_point_proposal(
+                conn,
+                organization_id=int(user["organization_id"]),
+                proposal_id=proposal_id,
+                actor_user_id=int(user["id"]),
+                request_id=request_id,
+                approve=bool((data or {})["approve"]),
+                note=str((data or {}).get("note") or "").strip(),
+            )
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "proposal alias conflicts with an existing mapping"}), 409
+    except Exception as exc:
+        return _curriculum_error_response(exc)
+    reprocessed = []
+    failures = []
+    proposal = review.get("proposal") or {}
+    if bool((data or {})["approve"]):
+        proposal_key = str(proposal.get("knowledge_point_key") or "")
+        for candidate_id in list_graph_candidate_ids_for_proposal(
+            organization_id=int(user["organization_id"]), proposal_key=proposal_key
+        ):
+            try:
+                result = resolve_graph_unmapped_candidate(
+                    candidate_id,
+                    organization_id=int(user["organization_id"]),
+                    actor_user_id=int(user["id"]),
+                    request_id=f"{request_id}:candidate:{candidate_id[:16]}",
+                    action="map",
+                    target_knowledge_point_key=proposal_key,
+                    note="Approved organization knowledge point replay",
+                )
+                reprocessed.append(result)
+            except Exception as exc:
+                logger.warning(
+                    "Curriculum proposal replay failed candidate=%s error=%s",
+                    candidate_id[:16],
+                    exc.__class__.__name__,
+                )
+                failures.append({"candidate_id": candidate_id, "error": exc.__class__.__name__})
+    _dispatch_class_commentary_graph_best_effort()
+    return jsonify(
+        {"review": review, "reprocessed": reprocessed, "failures": failures}
+    ), (207 if failures else 200)
 
 
 @app.route("/api/class-commentary/tasks", methods=["POST"])

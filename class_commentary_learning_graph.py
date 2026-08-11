@@ -425,6 +425,36 @@ def ensure_class_commentary_graph_schema(conn: sqlite3.Connection) -> None:
         "supersedes_event_id",
         "TEXT REFERENCES class_commentary_student_learning_events(event_id)",
     )
+    for column, ddl in {
+        "curriculum_assignment_id": "INTEGER",
+        "curriculum_version_id": "INTEGER",
+        "curriculum_book_node_id": "INTEGER",
+        "curriculum_registry_snapshot_hash": "TEXT NOT NULL DEFAULT ''",
+        "curriculum_registry_snapshot_json": "TEXT NOT NULL DEFAULT '[]'",
+        "curriculum_content_hash": "TEXT NOT NULL DEFAULT ''",
+        "curriculum_assignment_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+    }.items():
+        _ensure_column(conn, "class_commentary_graph_extraction_jobs", column, ddl)
+    for column, ddl in {
+        "curriculum_assignment_id": "INTEGER",
+        "curriculum_version_id": "INTEGER",
+        "curriculum_node_id": "INTEGER",
+        "organization_knowledge_point_id": "INTEGER",
+        "curriculum_book_node_id": "INTEGER",
+        "curriculum_package_key": "TEXT NOT NULL DEFAULT ''",
+        "curriculum_version_key": "TEXT NOT NULL DEFAULT ''",
+        "curriculum_source_revision": "TEXT NOT NULL DEFAULT ''",
+        "curriculum_content_hash": "TEXT NOT NULL DEFAULT ''",
+        "curriculum_node_content_hash": "TEXT NOT NULL DEFAULT ''",
+        "knowledge_point_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+    }.items():
+        _ensure_column(conn, "class_commentary_student_learning_events", column, ddl)
+    _ensure_column(
+        conn,
+        "class_commentary_graph_unmapped_candidates",
+        "candidate_payload_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )
     _ensure_column(
         conn,
         "class_commentary_revisions",
@@ -529,10 +559,28 @@ def resolve_knowledge_point(
     organization_id: int,
     subject_key: str,
     value: object,
+    class_id: Optional[int] = None,
 ) -> Optional[dict]:
     text = str(value or "").strip()
     if not text:
         return None
+    if class_id is not None:
+        from curriculum_registry import (
+            get_class_curriculum_assignment,
+            resolve_curriculum_knowledge_point,
+        )
+
+        curriculum_match = resolve_curriculum_knowledge_point(
+            conn,
+            organization_id=int(organization_id),
+            class_id=int(class_id),
+            subject_key=str(subject_key).strip(),
+            value=text,
+        )
+        if curriculum_match:
+            return curriculum_match
+        if get_class_curriculum_assignment(conn, int(class_id)):
+            return None
     row = conn.execute(
         """
         SELECT * FROM class_commentary_knowledge_points
@@ -568,6 +616,45 @@ def create_graph_extraction_job_conn(
     revision = dict(revision)
     organization_id = int(generation["organization_id"])
     ensure_builtin_knowledge_points(conn, organization_id)
+    from curriculum_registry import ensure_curriculum_schema, get_extraction_registry
+
+    ensure_curriculum_schema(conn)
+    curriculum_registry = get_extraction_registry(
+        conn,
+        organization_id=organization_id,
+        class_id=int(generation["class_id"]),
+        subject_key=str(generation.get("subject_key") or ""),
+    )
+    curriculum_assignment = curriculum_registry.get("assignment") or {}
+    curriculum_items = curriculum_registry.get("registry") or []
+    if curriculum_assignment:
+        registry_snapshot = list(curriculum_items)
+    else:
+        registry_rows = conn.execute(
+            """
+            SELECT kp.knowledge_point_key, kp.subject_key, kp.canonical_name,
+                   kp.parent_key, kp.registry_version,
+                   COALESCE(json_group_array(alias.alias), '[]') AS aliases_json
+            FROM class_commentary_knowledge_points AS kp
+            LEFT JOIN class_commentary_knowledge_point_aliases AS alias
+              ON alias.knowledge_point_id=kp.id
+            WHERE kp.organization_id=? AND kp.subject_key=? AND kp.active=1
+            GROUP BY kp.id ORDER BY kp.knowledge_point_key
+            """,
+            (organization_id, str(generation.get("subject_key") or "")),
+        ).fetchall()
+        registry_snapshot = [
+            {
+                "knowledge_point_key": item["knowledge_point_key"],
+                "subject_key": item["subject_key"],
+                "canonical_name": item["canonical_name"],
+                "parent_key": item["parent_key"],
+                "registry_version": item["registry_version"],
+                "aliases": _json_list(item["aliases_json"]),
+            }
+            for item in registry_rows
+        ]
+    curriculum_snapshot_hash = content_hash(registry_snapshot)
     revision_id = int(revision["id"])
     task_id = int(revision["task_id"])
     generation_id = int(revision["generation_id"])
@@ -581,6 +668,11 @@ def create_graph_extraction_job_conn(
         "prompt_version": GRAPH_PROMPT_VERSION,
         "event_schema_version": GRAPH_EVENT_SCHEMA_VERSION,
         "registry_version": GRAPH_REGISTRY_VERSION,
+        "curriculum_assignment_id": int(curriculum_assignment.get("id") or 0),
+        "curriculum_version_id": int(curriculum_assignment.get("version_id") or 0),
+        "curriculum_book_node_id": int(curriculum_assignment.get("book_node_id") or 0),
+        "curriculum_registry_snapshot_hash": curriculum_snapshot_hash,
+        "curriculum_content_hash": str(curriculum_assignment.get("content_hash") or ""),
     }
     extraction_input_hash = content_hash(extraction_identity)
     request_key = f"class-commentary-graph-extract:{content_hash(extraction_identity)}"
@@ -589,8 +681,12 @@ def create_graph_extraction_job_conn(
         INSERT OR IGNORE INTO class_commentary_graph_extraction_jobs (
             organization_id, revision_id, task_id, generation_id, request_key,
             extractor_version, prompt_version, event_schema_version,
-            registry_version, extraction_input_hash, source_revision_hash
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            registry_version, extraction_input_hash, source_revision_hash,
+            curriculum_assignment_id, curriculum_version_id,
+            curriculum_book_node_id, curriculum_registry_snapshot_hash,
+            curriculum_registry_snapshot_json, curriculum_content_hash,
+            curriculum_assignment_snapshot_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             organization_id,
@@ -604,6 +700,13 @@ def create_graph_extraction_job_conn(
             GRAPH_REGISTRY_VERSION,
             extraction_input_hash,
             source_revision_hash,
+            int(curriculum_assignment.get("id") or 0) or None,
+            int(curriculum_assignment.get("version_id") or 0) or None,
+            int(curriculum_assignment.get("book_node_id") or 0) or None,
+            curriculum_snapshot_hash,
+            canonical_json(registry_snapshot),
+            str(curriculum_assignment.get("content_hash") or ""),
+            canonical_json(curriculum_assignment),
         ),
     )
     row = conn.execute(
@@ -768,19 +871,23 @@ def get_graph_extraction_input(job_id: int) -> Optional[dict]:
         if not row:
             return None
         ensure_builtin_knowledge_points(conn, int(row["organization_id"]))
-        registry = conn.execute(
-            """
-            SELECT kp.knowledge_point_key, kp.subject_key, kp.canonical_name,
-                   kp.parent_key, kp.registry_version,
-                   COALESCE(json_group_array(alias.alias), '[]') AS aliases_json
-            FROM class_commentary_knowledge_points AS kp
-            LEFT JOIN class_commentary_knowledge_point_aliases AS alias
-              ON alias.knowledge_point_id=kp.id
-            WHERE kp.organization_id=? AND kp.subject_key=? AND kp.active=1
-            GROUP BY kp.id ORDER BY kp.knowledge_point_key
-            """,
-            (int(row["organization_id"]), str(row["subject_key"] or "")),
-        ).fetchall()
+        from curriculum_registry import ensure_curriculum_schema
+
+        ensure_curriculum_schema(conn)
+        frozen_registry = _json_list(row["curriculum_registry_snapshot_json"])
+        frozen_version = None
+        if int(row["curriculum_version_id"] or 0):
+            frozen_version = conn.execute(
+                """
+                SELECT version.content_hash, version.version_key,
+                       version.source_dataset_revision, version.source_sha256,
+                       package.package_key
+                FROM curriculum_versions version
+                JOIN curriculum_packages package ON package.id=version.package_id
+                WHERE version.id=?
+                """,
+                (int(row["curriculum_version_id"]),),
+            ).fetchone()
     structured = _json_object(row["structured_feedback_json"])
     items = structured.get("items") if isinstance(structured.get("items"), list) else []
     safe_items = []
@@ -796,22 +903,26 @@ def get_graph_extraction_input(job_id: int) -> Optional[dict]:
             safe_items.append({"student_id": student_id, "feedback_text": feedback_text})
     result = dict(row)
     result["student_feedback_items"] = safe_items
-    result["registry"] = [
-        {
-            "knowledge_point_key": item["knowledge_point_key"],
-            "subject_key": item["subject_key"],
-            "canonical_name": item["canonical_name"],
-            "parent_key": item["parent_key"],
-            "registry_version": item["registry_version"],
-            "aliases": _json_list(item["aliases_json"]),
-        }
-        for item in registry
-    ]
+    result["registry"] = frozen_registry
+    frozen_assignment = _json_object(row["curriculum_assignment_snapshot_json"])
+    result["curriculum_assignment"] = frozen_assignment or None
     result["lesson_id"] = int(row["task_id"])
     result["lesson_name"] = f"{str(row['class_name'] or '').strip()} 课堂反馈".strip()
     result["integrity_valid"] = (
         str(row["source_revision_hash"])
         == (str(row["structured_feedback_hash"] or "") or content_hash(str(row["final_feedback_text"] or "")))
+        and str(row["curriculum_registry_snapshot_hash"] or "") == content_hash(frozen_registry)
+        and int(frozen_assignment.get("id") or 0) == int(row["curriculum_assignment_id"] or 0)
+        and int(frozen_assignment.get("version_id") or 0) == int(row["curriculum_version_id"] or 0)
+        and int(frozen_assignment.get("book_node_id") or 0) == int(row["curriculum_book_node_id"] or 0)
+        and (
+            not int(row["curriculum_version_id"] or 0)
+            or (
+                frozen_version is not None
+                and str(frozen_version["content_hash"] or "")
+                == str(row["curriculum_content_hash"] or "")
+            )
+        )
     )
     return result
 
@@ -832,6 +943,115 @@ def _validated_quote(candidate: Mapping[str, object], feedback_text: str) -> tup
     if not supplied_hash or supplied_hash != quote_hash:
         raise LearningGraphValidationError("evidence content hash mismatch")
     return quote, start, end, quote_hash
+
+
+def _resolve_frozen_knowledge_point(
+    conn: sqlite3.Connection,
+    *,
+    frozen: Mapping[str, object],
+    value: object,
+    allow_active_organization_target: bool = False,
+) -> Optional[dict]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    registry = [dict(item) for item in frozen.get("registry") or [] if isinstance(item, Mapping)]
+    exact = [item for item in registry if str(item.get("knowledge_point_key") or "") == text]
+    if not exact:
+        normalized = normalize_knowledge_point_alias(text)
+        exact = [
+            item
+            for item in registry
+            if normalized
+            and normalized
+            in {
+                normalize_knowledge_point_alias(item.get("canonical_name")),
+                *(normalize_knowledge_point_alias(alias) for alias in item.get("aliases") or []),
+            }
+        ]
+    assignment = frozen.get("curriculum_assignment")
+    unique = {str(item.get("knowledge_point_key") or ""): item for item in exact}
+    if not unique and allow_active_organization_target and isinstance(assignment, Mapping):
+        custom = conn.execute(
+            """
+            SELECT * FROM curriculum_organization_knowledge_points
+            WHERE organization_id=? AND version_id=? AND book_node_id=?
+              AND subject_key=? AND knowledge_point_key=? AND status='active'
+            """,
+            (
+                int(assignment.get("organization_id") or 0),
+                int(assignment.get("version_id") or 0),
+                int(assignment.get("book_node_id") or 0),
+                str(assignment.get("subject_key") or ""),
+                text,
+            ),
+        ).fetchone()
+        if custom:
+            custom_snapshot = {
+                "knowledge_point_key": str(custom["knowledge_point_key"]),
+                "canonical_name": str(custom["canonical_name"]),
+                "registry_version": int(assignment.get("stable_registry_version") or 0),
+                "curriculum_node_id": 0,
+                "organization_knowledge_point_id": int(custom["id"]),
+                "node_content_hash": content_hash(
+                    {
+                        "knowledge_point_key": custom["knowledge_point_key"],
+                        "canonical_name": custom["canonical_name"],
+                        "description": custom["description"],
+                    }
+                ),
+            }
+            unique[str(custom["knowledge_point_key"])] = custom_snapshot
+    if len(unique) != 1:
+        return None
+    snapshot = dict(next(iter(unique.values())))
+    if not isinstance(assignment, Mapping):
+        snapshot["registry_version"] = int(snapshot.get("registry_version") or GRAPH_REGISTRY_VERSION)
+        return snapshot
+    if int(snapshot.get("organization_knowledge_point_id") or 0):
+        result = dict(snapshot)
+        result.update(
+            {
+                "curriculum_version_id": int(assignment.get("version_id") or 0),
+                "book_node_id": int(assignment.get("book_node_id") or 0),
+                "curriculum_content_hash": str(assignment.get("content_hash") or ""),
+            }
+        )
+        return result
+    node_id = int(snapshot.get("curriculum_node_id") or 0)
+    row = conn.execute(
+        """
+        SELECT node.* FROM curriculum_nodes node
+        JOIN curriculum_book_nodes membership ON membership.node_id=node.id
+          AND membership.version_id=node.version_id
+        WHERE node.id=? AND node.version_id=? AND node.node_key=?
+          AND membership.book_node_id=?
+          AND membership.membership_type='appears_in'
+          AND node.node_type IN ('Concept','Skill')
+        """,
+        (
+            node_id,
+            int(assignment.get("version_id") or 0),
+            str(snapshot.get("knowledge_point_key") or ""),
+            int(assignment.get("book_node_id") or 0),
+        ),
+    ).fetchone()
+    if not row:
+        raise LearningGraphValidationError("frozen curriculum knowledge point is unavailable")
+    result = dict(row)
+    result.update(
+        {
+            "knowledge_point_key": str(snapshot["knowledge_point_key"]),
+            "canonical_name": str(snapshot["canonical_name"]),
+            "registry_version": int(assignment.get("stable_registry_version") or 0),
+            "curriculum_node_id": node_id,
+            "curriculum_version_id": int(assignment.get("version_id") or 0),
+            "book_node_id": int(assignment.get("book_node_id") or 0),
+            "curriculum_content_hash": str(assignment.get("content_hash") or ""),
+            "node_content_hash": str(snapshot.get("node_content_hash") or ""),
+        }
+    )
+    return result
 
 
 def _supported_texts(raw_values: object, feedback_text: str, *, limit: int) -> list[str]:
@@ -1067,6 +1287,7 @@ def commit_graph_extraction(
     extractor_provider: str,
     extractor_model: str,
     usage: Optional[Mapping[str, object]] = None,
+    allow_active_organization_targets: bool = False,
 ) -> dict:
     frozen = get_graph_extraction_input(int(job_id))
     if not frozen or not frozen.get("integrity_valid"):
@@ -1178,11 +1399,11 @@ def commit_graph_extraction(
             quote, start, end, quote_hash = _validated_quote(candidate, feedback_text)
             raw_kp = candidate.get("knowledge_point_key")
             raw_unmapped = candidate.get("unmapped_candidate")
-            resolved = resolve_knowledge_point(
+            resolved = _resolve_frozen_knowledge_point(
                 conn,
-                organization_id=int(job["organization_id"]),
-                subject_key=subject_key,
+                frozen=frozen,
                 value=raw_kp or raw_unmapped,
+                allow_active_organization_target=allow_active_organization_targets,
             )
             if not resolved:
                 candidate_text = str(raw_unmapped or raw_kp or "").strip()
@@ -1197,8 +1418,8 @@ def commit_graph_extraction(
                         candidate_id, organization_id, extraction_job_id, revision_id,
                         student_id, subject_key, candidate_text, normalized_candidate,
                         evidence_quote, evidence_start_offset, evidence_end_offset,
-                        evidence_content_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        evidence_content_hash, candidate_payload_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         candidate_id,
@@ -1213,6 +1434,7 @@ def commit_graph_extraction(
                         start,
                         end,
                         quote_hash,
+                        canonical_json(candidate),
                     ),
                 )
                 unmapped.append(candidate_id)
@@ -1248,8 +1470,13 @@ def commit_graph_extraction(
                     previous_event_id, improved_from_trusted_state,
                     confirmed_teacher_user_id, confirmed_at, source_revision_hash,
                     extractor_provider, extractor_model, extractor_prompt_version,
-                    event_schema_version, registry_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_schema_version, registry_version, curriculum_assignment_id,
+                    curriculum_version_id, curriculum_node_id,
+                    organization_knowledge_point_id, curriculum_book_node_id,
+                    curriculum_package_key, curriculum_version_key,
+                    curriculum_source_revision, curriculum_content_hash,
+                    curriculum_node_content_hash, knowledge_point_name_snapshot
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -1276,6 +1503,17 @@ def commit_graph_extraction(
                     str(job["prompt_version"]),
                     str(job["event_schema_version"]),
                     int(resolved["registry_version"]),
+                    int(job["curriculum_assignment_id"] or 0) or None,
+                    int(resolved.get("curriculum_version_id") or 0) or None,
+                    int(resolved.get("curriculum_node_id") or 0) or None,
+                    int(resolved.get("organization_knowledge_point_id") or 0) or None,
+                    int(resolved.get("book_node_id") or job["curriculum_book_node_id"] or 0) or None,
+                    str((frozen.get("curriculum_assignment") or {}).get("package_key") or ""),
+                    str((frozen.get("curriculum_assignment") or {}).get("version_key") or ""),
+                    str((frozen.get("curriculum_assignment") or {}).get("source_dataset_revision") or ""),
+                    str(resolved.get("curriculum_content_hash") or ""),
+                    str(resolved.get("node_content_hash") or ""),
+                    str(resolved["canonical_name"]),
                 ),
             )
             evidence_id = content_hash(["evidence", event_id, quote_hash, start, end])
@@ -1474,6 +1712,55 @@ def fail_graph_extraction_job(job_id: int, *, claim_token: str, error: str) -> d
     return dict(row)
 
 
+def _curriculum_context_for_event_conn(
+    conn: sqlite3.Connection, event: Mapping[str, object]
+) -> Optional[dict]:
+    from curriculum_registry import (
+        curriculum_context_for_organization_knowledge_point,
+        get_curriculum_node_detail,
+    )
+
+    curriculum_node_id = int(event.get("curriculum_node_id") or 0)
+    book_node_id = int(event.get("curriculum_book_node_id") or 0)
+    if curriculum_node_id:
+        detail = get_curriculum_node_detail(
+            conn,
+            curriculum_node_id,
+            book_node_id=book_node_id or None,
+        )
+        if not detail:
+            return None
+        return {
+            "curriculum_node_id": curriculum_node_id,
+            "organization_knowledge_point_id": None,
+            "knowledge_point_key": str(detail["node_key"]),
+            "knowledge_point_kind": str(detail["node_type"]),
+            "path": detail["path"],
+            "prerequisites": detail["relations"]["prerequisites"],
+            "follow_ups": detail["relations"]["follow_ups"],
+            "related": detail["relations"]["related"],
+            "source": {
+                "package_key": str(detail["package_key"]),
+                "version_key": str(detail["version_key"]),
+                "dataset_revision": str(detail["source_dataset_revision"]),
+                "source_sha256": str(detail["source_sha256"]),
+                "content_hash": str(event.get("curriculum_content_hash") or ""),
+                "license": str(detail["data_license"]),
+            },
+        }
+    organization_knowledge_point_id = int(
+        event.get("organization_knowledge_point_id") or 0
+    )
+    if not organization_knowledge_point_id or not book_node_id:
+        return None
+    return curriculum_context_for_organization_knowledge_point(
+        conn,
+        organization_id=int(event.get("organization_id") or 0),
+        organization_knowledge_point_id=organization_knowledge_point_id,
+        book_node_id=book_node_id,
+    )
+
+
 def _graph_event_payload_conn(conn: sqlite3.Connection, event_id: str) -> dict:
     row = conn.execute(
         """
@@ -1481,13 +1768,17 @@ def _graph_event_payload_conn(conn: sqlite3.Connection, event_id: str) -> dict:
                evidence.start_offset AS evidence_start_offset,
                evidence.end_offset AS evidence_end_offset,
                evidence.content_hash AS evidence_content_hash,
-               kp.canonical_name AS knowledge_point_name,
+               COALESCE(NULLIF(event.knowledge_point_name_snapshot,''),
+                        curriculum_kp.canonical_name, kp.canonical_name,
+                        event.knowledge_point_key) AS knowledge_point_name,
                class.name AS class_name
         FROM class_commentary_student_learning_events AS event
         JOIN class_commentary_learning_evidence AS evidence ON evidence.event_id=event.event_id
-        JOIN class_commentary_knowledge_points AS kp
+        LEFT JOIN class_commentary_knowledge_points AS kp
           ON kp.organization_id=event.organization_id
          AND kp.knowledge_point_key=event.knowledge_point_key
+        LEFT JOIN curriculum_nodes AS curriculum_kp
+          ON curriculum_kp.id=event.curriculum_node_id
         JOIN class_commentary_generations AS generation ON generation.id=event.generation_id
         JOIN classes AS class ON class.id=generation.class_id
         WHERE event.event_id=?
@@ -1508,6 +1799,7 @@ def _graph_event_payload_conn(conn: sqlite3.Connection, event_id: str) -> dict:
     payload["lesson_name"] = f"{str(row['class_name'] or '').strip()} 课堂反馈".strip()
     payload["teaching_methods"] = [dict(item) for item in methods]
     payload["next_steps"] = [dict(item) for item in next_steps]
+    payload["curriculum_context"] = _curriculum_context_for_event_conn(conn, payload)
     supersedes_event_id = str(row["supersedes_event_id"] or "").strip()
     if supersedes_event_id:
         supersedes = conn.execute(
@@ -1638,11 +1930,29 @@ def list_trusted_graph_events() -> list[dict]:
         return _list_trusted_graph_events_conn(conn)
 
 
+def _semantica_curriculum_snapshot_conn(conn: sqlite3.Connection) -> dict:
+    from curriculum_registry import build_semantica_curriculum_snapshot
+
+    return build_semantica_curriculum_snapshot(conn)
+
+
+def get_semantica_curriculum_snapshot() -> dict:
+    with _conn() as conn:
+        return _semantica_curriculum_snapshot_conn(conn)
+
+
 def rebuild_semantica_graph(adapter) -> dict:
     with _conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         events = _list_trusted_graph_events_conn(conn)
-        result = adapter.rebuild(events)
+        curriculum_snapshot = _semantica_curriculum_snapshot_conn(conn)
+        result = adapter.rebuild(
+            events,
+            curriculum_snapshot=curriculum_snapshot,
+        )
+        result["curriculum_node_count"] = int(curriculum_snapshot["node_count"])
+        result["curriculum_edge_count"] = int(curriculum_snapshot["edge_count"])
+        result["curriculum_content_hash"] = str(curriculum_snapshot["content_hash"])
         conn.execute(
             """
             UPDATE class_commentary_graph_sync_outbox
@@ -1992,6 +2302,559 @@ def retry_graph_revision(
     return dict(row)
 
 
+def _resume_graph_mapping_action(
+    *,
+    action_id: int,
+    candidate_id: str,
+    organization_id: int,
+    request_id: str,
+) -> dict:
+    mapping_claim_token = f"mapping:{content_hash([organization_id, request_id])}"
+    with _conn() as conn:
+        row = conn.execute(
+            """
+            SELECT candidate.*, action.payload_json, action.status AS action_status
+            FROM class_commentary_graph_unmapped_candidates candidate
+            JOIN curriculum_mapping_actions action
+              ON action.organization_id=candidate.organization_id
+             AND action.candidate_id=candidate.candidate_id
+            WHERE action.id=? AND candidate.candidate_id=?
+              AND candidate.organization_id=?
+            """,
+            (int(action_id), str(candidate_id), int(organization_id)),
+        ).fetchone()
+        if not row:
+            raise LookupError("mapping action not found")
+        if str(row["status"]) == "mapped" and str(row["action_status"]) == "applied":
+            action = conn.execute(
+                "SELECT * FROM curriculum_mapping_actions WHERE id=?", (int(action_id),)
+            ).fetchone()
+            return {"action": dict(action), "candidate": dict(row), "reprocess": None, "replayed": True}
+        action_payload = _json_object(row["payload_json"])
+        target_key = str(action_payload.get("target_knowledge_point_key") or "").strip()
+        raw_payload = _json_object(row["candidate_payload_json"])
+        if not target_key or not raw_payload:
+            raise LearningGraphValidationError("mapping replay payload is incomplete")
+        frozen = get_graph_extraction_input(int(row["extraction_job_id"]))
+        if not frozen or not frozen.get("integrity_valid"):
+            raise LearningGraphValidationError("mapping replay frozen input is invalid")
+        target = _resolve_frozen_knowledge_point(
+            conn,
+            frozen=frozen,
+            value=target_key,
+            allow_active_organization_target=True,
+        )
+        if (
+            not target
+            or str(target.get("knowledge_point_key") or "") != target_key
+            or int(target.get("curriculum_node_id") or 0)
+            != int(action_payload.get("target_curriculum_node_id") or 0)
+            or int(target.get("organization_knowledge_point_id") or 0)
+            != int(action_payload.get("target_organization_knowledge_point_id") or 0)
+            or str(target.get("node_content_hash") or "")
+            != str(action_payload.get("target_node_content_hash") or "")
+        ):
+            raise LearningGraphValidationError("mapping replay target is no longer valid")
+        raw_payload["knowledge_point_key"] = target_key
+        raw_payload["unmapped_candidate"] = None
+        job_id = int(row["extraction_job_id"])
+        conn.execute("BEGIN IMMEDIATE")
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET status='running', claim_token=?, claim_owner='curriculum-mapping',
+                lease_until=strftime('%Y-%m-%dT%H:%M:%fZ','now','+5 minutes'),
+                last_error=NULL, completed_at=NULL,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND (
+                status IN ('needs_mapping','extracted','retry_wait','failed')
+                OR (status='running' AND claim_owner='curriculum-mapping')
+            )
+            """,
+            (mapping_claim_token, job_id),
+        )
+        if updated.rowcount != 1:
+            raise LearningGraphRetryConflict("mapping replay job is busy")
+        conn.execute(
+            "UPDATE curriculum_mapping_actions SET status='approved' WHERE id=?",
+            (int(action_id),),
+        )
+    try:
+        committed = commit_graph_extraction(
+            job_id,
+            claim_token=mapping_claim_token,
+            candidates_by_student=[raw_payload],
+            extractor_provider="human-mapping",
+            extractor_model="deterministic-replay",
+            usage={"mapping_action_id": int(action_id)},
+            allow_active_organization_targets=True,
+        )
+        if not committed.get("event_ids"):
+            raise LearningGraphValidationError(
+                "mapping replay did not create a trusted learning event"
+            )
+    except Exception:
+        with _conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET status='needs_mapping', claim_token=NULL, claim_owner=NULL,
+                    lease_until=NULL WHERE id=? AND claim_owner='curriculum-mapping'
+                """,
+                (job_id,),
+            )
+            conn.execute(
+                "UPDATE curriculum_mapping_actions SET status='failed' WHERE id=?",
+                (int(action_id),),
+            )
+        raise
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_unmapped_candidates
+            SET status='mapped', resolved_at=?, resolved_knowledge_point_key=?
+            WHERE candidate_id=? AND status='pending'
+            """,
+            (_utc_now(), target_key, candidate_id),
+        )
+        conn.execute(
+            "UPDATE curriculum_mapping_actions SET status='applied' WHERE id=?",
+            (int(action_id),),
+        )
+        pending = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM class_commentary_graph_unmapped_candidates
+                WHERE extraction_job_id=? AND status='pending'
+                """,
+                (job_id,),
+            ).fetchone()[0]
+        )
+        if not pending:
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET status='extracted', claim_token=NULL, claim_owner=NULL,
+                    lease_until=NULL, completed_at=COALESCE(completed_at, ?)
+                WHERE id=? AND status='needs_mapping'
+                """,
+                (_utc_now(), job_id),
+            )
+        action = conn.execute(
+            "SELECT * FROM curriculum_mapping_actions WHERE id=?", (int(action_id),)
+        ).fetchone()
+        candidate = conn.execute(
+            "SELECT * FROM class_commentary_graph_unmapped_candidates WHERE candidate_id=?",
+            (candidate_id,),
+        ).fetchone()
+    return {
+        "action": dict(action),
+        "candidate": dict(candidate),
+        "reprocess": committed,
+        "replayed": str(row["action_status"]) != "approved",
+    }
+
+
+def list_resumable_graph_mapping_actions(limit: int = 100) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT action.id, action.organization_id, action.candidate_id,
+                   action.request_id, action.status
+            FROM curriculum_mapping_actions action
+            JOIN class_commentary_graph_unmapped_candidates candidate
+              ON candidate.organization_id=action.organization_id
+             AND candidate.candidate_id=action.candidate_id
+            WHERE action.action_type IN ('map','add_alias')
+              AND action.status IN ('approved','failed')
+              AND candidate.status='pending'
+            ORDER BY action.id LIMIT ?
+            """,
+            (max(1, min(int(limit), 500)),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def resume_graph_mapping_action(action_id: int) -> dict:
+    with _conn() as conn:
+        action = conn.execute(
+            "SELECT * FROM curriculum_mapping_actions WHERE id=?",
+            (int(action_id),),
+        ).fetchone()
+    if not action:
+        raise LookupError("mapping action not found")
+    return _resume_graph_mapping_action(
+        action_id=int(action["id"]),
+        candidate_id=str(action["candidate_id"]),
+        organization_id=int(action["organization_id"]),
+        request_id=str(action["request_id"]),
+    )
+
+
+def resolve_graph_unmapped_candidate(
+    candidate_id: str,
+    *,
+    organization_id: int,
+    actor_user_id: int,
+    request_id: str,
+    action: str,
+    target_knowledge_point_key: str = "",
+    proposed_name: str = "",
+    note: str = "",
+) -> dict:
+    candidate_id = str(candidate_id or "").strip()
+    request_id = str(request_id or "").strip()
+    action = str(action or "").strip()
+    if not candidate_id or not request_id:
+        raise LearningGraphValidationError("candidate_id and request_id are required")
+    if action not in {"map", "add_alias", "propose_new", "reject"}:
+        raise LearningGraphValidationError("mapping action is invalid")
+    action_payload = {
+        "candidate_id": candidate_id,
+        "action": action,
+        "target_knowledge_point_key": str(target_knowledge_point_key or "").strip(),
+        "proposed_name": str(proposed_name or "").strip(),
+        "note": str(note or "").strip(),
+    }
+    action_hash = content_hash(action_payload)
+    mapping_claim_token = f"mapping:{content_hash([organization_id, request_id])}"
+    reprocess_job_id = None
+    candidate_payload = None
+    resume_action_id = None
+    replay_response = None
+    with _conn() as conn:
+        replay = conn.execute(
+            "SELECT * FROM curriculum_mapping_actions WHERE organization_id=? AND request_id=?",
+            (int(organization_id), request_id),
+        ).fetchone()
+        if replay:
+            replay_payload = _json_object(replay["payload_json"])
+            if str(replay_payload.get("action_hash") or "") != action_hash:
+                raise LearningGraphRetryConflict("mapping request replay differs")
+            candidate = conn.execute(
+                "SELECT * FROM class_commentary_graph_unmapped_candidates WHERE candidate_id=?",
+                (candidate_id,),
+            ).fetchone()
+            if str(replay["action_type"]) in {"map", "add_alias"} and str(replay["status"]) in {
+                "approved",
+                "failed",
+            }:
+                resume_action_id = int(replay["id"])
+            else:
+                replay_response = {
+                    "action": dict(replay),
+                    "candidate": dict(candidate) if candidate else None,
+                    "replayed": True,
+                }
+    if resume_action_id is not None:
+        return _resume_graph_mapping_action(
+            action_id=resume_action_id,
+            candidate_id=candidate_id,
+            organization_id=int(organization_id),
+            request_id=request_id,
+        )
+    if replay_response is not None:
+        return replay_response
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        candidate = conn.execute(
+            """
+            SELECT candidate.*, job.status AS job_status, job.task_id, job.generation_id,
+                   job.curriculum_assignment_id, job.curriculum_version_id,
+                   job.curriculum_book_node_id, job.curriculum_content_hash,
+                   job.curriculum_registry_snapshot_hash,
+                   job.curriculum_registry_snapshot_json,
+                   job.curriculum_assignment_snapshot_json,
+                   generation.class_id
+            FROM class_commentary_graph_unmapped_candidates candidate
+            JOIN class_commentary_graph_extraction_jobs job ON job.id=candidate.extraction_job_id
+            JOIN class_commentary_generations generation ON generation.id=job.generation_id
+            WHERE candidate.candidate_id=? AND candidate.organization_id=?
+            """,
+            (candidate_id, int(organization_id)),
+        ).fetchone()
+        if not candidate:
+            raise LookupError("unmapped candidate not found")
+        if str(candidate["status"]) != "pending":
+            raise LearningGraphRetryConflict("unmapped candidate is no longer pending")
+        frozen_registry = _json_list(candidate["curriculum_registry_snapshot_json"])
+        frozen_assignment = _json_object(candidate["curriculum_assignment_snapshot_json"])
+        if (
+            str(candidate["curriculum_registry_snapshot_hash"] or "")
+            != content_hash(frozen_registry)
+            or int(frozen_assignment.get("id") or 0)
+            != int(candidate["curriculum_assignment_id"] or 0)
+            or int(frozen_assignment.get("version_id") or 0)
+            != int(candidate["curriculum_version_id"] or 0)
+            or int(frozen_assignment.get("book_node_id") or 0)
+            != int(candidate["curriculum_book_node_id"] or 0)
+            or int(frozen_assignment.get("organization_id") or 0)
+            != int(organization_id)
+            or str(frozen_assignment.get("content_hash") or "")
+            != str(candidate["curriculum_content_hash"] or "")
+        ):
+            raise LearningGraphValidationError("frozen curriculum mapping scope is invalid")
+        frozen = {
+            "registry": frozen_registry,
+            "curriculum_assignment": frozen_assignment or None,
+        }
+        action_payload.update(
+            {
+                "curriculum_assignment_id": int(candidate["curriculum_assignment_id"] or 0),
+                "curriculum_version_id": int(candidate["curriculum_version_id"] or 0),
+                "curriculum_book_node_id": int(candidate["curriculum_book_node_id"] or 0),
+                "curriculum_registry_snapshot_hash": str(
+                    candidate["curriculum_registry_snapshot_hash"] or ""
+                ),
+                "candidate_status_before": str(candidate["status"]),
+            }
+        )
+        now = _utc_now()
+        if action == "reject":
+            conn.execute(
+                "UPDATE class_commentary_graph_unmapped_candidates SET status='dismissed', resolved_at=? WHERE candidate_id=?",
+                (now, candidate_id),
+            )
+            status = "applied"
+        elif action == "propose_new":
+            proposal_name = str(proposed_name or candidate["candidate_text"] or "").strip()
+            if not proposal_name:
+                raise LearningGraphValidationError("proposed knowledge point name is required")
+            assignment = frozen_assignment
+            if not assignment:
+                raise LearningGraphValidationError("candidate has no frozen curriculum assignment")
+            proposal_key = f"org.{int(organization_id)}.custom.{content_hash([assignment['version_id'], assignment['book_node_id'], normalize_knowledge_point_alias(proposal_name)])[:24]}"
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO curriculum_organization_knowledge_points (
+                    organization_id, version_id, book_node_id, subject_key,
+                    knowledge_point_key, canonical_name, description, status,
+                    proposed_by_user_id, proposed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?)
+                """,
+                (
+                    int(organization_id), int(assignment["version_id"]),
+                    int(assignment["book_node_id"]), str(candidate["subject_key"]),
+                    proposal_key, proposal_name, str(note or ""), int(actor_user_id), now,
+                ),
+            )
+            action_payload["proposal_key"] = proposal_key
+            status = "pending_review"
+        else:
+            target = _resolve_frozen_knowledge_point(
+                conn,
+                frozen=frozen,
+                value=str(target_knowledge_point_key or ""),
+                allow_active_organization_target=True,
+            )
+            if not target or str(target["knowledge_point_key"]) != str(target_knowledge_point_key):
+                raise LearningGraphValidationError("mapping target is outside the assigned curriculum")
+            if action == "add_alias":
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO curriculum_organization_aliases (
+                            organization_id, version_id, book_node_id, subject_key,
+                            curriculum_node_id, alias, normalized_alias, status,
+                            created_by_user_id, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+                        """,
+                        (
+                            int(organization_id), int(target["curriculum_version_id"]),
+                            int(target["book_node_id"]), str(candidate["subject_key"]),
+                            int(target["curriculum_node_id"]), str(candidate["candidate_text"]),
+                            str(candidate["normalized_candidate"]), int(actor_user_id), now,
+                        ),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise LearningGraphRetryConflict("organization alias conflicts with an existing mapping") from exc
+            raw_payload = _json_object(candidate["candidate_payload_json"])
+            if not raw_payload:
+                raise LearningGraphValidationError("unmapped candidate has no replay payload")
+            raw_payload["knowledge_point_key"] = str(target["knowledge_point_key"])
+            raw_payload["unmapped_candidate"] = None
+            action_payload.update(
+                {
+                    "target_curriculum_node_id": int(target.get("curriculum_node_id") or 0),
+                    "target_organization_knowledge_point_id": int(
+                        target.get("organization_knowledge_point_id") or 0
+                    ),
+                    "target_node_content_hash": str(target.get("node_content_hash") or ""),
+                    "candidate_status_after": "mapped",
+                }
+            )
+            candidate_payload = raw_payload
+            reprocess_job_id = int(candidate["extraction_job_id"])
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET status='running', claim_token=?, claim_owner='curriculum-mapping',
+                    lease_until=strftime('%Y-%m-%dT%H:%M:%fZ','now','+5 minutes'),
+                    last_error=NULL, completed_at=NULL,
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE id=? AND status IN ('needs_mapping','extracted')
+                """,
+                (mapping_claim_token, reprocess_job_id),
+            )
+            status = "approved"
+        cursor = conn.execute(
+            """
+            INSERT INTO curriculum_mapping_actions (
+                organization_id, candidate_id, request_id, action_type, status,
+                target_knowledge_point_key, proposed_name, note, actor_user_id,
+                payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(organization_id), candidate_id, request_id, action, status,
+                str(target_knowledge_point_key or "") or None, str(proposed_name or ""),
+                str(note or ""), int(actor_user_id),
+                canonical_json({**action_payload, "action_hash": action_hash}), now,
+            ),
+        )
+        action_id = int(cursor.lastrowid)
+        if action == "reject":
+            pending = int(conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_graph_unmapped_candidates WHERE extraction_job_id=? AND status='pending'",
+                (int(candidate["extraction_job_id"]),),
+            ).fetchone()[0])
+            if not pending:
+                conn.execute(
+                    "UPDATE class_commentary_graph_extraction_jobs SET status='extracted' WHERE id=? AND status='needs_mapping'",
+                    (int(candidate["extraction_job_id"]),),
+                )
+    if reprocess_job_id and candidate_payload:
+        return _resume_graph_mapping_action(
+            action_id=action_id,
+            candidate_id=candidate_id,
+            organization_id=int(organization_id),
+            request_id=request_id,
+        )
+    committed = None
+    with _conn() as conn:
+        action_row = conn.execute("SELECT * FROM curriculum_mapping_actions WHERE id=?", (action_id,)).fetchone()
+        candidate_row = conn.execute(
+            "SELECT * FROM class_commentary_graph_unmapped_candidates WHERE candidate_id=?",
+            (candidate_id,),
+        ).fetchone()
+    return {
+        "action": dict(action_row),
+        "candidate": dict(candidate_row),
+        "reprocess": committed,
+        "replayed": False,
+    }
+
+
+def list_graph_unmapped_candidates(
+    *,
+    organization_id: int,
+    allowed_class_ids: Optional[Iterable[int]] = None,
+    status: str = "pending",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    status = str(status or "pending").strip()
+    if status not in {"pending", "mapped", "dismissed", "all"}:
+        raise LearningGraphValidationError("unmapped candidate status is invalid")
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 100))
+    class_ids = None
+    if allowed_class_ids is not None:
+        class_ids = sorted({int(class_id) for class_id in allowed_class_ids if int(class_id) > 0})
+        if not class_ids:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+    conditions = ["candidate.organization_id=?"]
+    params: list[object] = [int(organization_id)]
+    if status != "all":
+        conditions.append("candidate.status=?")
+        params.append(status)
+    if class_ids is not None:
+        placeholders = ",".join("?" for _ in class_ids)
+        conditions.append(f"generation.class_id IN ({placeholders})")
+        params.extend(class_ids)
+    where_sql = " AND ".join(conditions)
+    with _conn() as conn:
+        total = int(
+            conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM class_commentary_graph_unmapped_candidates candidate
+                JOIN class_commentary_graph_extraction_jobs job
+                  ON job.id=candidate.extraction_job_id
+                JOIN class_commentary_generations generation
+                  ON generation.id=job.generation_id
+                WHERE {where_sql}
+                """,
+                params,
+            ).fetchone()[0]
+        )
+        rows = conn.execute(
+            f"""
+            SELECT candidate.*, generation.class_id, class.name AS class_name,
+                   student.name AS student_name, revision.revision_no,
+                   revision.confirmed_at,
+                   job.curriculum_version_id, job.curriculum_book_node_id,
+                   job.curriculum_assignment_snapshot_json,
+                   job.curriculum_registry_snapshot_hash,
+                   action.action_type AS latest_action_type,
+                   action.status AS latest_action_status,
+                   action.created_at AS latest_action_at
+            FROM class_commentary_graph_unmapped_candidates candidate
+            JOIN class_commentary_graph_extraction_jobs job
+              ON job.id=candidate.extraction_job_id
+            JOIN class_commentary_generations generation
+              ON generation.id=job.generation_id
+            JOIN classes class ON class.id=generation.class_id
+            JOIN students student ON student.id=candidate.student_id
+            JOIN class_commentary_revisions revision ON revision.id=candidate.revision_id
+            LEFT JOIN curriculum_mapping_actions action ON action.id=(
+                SELECT latest.id FROM curriculum_mapping_actions latest
+                WHERE latest.organization_id=candidate.organization_id
+                  AND latest.candidate_id=candidate.candidate_id
+                ORDER BY latest.id DESC LIMIT 1
+            )
+            WHERE {where_sql}
+            ORDER BY candidate.created_at DESC, candidate.candidate_id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (*params, page_size, (page - 1) * page_size),
+        ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["curriculum_assignment"] = _json_object(
+            item.pop("curriculum_assignment_snapshot_json", "{}")
+        )
+        item.pop("candidate_payload_json", None)
+        items.append(item)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+def list_graph_candidate_ids_for_proposal(
+    *, organization_id: int, proposal_key: str
+) -> list[str]:
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT action.candidate_id, action.payload_json
+            FROM curriculum_mapping_actions action
+            JOIN class_commentary_graph_unmapped_candidates candidate
+              ON candidate.candidate_id=action.candidate_id
+            WHERE action.organization_id=? AND action.action_type='propose_new'
+              AND candidate.status='pending'
+            ORDER BY action.id
+            """,
+            (int(organization_id),),
+        ).fetchall()
+    return [
+        str(row["candidate_id"])
+        for row in rows
+        if str(_json_object(row["payload_json"]).get("proposal_key") or "")
+        == str(proposal_key)
+    ]
+
+
 def get_student_learning_graph_summary(
     *,
     organization_id: int,
@@ -2009,27 +2872,44 @@ def get_student_learning_graph_summary(
         ).fetchone()
         if not task:
             raise ValueError("class commentary task not found")
+        from curriculum_registry import get_class_curriculum_assignment
+
+        curriculum_assignment = get_class_curriculum_assignment(conn, int(task["class_id"]))
         current_rows = conn.execute(
             """
-            SELECT current.*, kp.canonical_name
+            SELECT current.*,
+                   COALESCE(NULLIF(event.knowledge_point_name_snapshot,''),
+                            curriculum_kp.canonical_name, kp.canonical_name,
+                            current.knowledge_point_key) AS canonical_name,
+                   event.curriculum_node_id, event.organization_knowledge_point_id,
+                   event.curriculum_book_node_id, event.curriculum_content_hash
             FROM class_commentary_learning_state_current AS current
-            JOIN class_commentary_knowledge_points AS kp
+            JOIN class_commentary_student_learning_events AS event
+              ON event.event_id=current.event_id
+            LEFT JOIN class_commentary_knowledge_points AS kp
               ON kp.organization_id=current.organization_id
              AND kp.knowledge_point_key=current.knowledge_point_key
+            LEFT JOIN curriculum_nodes AS curriculum_kp
+              ON curriculum_kp.id=event.curriculum_node_id
             WHERE current.organization_id=? AND current.student_id=? AND current.subject_key=?
-            ORDER BY kp.canonical_name, current.knowledge_point_key
+            ORDER BY canonical_name, current.knowledge_point_key
             """,
             (int(organization_id), int(student_id), subject_key),
         ).fetchall()
         event_rows = conn.execute(
             """
             SELECT event.*, evidence.evidence_id, evidence.quote,
-                   kp.canonical_name, class.name AS class_name
+                   COALESCE(NULLIF(event.knowledge_point_name_snapshot,''),
+                            curriculum_kp.canonical_name, kp.canonical_name,
+                            event.knowledge_point_key) AS canonical_name,
+                   class.name AS class_name, generation.class_id
             FROM class_commentary_student_learning_events AS event
             JOIN class_commentary_learning_evidence AS evidence ON evidence.event_id=event.event_id
-            JOIN class_commentary_knowledge_points AS kp
+            LEFT JOIN class_commentary_knowledge_points AS kp
               ON kp.organization_id=event.organization_id
              AND kp.knowledge_point_key=event.knowledge_point_key
+            LEFT JOIN curriculum_nodes AS curriculum_kp
+              ON curriculum_kp.id=event.curriculum_node_id
             JOIN class_commentary_generations AS generation ON generation.id=event.generation_id
             JOIN classes AS class ON class.id=generation.class_id
             WHERE event.organization_id=? AND event.student_id=? AND event.subject_key=?
@@ -2122,6 +3002,7 @@ def get_student_learning_graph_summary(
                 "SELECT next_step_text FROM class_commentary_learning_next_steps WHERE event_id=? AND status='confirmed' ORDER BY next_step_id",
                 (str(row["event_id"]),),
             ).fetchall()
+            curriculum_context = _curriculum_context_for_event_conn(conn, dict(row))
             timeline.append(
                 {
                     "event_ref": str(row["event_id"]),
@@ -2142,6 +3023,7 @@ def get_student_learning_graph_summary(
                     },
                     "teaching_methods": [str(item["method_text"]) for item in methods],
                     "next_steps": [str(item["next_step_text"]) for item in next_steps],
+                    "curriculum": curriculum_context,
                 }
             )
         pending_mapping = conn.execute(
@@ -2151,6 +3033,43 @@ def get_student_learning_graph_summary(
             """,
             (int(organization_id), int(student_id), subject_key),
         ).fetchone()["count"]
+        curriculum_detail_by_scope = {}
+        for row in [*current_rows, *event_rows]:
+            node_id = int(row["curriculum_node_id"] or 0)
+            custom_id = int(row["organization_knowledge_point_id"] or 0)
+            book_node_id = int(row["curriculum_book_node_id"] or 0)
+            detail_key = (node_id, custom_id, book_node_id)
+            if (node_id or custom_id) and detail_key not in curriculum_detail_by_scope:
+                curriculum_detail_by_scope[detail_key] = _curriculum_context_for_event_conn(
+                    conn, dict(row)
+                )
+        current_state_items = []
+        for row in current_rows:
+            detail = curriculum_detail_by_scope.get(
+                (
+                    int(row["curriculum_node_id"] or 0),
+                    int(row["organization_knowledge_point_id"] or 0),
+                    int(row["curriculum_book_node_id"] or 0),
+                )
+            )
+            current_state_items.append(
+                {
+                    "knowledge_point_key": str(row["knowledge_point_key"]),
+                    "knowledge_point_name": str(row["canonical_name"]),
+                    "state": str(row["observed_state"]),
+                    "observed_at": str(row["confirmed_at"]),
+                    "curriculum": (
+                        {
+                            "path": detail["path"],
+                            "prerequisites": detail["prerequisites"],
+                            "follow_ups": detail["follow_ups"],
+                            "source": detail["source"],
+                        }
+                        if detail
+                        else None
+                    ),
+                }
+            )
     raw_status = str(latest_revision["status"] if latest_revision else "")
     if int(pending_mapping or 0) > 0:
         sync_status = "needs_mapping"
@@ -2177,21 +3096,14 @@ def get_student_learning_graph_summary(
         "task_id": int(task_id),
         "student_id": int(student_id),
         "subject_key": subject_key,
+        "curriculum_assignment": curriculum_assignment,
         "sync_status": sync_status,
         "can_retry": sync_status in {"failed", "pending"},
         "error": (
             str(latest_revision["last_error"] or "") if latest_revision else ""
         )
         or graph_error,
-        "current_states": [
-            {
-                "knowledge_point_key": str(row["knowledge_point_key"]),
-                "knowledge_point_name": str(row["canonical_name"]),
-                "state": str(row["observed_state"]),
-                "observed_at": str(row["confirmed_at"]),
-            }
-            for row in current_rows
-        ],
+        "current_states": current_state_items,
         "timeline": timeline,
         "used_graph_evidence_refs": used_refs,
         "used_graph_evidence": [

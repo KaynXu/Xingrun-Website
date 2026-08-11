@@ -36,11 +36,35 @@ function learningGraphPayload(studentId: number, knowledgePointName: string) {
       sync_status: 'learned',
       can_retry: false,
       error: '',
+      curriculum_assignment: {
+        id: 6,
+        class_id: 3,
+        version_id: 2,
+        version_key: 'pep-math-k12@d8522c2b',
+        version_status: 'active',
+        book_node_id: 8,
+        book_name: '三年级上册',
+        curriculum_name: '数学课程知识图谱',
+        publisher_name: '课程数据集',
+        edition_name: 'K12-KGraph',
+        source_dataset_revision: 'd8522c2b',
+        data_license: 'CC BY-NC-SA 4.0',
+      },
       current_states: [{
         knowledge_point_key: `kp-${studentId}`,
         knowledge_point_name: knowledgePointName,
         state: 'developing',
         observed_at: '2026-08-11T10:00:00Z',
+        curriculum: {
+          path: [
+            { node_key: 'book-3a', node_type: 'Book', name: '三年级上册' },
+            { node_key: 'chapter-5', node_type: 'Chapter', name: '第五章' },
+            { node_key: `kp-${studentId}`, node_type: 'Concept', name: knowledgePointName },
+          ],
+          prerequisites: [{ node_key: 'kp-before', node_type: 'Concept', canonical_name: '数的认识' }],
+          follow_ups: [{ node_key: 'kp-after', node_type: 'Skill', canonical_name: '综合应用' }],
+          source: { version_key: 'pep-math-k12@d8522c2b', dataset_revision: 'd8522c2b', license: 'CC BY-NC-SA 4.0' },
+        },
       }],
       timeline: [{
         event_ref: `event-${studentId}`,
@@ -61,6 +85,16 @@ function learningGraphPayload(studentId: number, knowledgePointName: string) {
         },
         teaching_methods: ['图像与参数联动练习'],
         next_steps: ['继续练习'],
+        curriculum: {
+          path: [
+            { node_key: 'book-3a', node_type: 'Book', name: '三年级上册' },
+            { node_key: 'chapter-5', node_type: 'Chapter', name: '第五章' },
+            { node_key: `kp-${studentId}`, node_type: 'Concept', name: knowledgePointName },
+          ],
+          prerequisites: [{ node_key: 'kp-before', node_type: 'Concept', canonical_name: '数的认识' }],
+          follow_ups: [{ node_key: 'kp-after', node_type: 'Skill', canonical_name: '综合应用' }],
+          source: { version_key: 'pep-math-k12@d8522c2b', dataset_revision: 'd8522c2b', license: 'CC BY-NC-SA 4.0' },
+        },
       }],
       used_graph_evidence_refs: [`evidence-${studentId}`],
       used_graph_evidence: [],
@@ -162,6 +196,10 @@ test('student learning graph dialog ignores stale cross-student responses', asyn
 
     assert.match(dom.window.document.body.textContent || '', /学生 B的学生成长轨迹/);
     assert.match(dom.window.document.body.textContent || '', /导数基础/);
+    assert.match(dom.window.document.body.textContent || '', /三年级上册/);
+    assert.match(dom.window.document.body.textContent || '', /前置知识: 数的认识/);
+    assert.match(dom.window.document.body.textContent || '', /后续知识: 综合应用/);
+    assert.match(dom.window.document.body.textContent || '', /课程版本: pep-math-k12@d8522c2b/);
     assert.doesNotMatch(dom.window.document.body.textContent || '', /二次函数图像/);
 
     await act(async () => {

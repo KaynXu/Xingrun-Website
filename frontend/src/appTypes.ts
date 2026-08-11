@@ -7,6 +7,7 @@ export type WorkspacePage =
   | 'consultation'
   | 'calendar'
   | 'smartWrongQuestions'
+  | 'curriculum-knowledge'
   | 'classes'
   | 'accounts'
   | 'credit'
@@ -17,6 +18,7 @@ export interface ClassItem {
   name: string;
   class_type?: string;
   subject: string;
+  subject_key?: string;
   grade: string;
   stage?: string;
   current_grade?: string;

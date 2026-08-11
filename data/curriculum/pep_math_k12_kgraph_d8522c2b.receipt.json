@@ -1,0 +1,52 @@
+{
+  "bundle_path": "pep_math_k12_kgraph_d8522c2b.json",
+  "bundle_sha256": "2d6562f8c8efa490a0a4ccbd38def8eaeca43816c4aec91f2da1d52756bee7f5",
+  "code_license": "MIT",
+  "contains_exercises": false,
+  "content_hash": "9187765c1eb1b5f1b55c5f751b50dd7e5f203c7327f99983e7a957bf87dc326b",
+  "data_license": "CC BY-NC-SA 4.0",
+  "import_counts": {
+    "edges": {
+      "appears_in": 2146,
+      "is_a": 287,
+      "is_part_of": 316,
+      "prerequisites_for": 853,
+      "relates_to": 405
+    },
+    "nodes": {
+      "Book": 23,
+      "Chapter": 150,
+      "Concept": 1470,
+      "Section": 166,
+      "Skill": 428
+    }
+  },
+  "importer_version": "xingrun.k12-kgraph-importer.v1",
+  "schema_version": "xingrun.curriculum-source-receipt.v1",
+  "source_counts": {
+    "edges": {
+      "appears_in": 2621,
+      "is_a": 287,
+      "is_part_of": 316,
+      "leads_to": 156,
+      "prerequisites_for": 853,
+      "relates_to": 405,
+      "tests_concept": 406,
+      "tests_skill": 229
+    },
+    "nodes": {
+      "Book": 23,
+      "Chapter": 150,
+      "Concept": 1470,
+      "Exercise": 474,
+      "Section": 166,
+      "Skill": 428
+    }
+  },
+  "source_dataset_url": "https://huggingface.co/datasets/lhpku20010120/K12-KGraph",
+  "source_dataset_revision": "d8522c2b336ee435aa51daa39ca0dd736f56fa53",
+  "source_github_commit": "8716b6a80850790f509c01286f43e5bfe6858f49",
+  "source_github_url": "https://github.com/haolpku/K12-KGraph",
+  "source_file_path": "K12-KGraph/subject_specific_KG/math.json",
+  "source_sha256": "00ed25179bb4ad096c53b3965fe84a32afa708850de85db5ea4c9e0bacec8f14"
+}

@@ -11,6 +11,7 @@ export const configurableWorkspacePages: Array<{ id: WorkspacePage; label: strin
   { id: 'consultation', label: '咨询记录' },
   { id: 'calendar', label: '课程日历' },
   { id: 'smartWrongQuestions', label: '智能错题' },
+  { id: 'curriculum-knowledge', label: '课程知识点' },
   { id: 'classes', label: '学管中心' },
 ];
 

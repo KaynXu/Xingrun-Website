@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, BookOpen, RefreshCw, TrendingUp } from 'lucide-react';
+import { AlertCircle, BookMarked, BookOpen, ChevronRight, RefreshCw, TrendingUp } from 'lucide-react';
 
 import {
   Accordion,
@@ -29,6 +29,7 @@ import {
   type ClassCommentaryLearningTrend,
   type ClassCommentaryObservedLearningState,
   type ClassCommentaryStudentGraphEvidence,
+  type ClassCommentaryStudentGraphCurriculumContext,
   type ClassCommentaryStudentLearningGraphSummary,
 } from '../../classCommentary';
 
@@ -110,6 +111,46 @@ function syncStatusVariant(status: ClassCommentaryGraphLearningStatus): 'destruc
 
 function learningStateVariant(state: ClassCommentaryObservedLearningState): 'outline' | 'secondary' {
   return state === 'secure' || state === 'mastered' ? 'secondary' : 'outline';
+}
+
+function CurriculumContextBlock({
+  curriculum,
+  compact = false,
+}: {
+  curriculum: ClassCommentaryStudentGraphCurriculumContext;
+  compact?: boolean;
+}) {
+  const path = curriculum.path.map((item) => item.name).filter(Boolean);
+  const sourceVersion = curriculum.source.version_key || curriculum.source.dataset_revision;
+  return (
+    <div className="mt-2 min-w-0 space-y-2 rounded-lg bg-muted/45 px-3 py-2.5" data-testid="student-learning-curriculum-context">
+      {path.length ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          {path.map((name, index) => (
+            <span key={`${name}-${index}`} className="contents">
+              {index > 0 ? <ChevronRight className="size-3 shrink-0" /> : null}
+              <span className="max-w-full break-words">{name}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {!compact && curriculum.prerequisites.length ? (
+        <p className="break-words text-xs text-muted-foreground">
+          前置知识: {curriculum.prerequisites.map((item) => item.canonical_name).join('、')}
+        </p>
+      ) : null}
+      {!compact && curriculum.follow_ups.length ? (
+        <p className="break-words text-xs text-muted-foreground">
+          后续知识: {curriculum.follow_ups.map((item) => item.canonical_name).join('、')}
+        </p>
+      ) : null}
+      {sourceVersion ? (
+        <p className="break-all text-[11px] text-muted-foreground">
+          课程版本: {sourceVersion}{curriculum.source.license ? ` · ${curriculum.source.license}` : ''}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function StudentLearningGraphDialog({
@@ -366,6 +407,30 @@ export function StudentLearningGraphDialog({
                   </Alert>
                 ) : null}
 
+                {summary.curriculum_assignment ? (
+                  <div className="min-w-0 rounded-lg border border-border/70 bg-muted/30 px-3 py-3" data-testid="student-learning-curriculum-assignment">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <BookMarked className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-medium text-foreground">
+                          {summary.curriculum_assignment.book_name}
+                        </p>
+                        <p className="mt-1 break-words text-xs text-muted-foreground">
+                          {[
+                            summary.curriculum_assignment.curriculum_name,
+                            summary.curriculum_assignment.publisher_name,
+                            summary.curriculum_assignment.edition_name,
+                          ].filter(Boolean).join(' · ')}
+                        </p>
+                        <p className="mt-1 break-all text-[11px] text-muted-foreground">
+                          课程版本: {summary.curriculum_assignment.version_key || summary.curriculum_assignment.source_dataset_revision}
+                          {summary.curriculum_assignment.data_license ? ` · ${summary.curriculum_assignment.data_license}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {summary.error ? (
                   <p className="text-xs text-muted-foreground">
                     同步服务记录了错误, 已确认反馈不会丢失. 请稍后重试.
@@ -432,6 +497,7 @@ export function StudentLearningGraphDialog({
                             <p className="mt-1 text-xs text-muted-foreground">
                               最近确认于 {formatLearningGraphTime(state.observed_at)}
                             </p>
+                            {state.curriculum ? <CurriculumContextBlock curriculum={state.curriculum} compact /> : null}
                           </div>
                         ))}
                       </div>
@@ -468,6 +534,8 @@ export function StudentLearningGraphDialog({
                                 本次反馈报告有进步, 但没有可信旧状态可用于比较.
                               </p>
                             ) : null}
+
+                            {event.curriculum ? <CurriculumContextBlock curriculum={event.curriculum} /> : null}
 
                             {event.teaching_methods.length ? (
                               <div className="mt-3 flex flex-col gap-1.5">
