@@ -130,11 +130,15 @@ test('review generation source keeps progress feedback in a dismissible floating
   assert.match(reviewGenerationSource, /aria-label=\"关闭生成状态浮层\"/);
   assert.match(reviewGenerationSource, /复习计划生成/);
   assert.match(reviewGenerationSource, /dotClassName: 'bg-amber-500'/);
-  assert.match(reviewGenerationSource, /return state === 'pending' \|\| state === 'failed';/);
-  assert.match(workspacePageContentSource, /return state === 'pending' \|\| state === 'failed';/);
+  assert.match(reviewGenerationSource, /getReviewTaskDockLessons\(lessons, visibleFailedTaskIds\)/);
+  assert.match(workspacePageContentSource, /const REVIEW_NOTICE_AUTO_DISMISS_MS = 6000;/);
+  assert.match(workspacePageContentSource, /const REVIEW_FAILED_TASK_AUTO_DISMISS_MS = 12000;/);
+  assert.match(workspacePageContentSource, /setReviewFloatingNotice\(null\);[\s\S]*REVIEW_NOTICE_AUTO_DISMISS_MS/);
+  assert.match(workspacePageContentSource, /setReviewFailedTaskExpiresAtById[\s\S]*REVIEW_FAILED_TASK_AUTO_DISMISS_MS/);
   assert.match(workspacePageContentSource, /reviewTaskDockDismissed/);
   assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(false\);/);
   assert.match(workspacePageContentSource, /setReviewTaskDockDismissed\(true\);/);
+  assert.match(workspacePageContentSource, /const reviewDockLessons = getReviewTaskDockLessons\(reviewLatestLessons, visibleFailedReviewTaskIds\);/);
   assert.match(workspacePageContentSource, /const hasReviewDockContent = Boolean\(reviewFloatingNotice\) \|\| hasReviewFloatingTask;/);
   assert.match(workspacePageContentSource, /onReviewTaskDockAvailableChange\(hasReviewDockContent\);/);
   assert.match(workspacePageContentSource, /<ReviewGenerationTaskDock[\s\S]*lessons=\{reviewLatestLessons\}[\s\S]*notice=\{reviewFloatingNotice\}/);

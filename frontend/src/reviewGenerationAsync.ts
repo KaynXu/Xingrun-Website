@@ -185,6 +185,16 @@ export function isReviewLessonPending(
   return getReviewLessonTaskState(lesson) === 'pending';
 }
 
+export function getReviewTaskDockLessons(
+  lessons: ReviewLessonRecord[],
+  visibleFailedTaskIds: ReadonlySet<number>,
+): ReviewLessonRecord[] {
+  return lessons.filter((lesson) => {
+    const state = getReviewLessonTaskState(lesson);
+    return state === 'pending' || (state === 'failed' && visibleFailedTaskIds.has(lesson.id));
+  }).slice(0, 4);
+}
+
 export function getReviewLessonTaskMessage(
   lesson: Pick<
     ReviewLessonRecord,
