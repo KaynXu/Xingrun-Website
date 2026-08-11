@@ -7,6 +7,7 @@ import {
   getReviewLessonTaskMessage,
   getReviewLessonTaskProgress,
   getReviewLessonTaskState,
+  getReviewTaskDockLessons,
   hasReviewLessonOutput,
   isReviewLessonPending,
   normalizeReviewLessonsPageResponse,
@@ -211,18 +212,17 @@ export function ReviewGenerationTaskDock({
   onDismiss,
   progressNow,
   taskStartedAtById,
+  visibleFailedTaskIds,
 }: {
   lessons: ReviewLessonRecord[];
   notice: ReviewGenerationFloatingNotice | null;
   onDismiss: () => void;
   progressNow: number;
   taskStartedAtById: Record<number, number>;
+  visibleFailedTaskIds: ReadonlySet<number>;
 }) {
   const reduceMotion = useReducedMotion();
-  const dockLessons = lessons.filter((lesson) => {
-    const state = getReviewLessonTaskState(lesson);
-    return state === 'pending' || state === 'failed';
-  }).slice(0, 4);
+  const dockLessons = getReviewTaskDockLessons(lessons, visibleFailedTaskIds);
   const activeCount = lessons.filter(isReviewLessonPending).length;
 
   if (!notice && dockLessons.length === 0) {

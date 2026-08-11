@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  getReviewTaskDockLessons,
   getReviewLessonTaskMessage,
   getReviewLessonTaskProgress,
   getReviewLessonTaskState,
@@ -10,6 +11,38 @@ import {
   normalizeReviewLessonsResponse,
   normalizeReviewLessonsPageResponse,
 } from './reviewGenerationAsync';
+
+test('review task dock keeps pending work but does not revive historical failures', () => {
+  const lessons = normalizeReviewLessonsResponse([
+    {
+      id: 30,
+      subject: '数学',
+      active_version_status: 'generating',
+      has_version_generating: true,
+    },
+    {
+      id: 31,
+      subject: '数学',
+      record_status: 'failed',
+      generation_error: '很久以前的失败',
+    },
+    {
+      id: 32,
+      subject: '数学',
+      record_status: 'failed',
+      generation_error: '本次任务失败',
+    },
+    {
+      id: 33,
+      subject: '数学',
+      current_pdf_url: '/api/review-plans/33/pdf',
+      current_status: 'ready',
+    },
+  ]);
+
+  assert.deepEqual(getReviewTaskDockLessons(lessons, new Set()).map((lesson) => lesson.id), [30]);
+  assert.deepEqual(getReviewTaskDockLessons(lessons, new Set([32])).map((lesson) => lesson.id), [30, 32]);
+});
 
 test('normalizeReviewLessonsResponse keeps current version and active generation fields', () => {
   assert.deepEqual(normalizeReviewLessonsResponse({ items: [] }), []);

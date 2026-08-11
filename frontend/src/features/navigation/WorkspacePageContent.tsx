@@ -19,6 +19,7 @@ import { ApprovalPage } from '../approval/ApprovalPage';
 import { ConsultationMeetingWorkbench } from '../consultation/ConsultationMeetingWorkbench';
 import {
   getReviewLessonTaskState,
+  getReviewTaskDockLessons,
   isReviewLessonPending,
   normalizeReviewLessonsResponse,
   type ReviewLessonRecord,
@@ -42,6 +43,9 @@ type WorkspaceShellPage =
   | 'accounts'
   | 'credit'
   | 'settings';
+
+const REVIEW_NOTICE_AUTO_DISMISS_MS = 6000;
+const REVIEW_FAILED_TASK_AUTO_DISMISS_MS = 12000;
 
 export function WorkspacePageContent({
   activeWorkspacePage,
@@ -85,6 +89,7 @@ export function WorkspacePageContent({
   const [reviewLatestLessons, setReviewLatestLessons] = useState<ReviewLessonRecord[]>([]);
   const [reviewTaskStartedAtById, setReviewTaskStartedAtById] = useState<Record<number, number>>({});
   const [activeReviewTaskIds, setActiveReviewTaskIds] = useState<Set<number>>(() => new Set());
+  const [reviewFailedTaskExpiresAtById, setReviewFailedTaskExpiresAtById] = useState<Record<number, number>>({});
   const [reviewProgressNow, setReviewProgressNow] = useState(() => Date.now());
 
   const refreshReviewLessons = useCallback((quiet = true) => (
@@ -106,6 +111,19 @@ export function WorkspacePageContent({
   const handleReviewTaskStarted = useCallback((lessonId: number, startedAtMs: number) => {
     setReviewTaskStartedAtById((current) => ({ ...current, [lessonId]: startedAtMs }));
     setActiveReviewTaskIds((current) => new Set(current).add(lessonId));
+    setReviewLatestLessons((current) => current.map((lesson) => (
+      lesson.id === lessonId
+        ? {
+          ...lesson,
+          has_version_generating: true,
+          active_version_status: 'generating',
+          active_version_created_at: new Date(startedAtMs).toISOString(),
+          latest_generation_error: '',
+          record_status: 'generating',
+          generation_error: '',
+        }
+        : lesson
+    )));
     setReviewTaskDockDismissed(false);
     void refreshReviewLessons();
   }, [refreshReviewLessons]);
@@ -115,13 +133,24 @@ export function WorkspacePageContent({
     setReviewTaskDockDismissed(false);
   }, []);
 
-  const hasReviewFloatingTask = reviewLatestLessons.some((lesson) => {
-    const state = getReviewLessonTaskState(lesson);
-    return state === 'pending' || state === 'failed';
-  });
+  const visibleFailedReviewTaskIds = new Set(activeReviewTaskIds);
+  Object.keys(reviewFailedTaskExpiresAtById).forEach((taskId) => visibleFailedReviewTaskIds.add(Number(taskId)));
+  const reviewDockLessons = getReviewTaskDockLessons(reviewLatestLessons, visibleFailedReviewTaskIds);
+  const hasReviewFloatingTask = reviewDockLessons.length > 0;
   const hasReviewDockContent = Boolean(reviewFloatingNotice) || hasReviewFloatingTask;
   const hasReviewPendingTask = reviewLatestLessons.some(isReviewLessonPending);
   const shouldPollReviewTasks = activeReviewTaskIds.size > 0 || hasReviewPendingTask;
+
+  useEffect(() => {
+    if (!reviewFloatingNotice) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setReviewFloatingNotice(null);
+    }, REVIEW_NOTICE_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [reviewFloatingNotice]);
 
   useEffect(() => {
     onReviewTaskDockAvailableChange(hasReviewDockContent);
@@ -150,21 +179,66 @@ export function WorkspacePageContent({
   }, [activeWorkspacePage, refreshReviewLessons, shouldPollReviewTasks]);
 
   useEffect(() => {
-    if (activeReviewTaskIds.size === 0) {
+    const pendingTaskIds = reviewLatestLessons.filter(isReviewLessonPending).map((lesson) => lesson.id);
+    if (pendingTaskIds.length === 0) {
       return;
     }
 
     setActiveReviewTaskIds((current) => {
       const next = new Set(current);
-      for (const taskId of current) {
-        const matchingLesson = reviewLatestLessons.find((lesson) => lesson.id === taskId);
-        if (matchingLesson && !isReviewLessonPending(matchingLesson)) {
-          next.delete(taskId);
-        }
-      }
+      pendingTaskIds.forEach((taskId) => next.add(taskId));
+      return next.size === current.size ? current : next;
+    });
+  }, [reviewLatestLessons]);
+
+  useEffect(() => {
+    if (activeReviewTaskIds.size === 0) {
+      return;
+    }
+
+    const settledLessons = reviewLatestLessons.filter((lesson) => (
+      activeReviewTaskIds.has(lesson.id) && !isReviewLessonPending(lesson)
+    ));
+    if (settledLessons.length === 0) {
+      return;
+    }
+
+    const failedTaskIds = settledLessons
+      .filter((lesson) => getReviewLessonTaskState(lesson) === 'failed')
+      .map((lesson) => lesson.id);
+    if (failedTaskIds.length > 0) {
+      const expiresAt = Date.now() + REVIEW_FAILED_TASK_AUTO_DISMISS_MS;
+      setReviewFailedTaskExpiresAtById((current) => {
+        const next = { ...current };
+        failedTaskIds.forEach((taskId) => {
+          next[taskId] = expiresAt;
+        });
+        return next;
+      });
+    }
+
+    const settledTaskIds = new Set(settledLessons.map((lesson) => lesson.id));
+    setActiveReviewTaskIds((current) => {
+      const next = new Set(current);
+      settledTaskIds.forEach((taskId) => next.delete(taskId));
       return next.size === current.size ? current : next;
     });
   }, [activeReviewTaskIds, reviewLatestLessons]);
+
+  useEffect(() => {
+    const nextExpiresAt = Math.min(...Object.values(reviewFailedTaskExpiresAtById));
+    if (!Number.isFinite(nextExpiresAt)) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      setReviewFailedTaskExpiresAtById((current) => Object.fromEntries(
+        Object.entries(current).filter(([, expiresAt]) => expiresAt > now),
+      ));
+    }, Math.max(0, nextExpiresAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [reviewFailedTaskExpiresAtById]);
 
   const reviewTaskControls = {
     progressNow: reviewProgressNow,
@@ -233,10 +307,12 @@ export function WorkspacePageContent({
           notice={reviewFloatingNotice}
           onDismiss={() => {
             setReviewFloatingNotice(null);
+            setReviewFailedTaskExpiresAtById({});
             setReviewTaskDockDismissed(true);
           }}
           progressNow={reviewProgressNow}
           taskStartedAtById={reviewTaskStartedAtById}
+          visibleFailedTaskIds={visibleFailedReviewTaskIds}
         />
       )}
     </>
