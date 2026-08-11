@@ -306,14 +306,17 @@ function classCommentarySkillCandidateStatusLabel(status: ClassCommentarySkillCa
 }
 
 function classCommentarySkillEligibilityMessage(eligibility: ClassCommentarySkillEligibility): string {
+  const currentCount = Math.max(0, eligibility.effective_task_count);
+  const requiredCount = Math.max(1, eligibility.min_effective_tasks);
   if (eligibility.eligible) {
-    return '已经积累到足够的有效修改, 可以让 AI 整理一次更新.';
+    return `已积累 ${currentCount}/${requiredCount} 次有效修改, 可以让 AI 整理一次更新.`;
   }
   if (eligibility.reason === 'insufficient_effective_tasks' || eligibility.reason === 'not_enough_effective_tasks') {
-    return '继续确认并学习修改, AI 会在积累到更多不同课堂后开放整理.';
+    const remainingCount = Math.max(0, requiredCount - currentCount);
+    return `已积累 ${currentCount}/${requiredCount} 次有效修改, 还需要 ${remainingCount} 个不同课堂的真实修改.`;
   }
   if (eligibility.reason === 'insufficient_supporting_tasks' || eligibility.reason === 'not_enough_supporting_tasks') {
-    return '还需要在更多不同课堂里出现同一类修改, 才会写进同事测评风格.';
+    return `已积累 ${currentCount}/${requiredCount} 次有效修改, 整理规则更新后即可继续.`;
   }
   if (eligibility.reason === 'candidate_in_progress' || eligibility.reason === 'build_in_progress') {
     return 'AI 正在整理这次更新, 完成前无需重复操作.';
@@ -2939,7 +2942,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <Badge variant={skillEvolution.eligibility.eligible ? 'secondary' : 'outline'}>
-                                          {skillEvolution.eligibility.eligible ? '可以整理更新' : '继续积累修改'}
+                                          {`有效修改 ${skillEvolution.eligibility.effective_task_count}/${skillEvolution.eligibility.min_effective_tasks}`}
                                         </Badge>
                                       </div>
                                       <Button
@@ -2957,6 +2960,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                                     </div>
                                     <p className="text-xs text-muted-foreground">
                                       {classCommentarySkillEligibilityMessage(skillEvolution.eligibility)}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      每个课堂只计最新一次确认并学习的真实修改, 原样确认不计入.
                                     </p>
                                   </div>
 

@@ -59,7 +59,7 @@ def _frozen_input(*, source_valid=True):
                 "final_feedback_text": f"teacher final {index}",
                 "generation_diff": {"changed": True},
                 "previous_revision_diff": None,
-                "accepted_without_edit": index == 5,
+                "accepted_without_edit": False,
                 "prompt_payload": _prompt_payload(base_content),
                 "prompt_payload_hash": f"prompt-{index}",
             }
@@ -122,7 +122,7 @@ class FakeCandidateStore:
 
 
 class ClassCommentarySkillEvolutionWorkerTests(unittest.TestCase):
-    def test_candidate_build_uses_repeated_style_rule_and_replays_every_frozen_task(self):
+    def test_candidate_build_uses_all_frozen_changes_and_replays_every_task(self):
         store = FakeCandidateStore()
         candidate_generator = Mock(
             return_value=(
@@ -179,6 +179,7 @@ class ClassCommentarySkillEvolutionWorkerTests(unittest.TestCase):
         self.assertEqual(
             generator_input["style_rules"][0]["supporting_task_ids"], [1, 2, 3]
         )
+        self.assertEqual(len(generator_input["revision_edits"]), 5)
         completed = store.complete_calls[0][1]
         evaluation = completed["evaluation_snapshot"]
         self.assertEqual(evaluation["effective_task_count"], 5)
@@ -190,6 +191,62 @@ class ClassCommentarySkillEvolutionWorkerTests(unittest.TestCase):
         self.assertGreater(
             evaluation["metrics"]["delta"]["normalized_edit_distance_improvement"],
             0,
+        )
+
+    def test_candidate_build_can_organize_five_changes_without_style_labels(self):
+        frozen = _frozen_input()
+        frozen["style_evidence"] = []
+        frozen["build"]["supporting_task_count"] = 0
+        store = FakeCandidateStore(frozen)
+
+        def evaluate(evaluation_input, config):
+            return {
+                "candidate_skill_student_fact_count": 0,
+                "samples": [
+                    {
+                        "task_id": item["task_id"],
+                        "revision_id": item["revision_id"],
+                        "base_roster_consistent": True,
+                        "candidate_roster_consistent": True,
+                        "base_unsupported_fact_count": 0,
+                        "candidate_unsupported_fact_count": 0,
+                        "base_plain_text_valid": True,
+                        "candidate_plain_text_valid": True,
+                        "base_structure_valid": True,
+                        "candidate_structure_valid": True,
+                        "candidate_style_memory_record_ids": [],
+                    }
+                    for item in evaluation_input["samples"]
+                ],
+            }
+
+        candidate_generator = Mock(
+            return_value={
+                "candidate_content": "# Skill\n\nUse concise, actionable feedback.",
+                "change_summary": ["Make feedback concise and actionable."],
+                "incorporated_memory_record_ids": [],
+                "known_risks": [],
+            }
+        )
+        result = process_class_commentary_skill_candidate_build(
+            9,
+            store=store,
+            candidate_generator=candidate_generator,
+            replay_generator=lambda sample, candidate_content, config: (
+                f"teacher final {sample['task_id']}"
+            ),
+            replay_evaluator=evaluate,
+            runtime_config=ENABLED_CONFIG,
+        )
+
+        self.assertEqual(result["status"], "succeeded")
+        generator_input = candidate_generator.call_args.args[0]
+        self.assertEqual(generator_input["style_rules"], [])
+        self.assertEqual(len(generator_input["revision_edits"]), 5)
+        evaluation = store.complete_calls[0][1]["evaluation_snapshot"]
+        self.assertEqual(
+            evaluation["metrics"]["candidate"]["confirmed_style_rule_coverage_rate"],
+            0.0,
         )
 
     def test_candidate_with_roster_name_is_rejected_before_replay(self):

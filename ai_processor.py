@@ -2498,15 +2498,17 @@ def generate_class_commentary_skill_candidate(
         openai_headers,
     )
     system_prompt = (
-        "You revise one colleague's distilled class-commentary skill from frozen, repeated edits made by its users. "
-        "Make the smallest reusable change supported by the supplied teacher_style rules and revision diffs. "
+        "You revise one colleague's distilled class-commentary skill after its users have confirmed enough real "
+        "changes across distinct classes. Use all supplied frozen revision diffs to organize the durable patterns. "
+        "The supplied teacher_style rules are optional hints and may use different wording for similar changes. "
+        "Make the smallest reusable change supported by the full set of revision diffs. "
         "Preserve the named colleague's identity, the existing skill structure, and every persona, work, and "
-        "assessment rule that is not contradicted by repeated evidence. "
+        "assessment rule that is not contradicted by the confirmed changes. "
         "Never add student names, student facts, lesson facts, contact details, or claims inferred from one case. "
         "Return one JSON object with candidate_content, change_summary, incorporated_memory_record_ids, and "
         "known_risks. candidate_content must be the complete replacement SKILL.md. change_summary and known_risks "
-        "must be arrays of concise strings. incorporated_memory_record_ids must contain only IDs supplied in "
-        "style_rules. Do not emit markdown fences around the JSON."
+        "must be arrays of concise strings. incorporated_memory_record_ids may be empty and otherwise must contain "
+        "only IDs supplied in style_rules. Do not emit markdown fences around the JSON."
     )
     response = client.chat.completions.create(
         model=model,

@@ -394,18 +394,13 @@ def _candidate_style_rules(frozen: Mapping[str, object]) -> list[dict]:
             raise ValueError("candidate style rule is empty")
         item["supporting_task_ids"].add(task_id)
         item["memory_evidence_ids"].append(int(evidence["memory_evidence_id"]))
-    threshold = int(build["min_support_tasks"])
     rules = []
     for item in grouped.values():
         supporting_task_ids = sorted(item.pop("supporting_task_ids"))
-        if len(supporting_task_ids) < threshold:
-            continue
         item["supporting_task_ids"] = supporting_task_ids
         item["supporting_task_count"] = len(supporting_task_ids)
         item["memory_evidence_ids"] = sorted(set(item["memory_evidence_ids"]))
         rules.append(item)
-    if not rules:
-        raise ValueError("candidate has no repeated teacher style rule")
     return sorted(rules, key=lambda item: item["memory_record_id"])
 
 
@@ -418,15 +413,8 @@ def _candidate_generation_input(
     samples = frozen.get("revision_samples")
     if not isinstance(base_version, Mapping) or not isinstance(samples, list):
         raise ValueError("candidate base version or samples are missing")
-    supporting_task_ids = {
-        int(task_id)
-        for rule in style_rules
-        for task_id in rule["supporting_task_ids"]
-    }
     revision_edits = []
     for sample in samples:
-        if int(sample["task_id"]) not in supporting_task_ids:
-            continue
         revision_edits.append(
             {
                 "task_id": int(sample["task_id"]),
@@ -448,7 +436,8 @@ def _candidate_generation_input(
         "style_rules": style_rules,
         "revision_edits": revision_edits,
         "rules": [
-            "Use only repeated style_rules.",
+            "Use all frozen revision_edits as the primary evidence.",
+            "Treat style_rules as optional extracted hints, not as an eligibility gate.",
             "Do not put any student or lesson fact into the skill.",
             "Return the complete skill with the smallest supported edit.",
             "Preserve the colleague identity and all unrelated persona, work, and assessment instructions.",
@@ -580,7 +569,7 @@ def _normalize_candidate_payload(
         normalized_ids = sorted({int(value) for value in incorporated})
     except (TypeError, ValueError) as exc:
         raise ValueError("candidate style rule IDs are invalid") from exc
-    if not normalized_ids or not set(normalized_ids).issubset(allowed_style_record_ids):
+    if not set(normalized_ids).issubset(allowed_style_record_ids):
         raise ValueError("candidate used an unfrozen style rule")
     return {
         "candidate_content": content,
@@ -851,8 +840,10 @@ def process_class_commentary_skill_candidate_build(
                     "no_edit_acceptance_rate": _rate(
                         [item["candidate_exact_acceptance"] for item in no_edit_samples]
                     ),
-                    "confirmed_style_rule_coverage_rate": round(
-                        len(covered_style_ids) / len(allowed_style_record_ids), 6
+                    "confirmed_style_rule_coverage_rate": (
+                        round(len(covered_style_ids) / len(allowed_style_record_ids), 6)
+                        if allowed_style_record_ids
+                        else 0.0
                     ),
                     "roster_consistency_rate": _rate(
                         [
