@@ -174,7 +174,8 @@ class ClassCommentarySkillEvolutionApiTest(unittest.TestCase):
             for index in range(3)
         ]
         samples.extend(
-            self._create_sample(f"evaluation-{index}") for index in range(2)
+            self._create_sample(f"evaluation-{index}", learn_requested=True)
+            for index in range(2)
         )
         return samples
 

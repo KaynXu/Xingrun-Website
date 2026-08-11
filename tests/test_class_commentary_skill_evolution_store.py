@@ -158,7 +158,8 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
             for index in range(3)
         ]
         samples.extend(
-            self._create_sample(f"evaluation-{index}") for index in range(2)
+            self._create_sample(f"evaluation-{index}", learn_requested=True)
+            for index in range(2)
         )
         return samples
 
@@ -303,6 +304,43 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
         )
         self.assertEqual(same_org_eligibility, eligibility)
 
+    def test_five_real_changes_are_eligible_without_a_repeated_style_label(self):
+        samples = [
+            self._create_sample(
+                f"unique-style-{index}",
+                learn_requested=True,
+                style_text=f"Unique style adjustment {index}.",
+            )
+            for index in range(5)
+        ]
+
+        eligibility = lesson_manager.get_class_commentary_skill_candidate_eligibility(
+            organization_id=self.teacher["organization_id"],
+            skill_id=self.skill["skill_id"],
+            actor_user_id=self.teacher["id"],
+            min_effective_tasks=5,
+            min_support_tasks=3,
+        )
+        build = lesson_manager.create_class_commentary_skill_candidate_build(
+            organization_id=self.teacher["organization_id"],
+            skill_id=self.skill["skill_id"],
+            actor_user_id=self.teacher["id"],
+            candidate_request_id="five-unique-style-changes",
+            expected_active_version_id=self.skill["active_version_id"],
+            min_effective_tasks=5,
+            min_support_tasks=3,
+        )
+
+        self.assertTrue(eligibility["eligible"])
+        self.assertEqual(eligibility["effective_task_count"], 5)
+        self.assertEqual(eligibility["supporting_task_count"], 1)
+        self.assertEqual(build["effective_task_count"], 5)
+        self.assertEqual(build["supporting_task_count"], 1)
+        self.assertEqual(
+            {item["revision_id"] for item in build["frozen_revisions"]},
+            {item["revision"]["id"] for item in samples},
+        )
+
     def test_import_actor_and_feedback_actor_share_one_skill_evolution_scope(self):
         sample = self._create_sample(
             "cross-actor",
@@ -404,7 +442,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
             min_effective_tasks=1,
             min_support_tasks=1,
         )
-        self.assertEqual(eligibility["effective_task_count"], 1)
+        self.assertEqual(eligibility["effective_task_count"], 0)
         self.assertEqual(eligibility["supporting_task_count"], 0)
         self.assertFalse(eligibility["eligible"])
         with self.assertRaises(lesson_manager.ClassCommentarySkillCandidateNotReady):
@@ -435,7 +473,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
             replacement["id"],
         )
 
-    def test_accepted_without_edit_never_counts_as_style_support(self):
+    def test_accepted_without_edit_never_counts_as_a_real_change(self):
         self._create_sample(
             "accepted",
             learn_requested=True,
@@ -449,7 +487,7 @@ class ClassCommentarySkillEvolutionStoreTest(unittest.TestCase):
             min_effective_tasks=1,
             min_support_tasks=1,
         )
-        self.assertEqual(eligibility["effective_task_count"], 1)
+        self.assertEqual(eligibility["effective_task_count"], 0)
         self.assertEqual(eligibility["supporting_task_count"], 0)
         self.assertFalse(eligibility["eligible"])
 

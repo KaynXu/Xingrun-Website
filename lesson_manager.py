@@ -110,7 +110,7 @@ CLASS_COMMENTARY_LEARNING_EVIDENCE_SELECTOR_VERSION = "class-commentary-learning
 CLASS_COMMENTARY_MEMORY_EXTRACTOR_VERSION = "class-commentary-memory-extractor-v1"
 CLASS_COMMENTARY_MEMORY_SCHEMA_VERSION = "class-commentary-memory-v1"
 CLASS_COMMENTARY_MEMORY_NORMALIZATION_VERSION = "class-commentary-memory-normalization-v1"
-CLASS_COMMENTARY_SKILL_SELECTION_POLICY_VERSION = "class-commentary-skill-selection-v2"
+CLASS_COMMENTARY_SKILL_SELECTION_POLICY_VERSION = "class-commentary-skill-selection-v3"
 WECHAT_CHILD_REASON_INPUT_MODES = {"text", "voice"}
 PRIMARY_WRONG_QUESTION_TOPIC_UNCLASSIFIED = "未分类"
 PRIMARY_WRONG_QUESTION_TOPIC_PRESETS = (
@@ -9520,6 +9520,8 @@ def _class_commentary_candidate_effective_revision_rows_conn(
         WHERE task.organization_id=?
           AND revision.organization_id=task.organization_id
           AND revision.teacher_user_id=task.teacher_user_id
+          AND revision.learn_requested=1
+          AND revision.accepted_without_edit=0
           AND generation.organization_id=task.organization_id
           AND generation.teacher_user_id=task.teacher_user_id
           AND generation.skill_registry_id=?
@@ -9778,6 +9780,8 @@ def _class_commentary_candidate_source_status_conn(
             or str(row["snapshot_completeness"] or "") != "complete"
             or str(row["execution_snapshot_status"] or "") != "ready"
             or str(row["generation_status"] or "") != "succeeded"
+            or int(row["learn_requested"] or 0) != 1
+            or int(row["accepted_without_edit"] or 0) != 0
         ):
             return False, "revision_scope_mismatch"
         current_hash = _class_commentary_candidate_revision_snapshot_hash(row)
@@ -9980,10 +9984,7 @@ def get_class_commentary_skill_candidate_eligibility(
     return {
         "skill_registry_id": int(registry["id"]),
         "active_version_id": int(registry["active_version_id"]),
-        "eligible": (
-            effective_task_count >= effective_threshold
-            and supporting_task_count >= support_threshold
-        ),
+        "eligible": effective_task_count >= effective_threshold,
         "effective_task_count": effective_task_count,
         "supporting_task_count": supporting_task_count,
         "min_effective_tasks": effective_threshold,
@@ -10098,10 +10099,7 @@ def create_class_commentary_skill_candidate_build(
             default=0,
         )
         effective_task_count = len(revision_rows)
-        if (
-            effective_task_count < effective_threshold
-            or supporting_task_count < support_threshold
-        ):
+        if effective_task_count < effective_threshold:
             raise ClassCommentarySkillCandidateNotReady(
                 effective_task_count=effective_task_count,
                 supporting_task_count=supporting_task_count,
