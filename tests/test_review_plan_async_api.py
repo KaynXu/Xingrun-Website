@@ -102,6 +102,90 @@ class ReviewPlanAsyncApiTestCase(unittest.TestCase):
         self.assertTrue(all("current_plan_preview" not in item or item["current_plan_preview"] == {} for item in payload["items"]))
         self.assertTrue(all("versions" not in item for item in payload["items"]))
 
+    def test_failure_notification_is_seen_once_without_removing_history(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-08-11",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结文本",
+            weak_points="斜率判断",
+            created_by_user_id=1,
+        )
+        first_version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=1,
+        )
+        lesson_manager.fail_review_plan_version(first_version["id"], "第一次生成失败")
+
+        unseen_response = self.client.get(
+            "/api/review-plans/failure-notifications",
+            headers=self._auth_headers(self.owner_token),
+        )
+        self.assertEqual(unseen_response.status_code, 200)
+        unseen_items = unseen_response.get_json()["items"]
+        self.assertEqual(len(unseen_items), 1)
+        self.assertEqual(unseen_items[0]["id"], lesson_id)
+        self.assertEqual(unseen_items[0]["latest_failed_version_id"], first_version["id"])
+        self.assertEqual(unseen_items[0]["latest_generation_error"], "第一次生成失败")
+        self.assertEqual(unseen_items[0]["record_status"], "failed")
+        self.assertEqual(unseen_items[0]["current_pdf_url"], "")
+
+        for _ in range(2):
+            seen_response = self.client.post(
+                "/api/review-plans/failure-notifications/seen",
+                headers=self._auth_headers(self.owner_token),
+                json={"version_ids": [first_version["id"]]},
+            )
+            self.assertEqual(seen_response.status_code, 200)
+            self.assertEqual(seen_response.get_json()["seen_version_ids"], [first_version["id"]])
+
+        self.assertEqual(
+            self.client.get(
+                "/api/review-plans/failure-notifications",
+                headers=self._auth_headers(self.owner_token),
+            ).get_json()["items"],
+            [],
+        )
+
+        second_version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=1,
+        )
+        lesson_manager.fail_review_plan_version(second_version["id"], "第二次生成失败")
+        second_unseen = self.client.get(
+            "/api/review-plans/failure-notifications",
+            headers=self._auth_headers(self.owner_token),
+        ).get_json()["items"]
+        self.assertEqual([item["latest_failed_version_id"] for item in second_unseen], [second_version["id"]])
+
+        detail_response = self.client.get(
+            f"/api/review-plans/{lesson_id}",
+            headers=self._auth_headers(self.owner_token),
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(
+            [version["id"] for version in detail_response.get_json()["versions"]],
+            [second_version["id"], first_version["id"]],
+        )
+
+    def test_failure_notification_seen_endpoint_rejects_invalid_versions(self):
+        response = self.client.post(
+            "/api/review-plans/failure-notifications/seen",
+            headers=self._auth_headers(self.owner_token),
+            json={"version_ids": [True]},
+        )
+        self.assertEqual(response.status_code, 400)
+
+        missing_response = self.client.post(
+            "/api/review-plans/failure-notifications/seen",
+            headers=self._auth_headers(self.owner_token),
+            json={"version_ids": [999999]},
+        )
+        self.assertEqual(missing_response.status_code, 404)
+
     @patch("app._start_review_plan_generation_thread")
     @patch("app.ensure_feature_credits_available")
     @patch("app.has_review_plan_api_key", return_value=True)

@@ -5517,6 +5517,7 @@ def _bootstrap_account_state(conn: sqlite3.Connection) -> None:
 REVIEW_PLAN_ACTIVE_STATUSES = {"pending", "queued", "processing", "transcribing", "generating"}
 REVIEW_PLAN_READY_STATUS = "ready"
 REVIEW_PLAN_FAILED_STATUS = "failed"
+REVIEW_PLAN_FAILURE_NOTIFICATION_EVENT = "failed"
 REVIEW_PLAN_LEGACY_ARTIFACT_COLUMNS = {
     "plan_json",
     "pdf_path",
@@ -5632,6 +5633,51 @@ def _load_review_plan_source_pack(value: object | None) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _ensure_review_plan_failure_notification_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS review_plan_notification_events (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            review_plan_version_id INTEGER NOT NULL REFERENCES review_plan_versions(id) ON DELETE CASCADE,
+            event_type             TEXT NOT NULL,
+            created_at             TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(review_plan_version_id, event_type)
+        );
+
+        CREATE TABLE IF NOT EXISTS review_plan_notification_receipts (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id                INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            review_plan_version_id INTEGER NOT NULL REFERENCES review_plan_versions(id) ON DELETE CASCADE,
+            event_type             TEXT NOT NULL,
+            seen_at                TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(user_id, review_plan_version_id, event_type)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_review_plan_notification_events_created
+        ON review_plan_notification_events(event_type, created_at, id);
+
+        CREATE INDEX IF NOT EXISTS idx_review_plan_notification_receipts_user
+        ON review_plan_notification_receipts(user_id, event_type, review_plan_version_id);
+
+        CREATE TRIGGER IF NOT EXISTS trg_review_plan_failed_notification_insert
+        AFTER INSERT ON review_plan_versions
+        WHEN NEW.status='failed'
+        BEGIN
+            INSERT OR IGNORE INTO review_plan_notification_events (review_plan_version_id, event_type)
+            VALUES (NEW.id, 'failed');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_review_plan_failed_notification_update
+        AFTER UPDATE OF status ON review_plan_versions
+        WHEN NEW.status='failed' AND OLD.status<>'failed'
+        BEGIN
+            INSERT OR IGNORE INTO review_plan_notification_events (review_plan_version_id, event_type)
+            VALUES (NEW.id, 'failed');
+        END;
+        """
+    )
+
+
 def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -5730,6 +5776,83 @@ def _ensure_review_plan_versions_schema(conn: sqlite3.Connection) -> None:
         WHERE status IN ('pending', 'queued', 'processing', 'transcribing', 'generating')
         """
     )
+    _ensure_review_plan_failure_notification_schema(conn)
+
+
+def list_unseen_review_plan_failure_notifications(user_id: int, limit: int = 100) -> list[dict]:
+    safe_limit = max(1, min(500, int(limit or 100)))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.review_plan_version_id AS version_id,
+                   e.created_at AS notification_created_at,
+                   v.lesson_id,
+                   v.version_no,
+                   v.generation_error,
+                   v.updated_at AS failed_at
+            FROM review_plan_notification_events e
+            JOIN review_plan_versions v ON v.id = e.review_plan_version_id
+            LEFT JOIN review_plan_notification_receipts r
+              ON r.user_id=?
+             AND r.review_plan_version_id=e.review_plan_version_id
+             AND r.event_type=e.event_type
+            WHERE e.event_type=?
+              AND v.status=?
+              AND r.id IS NULL
+            ORDER BY e.id DESC
+            LIMIT ?
+            """,
+            (
+                int(user_id),
+                REVIEW_PLAN_FAILURE_NOTIFICATION_EVENT,
+                REVIEW_PLAN_FAILED_STATUS,
+                safe_limit,
+            ),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def mark_review_plan_failure_notifications_seen(user_id: int, version_ids: list[int]) -> list[int]:
+    normalized_version_ids = sorted({int(version_id) for version_id in version_ids if int(version_id or 0) > 0})
+    if not normalized_version_ids:
+        return []
+    placeholders = ",".join("?" for _ in normalized_version_ids)
+    with get_conn() as conn:
+        user = conn.execute("SELECT id FROM users WHERE id=?", (int(user_id),)).fetchone()
+        if not user:
+            raise LookupError("user not found")
+        rows = conn.execute(
+            f"""
+            SELECT e.review_plan_version_id
+            FROM review_plan_notification_events e
+            JOIN review_plan_versions v ON v.id=e.review_plan_version_id
+            WHERE e.event_type=?
+              AND v.status=?
+              AND e.review_plan_version_id IN ({placeholders})
+            ORDER BY e.review_plan_version_id
+            """,
+            [
+                REVIEW_PLAN_FAILURE_NOTIFICATION_EVENT,
+                REVIEW_PLAN_FAILED_STATUS,
+                *normalized_version_ids,
+            ],
+        ).fetchall()
+        eligible_version_ids = [int(row["review_plan_version_id"]) for row in rows]
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO review_plan_notification_receipts (
+                user_id,
+                review_plan_version_id,
+                event_type
+            )
+            VALUES (?, ?, ?)
+            """,
+            [
+                (int(user_id), version_id, REVIEW_PLAN_FAILURE_NOTIFICATION_EVENT)
+                for version_id in eligible_version_ids
+            ],
+        )
+        return eligible_version_ids
 
 
 def _migrate_review_plan_generated_at_column(conn: sqlite3.Connection) -> None:
@@ -6879,6 +7002,7 @@ def _attach_review_plan_version_summary(conn: sqlite3.Connection, lesson: dict) 
     lesson["has_version_generating"] = active_version is not None
     lesson["active_version_status"] = active_version["status"] if active_version else ""
     lesson["active_version_created_at"] = active_version["created_at"] if active_version else ""
+    lesson["latest_failed_version_id"] = latest_failed["id"] if latest_failed else None
     lesson["latest_generation_error"] = (
         (latest_failed or {}).get("generation_error")
         or (active_version or {}).get("generation_error")
@@ -7062,6 +7186,7 @@ def _attach_review_plan_version_summaries_bulk(conn: sqlite3.Connection, lessons
         lesson["has_version_generating"] = active_version is not None
         lesson["active_version_status"] = active_version["status"] if active_version else ""
         lesson["active_version_created_at"] = active_version["created_at"] if active_version else ""
+        lesson["latest_failed_version_id"] = latest_failed["id"] if latest_failed else None
         lesson["latest_generation_error"] = (
             (latest_failed or {}).get("generation_error")
             or (active_version or {}).get("generation_error")

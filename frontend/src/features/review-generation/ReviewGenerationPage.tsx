@@ -212,17 +212,17 @@ export function ReviewGenerationTaskDock({
   onDismiss,
   progressNow,
   taskStartedAtById,
-  visibleFailedTaskIds,
+  visibleFailedVersionIds,
 }: {
   lessons: ReviewLessonRecord[];
   notice: ReviewGenerationFloatingNotice | null;
   onDismiss: () => void;
   progressNow: number;
   taskStartedAtById: Record<number, number>;
-  visibleFailedTaskIds: ReadonlySet<number>;
+  visibleFailedVersionIds: ReadonlySet<number>;
 }) {
   const reduceMotion = useReducedMotion();
-  const dockLessons = getReviewTaskDockLessons(lessons, visibleFailedTaskIds);
+  const dockLessons = getReviewTaskDockLessons(lessons, visibleFailedVersionIds);
   const activeCount = lessons.filter(isReviewLessonPending).length;
 
   if (!notice && dockLessons.length === 0) {
@@ -281,7 +281,10 @@ export function ReviewGenerationTaskDock({
             {dockLessons.map((lesson) => {
               const status = getLessonStatusMeta(lesson, progressNow, taskStartedAtById[lesson.id]);
               return (
-                <div key={lesson.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                <div
+                  key={lesson.latest_failed_version_id === null ? `pending:${lesson.id}` : `failed:${lesson.latest_failed_version_id}`}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{getLessonTitle(lesson)}</p>
