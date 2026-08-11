@@ -308,6 +308,8 @@ test('skill evolution is capability-gated and stays inside the existing feedback
   assertSourceMatches(feedbackCard, /<DialogTitle>\{selectedSkill\.name\}的测评风格<\/DialogTitle>/, 'the version dialog needs an accessible shadcn title');
   assertSourceMatches(feedbackCard, /AI 会从大家使用这个同事测评风格时确认的修改中整理可复用的调整\./, 'the shared distilled-skill learning scope must be explicit');
   assertSourceMatches(feedbackCard, /更新不会自动使用/, 'the no-auto-use rule must be explicit in the UI');
+  assertSourceMatches(feedbackCard, /有效修改 \$\{skillEvolution\.eligibility\.effective_task_count\}\/\$\{skillEvolution\.eligibility\.min_effective_tasks\}/, 'the dialog must show the current real-change count and threshold');
+  assertSourceMatches(feedbackCard, /每个课堂只计最新一次确认并学习的真实修改, 原样确认不计入\./, 'the five-change counting rule must be visible');
   assertSourceExcludes(source, /<CardTitle>反馈风格版本<\/CardTitle>/, 'skill evolution must not add another page-level Card');
 });
 

@@ -5036,12 +5036,8 @@ def _class_commentary_skill_evolution_envelope(
     )
     if bool(eligibility.get("eligible")):
         eligibility_reason = ""
-    elif int(eligibility.get("effective_task_count") or 0) < int(
-        eligibility.get("min_effective_tasks") or 0
-    ):
-        eligibility_reason = "insufficient_effective_tasks"
     else:
-        eligibility_reason = "insufficient_supporting_tasks"
+        eligibility_reason = "insufficient_effective_tasks"
     return {
         "skill": _serialize_class_commentary_skill_for_evolution(skill),
         "versions": serialized_versions,

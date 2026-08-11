@@ -20,7 +20,6 @@
 miniprogram/
 ├── backend/
 ├── miniprogram/
-├── handoff.md
 └── CLOUD_HOSTING_SETUP.md
 ```
 

@@ -152,6 +152,8 @@ class ClassCommentaryMemoryAiTest(unittest.TestCase):
         self.assertEqual(captured["response_format"], {"type": "json_object"})
         self.assertEqual(usage["input_tokens"], 12)
         self.assertIn("Never add student names", captured["messages"][0]["content"])
+        self.assertIn("Use all supplied frozen revision diffs", captured["messages"][0]["content"])
+        self.assertIn("may be empty", captured["messages"][0]["content"])
 
     def test_skill_replay_evaluator_uses_structured_json(self):
         captured = {}
