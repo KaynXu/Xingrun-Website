@@ -53,7 +53,7 @@ class ClassCommentaryMemoryDependencyContractTests(unittest.TestCase):
         self.assertEqual((ROOT / ".python-version").read_text(encoding="utf-8").strip(), "3.12.13")
         self.assertIn("openai>=1.90.0", requirements)
         self.assertIn("pydantic>=2.7.3", requirements)
-        self.assertIn("mem0ai==2.0.12", requirements)
+        self.assertIn("mem0ai==2.0.17", requirements)
         self.assertIn("qdrant-client==1.18.0", requirements)
 
     def test_readme_rejects_embedded_qdrant_for_production(self):
