@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationErro
 from class_commentary import (
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
     normalize_class_commentary_feedback_text,
 )
 
@@ -265,10 +266,16 @@ def validate_class_commentary_structured_generation_contract(
         CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     ):
         pass
-    elif contract_pair == (
-        CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
-        CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
-    ):
+    elif contract_pair in {
+        (
+            CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+        ),
+        (
+            CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
+            CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
+        ),
+    }:
         if eligible_ids != list(names_by_id):
             raise ValueError("structured feedback attending roster scope is invalid")
         if not bool(generation.get("attending_roster_explicit")):

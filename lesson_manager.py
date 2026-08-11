@@ -34,6 +34,7 @@ from config_runtime import get_runtime_config
 from class_commentary import (
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
     get_class_commentary_structured_prompt_contract,
     read_class_commentary_skill_package_content,
 )
@@ -11272,10 +11273,10 @@ def reserve_class_commentary_generation(
                     transcript_text=transcript_snapshot,
                     roster=roster_snapshot,
                 )
-            elif (
-                normalized_prompt_version
-                == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2
-            ):
+            elif normalized_prompt_version in {
+                CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
+                CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
+            }:
                 if not attending_roster_explicit:
                     raise ValueError(
                         "structured feedback attending roster scope must be explicit"
