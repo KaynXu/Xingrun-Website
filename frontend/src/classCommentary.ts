@@ -1,9 +1,17 @@
 import {
+  ApiFetchError,
   apiFetch,
   apiUploadFormWithProgress,
   readLocalStorageItem,
   writeLocalStorageItem,
 } from './workspaceShared';
+
+export function isClassCommentaryMutationOutcomeAmbiguous(error: unknown): boolean {
+  if (!(error instanceof ApiFetchError)) {
+    return true;
+  }
+  return error.status >= 500 || [408, 425, 429].includes(error.status);
+}
 
 export type ClassCommentaryStatus = 'uploaded' | 'transcribing' | 'transcribed' | 'generating' | 'ready' | 'failed';
 export type ClassCommentaryFailureStage = '' | 'transcription' | 'generation';
@@ -24,6 +32,19 @@ export type ClassCommentaryCapabilities = {
   structured_feedback_enabled: boolean;
   student_history_memory_v2_enabled: boolean;
   student_history_memory_v2_max_credits_per_student: number;
+};
+
+export type ClassCommentaryCapabilitiesLoadResult = {
+  state: 'ready' | 'unavailable';
+  value: ClassCommentaryCapabilities;
+};
+
+const unavailableClassCommentaryCapabilities: ClassCommentaryCapabilities = {
+  memory_learning_enabled: false,
+  skill_evolution_enabled: false,
+  structured_feedback_enabled: false,
+  student_history_memory_v2_enabled: false,
+  student_history_memory_v2_max_credits_per_student: 0,
 };
 
 export type ClassCommentaryTask = {
@@ -1073,6 +1094,17 @@ export async function fetchClassCommentaryCapabilities(): Promise<ClassCommentar
       payload.student_history_memory_v2_max_credits_per_student,
     ),
   };
+}
+
+export async function loadClassCommentaryCapabilities(): Promise<ClassCommentaryCapabilitiesLoadResult> {
+  try {
+    return { state: 'ready', value: await fetchClassCommentaryCapabilities() };
+  } catch {
+    return {
+      state: 'unavailable',
+      value: unavailableClassCommentaryCapabilities,
+    };
+  }
 }
 
 export async function fetchClassCommentaryTasks(): Promise<ClassCommentaryTask[]> {

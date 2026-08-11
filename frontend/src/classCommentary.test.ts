@@ -24,7 +24,9 @@ import {
   formatClassCommentaryStudentFeedback,
   generateClassCommentaryFeedback,
   isClassCommentaryFeedbackRecordInScope,
+  isClassCommentaryMutationOutcomeAmbiguous,
   isClassCommentaryTaskLatestSchemaCompatible,
+  loadClassCommentaryCapabilities,
   normalizeClassCommentaryGeneration,
   normalizeClassCommentaryStudentGenerationProgress,
   normalizeClassCommentaryTask,
@@ -45,6 +47,26 @@ import { ApiFetchError } from './workspaceShared';
 const source = readFileSync(new URL('./classCommentary.ts', import.meta.url), 'utf8');
 const originalLocalStorage = globalThis.localStorage;
 const originalFetch = globalThis.fetch;
+
+test('mutation ambiguity keeps request identities for proxy and transport failures', () => {
+  assert.equal(isClassCommentaryMutationOutcomeAmbiguous(new Error('network')), true);
+  assert.equal(
+    isClassCommentaryMutationOutcomeAmbiguous(new ApiFetchError(502, {}, 'bad gateway')),
+    true,
+  );
+  assert.equal(
+    isClassCommentaryMutationOutcomeAmbiguous(new ApiFetchError(504, {}, 'timeout')),
+    true,
+  );
+  assert.equal(
+    isClassCommentaryMutationOutcomeAmbiguous(new ApiFetchError(409, {}, 'conflict')),
+    false,
+  );
+  assert.equal(
+    isClassCommentaryMutationOutcomeAmbiguous(new ApiFetchError(402, {}, 'credits')),
+    false,
+  );
+});
 
 type MockFetchCall = {
   path: string;
@@ -262,6 +284,21 @@ test('capabilities expose isolated generation call and credit impact', async () 
     structured_feedback_enabled: true,
     student_history_memory_v2_enabled: true,
     student_history_memory_v2_max_credits_per_student: 10,
+  });
+});
+
+test('capability transport failures return unavailable instead of a zero-cost mode', async () => {
+  mockJsonFetch({ error: 'bad gateway' }, 502);
+
+  assert.deepEqual(await loadClassCommentaryCapabilities(), {
+    state: 'unavailable',
+    value: {
+      memory_learning_enabled: false,
+      skill_evolution_enabled: false,
+      structured_feedback_enabled: false,
+      student_history_memory_v2_enabled: false,
+      student_history_memory_v2_max_credits_per_student: 0,
+    },
   });
 });
 

@@ -98,7 +98,7 @@ test('class feedback generation page does not trim undefined persisted transcrip
 test('class feedback generation page allows manual transcript generation without audio task', () => {
   assert.match(source, /const canCreateManualTextTask = !task \|\| task\.status === 'uploaded' \|\| task\.status === 'transcribing';/);
   assert.match(source, /const attendanceReadyForGeneration = capabilities\.structured_feedback_enabled[\s\S]*\? attendingStudentIds\.length > 0[\s\S]*: !classStudents\.length \|\| attendingStudentIds\.length > 0;/);
-  assert.match(source, /const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean\(selectedClassId && selectedSkillId\) && \(canUseTranscript \|\| canCreateManualTextTask\) && attendanceReadyForGeneration;/);
+  assert.match(source, /const canGenerate = capabilitiesState === 'ready'[\s\S]*uncertainStudentRetryGenerationId === null[\s\S]*!isTaskReadOnly[\s\S]*attendanceReadyForGeneration;/);
   assert.match(source, /disabled=\{loadingInitial \|\| isTaskReadOnly\}/);
   assert.doesNotMatch(source, /disabled=\{loadingInitial \|\| \(!task && !confirmedTranscript\)\}/);
 });
@@ -129,6 +129,9 @@ test('isolated generation shows call cost impact and aggregate progress without 
   assertSourceMatches(source, /const isolatedGenerationCallCount = capabilities\.student_history_memory_v2_enabled[\s\S]*\? attendingStudentIds\.length[\s\S]*: attendingStudentIds\.length > 0 \? 1 : 0;/, 'call impact must follow the server capability and selected attendance');
   assertSourceMatches(source, /isolatedGenerationMaxCredits[\s\S]*student_history_memory_v2_max_credits_per_student/, 'maximum credit impact must use the server capability');
   assertSourceMatches(uploadCard, /data-testid="generation-cost-impact"[\s\S]*次独立学生生成[\s\S]*点额度/, 'generation cost impact must be visible before the action');
+  assertSourceMatches(uploadCard, /capabilitiesState === 'unavailable'[\s\S]*额度与调用次数暂不可用, 当前不能发起生成/, 'unavailable capabilities must show unknown cost instead of a fabricated one-call estimate');
+  assertSourceMatches(source, /const \[capabilitiesState, setCapabilitiesState\] = useState<ClassCommentaryCapabilitiesState>\('loading'\)/, 'capability loading state must be explicit');
+  assertSourceMatches(source, /const canGenerate = capabilitiesState === 'ready'/, 'generation must stay disabled until capability and cost data are ready');
   assertSourceMatches(uploadCard, /data-testid="student-generation-progress"[\s\S]*总计[\s\S]*等待[\s\S]*生成中[\s\S]*已完成[\s\S]*失败/, 'aggregate student run progress must remain class-level');
   assertSourceExcludes(uploadCard, /memory_context|prompt_payload|historical/i, 'the progress surface must not expose private prompt or memory context');
 });
@@ -188,10 +191,10 @@ test('class feedback result stays in its current card with a shadcn editor and g
 test('class feedback result actions use shadcn buttons and gate learning from server capability', () => {
   const feedbackCard = cardSource('反馈结果');
 
-  assertSourceMatches(source, /fetchClassCommentaryCapabilities/, 'capability client is not imported');
+  assertSourceMatches(source, /loadClassCommentaryCapabilities/, 'capability client is not imported');
   assertSourceMatches(source, /const \[capabilities, setCapabilities\] = useState/, 'server capability state is missing');
-  assertSourceMatches(source, /fetchClassCommentaryCapabilities\(\)/, 'server capabilities are not fetched');
-  assertSourceMatches(source, /fetchClassCommentaryCapabilities\(\)\.catch\(\(\) => disabledClassCommentaryCapabilities\)/, 'memory capability failure must not block the core feedback page');
+  assertSourceMatches(source, /loadClassCommentaryCapabilities\(\)/, 'server capabilities are not fetched');
+  assertSourceMatches(source, /loadClassCommentaryCapabilities\(\)[\s\S]*setCapabilitiesState\(nextCapabilitiesResult\.state\)/, 'capability failure must remain distinguishable from a disabled server feature');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{handleSaveFeedbackDraft\} disabled=\{!canSaveFeedbackDraft\}>\s*保存草稿\s*<\/Button>/, 'save draft must be a shadcn Button');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{\(\) => handleConfirmFeedback\(false\)\} disabled=\{!canConfirmFeedback\}>\s*确认但不学习\s*<\/Button>/, 'confirm without learning must be a shadcn Button independent of memory capability');
   assertSourceMatches(feedbackCard, /<Button type="button" onClick=\{\(\) => handleConfirmFeedback\(true\)\} disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}>\s*确认并让 AI 学习修改\s*<\/Button>/, 'confirm and learn must be disabled when the server capability is off');
@@ -239,8 +242,19 @@ test('isolated generation polling publishes only terminal complete output and sa
   assertSourceMatches(source, /const failedStudentRunIds =[\s\S]*\.filter\(\(run\) => run\.status === 'failed'\)/, 'only failed student runs may enter the retry set');
   assertSourceMatches(retryHandler, /selectedGeneration\.status !== 'failed'[\s\S]*retryStudentIds = \[\.\.\.failedStudentRunIds\][\s\S]*retryClassCommentaryStudentGenerationRuns\(/, 'retry must target the frozen failed-run set only');
   assertSourceMatches(retryHandler, /claimClassCommentaryRequest\([\s\S]*'student-generation-retry'[\s\S]*retryRequest\.requestId/, 'student-run retry must reuse a stable request id across transport failures');
+  assertSourceMatches(retryHandler, /isClassCommentaryMutationOutcomeAmbiguous\(error\)[\s\S]*fetchClassCommentaryGeneration\(\s*retryTaskId,\s*retryGenerationId,[\s\S]*setGenerations\([\s\S]*canonicalGeneration/, 'an ambiguous retry response must reconcile the exact generation into canonical state');
+  assertSourceMatches(retryHandler, /canonicalGeneration\.status !== 'failed'[\s\S]*settleClassCommentaryRequest\([\s\S]*setUncertainStudentRetryGenerationId\(null\)/, 'a retry id may clear only after canonical state proves the mutation progressed');
+  assertSourceMatches(source, /uncertainStudentRetryGenerationId === null[\s\S]*!generations\.some\(\(generation\) => generation\.status === 'generating'/, 'new generation must stay blocked while retry outcome is unknown or an isolated generation is active');
   assertSourceMatches(feedbackCard, /data-testid="student-generation-partial-failure"[\s\S]*反馈包未发布[\s\S]*不会被当成完整反馈包[\s\S]*安全重试失败学生/, 'partial success must be visibly blocked and safely retryable');
   assertSourceExcludes(feedbackCard, /prompt_payload_snapshot|memory_context_snapshot/, 'the result card must never expose internal snapshots');
+});
+
+test('generation request ids survive ambiguous proxy failures', () => {
+  const generationHandler = functionSource('handleGenerate', 'handleRetryFailedStudentRuns');
+
+  assertSourceMatches(generationHandler, /isClassCommentaryMutationOutcomeAmbiguous\(error\)/, 'generation errors must classify proxy outcomes before clearing request identity');
+  assertSourceMatches(generationHandler, /validatedTerminalResponse[\s\S]*settleClassCommentaryRequest\([\s\S]*validatedTerminalResponse/, 'generation request identity must clear only for a validated terminal response');
+  assertSourceMatches(generationHandler, /throw new Error\('生成响应范围不一致'\);[\s\S]*settleClassCommentaryRequest\(/, 'success must validate task and generation scope before clearing request identity');
 });
 
 test('memory learning stays inside the feedback card and reuses shadcn actions', () => {
@@ -488,7 +502,7 @@ test('generation loading uses a safe empty state and restores the prior selectio
 test('super owner history access stays read-only in the class feedback page', () => {
   assertSourceMatches(source, /const isTaskReadOnly = Boolean\(task && task\.teacher_user_id !== currentUser\.id\);/, 'read-only task ownership state is missing');
   assertSourceMatches(source, /const canSaveTranscript = !isTaskReadOnly/, 'read-only history must block transcript writes');
-  assertSourceMatches(source, /const canGenerate = !isTaskReadOnly/, 'read-only history must block regeneration');
+  assertSourceMatches(source, /const canGenerate =[\s\S]*!isTaskReadOnly/, 'read-only history must block regeneration');
   assertSourceMatches(source, /const canSaveFeedbackDraft = !isTaskReadOnly/, 'read-only history must block draft writes');
   assertSourceMatches(source, /const canConfirmFeedback = !isTaskReadOnly/, 'read-only history must block confirmation and learning');
   assertSourceMatches(source, /<AlertTitle>只读查看<\/AlertTitle>/, 'read-only history must explain the permission boundary');

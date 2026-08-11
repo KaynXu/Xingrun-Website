@@ -67,7 +67,6 @@ import {
   createClassCommentaryTextTask,
   confirmClassCommentaryFeedback,
   deriveClassCommentaryStructuredFeedbackText,
-  fetchClassCommentaryCapabilities,
   fetchClassCommentaryFeedbackDraft,
   fetchClassCommentaryFeedbackRevisions,
   fetchClassCommentaryGeneration,
@@ -80,7 +79,9 @@ import {
   generateClassCommentaryFeedback,
   formatClassCommentaryStudentFeedback,
   isClassCommentaryFeedbackRecordInScope,
+  isClassCommentaryMutationOutcomeAmbiguous,
   isClassCommentaryTaskLatestSchemaCompatible,
+  loadClassCommentaryCapabilities,
   normalizeClassCommentaryFeedbackDraft,
   normalizeClassCommentaryFeedbackRevision,
   normalizeClassCommentaryGeneration,
@@ -165,6 +166,8 @@ type PendingClassCommentaryRequest = {
   scopeKey: string;
   requestId: string;
 };
+
+type ClassCommentaryCapabilitiesState = 'loading' | 'ready' | 'unavailable';
 
 const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   memory_learning_enabled: false,
@@ -494,6 +497,8 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [skillEvolutionRefreshVersion, setSkillEvolutionRefreshVersion] = useState(0);
   const [loadingGenerationId, setLoadingGenerationId] = useState<number | null>(null);
   const [capabilities, setCapabilities] = useState<ClassCommentaryCapabilities>(disabledClassCommentaryCapabilities);
+  const [capabilitiesState, setCapabilitiesState] = useState<ClassCommentaryCapabilitiesState>('loading');
+  const [uncertainStudentRetryGenerationId, setUncertainStudentRetryGenerationId] = useState<number | null>(null);
   const [draftConflict, setDraftConflict] = useState<StructuredDraftConflict | null>(null);
   const [revisionConflict, setRevisionConflict] = useState<{
     workspaceKey: string;
@@ -565,6 +570,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     confirmationRequestRef.current = null;
     generationRequestRef.current = null;
     studentGenerationRetryRequestRef.current = null;
+    setUncertainStudentRetryGenerationId(null);
     memoryRetryRequestRef.current = null;
     memoryRevokeRequestRef.current = null;
     setLoadingGenerationId(null);
@@ -584,20 +590,22 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   useEffect(() => {
     let cancelled = false;
     setLoadingInitial(true);
+    setCapabilitiesState('loading');
     Promise.all([
       apiFetch<ClassItem[]>('/api/classes'),
       fetchClassCommentarySkills(),
       fetchClassCommentaryTasks(),
-      fetchClassCommentaryCapabilities().catch(() => disabledClassCommentaryCapabilities),
+      loadClassCommentaryCapabilities(),
     ])
-      .then(([nextClasses, nextSkills, nextHistoryTasks, nextCapabilities]) => {
+      .then(([nextClasses, nextSkills, nextHistoryTasks, nextCapabilitiesResult]) => {
         if (cancelled) {
           return;
         }
         setClasses(nextClasses);
         setSkills(nextSkills);
         setHistoryTasks(nextHistoryTasks);
-        setCapabilities(nextCapabilities);
+        setCapabilities(nextCapabilitiesResult.value);
+        setCapabilitiesState(nextCapabilitiesResult.state);
         setSelectedClassId((currentValue) => currentValue || (nextClasses[0] ? String(nextClasses[0].id) : ''));
         setSelectedSkillId((currentValue) => currentValue || readClassCommentarySkillPreference(currentUser, nextSkills) || (nextSkills[0]?.id || ''));
       })
@@ -935,7 +943,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const attendanceReadyForGeneration = capabilities.structured_feedback_enabled
     ? attendingStudentIds.length > 0
     : !classStudents.length || attendingStudentIds.length > 0;
-  const canGenerate = !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && attendanceReadyForGeneration;
+  const canGenerate = capabilitiesState === 'ready' && uncertainStudentRetryGenerationId === null && !generations.some((generation) => generation.status === 'generating' && generation.student_history_memory_mode === 'isolated_v2') && !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && attendanceReadyForGeneration;
   const hasSucceededGeneration = selectedGeneration?.status === 'succeeded';
   const feedbackContentValid = structuredFeedbackMode
     ? Boolean(
@@ -1397,11 +1405,6 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         attendingStudentIds,
         generationRequest.requestId,
       );
-      generationRequestRef.current = settleClassCommentaryRequest(
-        generationRequestRef.current,
-        generationRequest.requestId,
-        true,
-      );
       const nextTask = result.task;
       const nextGeneration = result.generation;
       if (
@@ -1410,6 +1413,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       ) {
         throw new Error('生成响应范围不一致');
       }
+      generationRequestRef.current = settleClassCommentaryRequest(
+        generationRequestRef.current,
+        generationRequest.requestId,
+        true,
+      );
       setTask(nextTask);
       setHistoryTasks((current) => mergeHistoryTask(current, nextTask));
       setGenerations((current) => [nextGeneration, ...current.filter((item) => item.id !== nextGeneration.id)]);
@@ -1437,13 +1445,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setCopyNotice('');
       setStudentFeedbackErrors({});
     } catch (error) {
-      if (generationRequest) {
-        generationRequestRef.current = settleClassCommentaryRequest(
-          generationRequestRef.current,
-          generationRequest.requestId,
-          error instanceof ApiFetchError,
-        );
-      }
+      let validatedTerminalResponse = !isClassCommentaryMutationOutcomeAmbiguous(error);
       if (error instanceof ApiFetchError) {
         const rawFailedTask = error.payload.task;
         const rawFailedGeneration = error.payload.generation;
@@ -1462,6 +1464,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
             && failedGeneration.task_id === generationTaskId
             && failedGeneration.id > 0
           ) {
+            validatedTerminalResponse = true;
             setTask(failedTask);
             setHistoryTasks((current) => mergeHistoryTask(current, failedTask));
             setGenerations((current) => [
@@ -1487,6 +1490,13 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
             setExpandedStudentIds([]);
           }
         }
+      }
+      if (generationRequest) {
+        generationRequestRef.current = settleClassCommentaryRequest(
+          generationRequestRef.current,
+          generationRequest.requestId,
+          validatedTerminalResponse,
+        );
       }
       setErrorMessage(getClassCommentaryGenerationErrorMessage(error));
     } finally {
@@ -1525,11 +1535,6 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         retryStudentIds,
         retryRequest.requestId,
       );
-      studentGenerationRetryRequestRef.current = settleClassCommentaryRequest(
-        studentGenerationRetryRequestRef.current,
-        retryRequest.requestId,
-        true,
-      );
       if (
         result.task.id !== retryTaskId
         || !isClassCommentaryFeedbackRecordInScope(
@@ -1540,6 +1545,12 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       ) {
         throw new Error('重试响应范围不一致');
       }
+      studentGenerationRetryRequestRef.current = settleClassCommentaryRequest(
+        studentGenerationRetryRequestRef.current,
+        retryRequest.requestId,
+        true,
+      );
+      setUncertainStudentRetryGenerationId(null);
       setTask(result.task);
       setHistoryTasks((current) => mergeHistoryTask(current, result.task));
       setGenerations((current) => current.map((generation) => (
@@ -1563,11 +1574,68 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         [retryEditor.workspaceKey]: retryEditor,
       }));
     } catch (error) {
-      studentGenerationRetryRequestRef.current = settleClassCommentaryRequest(
-        studentGenerationRetryRequestRef.current,
-        retryRequest.requestId,
-        error instanceof ApiFetchError,
-      );
+      const ambiguous = isClassCommentaryMutationOutcomeAmbiguous(error);
+      if (!ambiguous) {
+        studentGenerationRetryRequestRef.current = settleClassCommentaryRequest(
+          studentGenerationRetryRequestRef.current,
+          retryRequest.requestId,
+          true,
+        );
+        setUncertainStudentRetryGenerationId(null);
+      } else {
+        setUncertainStudentRetryGenerationId(retryGenerationId);
+        try {
+          const canonicalGeneration = await fetchClassCommentaryGeneration(
+            retryTaskId,
+            retryGenerationId,
+          );
+          if (!isClassCommentaryFeedbackRecordInScope(
+            canonicalGeneration,
+            retryTaskId,
+            retryGenerationId,
+          )) {
+            throw new Error('重试状态范围不一致');
+          }
+          const canonicalTask = await fetchClassCommentaryTask(retryTaskId)
+            .catch(() => task);
+          setTask(canonicalTask);
+          setHistoryTasks((current) => mergeHistoryTask(current, canonicalTask));
+          setGenerations((current) => current.map((generation) => (
+            generation.id === retryGenerationId ? canonicalGeneration : generation
+          )));
+          selectedGenerationIdRef.current = String(retryGenerationId);
+          setSelectedGenerationId(String(retryGenerationId));
+          setFeedbackDraft(null);
+          setRevisionPreview(null);
+          setExpandedStudentIds([]);
+          if (canonicalGeneration.status === 'succeeded') {
+            const canonicalEditor = createGenerationEditorState(
+              retryTaskId,
+              canonicalGeneration,
+              null,
+              null,
+              canonicalTask.latest_revision_id,
+            );
+            setFeedbackEditorText(canonicalEditor.feedbackText);
+            setGenerationEditors((current) => ({
+              ...current,
+              [canonicalEditor.workspaceKey]: canonicalEditor,
+            }));
+          } else {
+            setFeedbackEditorText('');
+          }
+          if (canonicalGeneration.status !== 'failed') {
+            studentGenerationRetryRequestRef.current = settleClassCommentaryRequest(
+              studentGenerationRetryRequestRef.current,
+              retryRequest.requestId,
+              true,
+            );
+            setUncertainStudentRetryGenerationId(null);
+          }
+        } catch {
+          setGenerationProgressError('学生反馈重试状态暂时不可用, 已保留本次请求 ID.');
+        }
+      }
       setErrorMessage(error instanceof Error ? error.message : '重试失败学生反馈失败');
     } finally {
       setBusy(false);
@@ -2923,7 +2991,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                       </p>
                       {!loadingInitial && selectedClassId ? (
                         <p className="text-xs text-muted-foreground" data-testid="generation-cost-impact">
-                          {capabilities.student_history_memory_v2_enabled
+                          {capabilitiesState === 'unavailable'
+                            ? '额度与调用次数暂不可用, 当前不能发起生成.'
+                            : capabilitiesState === 'loading'
+                              ? '正在读取额度与调用次数...'
+                              : capabilities.student_history_memory_v2_enabled
                             ? `本次将发起 ${isolatedGenerationCallCount} 次独立学生生成, 最多使用 ${isolatedGenerationMaxCredits} 点额度.`
                             : `当前按 ${isolatedGenerationCallCount} 次班级生成进行额度预检.`}
                         </p>
