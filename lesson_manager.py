@@ -58,6 +58,13 @@ from class_commentary_feedback_schema import (
     validate_class_commentary_structured_generation_contract,
 )
 from class_commentary_memory_privacy import validate_class_commentary_memory_privacy
+from class_commentary_student_memory_v2 import (
+    CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1,
+    build_safe_class_context,
+    build_student_current_evidence,
+    canonical_hash as class_commentary_student_canonical_hash,
+    canonical_json as class_commentary_student_canonical_json,
+)
 from review_plan_workflow.generation_options import (
     generation_options_summary,
     normalize_generation_options,
@@ -2444,6 +2451,22 @@ def _ensure_class_commentary_structured_feedback_schema(conn: sqlite3.Connection
             "structured_feedback_json": "TEXT NOT NULL DEFAULT ''",
             "structured_feedback_hash": "TEXT NOT NULL DEFAULT ''",
         },
+        "class_commentary_student_generation_runs": {
+            "student_run_schema_version": (
+                "TEXT NOT NULL DEFAULT 'class_commentary.student_generation_run.v1'"
+            ),
+            "eligible_student_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+            "eligible_student_scope_hash": "TEXT NOT NULL DEFAULT 'legacy_unavailable'",
+            "student_mention_matcher_version": "TEXT NOT NULL DEFAULT 'legacy_unavailable'",
+            "class_context_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+            "class_context_hash": (
+                "TEXT NOT NULL DEFAULT '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'"
+            ),
+            "charge_usage_id": "INTEGER REFERENCES ai_usage_ledger(id) ON DELETE SET NULL",
+        },
+        "ai_usage_ledger": {
+            "request_payload_hash": "TEXT NOT NULL DEFAULT ''",
+        },
     }
     for table, table_columns in columns.items():
         for column, ddl in table_columns.items():
@@ -2729,8 +2752,14 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             student_name_snapshot TEXT NOT NULL,
             request_id TEXT NOT NULL,
             request_payload_hash TEXT NOT NULL,
+            student_run_schema_version TEXT NOT NULL DEFAULT 'class_commentary.student_generation_run.v1',
             prompt_version TEXT NOT NULL,
             memory_mode TEXT NOT NULL,
+            eligible_student_ids_json TEXT NOT NULL DEFAULT '[]',
+            eligible_student_scope_hash TEXT NOT NULL DEFAULT 'legacy_unavailable',
+            student_mention_matcher_version TEXT NOT NULL DEFAULT 'legacy_unavailable',
+            class_context_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            class_context_hash TEXT NOT NULL DEFAULT '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
             current_evidence_snapshot_json TEXT NOT NULL DEFAULT '{}',
             current_evidence_hash TEXT NOT NULL,
             memory_context_snapshot_json TEXT NOT NULL DEFAULT '{}',
@@ -2748,6 +2777,7 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             next_attempt_at TEXT,
             charge_request_key TEXT NOT NULL,
             charge_status TEXT NOT NULL DEFAULT 'pending',
+            charge_usage_id INTEGER REFERENCES ai_usage_ledger(id) ON DELETE SET NULL,
             response_snapshot_json TEXT NOT NULL DEFAULT '{}',
             response_hash TEXT NOT NULL DEFAULT '',
             structured_feedback_json TEXT NOT NULL DEFAULT '',
@@ -2766,6 +2796,10 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             CHECK(attempt_count >= 0),
             CHECK(request_id<>''),
             CHECK(request_payload_hash<>''),
+            CHECK(student_run_schema_version='class_commentary.student_generation_run.v1'),
+            CHECK(eligible_student_scope_hash<>''),
+            CHECK(student_mention_matcher_version<>''),
+            CHECK(class_context_hash<>''),
             CHECK(current_evidence_hash<>''),
             CHECK(memory_context_hash<>''),
             CHECK(prompt_payload_hash<>''),
@@ -2777,6 +2811,20 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_class_commentary_student_runs_retry
         ON class_commentary_student_generation_runs (status, next_attempt_at, generation_id);
+
+        CREATE TABLE IF NOT EXISTS class_commentary_student_generation_retry_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
+            actor_user_id INTEGER NOT NULL REFERENCES users(id),
+            retry_request_id TEXT NOT NULL,
+            retry_payload_hash TEXT NOT NULL,
+            student_ids_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(organization_id, retry_request_id),
+            CHECK(retry_request_id<>''),
+            CHECK(retry_payload_hash<>'')
+        );
 
         CREATE TABLE IF NOT EXISTS class_commentary_feedback_drafts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4431,6 +4479,7 @@ def init_db():
             source_record_type TEXT NOT NULL,
             source_record_id TEXT NOT NULL,
             request_id TEXT NOT NULL DEFAULT '',
+            request_payload_hash TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         );
 
@@ -4894,6 +4943,7 @@ def _insert_ai_usage_row_with_conn(
     source_record_type: str,
     source_record_id: str,
     request_id: str,
+    request_payload_hash: str = "",
     token_cost_raw: float = 0.0,
 ) -> dict:
     _ensure_credit_account_row(conn, organization_id)
@@ -4901,12 +4951,14 @@ def _insert_ai_usage_row_with_conn(
 
     total_tokens = max(0, int(input_tokens)) + max(0, int(output_tokens))
     normalized_request_id = (request_id or "").strip()
+    normalized_payload_hash = str(request_payload_hash or "").strip()
     cur = conn.execute(
         """
         INSERT INTO ai_usage_ledger
             (organization_id, user_id, feature_key, provider, model, input_tokens, output_tokens, total_tokens,
-             token_cost_raw, credit_cost_final, source_record_type, source_record_id, request_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             token_cost_raw, credit_cost_final, source_record_type, source_record_id,
+             request_id, request_payload_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             organization_id,
@@ -4922,6 +4974,7 @@ def _insert_ai_usage_row_with_conn(
             source_record_type,
             str(source_record_id),
             normalized_request_id,
+            normalized_payload_hash,
         ),
     )
     row = conn.execute(
@@ -4944,6 +4997,7 @@ def insert_ai_usage_row(
     source_record_type: str,
     source_record_id: str,
     request_id: str,
+    request_payload_hash: str = "",
     token_cost_raw: float = 0.0,
 ) -> dict:
     with get_conn() as conn:
@@ -4960,6 +5014,7 @@ def insert_ai_usage_row(
             source_record_type=source_record_type,
             source_record_id=source_record_id,
             request_id=request_id,
+            request_payload_hash=request_payload_hash,
             token_cost_raw=token_cost_raw,
         )
 
@@ -4977,9 +5032,11 @@ def insert_ai_usage_and_debit(
     source_record_type: str,
     source_record_id: str,
     request_id: str,
+    request_payload_hash: str = "",
     token_cost_raw: float = 0.0,
 ) -> dict:
     normalized_request_id = (request_id or "").strip()
+    normalized_payload_hash = str(request_payload_hash or "").strip()
     with get_conn() as conn:
         _ensure_credit_account_row(conn, organization_id)
         _ensure_user_in_organization(conn, user_id, organization_id, "usage")
@@ -4996,6 +5053,14 @@ def insert_ai_usage_and_debit(
                 (organization_id, normalized_request_id),
             ).fetchone()
             if existing:
+                if (
+                    normalized_payload_hash
+                    and str(existing["request_payload_hash"] or "")
+                    != normalized_payload_hash
+                ):
+                    raise AiUsageRequestConflict(
+                        "ai usage request_id was already used with a different payload"
+                    )
                 return dict(existing)
 
         try:
@@ -5012,6 +5077,7 @@ def insert_ai_usage_and_debit(
                 source_record_type=source_record_type,
                 source_record_id=source_record_id,
                 request_id=normalized_request_id,
+                request_payload_hash=normalized_payload_hash,
                 token_cost_raw=token_cost_raw,
             )
         except sqlite3.IntegrityError:
@@ -5029,6 +5095,14 @@ def insert_ai_usage_and_debit(
             ).fetchone()
             if not existing:
                 raise
+            if (
+                normalized_payload_hash
+                and str(existing["request_payload_hash"] or "")
+                != normalized_payload_hash
+            ):
+                raise AiUsageRequestConflict(
+                    "ai usage request_id was already used with a different payload"
+                )
             return dict(existing)
 
         _insert_credit_ledger_entry_with_conn(
@@ -8807,6 +8881,14 @@ class ClassCommentaryGenerationRequestConflict(ValueError):
     pass
 
 
+class ClassCommentaryStudentGenerationRetryRequestConflict(ValueError):
+    pass
+
+
+class AiUsageRequestConflict(ValueError):
+    pass
+
+
 class ClassCommentaryDraftVersionConflict(ValueError):
     def __init__(self, current_draft: Optional[dict]):
         super().__init__("draft_version_conflict")
@@ -11160,6 +11242,793 @@ def get_class_commentary_student_generation_progress(
     return {**counts, "runs": public_runs}
 
 
+def get_class_commentary_student_generation_run(run_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_dispatchable_class_commentary_student_generation_runs(
+    *,
+    limit: int = 100,
+    now: Optional[str] = None,
+) -> list[dict]:
+    current = str(now or _class_commentary_utc_timestamp())
+    normalized_limit = max(1, min(int(limit), 500))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT run.*
+            FROM class_commentary_student_generation_runs AS run
+            JOIN class_commentary_generations AS generation
+              ON generation.id=run.generation_id
+            WHERE generation.status='generating'
+              AND run.claim_token IS NULL
+              AND (
+                    run.status='queued'
+                    OR (
+                        run.status IN ('retry_wait','response_received')
+                        AND (run.next_attempt_at IS NULL OR run.next_attempt_at<=?)
+                    )
+              )
+            ORDER BY run.generation_id, run.id
+            LIMIT ?
+            """,
+            (current, normalized_limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def claim_class_commentary_student_generation_run(
+    run_id: int,
+    *,
+    claim_owner: str,
+    lease_seconds: int = 300,
+) -> Optional[dict]:
+    normalized_owner = str(claim_owner or "").strip()
+    if not normalized_owner:
+        raise ValueError("claim_owner is required")
+    claim_token = secrets.token_urlsafe(24)
+    lease_modifier = f"+{max(30, int(lease_seconds))} seconds"
+    current = _class_commentary_utc_timestamp()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        run = conn.execute(
+            """
+            SELECT run.*, generation.status AS generation_status
+            FROM class_commentary_student_generation_runs AS run
+            JOIN class_commentary_generations AS generation
+              ON generation.id=run.generation_id
+            WHERE run.id=?
+            """,
+            (int(run_id),),
+        ).fetchone()
+        if not run or str(run["generation_status"] or "") != "generating":
+            return None
+        status = str(run["status"] or "")
+        if run["claim_token"] is not None:
+            return None
+        if status in {"queued", "retry_wait"}:
+            if (
+                status == "retry_wait"
+                and run["next_attempt_at"] is not None
+                and str(run["next_attempt_at"]) > current
+            ):
+                return None
+            updated = conn.execute(
+                """
+                UPDATE class_commentary_student_generation_runs
+                SET status='generating', attempt_count=attempt_count+1,
+                    claim_token=?, claim_owner=?, error_code=NULL,
+                    started_at=COALESCE(started_at, ?),
+                    next_attempt_at=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?)
+                WHERE id=? AND status=? AND claim_token IS NULL
+                """,
+                (
+                    claim_token,
+                    normalized_owner,
+                    current,
+                    lease_modifier,
+                    int(run_id),
+                    status,
+                ),
+            )
+        elif status == "response_received":
+            if (
+                run["next_attempt_at"] is not None
+                and str(run["next_attempt_at"]) > current
+            ):
+                return None
+            updated = conn.execute(
+                """
+                UPDATE class_commentary_student_generation_runs
+                SET claim_token=?, claim_owner=?, error_code=NULL,
+                    next_attempt_at=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?)
+                WHERE id=? AND status='response_received' AND claim_token IS NULL
+                """,
+                (claim_token, normalized_owner, lease_modifier, int(run_id)),
+            )
+        else:
+            return None
+        if updated.rowcount != 1:
+            return None
+        claimed = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        return dict(claimed)
+
+
+def validate_class_commentary_student_generation_access(run_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT run.organization_id, run.student_id,
+                   generation.teacher_user_id, generation.class_id,
+                   task.teacher_user_id AS task_teacher_user_id,
+                   organization.status AS organization_status,
+                   teacher.status AS teacher_status,
+                   teacher.organization_id AS teacher_organization_id,
+                   class.organization_id AS class_organization_id,
+                   class.lifecycle_status AS class_lifecycle_status,
+                   student.organization_id AS student_organization_id,
+                   student.status AS student_status,
+                   skill.status AS skill_status,
+                   EXISTS(
+                       SELECT 1 FROM user_classes
+                       WHERE user_id=generation.teacher_user_id
+                         AND class_id=generation.class_id
+                   ) AS teacher_has_class,
+                   EXISTS(
+                       SELECT 1 FROM class_students
+                       WHERE class_id=generation.class_id
+                         AND student_id=run.student_id
+                   ) AS student_in_class
+            FROM class_commentary_student_generation_runs AS run
+            JOIN class_commentary_generations AS generation
+              ON generation.id=run.generation_id
+            JOIN class_commentary_tasks AS task ON task.id=generation.task_id
+            JOIN organizations AS organization ON organization.id=run.organization_id
+            JOIN users AS teacher ON teacher.id=generation.teacher_user_id
+            JOIN classes AS class ON class.id=generation.class_id
+            JOIN students AS student ON student.id=run.student_id
+            JOIN class_commentary_skills AS skill
+              ON skill.id=generation.skill_registry_id
+            WHERE run.id=?
+            """,
+            (int(run_id),),
+        ).fetchone()
+    if not row:
+        return {"allowed": False, "reason": "student_run_scope_unavailable"}
+    checks = (
+        (str(row["organization_status"] or "") == "active", "organization_inactive"),
+        (str(row["teacher_status"] or "") == "active", "teacher_inactive"),
+        (
+            int(row["teacher_organization_id"] or 0)
+            == int(row["organization_id"]),
+            "teacher_organization_mismatch",
+        ),
+        (
+            int(row["class_organization_id"] or 0) == int(row["organization_id"]),
+            "class_organization_mismatch",
+        ),
+        (
+            str(row["class_lifecycle_status"] or "active") == "active",
+            "class_inactive",
+        ),
+        (
+            int(row["student_organization_id"] or 0)
+            == int(row["organization_id"]),
+            "student_organization_mismatch",
+        ),
+        (str(row["student_status"] or "") == "active", "student_inactive"),
+        (str(row["skill_status"] or "") == "active", "skill_inactive"),
+        (
+            int(row["teacher_user_id"] or 0)
+            == int(row["task_teacher_user_id"] or 0),
+            "teacher_task_mismatch",
+        ),
+        (bool(row["teacher_has_class"]), "teacher_class_access_revoked"),
+        (bool(row["student_in_class"]), "student_class_access_revoked"),
+    )
+    for allowed, reason in checks:
+        if not allowed:
+            return {"allowed": False, "reason": reason}
+    return {"allowed": True, "reason": ""}
+
+
+def finalize_class_commentary_student_generation_prompt(
+    run_id: int,
+    *,
+    claim_token: str,
+    memory_context: object,
+    memory_retrieval_status: str,
+    prompt_payload: object,
+) -> dict:
+    normalized_status = str(memory_retrieval_status or "").strip()
+    if normalized_status not in {"empty", "ready", "degraded"}:
+        raise ValueError("student memory retrieval status is invalid")
+    memory_json = class_commentary_student_canonical_json(memory_context)
+    memory_hash = _class_commentary_content_hash(memory_json)
+    prompt_json = class_commentary_student_canonical_json(prompt_payload)
+    prompt_hash = _class_commentary_content_hash(prompt_json)
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        run = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        if not run:
+            raise ValueError("student generation run not found")
+        if str(run["memory_retrieval_status"] or "") != "pending":
+            if (
+                str(run["memory_context_hash"] or "") != memory_hash
+                or str(run["prompt_payload_hash"] or "") != prompt_hash
+            ):
+                raise ClassCommentaryGenerationRequestConflict(
+                    "student generation prompt is already finalized"
+                )
+            return dict(run)
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_student_generation_runs
+            SET memory_context_snapshot_json=?, memory_context_hash=?,
+                memory_retrieval_status=?, prompt_payload_snapshot_json=?,
+                prompt_payload_hash=?
+            WHERE id=? AND status='generating' AND claim_token=?
+              AND memory_retrieval_status='pending'
+            """,
+            (
+                memory_json,
+                memory_hash,
+                normalized_status,
+                prompt_json,
+                prompt_hash,
+                int(run_id),
+                str(claim_token),
+            ),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "student generation prompt claim changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        return dict(saved)
+
+
+def persist_class_commentary_student_generation_response(
+    run_id: int,
+    *,
+    claim_token: str,
+    response_snapshot: object,
+    structured_feedback_json: str,
+    structured_feedback_hash: str,
+) -> dict:
+    response_json = class_commentary_student_canonical_json(response_snapshot)
+    response_hash = _class_commentary_content_hash(response_json)
+    normalized_structured_json = str(structured_feedback_json or "").strip()
+    normalized_structured_hash = str(structured_feedback_hash or "").strip()
+    if not normalized_structured_json or not normalized_structured_hash:
+        raise ValueError("student generation structured response is required")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        run = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        if not run:
+            raise ValueError("student generation run not found")
+        if str(run["status"] or "") in {"response_received", "succeeded"}:
+            if (
+                str(run["response_hash"] or "") != response_hash
+                or str(run["structured_feedback_hash"] or "")
+                != normalized_structured_hash
+            ):
+                raise ClassCommentaryGenerationRequestConflict(
+                    "student generation response is already persisted"
+                )
+            return dict(run)
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_student_generation_runs
+            SET status='response_received', response_snapshot_json=?,
+                response_hash=?, structured_feedback_json=?,
+                structured_feedback_hash=?, error_code=NULL, next_attempt_at=NULL
+            WHERE id=? AND status='generating' AND claim_token=?
+            """,
+            (
+                response_json,
+                response_hash,
+                normalized_structured_json,
+                normalized_structured_hash,
+                int(run_id),
+                str(claim_token),
+            ),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "student generation response claim changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        return dict(saved)
+
+
+def complete_class_commentary_student_generation_run(
+    run_id: int,
+    *,
+    claim_token: str,
+    charge_usage_id: int,
+) -> dict:
+    with get_conn() as conn:
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_student_generation_runs
+            SET status='succeeded', charge_status='charged', charge_usage_id=?,
+                claim_token=NULL, claim_owner=NULL, next_attempt_at=NULL,
+                error_code=NULL, completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND status='response_received' AND claim_token=?
+              AND response_hash<>'' AND structured_feedback_hash<>''
+            """,
+            (int(charge_usage_id), int(run_id), str(claim_token)),
+        )
+        if updated.rowcount != 1:
+            run = conn.execute(
+                "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+                (int(run_id),),
+            ).fetchone()
+            if run and str(run["status"] or "") == "succeeded":
+                return dict(run)
+            raise ClassCommentaryGenerationRequestConflict(
+                "student generation charge claim changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        return dict(saved)
+
+
+def defer_class_commentary_student_generation_charge(
+    run_id: int,
+    *,
+    claim_token: str,
+    error_code: str,
+    retry_after_seconds: int = 300,
+) -> dict:
+    modifier = f"+{max(30, int(retry_after_seconds))} seconds"
+    with get_conn() as conn:
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_student_generation_runs
+            SET claim_token=NULL, claim_owner=NULL, error_code=?,
+                next_attempt_at=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?)
+            WHERE id=? AND status='response_received' AND claim_token=?
+            """,
+            (str(error_code or "charge_pending"), modifier, int(run_id), str(claim_token)),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "student generation charge deferral claim changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        return dict(saved)
+
+
+def fail_class_commentary_student_generation_charge(
+    run_id: int,
+    *,
+    claim_token: str,
+    error_code: str,
+) -> dict:
+    with get_conn() as conn:
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_student_generation_runs
+            SET status='failed', claim_token=NULL, claim_owner=NULL,
+                next_attempt_at=NULL, error_code=?,
+                completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND status='response_received' AND claim_token=?
+              AND charge_status='pending'
+            """,
+            (str(error_code or "charge_failed"), int(run_id), str(claim_token)),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "student generation charge failure claim changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        return dict(saved)
+
+
+def fail_class_commentary_student_generation_run(
+    run_id: int,
+    *,
+    claim_token: str,
+    error_code: str,
+    retryable: bool,
+    max_attempts: int = 3,
+    retry_after_seconds: int = 30,
+) -> dict:
+    modifier = f"+{max(1, int(retry_after_seconds))} seconds"
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        run = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        if not run:
+            raise ValueError("student generation run not found")
+        if str(run["status"] or "") in {"failed", "succeeded"}:
+            return dict(run)
+        if str(run["status"] or "") != "generating" or str(
+            run["claim_token"] or ""
+        ) != str(claim_token):
+            raise ClassCommentaryGenerationRequestConflict(
+                "student generation failure claim changed"
+            )
+        should_retry = bool(retryable) and int(run["attempt_count"] or 0) < max(
+            1, int(max_attempts)
+        )
+        next_status = "retry_wait" if should_retry else "failed"
+        conn.execute(
+            """
+            UPDATE class_commentary_student_generation_runs
+            SET status=?, claim_token=NULL, claim_owner=NULL, error_code=?,
+                next_attempt_at=CASE WHEN ?='retry_wait'
+                    THEN strftime('%Y-%m-%dT%H:%M:%fZ','now', ?) ELSE NULL END,
+                completed_at=CASE WHEN ?='failed'
+                    THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END,
+                memory_retrieval_status=CASE
+                    WHEN ?='failed' AND memory_retrieval_status='pending'
+                         AND ? LIKE 'memory_%'
+                    THEN 'failed' ELSE memory_retrieval_status END
+            WHERE id=? AND status='generating' AND claim_token=?
+            """,
+            (
+                next_status,
+                str(error_code or "student_generation_failed"),
+                next_status,
+                modifier,
+                next_status,
+                next_status,
+                str(error_code or ""),
+                int(run_id),
+                str(claim_token),
+            ),
+        )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (int(run_id),),
+        ).fetchone()
+        return dict(saved)
+
+
+def recover_stale_class_commentary_student_generation_runs(
+    *,
+    now: Optional[str] = None,
+    max_attempts: int = 3,
+) -> list[int]:
+    current = str(now or _class_commentary_utc_timestamp())
+    normalized_max_attempts = max(1, int(max_attempts))
+    failed_generation_ids: set[int] = set()
+    with get_conn() as conn:
+        stale_rows = conn.execute(
+            """
+            SELECT id, generation_id, status, attempt_count
+            FROM class_commentary_student_generation_runs
+            WHERE claim_token IS NOT NULL AND next_attempt_at IS NOT NULL
+              AND next_attempt_at<=?
+              AND status IN ('generating','response_received')
+            ORDER BY id
+            """,
+            (current,),
+        ).fetchall()
+        for row in stale_rows:
+            status = str(row["status"] or "")
+            exhausted = (
+                status == "generating"
+                and int(row["attempt_count"] or 0) >= normalized_max_attempts
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_student_generation_runs
+                SET status=?, claim_token=NULL, claim_owner=NULL,
+                    next_attempt_at=?, error_code=?,
+                    completed_at=CASE WHEN ?='failed'
+                        THEN strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                        ELSE completed_at END
+                WHERE id=? AND claim_token IS NOT NULL
+                """,
+                (
+                    "failed"
+                    if exhausted
+                    else "retry_wait"
+                    if status == "generating"
+                    else "response_received",
+                    None if exhausted else current,
+                    "worker_lease_attempts_exhausted"
+                    if exhausted
+                    else "worker_lease_expired",
+                    "failed" if exhausted else status,
+                    int(row["id"]),
+                ),
+            )
+            if exhausted:
+                failed_generation_ids.add(int(row["generation_id"]))
+    for generation_id in sorted(failed_generation_ids):
+        finalize_class_commentary_student_generation_parent(generation_id)
+    return [int(row["id"]) for row in stale_rows]
+
+
+def finalize_class_commentary_student_generation_parent(generation_id: int) -> dict:
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if str(generation["student_history_memory_mode"] or "") != (
+            CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+        ):
+            return _serialize_class_commentary_generation_row(generation)
+        runs = conn.execute(
+            """
+            SELECT * FROM class_commentary_student_generation_runs
+            WHERE generation_id=? ORDER BY id
+            """,
+            (int(generation_id),),
+        ).fetchall()
+        if not runs:
+            raise ValueError("isolated generation has no student runs")
+        statuses = [str(run["status"] or "") for run in runs]
+        if any(
+            status in {"queued", "generating", "retry_wait", "response_received"}
+            for status in statuses
+        ):
+            return _serialize_class_commentary_generation_row(generation)
+        if any(status == "failed" for status in statuses):
+            if str(generation["status"] or "") == "generating":
+                conn.execute(
+                    """
+                    UPDATE class_commentary_generations
+                    SET status='failed', error_code='student_run_failed',
+                        completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                    WHERE id=? AND status='generating'
+                    """,
+                    (int(generation_id),),
+                )
+                conn.execute(
+                    """
+                    UPDATE class_commentary_tasks
+                    SET status='failed', failure_stage='generation',
+                        generation_error='student_run_failed',
+                        updated_at=datetime('now','localtime')
+                    WHERE id=? AND latest_generation_id=?
+                    """,
+                    (int(generation["task_id"]), int(generation_id)),
+                )
+        elif all(status == "succeeded" for status in statuses):
+            roster = json.loads(str(generation["attending_roster_snapshot_json"] or "[]"))
+            run_by_student = {int(run["student_id"]): run for run in runs}
+            items = []
+            for roster_item in roster:
+                student_id = int(roster_item.get("student_id") or 0)
+                run = run_by_student.get(student_id)
+                if not run:
+                    raise ValueError("isolated generation roster coverage mismatch")
+                payload = json.loads(str(run["structured_feedback_json"] or "{}"))
+                response_items = payload.get("items") if isinstance(payload, dict) else None
+                if not isinstance(response_items, list) or len(response_items) != 1:
+                    raise ValueError("isolated student response is invalid")
+                items.append(dict(response_items[0]))
+            aggregate = {
+                "schema_version": CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+                "items": items,
+            }
+            canonical = canonicalize_class_commentary_structured_feedback(
+                structured_feedback=class_commentary_student_canonical_json(aggregate),
+                generation=dict(generation),
+            )
+            if str(generation["status"] or "") == "generating":
+                conn.execute(
+                    """
+                    UPDATE class_commentary_generations
+                    SET status='succeeded', structured_feedback_json=?,
+                        structured_feedback_hash=?, generated_feedback_text=?,
+                        error_code=NULL,
+                        completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                    WHERE id=? AND status='generating'
+                    """,
+                    (
+                        canonical["structured_feedback_json"],
+                        canonical["structured_feedback_hash"],
+                        canonical["derived_feedback_text"],
+                        int(generation_id),
+                    ),
+                )
+                conn.execute(
+                    """
+                    UPDATE class_commentary_tasks
+                    SET status='ready', failure_stage='', feedback_text=?,
+                        generation_error='', transcription_error='',
+                        updated_at=datetime('now','localtime')
+                    WHERE id=? AND latest_generation_id=?
+                      AND confirmed_transcript_version=?
+                    """,
+                    (
+                        canonical["derived_feedback_text"],
+                        int(generation["task_id"]),
+                        int(generation_id),
+                        int(generation["confirmed_transcript_version"]),
+                    ),
+                )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(saved)
+
+
+def retry_class_commentary_student_generation_runs(
+    generation_id: int,
+    *,
+    actor_user_id: int,
+    retry_request_id: str,
+    student_ids: Optional[list[int]] = None,
+) -> dict:
+    normalized_request_id = str(retry_request_id or "").strip()
+    if not normalized_request_id:
+        raise ValueError("retry_request_id is required")
+    requested_ids = (
+        sorted({int(student_id) for student_id in student_ids})
+        if student_ids is not None
+        else None
+    )
+    if requested_ids is not None and any(student_id <= 0 for student_id in requested_ids):
+        raise ValueError("student_ids is invalid")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if int(generation["teacher_user_id"] or 0) != int(actor_user_id):
+            raise ValueError("generation is not owned by actor")
+        if str(generation["student_history_memory_mode"] or "") != (
+            CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+        ):
+            raise ValueError("generation does not support student run retry")
+        existing = conn.execute(
+            """
+            SELECT * FROM class_commentary_student_generation_retry_events
+            WHERE organization_id=? AND retry_request_id=?
+            """,
+            (int(generation["organization_id"]), normalized_request_id),
+        ).fetchone()
+        if existing:
+            saved_ids = json.loads(str(existing["student_ids_json"] or "[]"))
+            if int(existing["generation_id"] or 0) != int(generation_id) or (
+                requested_ids is not None and requested_ids != saved_ids
+            ):
+                raise ClassCommentaryStudentGenerationRetryRequestConflict(
+                    "student generation retry request_id conflict"
+                )
+            result = _serialize_class_commentary_generation_row(generation)
+            result["is_idempotent"] = True
+            result["retried_student_ids"] = saved_ids
+            return result
+        failed_rows = conn.execute(
+            """
+            SELECT * FROM class_commentary_student_generation_runs
+            WHERE generation_id=? AND status='failed' ORDER BY id
+            """,
+            (int(generation_id),),
+        ).fetchall()
+        failed_ids = [int(row["student_id"]) for row in failed_rows]
+        target_ids = requested_ids if requested_ids is not None else failed_ids
+        if not target_ids or not set(target_ids).issubset(set(failed_ids)):
+            raise ValueError("student generation retry target is not failed")
+        payload = {
+            "generation_id": int(generation_id),
+            "student_ids": target_ids,
+        }
+        payload_hash = class_commentary_student_canonical_hash(payload)
+        conn.execute(
+            """
+            INSERT INTO class_commentary_student_generation_retry_events (
+                organization_id, generation_id, actor_user_id,
+                retry_request_id, retry_payload_hash, student_ids_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(generation["organization_id"]),
+                int(generation_id),
+                int(actor_user_id),
+                normalized_request_id,
+                payload_hash,
+                class_commentary_student_canonical_json(target_ids),
+            ),
+        )
+        placeholders = ",".join("?" for _ in target_ids)
+        conn.execute(
+            f"""
+            UPDATE class_commentary_student_generation_runs
+            SET status=CASE WHEN response_hash<>'' AND structured_feedback_hash<>''
+                    THEN 'response_received' ELSE 'retry_wait' END,
+                claim_token=NULL, claim_owner=NULL,
+                attempt_count=CASE
+                    WHEN response_hash<>'' AND structured_feedback_hash<>''
+                    THEN attempt_count ELSE 0 END,
+                next_attempt_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                error_code=NULL, completed_at=NULL,
+                memory_retrieval_status=CASE
+                    WHEN memory_retrieval_status='failed' THEN 'pending'
+                    ELSE memory_retrieval_status END,
+                memory_context_snapshot_json=CASE
+                    WHEN memory_retrieval_status='failed' THEN '{{}}'
+                    ELSE memory_context_snapshot_json END,
+                memory_context_hash=CASE
+                    WHEN memory_retrieval_status='failed'
+                    THEN '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
+                    ELSE memory_context_hash END,
+                prompt_payload_snapshot_json=CASE
+                    WHEN memory_retrieval_status='failed' THEN '{{}}'
+                    ELSE prompt_payload_snapshot_json END,
+                prompt_payload_hash=CASE
+                    WHEN memory_retrieval_status='failed'
+                    THEN '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
+                    ELSE prompt_payload_hash END
+            WHERE generation_id=? AND status='failed'
+              AND student_id IN ({placeholders})
+            """,
+            (int(generation_id), *target_ids),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET status='generating', error_code=NULL, completed_at=NULL
+            WHERE id=? AND status='failed'
+            """,
+            (int(generation_id),),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='generating', failure_stage='', generation_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND latest_generation_id=?
+            """,
+            (int(generation["task_id"]), int(generation_id)),
+        )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        result = _serialize_class_commentary_generation_row(saved)
+        result["is_idempotent"] = False
+        result["retried_student_ids"] = target_ids
+        return result
+
+
 def get_class_commentary_generation_by_request(
     task_id: int,
     generation_request_id: str,
@@ -11364,6 +12233,132 @@ def _validate_class_commentary_generation_execution_contract(
         raise ValueError("structured generation student history memory is not disabled")
 
 
+def _reserve_class_commentary_student_runs_conn(
+    conn: sqlite3.Connection,
+    *,
+    generation_id: int,
+    generation_request_id: str,
+    organization_id: int,
+    teacher_user_id: int,
+    class_id: int,
+    subject_key: str,
+    attending_roster: list[dict],
+    eligible_student_ids: list[int],
+    eligible_student_scope_hash: str,
+    student_mention_matcher_version: str,
+    confirmed_transcript_snapshot: str,
+    confirmed_transcript_hash: str,
+    prompt_version: str,
+    memory_mode: str,
+    provider: str,
+    model: str,
+    model_parameters_json: str,
+) -> list[dict]:
+    class_roster_rows = conn.execute(
+        """
+        SELECT student.id AS student_id, student.name AS student_name
+        FROM class_students AS membership
+        JOIN students AS student ON student.id=membership.student_id
+        WHERE membership.class_id=?
+          AND student.organization_id=?
+          AND student.status='active'
+        ORDER BY membership.id
+        """,
+        (class_id, organization_id),
+    ).fetchall()
+    privacy_roster = [dict(row) for row in class_roster_rows]
+    class_context = build_safe_class_context(
+        class_record={"id": int(class_id)},
+        subject_key=subject_key,
+    )
+    class_context_json = class_commentary_student_canonical_json(class_context)
+    class_context_hash = _class_commentary_content_hash(class_context_json)
+    run_rows = []
+    for roster_item in attending_roster:
+        student_id = int(roster_item["student_id"])
+        student_name = str(roster_item["student_name"])
+        evidence_snapshot = build_student_current_evidence(
+            transcript=confirmed_transcript_snapshot,
+            transcript_hash=confirmed_transcript_hash,
+            roster=privacy_roster,
+            target_student_id=student_id,
+            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+        )
+        evidence_hash = str(evidence_snapshot.pop("snapshot_hash"))
+        request_payload = {
+            "generation_id": int(generation_id),
+            "student_id": student_id,
+            "student_name": student_name,
+            "student_run_schema_version": CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1,
+            "current_evidence_hash": evidence_hash,
+            "class_context_hash": class_context_hash,
+            "eligible_student_ids": list(eligible_student_ids),
+            "eligible_student_scope_hash": eligible_student_scope_hash,
+            "student_mention_matcher_version": student_mention_matcher_version,
+            "prompt_version": prompt_version,
+            "memory_mode": memory_mode,
+            "provider": provider,
+            "model": model,
+            "model_parameters": json.loads(model_parameters_json),
+        }
+        request_payload_hash = class_commentary_student_canonical_hash(request_payload)
+        request_id = f"{generation_request_id}:student:{student_id}"
+        charge_request_key = _class_commentary_content_hash(
+            f"{teacher_user_id}:{request_id}:{request_payload_hash}:class_commentary_generate"
+        )
+        empty_json = class_commentary_student_canonical_json({})
+        empty_hash = _class_commentary_content_hash(empty_json)
+        cursor = conn.execute(
+            """
+            INSERT INTO class_commentary_student_generation_runs (
+                organization_id, generation_id, student_id,
+                student_name_snapshot, request_id, request_payload_hash,
+                student_run_schema_version, prompt_version, memory_mode,
+                eligible_student_ids_json, eligible_student_scope_hash,
+                student_mention_matcher_version,
+                class_context_snapshot_json, class_context_hash,
+                current_evidence_snapshot_json, current_evidence_hash,
+                memory_context_snapshot_json, memory_context_hash,
+                provider, model, model_parameters_json,
+                prompt_payload_snapshot_json, prompt_payload_hash,
+                charge_request_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                organization_id,
+                generation_id,
+                student_id,
+                student_name,
+                request_id,
+                request_payload_hash,
+                CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1,
+                prompt_version,
+                memory_mode,
+                class_commentary_student_canonical_json(eligible_student_ids),
+                eligible_student_scope_hash,
+                student_mention_matcher_version,
+                class_context_json,
+                class_context_hash,
+                class_commentary_student_canonical_json(evidence_snapshot),
+                evidence_hash,
+                empty_json,
+                empty_hash,
+                provider,
+                model,
+                model_parameters_json,
+                empty_json,
+                empty_hash,
+                charge_request_key,
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
+            (cursor.lastrowid,),
+        ).fetchone()
+        run_rows.append(dict(row))
+    return run_rows
+
+
 def reserve_class_commentary_generation(
     *,
     task_id: int,
@@ -11378,11 +12373,13 @@ def reserve_class_commentary_generation(
     memory_context: object = None,
     attending_roster_explicit: bool = True,
     structured_feedback_enabled: bool = False,
+    student_history_memory_mode: str = "",
 ) -> dict:
     normalized_request_id = str(generation_request_id or "").strip()
     normalized_provider = str(model_provider or "").strip()
     normalized_model = str(model_name or "").strip()
     normalized_prompt_version = str(prompt_version or "").strip()
+    requested_memory_mode = str(student_history_memory_mode or "").strip()
     if not normalized_request_id:
         raise ValueError("generation_request_id is required")
     if not normalized_provider or not normalized_model or not normalized_prompt_version:
@@ -11409,39 +12406,6 @@ def reserve_class_commentary_generation(
 
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        existing = conn.execute(
-            """
-            SELECT *
-            FROM class_commentary_generations
-            WHERE task_id=? AND generation_request_id=?
-            """,
-            (task_id, normalized_request_id),
-        ).fetchone()
-        if existing:
-            try:
-                saved_roster = json.loads(str(existing["attending_roster_snapshot_json"] or "[]"))
-            except (TypeError, json.JSONDecodeError):
-                saved_roster = []
-            saved_roster_ids = sorted(
-                int(item.get("student_id") or 0)
-                for item in saved_roster
-                if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
-            )
-            if (
-                int(existing["skill_registry_id"] or 0) != int(skill_registry_id)
-                or (
-                    attending_roster_explicit
-                    and saved_roster_ids != requested_roster_ids
-                )
-                or bool(existing["attending_roster_explicit"]) != attending_roster_explicit
-            ):
-                raise ClassCommentaryGenerationRequestConflict(
-                    "generation request_id was already used with a different payload"
-                )
-            item = _serialize_class_commentary_generation_row(existing)
-            item["is_idempotent"] = True
-            return item
-
         task = conn.execute(
             """
             SELECT task.*, class.organization_id AS class_organization_id,
@@ -11499,14 +12463,30 @@ def reserve_class_commentary_generation(
         eligible_student_scope_hash = ""
         student_mention_matcher_version = ""
         response_format: dict = {}
-        student_history_memory_mode = ""
+        frozen_memory_mode = ""
         if structured_feedback_enabled:
             feedback_schema_version = CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
             response_format = dict(CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT)
-            student_history_memory_mode = (
-                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
+            frozen_memory_mode = (
+                requested_memory_mode
+                or CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
             )
-            if normalized_prompt_version == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION:
+            if frozen_memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2:
+                if normalized_prompt_version != CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2:
+                    raise ValueError("isolated memory prompt version is invalid")
+                if not attending_roster_explicit:
+                    raise ValueError(
+                        "isolated memory attending roster scope must be explicit"
+                    )
+                student_mention_matcher_version = (
+                    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1
+                )
+                eligible_student_ids = resolve_class_commentary_attending_roster_student_ids(
+                    roster=roster_snapshot,
+                )
+            elif frozen_memory_mode != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1:
+                raise ValueError("structured feedback memory mode is invalid")
+            elif normalized_prompt_version == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION:
                 student_mention_matcher_version = (
                     CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1
                 )
@@ -11557,7 +12537,7 @@ def reserve_class_commentary_generation(
                         "response_format_json": _class_commentary_canonical_json(
                             response_format
                         ),
-                        "student_history_memory_mode": student_history_memory_mode,
+                        "student_history_memory_mode": frozen_memory_mode,
                         "student_mention_matcher_version": (
                             student_mention_matcher_version
                         ),
@@ -11583,7 +12563,7 @@ def reserve_class_commentary_generation(
             "response_format": response_format,
             "skill_registry_id": int(skill["registry_id"]),
             "skill_version_id": int(skill["version_id"]),
-            "student_history_memory_mode": student_history_memory_mode,
+            "student_history_memory_mode": frozen_memory_mode,
             "student_mention_matcher_version": student_mention_matcher_version,
             "subject_key": task["subject_key"],
             "task_id": int(task_id),
@@ -11591,6 +12571,24 @@ def reserve_class_commentary_generation(
         request_payload_hash = _class_commentary_content_hash(
             _class_commentary_canonical_json(request_payload)
         )
+        existing = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_generations
+            WHERE task_id=? AND generation_request_id=?
+            """,
+            (task_id, normalized_request_id),
+        ).fetchone()
+        if existing:
+            if str(existing["generation_request_payload_hash"] or "") != (
+                request_payload_hash
+            ):
+                raise ClassCommentaryGenerationRequestConflict(
+                    "generation request_id was already used with a different payload"
+                )
+            item = _serialize_class_commentary_generation_row(existing)
+            item["is_idempotent"] = True
+            return item
         generation_no = int(task["generation_seq"] or 0) + 1
         cursor = conn.execute(
             """
@@ -11644,7 +12642,7 @@ def reserve_class_commentary_generation(
                 eligible_student_scope_hash,
                 student_mention_matcher_version,
                 _class_commentary_canonical_json(response_format),
-                student_history_memory_mode,
+                frozen_memory_mode,
                 prompt_payload_json,
                 prompt_payload_hash,
                 memory_context_json,
@@ -11660,6 +12658,59 @@ def reserve_class_commentary_generation(
             ),
         )
         generation_id = int(cursor.lastrowid)
+        if frozen_memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2:
+            student_runs = _reserve_class_commentary_student_runs_conn(
+                conn,
+                generation_id=generation_id,
+                generation_request_id=normalized_request_id,
+                organization_id=organization_id,
+                teacher_user_id=teacher_user_id,
+                class_id=class_id,
+                subject_key=str(task["subject_key"] or ""),
+                attending_roster=roster_snapshot,
+                eligible_student_ids=eligible_student_ids,
+                eligible_student_scope_hash=eligible_student_scope_hash,
+                student_mention_matcher_version=student_mention_matcher_version,
+                confirmed_transcript_snapshot=transcript_snapshot,
+                confirmed_transcript_hash=transcript_hash,
+                prompt_version=normalized_prompt_version,
+                memory_mode=frozen_memory_mode,
+                provider=normalized_provider,
+                model=normalized_model,
+                model_parameters_json=model_parameters_json,
+            )
+            orchestration_snapshot = {
+                "kind": "class_commentary.student_generation_orchestration.v1",
+                "prompt_version": normalized_prompt_version,
+                "student_run_ids": [int(run["id"]) for run in student_runs],
+            }
+            parent_memory_snapshot = {
+                "student_history_memory_mode": frozen_memory_mode,
+                "student_run_count": len(student_runs),
+            }
+            prompt_snapshot_json = _class_commentary_canonical_json(
+                orchestration_snapshot
+            )
+            memory_snapshot_json = _class_commentary_canonical_json(
+                parent_memory_snapshot
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_generations
+                SET prompt_payload_snapshot_json=?, prompt_payload_hash=?,
+                    memory_context_snapshot_json=?, memory_context_hash=?,
+                    execution_snapshot_status='ready',
+                    execution_snapshot_finalized_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE id=? AND execution_snapshot_status='pending'
+                """,
+                (
+                    prompt_snapshot_json,
+                    _class_commentary_content_hash(prompt_snapshot_json),
+                    memory_snapshot_json,
+                    _class_commentary_content_hash(memory_snapshot_json),
+                    generation_id,
+                ),
+            )
         updated = conn.execute(
             """
             UPDATE class_commentary_tasks
@@ -14780,7 +15831,35 @@ def get_class_commentary_memory_records_by_ids(
             """,
             params,
         ).fetchall()
-    return [_serialize_class_commentary_memory_record(row) for row in rows]
+        evidence_rows = conn.execute(
+            f"""
+            SELECT evidence.id, evidence.memory_record_id, evidence.revision_id,
+                   evidence.evidence_hash, evidence.created_at
+            FROM class_commentary_memory_evidence AS evidence
+            JOIN class_commentary_memory_records AS record
+              ON record.id=evidence.memory_record_id
+            WHERE evidence.memory_record_id IN ({placeholders})
+              AND evidence.status='active' {organization_filter}
+            ORDER BY evidence.memory_record_id, evidence.created_at, evidence.id
+            """,
+            params,
+        ).fetchall()
+    evidence_by_record: dict[int, list[dict]] = {}
+    for evidence in evidence_rows:
+        evidence_by_record.setdefault(int(evidence["memory_record_id"]), []).append(
+            {
+                "evidence_id": int(evidence["id"]),
+                "revision_id": int(evidence["revision_id"]),
+                "evidence_hash": str(evidence["evidence_hash"]),
+                "created_at": str(evidence["created_at"] or ""),
+            }
+        )
+    records = []
+    for row in rows:
+        item = _serialize_class_commentary_memory_record(row)
+        item["active_evidence"] = evidence_by_record.get(int(item["id"]), [])
+        records.append(item)
+    return records
 
 
 def mark_class_commentary_memory_records_reconcile_needed(
@@ -16297,6 +17376,7 @@ def _count_student_profile_references(conn: sqlite3.Connection, student_id: int)
         "wrong_question_practice_pack_job_students",
         "weekly_wrong_question_followup_messages",
         "class_commentary_memory_records",
+        "class_commentary_student_generation_runs",
     ]
     total = 0
     for table in reference_tables:

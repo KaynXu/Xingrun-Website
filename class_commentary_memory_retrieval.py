@@ -4,9 +4,14 @@ import json
 from typing import Callable, Iterable, Mapping, Optional
 
 from class_commentary_memory import ClassCommentaryMemoryService
+from class_commentary_student_memory_v2 import build_student_memory_query
 
 
 CLASS_COMMENTARY_MEMORY_MIN_CONFIDENCE = 0.7
+
+
+class ClassCommentaryStudentMemoryRetrievalError(RuntimeError):
+    pass
 
 
 def empty_class_commentary_memory_context(
@@ -261,3 +266,252 @@ def retrieve_class_commentary_memory_context(
     if student_history_memory_mode:
         context["student_history_memory_mode"] = student_history_memory_mode
     return context
+
+
+def retrieve_isolated_student_memory_context(
+    *,
+    generation: Mapping[str, object],
+    student_id: int,
+    evidence_snapshot: Mapping[str, object],
+    class_context: Mapping[str, object],
+    record_loader: Callable[[list[int]], list[dict]],
+    memory_service: Optional[ClassCommentaryMemoryService] = None,
+    reconciliation_marker: Optional[Callable[[int, list[int], str], object]] = None,
+) -> dict:
+    organization_id = _positive_int(generation.get("organization_id"))
+    skill_registry_id = _positive_int(generation.get("skill_registry_id"))
+    subject_key = str(generation.get("subject_key") or "").strip()
+    target_student_id = _positive_int(student_id)
+    if not organization_id or not skill_registry_id or not target_student_id:
+        raise ClassCommentaryStudentMemoryRetrievalError(
+            "isolated_generation_scope_unavailable"
+        )
+    if not subject_key:
+        context = empty_class_commentary_memory_context(
+            student_history_memory_mode="isolated_v2"
+        )
+        context["retrieval_status"] = "degraded"
+        context["degraded_reason"] = "subject_unavailable"
+        return context
+    service = memory_service or ClassCommentaryMemoryService()
+    if not service.enabled:
+        raise ClassCommentaryStudentMemoryRetrievalError("memory_disabled")
+    query = build_student_memory_query(
+        evidence_snapshot=evidence_snapshot,
+        class_context=class_context,
+    )
+    try:
+        style_candidates = service.search_style(
+            query,
+            organization_id=organization_id,
+            scope_skill_registry_id=skill_registry_id,
+        )
+        student_candidates = service.search_student(
+            query,
+            organization_id=organization_id,
+            student_id=target_student_id,
+            subject_key=subject_key,
+        )
+    except Exception as exc:
+        raise ClassCommentaryStudentMemoryRetrievalError(
+            f"mem0_{type(exc).__name__}"
+        ) from exc
+    candidate_ids = sorted(
+        {
+            _candidate_record_id(candidate)
+            for candidate in [*style_candidates, *student_candidates]
+            if _candidate_record_id(candidate)
+        }
+    )
+    records = _record_map(record_loader(candidate_ids)) if candidate_ids else {}
+    invalid_ids = set()
+    accepted_style = []
+    accepted_student = []
+    used_chars = 0
+    char_limit = int(service.settings.context_char_limit)
+    style_limit = max(1, int(getattr(service.settings, "style_limit", 5) or 5))
+    student_limit = max(1, int(getattr(service.settings, "student_limit", 5) or 5))
+
+    def accept(candidate: Mapping[str, object], *, memory_type: str) -> None:
+        nonlocal used_chars
+        metadata = candidate.get("metadata")
+        if not isinstance(metadata, Mapping):
+            return
+        record_id = _candidate_record_id(candidate)
+        record = records.get(record_id)
+        if not record:
+            invalid_ids.add(record_id)
+            return
+        active_evidence = record.get("active_evidence")
+        scope_valid = (
+            _positive_int(metadata.get("organization_id")) == organization_id
+            and str(metadata.get("memory_type") or "") == memory_type
+            and str(metadata.get("status") or "") == "active"
+            and _positive_int(record.get("organization_id")) == organization_id
+            and str(record.get("memory_type") or "") == memory_type
+            and str(record.get("desired_status") or "") == "active"
+            and str(record.get("applied_status") or "") == "active"
+            and str(record.get("mem0_memory_id") or "")
+            == str(candidate.get("id") or "")
+            and _positive_int(record.get("record_version"))
+            == _positive_int(metadata.get("record_version"))
+            and isinstance(active_evidence, list)
+            and bool(active_evidence)
+            and _positive_int(record.get("active_evidence_count"))
+            == len(active_evidence)
+            and _positive_int(metadata.get("evidence_count"))
+            == len(active_evidence)
+        )
+        if memory_type == "student_fact":
+            scope_valid = (
+                scope_valid
+                and _positive_int(metadata.get("student_id")) == target_student_id
+                and str(metadata.get("subject_key") or "") == subject_key
+                and metadata.get("scope_skill_registry_id") is None
+                and _positive_int(record.get("student_id")) == target_student_id
+                and str(record.get("subject_key") or "") == subject_key
+                and record.get("scope_skill_registry_id") is None
+            )
+        else:
+            scope_valid = (
+                scope_valid
+                and _positive_int(metadata.get("scope_skill_registry_id"))
+                == skill_registry_id
+                and metadata.get("student_id") is None
+                and metadata.get("subject_key") is None
+                and _positive_int(record.get("scope_skill_registry_id"))
+                == skill_registry_id
+                and record.get("student_id") is None
+                and record.get("subject_key") is None
+            )
+        if not scope_valid:
+            invalid_ids.add(record_id)
+            return
+        try:
+            confidence = float(record.get("confidence") or 0)
+        except (TypeError, ValueError):
+            confidence = 0
+        memory_text = str(record.get("memory_text") or "").strip()
+        if (
+            confidence < CLASS_COMMENTARY_MEMORY_MIN_CONFIDENCE
+            or not memory_text
+            or used_chars + len(memory_text) > char_limit
+        ):
+            return
+        used_chars += len(memory_text)
+        item = {
+            "memory_record_id": record_id,
+            "mem0_memory_id": str(candidate.get("id") or ""),
+            "memory_text": memory_text,
+            "confidence": confidence,
+            "record_version": _positive_int(record.get("record_version")),
+            "created_from_revision_id": _positive_int(
+                record.get("created_from_revision_id")
+            ),
+            "created_at": str(record.get("created_at") or ""),
+            "active_evidence": list(active_evidence),
+            "memory_type": memory_type,
+        }
+        if memory_type == "student_fact":
+            item["student_id"] = target_student_id
+            item["subject_key"] = subject_key
+            accepted_student.append(item)
+        else:
+            item["scope_skill_registry_id"] = skill_registry_id
+            accepted_style.append(item)
+
+    for candidate in style_candidates[:style_limit]:
+        accept(candidate, memory_type="teacher_style")
+    for candidate in student_candidates[:student_limit]:
+        accept(candidate, memory_type="student_fact")
+    invalid_ids.discard(0)
+    if invalid_ids and reconciliation_marker:
+        reconciliation_marker(
+            organization_id,
+            sorted(invalid_ids),
+            "retrieval_projection_mismatch",
+        )
+    records_snapshot = [*accepted_style, *accepted_student]
+    return {
+        "records": records_snapshot,
+        "rendered_text": "",
+        "student_history_memories": accepted_student,
+        "teacher_style_memories": accepted_style,
+        "retrieval_status": "ready" if records_snapshot else "empty",
+        "degraded_reason": "",
+        "student_history_memory_mode": "isolated_v2",
+    }
+
+
+def validate_isolated_student_memory_context_snapshot(
+    *,
+    generation: Mapping[str, object],
+    student_id: int,
+    memory_context: Mapping[str, object],
+    record_loader: Callable[[list[int]], list[dict]],
+) -> None:
+    organization_id = _positive_int(generation.get("organization_id"))
+    skill_registry_id = _positive_int(generation.get("skill_registry_id"))
+    target_student_id = _positive_int(student_id)
+    subject_key = str(generation.get("subject_key") or "").strip()
+    snapshot_records = memory_context.get("records")
+    if not isinstance(snapshot_records, list):
+        raise ClassCommentaryStudentMemoryRetrievalError("memory_snapshot_invalid")
+    record_ids = sorted(
+        {
+            _positive_int(record.get("memory_record_id"))
+            for record in snapshot_records
+            if isinstance(record, Mapping)
+        }
+    )
+    current_records = _record_map(record_loader(record_ids)) if record_ids else {}
+    if len(current_records) != len(record_ids):
+        raise ClassCommentaryStudentMemoryRetrievalError("memory_snapshot_stale")
+    for snapshot in snapshot_records:
+        if not isinstance(snapshot, Mapping):
+            raise ClassCommentaryStudentMemoryRetrievalError("memory_snapshot_invalid")
+        record_id = _positive_int(snapshot.get("memory_record_id"))
+        current = current_records.get(record_id)
+        memory_type = str(snapshot.get("memory_type") or "")
+        active_evidence = current.get("active_evidence") if current else None
+        valid = bool(
+            current
+            and _positive_int(current.get("organization_id")) == organization_id
+            and str(current.get("memory_type") or "") == memory_type
+            and str(current.get("desired_status") or "") == "active"
+            and str(current.get("applied_status") or "") == "active"
+            and str(current.get("mem0_memory_id") or "")
+            == str(snapshot.get("mem0_memory_id") or "")
+            and _positive_int(current.get("record_version"))
+            == _positive_int(snapshot.get("record_version"))
+            and str(current.get("memory_text") or "")
+            == str(snapshot.get("memory_text") or "")
+            and isinstance(active_evidence, list)
+            and bool(active_evidence)
+            and _positive_int(current.get("active_evidence_count"))
+            == len(active_evidence)
+            and active_evidence == snapshot.get("active_evidence")
+            and _positive_int(current.get("created_from_revision_id"))
+            == _positive_int(snapshot.get("created_from_revision_id"))
+        )
+        if memory_type == "student_fact":
+            valid = bool(
+                valid
+                and _positive_int(current.get("student_id")) == target_student_id
+                and str(current.get("subject_key") or "") == subject_key
+                and current.get("scope_skill_registry_id") is None
+            )
+        elif memory_type == "teacher_style":
+            valid = bool(
+                valid
+                and _positive_int(current.get("scope_skill_registry_id"))
+                == skill_registry_id
+                and current.get("student_id") is None
+                and current.get("subject_key") is None
+            )
+        else:
+            valid = False
+        if not valid:
+            raise ClassCommentaryStudentMemoryRetrievalError(
+                "memory_snapshot_stale"
+            )
