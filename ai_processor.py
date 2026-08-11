@@ -2484,6 +2484,80 @@ def extract_class_commentary_memory_signals(
     return payload
 
 
+def extract_class_commentary_learning_events(
+    *,
+    extraction_input: dict,
+    provider: str = "",
+    model: str = "",
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: str = "",
+    include_usage: bool = False,
+):
+    """Extract untrusted learning-event candidates for one server-scoped student."""
+
+    provider = normalize_chat_provider(provider or _provider_name())
+    model = _get_chat_model(provider, model)
+    client = _get_class_commentary_client(
+        provider,
+        openai_api_key,
+        openai_base_url,
+        openai_headers,
+    )
+    system_prompt = (
+        "You extract candidate learning observations from one teacher-confirmed feedback item. "
+        "Return exactly one JSON object with schema_version student_learning_event.v1 and an items array. "
+        "Use only a supplied knowledge_point_key from registry, or set knowledge_point_key to null and "
+        "return a short unmapped_candidate. Never create a knowledge point or any student, organization, "
+        "lesson, task, generation, revision, or teacher identity. observed_state must be one of unknown, weak, "
+        "developing, secure, mastered. reported_trend must be new_observation, regressed, stable, or improved. "
+        "Every item must include an exact non-empty evidence_quote copied from feedback_text, zero-based "
+        "evidence_start_offset, exclusive evidence_end_offset, and SHA-256 evidence_content_hash. "
+        "teaching_methods and next_steps must contain only exact substrings explicitly stated in feedback_text. "
+        "teaching_method_causal_supported may be true only when the feedback explicitly says that a named "
+        "method caused the observed state or change. When true, teaching_method_causal_evidence must contain "
+        "one object per supported method with method_text plus an exact non-empty evidence_quote, zero-based "
+        "offsets, and SHA-256 hash for that causal sentence. Otherwise return false and an empty causal evidence "
+        "list. Do not infer causality from co-occurrence. Do not output "
+        "state_before; the server derives prior state from canonical history."
+    )
+    safe_input = {
+        "feedback_text": str(extraction_input.get("feedback_text") or ""),
+        "subject_key": str(extraction_input.get("subject_key") or ""),
+        "registry": extraction_input.get("registry") or [],
+        "schema": {
+            "schema_version": "student_learning_event.v1",
+            "item_fields": [
+                "knowledge_point_key",
+                "unmapped_candidate",
+                "observed_state",
+                "reported_trend",
+                "evidence_quote",
+                "evidence_start_offset",
+                "evidence_end_offset",
+                "evidence_content_hash",
+                "teaching_methods",
+                "next_steps",
+                "teaching_method_causal_supported",
+                "teaching_method_causal_evidence",
+            ],
+        },
+    }
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(safe_input, ensure_ascii=False, sort_keys=True)},
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    payload = _loads_model_json(response.choices[0].message.content)
+    if include_usage:
+        return payload, _usage_dict(response, provider=provider, model_fallback=model)
+    return payload
+
+
 def generate_class_commentary_skill_candidate(
     *,
     candidate_input: dict,

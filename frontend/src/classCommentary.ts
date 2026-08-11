@@ -32,6 +32,9 @@ export type ClassCommentaryCapabilities = {
   structured_feedback_enabled: boolean;
   student_history_memory_v2_enabled: boolean;
   student_history_memory_v2_max_credits_per_student: number;
+  graph_enabled: boolean;
+  graph_healthy: boolean;
+  graph_degraded: boolean;
 };
 
 export type ClassCommentaryCapabilitiesLoadResult = {
@@ -45,6 +48,9 @@ const unavailableClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   structured_feedback_enabled: false,
   student_history_memory_v2_enabled: false,
   student_history_memory_v2_max_credits_per_student: 0,
+  graph_enabled: false,
+  graph_healthy: false,
+  graph_degraded: false,
 };
 
 export type ClassCommentaryTask = {
@@ -52,6 +58,7 @@ export type ClassCommentaryTask = {
   organization_id: number;
   class_id: number;
   class_name: string;
+  subject_key: string;
   teacher_user_id: number;
   status: ClassCommentaryStatus;
   failure_stage: ClassCommentaryFailureStage;
@@ -179,6 +186,7 @@ export type ClassCommentaryGeneration = ClassCommentaryFeedbackReadEnvelope & {
   model_parameters: Record<string, unknown>;
   prompt_payload_snapshot: Record<string, unknown>;
   memory_context_snapshot: Record<string, unknown>;
+  used_graph_evidence_refs: string[];
   error_code: string;
   created_at: string;
   completed_at: string;
@@ -227,6 +235,55 @@ export type ClassCommentaryGenerationResult = {
 export type ClassCommentaryConfirmationResult = {
   revision: ClassCommentaryFeedbackRevision;
   draft: ClassCommentaryFeedbackDraft;
+};
+
+export type ClassCommentaryGraphLearningStatus = 'pending' | 'learned' | 'needs_mapping' | 'failed';
+
+export type ClassCommentaryObservedLearningState = 'unknown' | 'weak' | 'developing' | 'secure' | 'mastered';
+
+export type ClassCommentaryLearningTrend = 'new_observation' | 'regressed' | 'stable' | 'improved';
+
+export type ClassCommentaryStudentGraphCurrentState = {
+  knowledge_point_key: string;
+  knowledge_point_name: string;
+  state: ClassCommentaryObservedLearningState;
+  observed_at: string;
+};
+
+export type ClassCommentaryStudentGraphEvidence = {
+  evidence_ref: string;
+  quote: string;
+  lesson_id: number;
+  lesson_name: string;
+  revision_id: number;
+  revision_no: number;
+  confirmed_at: string;
+};
+
+export type ClassCommentaryStudentGraphTimelineEvent = {
+  event_ref: string;
+  knowledge_point_key: string;
+  knowledge_point_name: string;
+  state: ClassCommentaryObservedLearningState;
+  previous_state: ClassCommentaryObservedLearningState | null;
+  trend: ClassCommentaryLearningTrend;
+  observed_at: string;
+  evidence: ClassCommentaryStudentGraphEvidence;
+  teaching_methods: string[];
+  next_steps: string[];
+};
+
+export type ClassCommentaryStudentLearningGraphSummary = {
+  task_id: number;
+  student_id: number;
+  subject_key: string;
+  sync_status: ClassCommentaryGraphLearningStatus;
+  can_retry: boolean;
+  error: string;
+  current_states: ClassCommentaryStudentGraphCurrentState[];
+  timeline: ClassCommentaryStudentGraphTimelineEvent[];
+  used_graph_evidence_refs: string[];
+  used_graph_evidence: ClassCommentaryStudentGraphEvidence[];
 };
 
 export type ClassCommentaryMemoryStatus =
@@ -384,6 +441,25 @@ const validStatuses = new Set<ClassCommentaryStatus>([
   'failed',
 ]);
 const validFailureStages = new Set<ClassCommentaryFailureStage>(['', 'transcription', 'generation']);
+const validGraphLearningStatuses = new Set<ClassCommentaryGraphLearningStatus>([
+  'pending',
+  'learned',
+  'needs_mapping',
+  'failed',
+]);
+const validObservedLearningStates = new Set<ClassCommentaryObservedLearningState>([
+  'unknown',
+  'weak',
+  'developing',
+  'secure',
+  'mastered',
+]);
+const validLearningTrends = new Set<ClassCommentaryLearningTrend>([
+  'new_observation',
+  'regressed',
+  'stable',
+  'improved',
+]);
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -417,6 +493,40 @@ function numberArrayValue(value: unknown): number[] {
 function nonNegativeIntegerValue(value: unknown): number {
   const normalized = numberValue(value);
   return Number.isInteger(normalized) && normalized >= 0 ? normalized : 0;
+}
+
+function requiredStringValue(value: unknown, fieldName: string): string {
+  const normalized = stringValue(value).trim();
+  if (!normalized) {
+    throw new Error(`学习轨迹响应缺少 ${fieldName}`);
+  }
+  return normalized;
+}
+
+function requiredPositiveIntegerValue(value: unknown, fieldName: string): number {
+  const normalized = numberValue(value);
+  if (!Number.isInteger(normalized) || normalized <= 0) {
+    throw new Error(`学习轨迹响应中的 ${fieldName} 无效`);
+  }
+  return normalized;
+}
+
+function strictStringArrayValue(value: unknown, fieldName: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`学习轨迹响应中的 ${fieldName} 无效`);
+  }
+  return value.map((item) => requiredStringValue(item, fieldName));
+}
+
+function normalizeObservedLearningState(
+  value: unknown,
+  fieldName: string,
+): ClassCommentaryObservedLearningState {
+  const normalized = stringValue(value) as ClassCommentaryObservedLearningState;
+  if (!validObservedLearningStates.has(normalized)) {
+    throw new Error(`学习轨迹响应中的 ${fieldName} 无效`);
+  }
+  return normalized;
 }
 
 const validStudentGenerationRunStatuses = new Set<ClassCommentaryStudentGenerationRunStatus>([
@@ -498,6 +608,7 @@ export function normalizeClassCommentaryTask(source: Record<string, unknown>): C
     organization_id: numberValue(source.organization_id),
     class_id: numberValue(source.class_id),
     class_name: stringValue(source.class_name),
+    subject_key: stringValue(source.subject_key),
     teacher_user_id: numberValue(source.teacher_user_id),
     status: validStatuses.has(status) ? status : 'uploaded',
     failure_stage: validFailureStages.has(failureStage) ? failureStage : '',
@@ -551,6 +662,21 @@ export function isClassCommentaryFeedbackRecordInScope(
     && generationId > 0
     && record?.task_id === taskId
     && record.generation_id === generationId;
+}
+
+export function isClassCommentaryStudentLearningGraphSummaryInScope(
+  summary: ClassCommentaryStudentLearningGraphSummary | null | undefined,
+  taskId: number,
+  studentId: number,
+  subjectKey: string,
+): boolean {
+  const normalizedSubjectKey = subjectKey.trim();
+  return taskId > 0
+    && studentId > 0
+    && Boolean(normalizedSubjectKey)
+    && summary?.task_id === taskId
+    && summary.student_id === studentId
+    && summary.subject_key === normalizedSubjectKey;
 }
 
 export function buildClassCommentaryFeedbackWorkspaceKey(taskId: number, generationId: number): string {
@@ -813,6 +939,7 @@ export function normalizeClassCommentaryGeneration(source: Record<string, unknow
     model_parameters: recordValue(source.model_parameters),
     prompt_payload_snapshot: recordValue(source.prompt_payload_snapshot),
     memory_context_snapshot: recordValue(source.memory_context_snapshot),
+    used_graph_evidence_refs: stringArrayValue(source.used_graph_evidence_refs),
     error_code: stringValue(source.error_code),
     created_at: stringValue(source.created_at),
     completed_at: stringValue(source.completed_at),
@@ -864,6 +991,92 @@ export function normalizeClassCommentaryFeedbackRevision(source: Record<string, 
     confirmed_draft_version: numberValue(source.confirmed_draft_version || source.draft_version),
     draft_version: numberValue(source.draft_version || source.confirmed_draft_version),
     ...feedbackEnvelope,
+  };
+}
+
+export function normalizeClassCommentaryStudentLearningGraphSummary(
+  source: Record<string, unknown>,
+): ClassCommentaryStudentLearningGraphSummary {
+  const syncStatus = stringValue(source.sync_status) as ClassCommentaryGraphLearningStatus;
+  if (!validGraphLearningStatuses.has(syncStatus)) {
+    throw new Error('学习轨迹响应中的 sync_status 无效');
+  }
+  if (!Array.isArray(source.current_states) || !Array.isArray(source.timeline)) {
+    throw new Error('学习轨迹响应中的事件列表无效');
+  }
+
+  const currentStates = source.current_states.map((rawState) => {
+    const state = recordValue(rawState);
+    return {
+      knowledge_point_key: requiredStringValue(state.knowledge_point_key, 'knowledge_point_key'),
+      knowledge_point_name: requiredStringValue(state.knowledge_point_name, 'knowledge_point_name'),
+      state: normalizeObservedLearningState(state.state, 'state'),
+      observed_at: requiredStringValue(state.observed_at, 'observed_at'),
+    } satisfies ClassCommentaryStudentGraphCurrentState;
+  });
+
+  const timeline = source.timeline.map((rawEvent) => {
+    const event = recordValue(rawEvent);
+    const evidence = recordValue(event.evidence);
+    const previousStateValue = stringValue(event.previous_state);
+    const trend = stringValue(event.trend) as ClassCommentaryLearningTrend;
+    if (!validLearningTrends.has(trend)) {
+      throw new Error('学习轨迹响应中的 trend 无效');
+    }
+    return {
+      event_ref: requiredStringValue(event.event_ref, 'event_ref'),
+      knowledge_point_key: requiredStringValue(event.knowledge_point_key, 'knowledge_point_key'),
+      knowledge_point_name: requiredStringValue(event.knowledge_point_name, 'knowledge_point_name'),
+      state: normalizeObservedLearningState(event.state, 'state'),
+      previous_state: previousStateValue
+        ? normalizeObservedLearningState(previousStateValue, 'previous_state')
+        : null,
+      trend,
+      observed_at: requiredStringValue(event.observed_at, 'observed_at'),
+      evidence: {
+        evidence_ref: requiredStringValue(evidence.evidence_ref, 'evidence_ref'),
+        quote: requiredStringValue(evidence.quote, 'evidence quote'),
+        lesson_id: requiredPositiveIntegerValue(evidence.lesson_id, 'lesson_id'),
+        lesson_name: requiredStringValue(evidence.lesson_name, 'lesson_name'),
+        revision_id: requiredPositiveIntegerValue(evidence.revision_id, 'revision_id'),
+        revision_no: requiredPositiveIntegerValue(evidence.revision_no, 'revision_no'),
+        confirmed_at: requiredStringValue(evidence.confirmed_at, 'confirmed_at'),
+      },
+      teaching_methods: strictStringArrayValue(event.teaching_methods, 'teaching_methods'),
+      next_steps: strictStringArrayValue(event.next_steps, 'next_steps'),
+    } satisfies ClassCommentaryStudentGraphTimelineEvent;
+  });
+
+  if (!Array.isArray(source.used_graph_evidence)) {
+    throw new Error('学习轨迹响应中的引用证据列表无效');
+  }
+  const usedGraphEvidence = source.used_graph_evidence.map((rawEvidence) => {
+    const evidence = recordValue(rawEvidence);
+    return {
+      evidence_ref: requiredStringValue(evidence.evidence_ref, 'evidence_ref'),
+      quote: requiredStringValue(evidence.quote, 'evidence quote'),
+      lesson_id: requiredPositiveIntegerValue(evidence.lesson_id, 'lesson_id'),
+      lesson_name: requiredStringValue(evidence.lesson_name, 'lesson_name'),
+      revision_id: requiredPositiveIntegerValue(evidence.revision_id, 'revision_id'),
+      revision_no: requiredPositiveIntegerValue(evidence.revision_no, 'revision_no'),
+      confirmed_at: requiredStringValue(evidence.confirmed_at, 'confirmed_at'),
+    } satisfies ClassCommentaryStudentGraphEvidence;
+  });
+
+  return {
+    task_id: requiredPositiveIntegerValue(source.task_id, 'task_id'),
+    student_id: requiredPositiveIntegerValue(source.student_id, 'student_id'),
+    subject_key: requiredStringValue(source.subject_key, 'subject_key'),
+    sync_status: syncStatus,
+    can_retry: booleanValue(source.can_retry),
+    error: stringValue(source.error),
+    current_states: currentStates,
+    timeline,
+    used_graph_evidence_refs: strictStringArrayValue(
+      source.used_graph_evidence_refs,
+      'used_graph_evidence_refs',
+    ),
+    used_graph_evidence: usedGraphEvidence,
   };
 }
 
@@ -1093,6 +1306,9 @@ export async function fetchClassCommentaryCapabilities(): Promise<ClassCommentar
     student_history_memory_v2_max_credits_per_student: nonNegativeIntegerValue(
       payload.student_history_memory_v2_max_credits_per_student,
     ),
+    graph_enabled: payload.graph_enabled === true,
+    graph_healthy: payload.graph_healthy === true,
+    graph_degraded: payload.graph_degraded === true,
   };
 }
 
@@ -1290,6 +1506,43 @@ export async function fetchClassCommentaryFeedbackRevisions(
   );
   return (Array.isArray(payload.revisions) ? payload.revisions : [])
     .map((item) => normalizeClassCommentaryFeedbackRevision(recordValue(item)));
+}
+
+export function buildClassCommentaryStudentLearningGraphPath(
+  taskId: number,
+  studentId: number,
+  generationId?: number | null,
+): string {
+  const path = `${buildClassCommentaryTaskPath(taskId)}/students/${encodeURIComponent(String(studentId))}/learning-graph`;
+  return generationId && generationId > 0
+    ? `${path}?generation_id=${encodeURIComponent(String(generationId))}`
+    : path;
+}
+
+export async function fetchClassCommentaryStudentLearningGraph(
+  taskId: number,
+  studentId: number,
+  generationId?: number | null,
+): Promise<ClassCommentaryStudentLearningGraphSummary> {
+  const payload = await apiFetch<Record<string, unknown>>(
+    buildClassCommentaryStudentLearningGraphPath(taskId, studentId, generationId),
+  );
+  return normalizeClassCommentaryStudentLearningGraphSummary(
+    recordValue(payload.learning_graph || payload),
+  );
+}
+
+export async function retryClassCommentaryRevisionLearningGraph(
+  revisionId: number,
+  requestId: string,
+): Promise<void> {
+  await apiFetch<Record<string, unknown>>(
+    `/api/class-commentary/revisions/${encodeURIComponent(String(revisionId))}/graph-retry`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ request_id: requestId }),
+    },
+  );
 }
 
 export async function fetchClassCommentaryRevisionMemories(

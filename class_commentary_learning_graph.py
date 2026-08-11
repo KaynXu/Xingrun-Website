@@ -1,0 +1,2202 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import sqlite3
+import unicodedata
+import uuid
+from datetime import datetime, timezone
+from typing import Iterable, Mapping, Optional
+
+
+GRAPH_EVENT_SCHEMA_VERSION = "student_learning_event.v1"
+GRAPH_EXTRACTOR_VERSION = "class_commentary.learning_graph.extractor.v1"
+GRAPH_PROMPT_VERSION = "class_commentary.learning_graph.prompt.v2"
+GRAPH_REGISTRY_VERSION = 1
+LEARNING_STATES = ("unknown", "weak", "developing", "secure", "mastered")
+LEARNING_TRENDS = ("new_observation", "regressed", "stable", "improved")
+STATE_RANK = {value: index for index, value in enumerate(LEARNING_STATES)}
+
+_BUILTIN_KNOWLEDGE_POINTS = (
+    {
+        "knowledge_point_key": "math.quadratic_function_graph",
+        "subject_key": "math",
+        "canonical_name": "二次函数图像",
+        "aliases": ["二次函数图像", "二次函数的图像", "quadratic function graph"],
+        "parent_key": None,
+    },
+    {
+        "knowledge_point_key": "math.derivative_basics",
+        "subject_key": "math",
+        "canonical_name": "导数基础",
+        "aliases": ["导数基础", "导数的基础", "derivative basics"],
+        "parent_key": None,
+    },
+)
+
+
+class LearningGraphValidationError(ValueError):
+    pass
+
+
+class LearningGraphRetryConflict(ValueError):
+    pass
+
+
+def canonical_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def content_hash(value: object) -> str:
+    text = value if isinstance(value, str) else canonical_json(value)
+    return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
+
+
+def _graph_sync_payload_hash(payload: Mapping[str, object]) -> str:
+    # Supersession is represented by the newer event's immutable
+    # previous_event_id edges. These two lifecycle projection fields can
+    # legitimately change after an older event's outbox row was created and
+    # are not consumed by the Semantica adapter.
+    immutable_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"desired_status", "superseded_by_event_id"}
+    }
+    desired_status = str(payload.get("desired_status") or "")
+    immutable_payload["graph_deleted"] = desired_status == "deleted" or (
+        desired_status == "superseded"
+        and not str(payload.get("superseded_by_event_id") or "").strip()
+    )
+    return content_hash(immutable_payload)
+
+
+def normalize_knowledge_point_alias(value: object) -> str:
+    normalized = unicodedata.normalize("NFKC", str(value or ""))
+    return " ".join(normalized.split()).casefold()
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _conn():
+    import lesson_manager
+
+    return lesson_manager.get_conn()
+
+
+def _json_object(value: object) -> dict:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, Mapping) else {}
+    return {}
+
+
+def _json_list(value: object) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def ensure_class_commentary_graph_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS class_commentary_knowledge_points (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            knowledge_point_key TEXT NOT NULL,
+            subject_key TEXT NOT NULL,
+            canonical_name TEXT NOT NULL,
+            parent_key TEXT,
+            registry_version INTEGER NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(organization_id, knowledge_point_key),
+            CHECK(active IN (0,1)),
+            CHECK(registry_version >= 1),
+            CHECK(knowledge_point_key<>''),
+            CHECK(subject_key<>''),
+            CHECK(canonical_name<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_knowledge_point_aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            knowledge_point_id INTEGER NOT NULL REFERENCES class_commentary_knowledge_points(id) ON DELETE CASCADE,
+            subject_key TEXT NOT NULL,
+            alias TEXT NOT NULL,
+            normalized_alias TEXT NOT NULL,
+            registry_version INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(organization_id, subject_key, normalized_alias),
+            CHECK(alias<>''),
+            CHECK(normalized_alias<>''),
+            CHECK(registry_version >= 1)
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_graph_extraction_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            revision_id INTEGER NOT NULL REFERENCES class_commentary_revisions(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES class_commentary_tasks(id) ON DELETE CASCADE,
+            generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
+            request_key TEXT NOT NULL,
+            extractor_version TEXT NOT NULL,
+            prompt_version TEXT NOT NULL,
+            event_schema_version TEXT NOT NULL,
+            registry_version INTEGER NOT NULL,
+            extraction_input_hash TEXT NOT NULL,
+            source_revision_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            claim_token TEXT,
+            claim_owner TEXT,
+            lease_until TEXT,
+            rq_job_id TEXT,
+            enqueued_at TEXT,
+            next_attempt_at TEXT,
+            last_error TEXT,
+            result_summary_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            started_at TEXT,
+            completed_at TEXT,
+            UNIQUE(request_key),
+            UNIQUE(revision_id, extractor_version, event_schema_version),
+            CHECK(status IN ('queued','running','retry_wait','extracted','needs_mapping','failed','integrity_failed','obsolete')),
+            CHECK(attempt_count >= 0 AND attempt_count <= 4),
+            CHECK(request_key<>''),
+            CHECK(extraction_input_hash<>''),
+            CHECK(source_revision_hash<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_graph_unmapped_candidates (
+            candidate_id TEXT PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            extraction_job_id INTEGER NOT NULL REFERENCES class_commentary_graph_extraction_jobs(id) ON DELETE CASCADE,
+            revision_id INTEGER NOT NULL REFERENCES class_commentary_revisions(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            candidate_text TEXT NOT NULL,
+            normalized_candidate TEXT NOT NULL,
+            evidence_quote TEXT NOT NULL,
+            evidence_start_offset INTEGER NOT NULL,
+            evidence_end_offset INTEGER NOT NULL,
+            evidence_content_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            resolved_at TEXT,
+            resolved_knowledge_point_key TEXT,
+            UNIQUE(extraction_job_id, student_id, subject_key, normalized_candidate, evidence_content_hash),
+            CHECK(status IN ('pending','mapped','dismissed')),
+            CHECK(candidate_text<>''),
+            CHECK(normalized_candidate<>''),
+            CHECK(evidence_end_offset > evidence_start_offset)
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_graph_revision_scopes (
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES class_commentary_tasks(id) ON DELETE CASCADE,
+            generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
+            revision_id INTEGER NOT NULL REFERENCES class_commentary_revisions(id) ON DELETE CASCADE,
+            revision_no INTEGER NOT NULL,
+            extraction_job_id INTEGER NOT NULL REFERENCES class_commentary_graph_extraction_jobs(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            PRIMARY KEY(revision_id, student_id, subject_key),
+            CHECK(revision_no >= 1),
+            CHECK(student_id > 0),
+            CHECK(subject_key<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_student_learning_events (
+            event_id TEXT PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            lesson_id INTEGER NOT NULL,
+            task_id INTEGER NOT NULL REFERENCES class_commentary_tasks(id) ON DELETE CASCADE,
+            generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
+            revision_id INTEGER NOT NULL REFERENCES class_commentary_revisions(id) ON DELETE CASCADE,
+            revision_no INTEGER NOT NULL,
+            extraction_job_id INTEGER NOT NULL REFERENCES class_commentary_graph_extraction_jobs(id) ON DELETE CASCADE,
+            knowledge_point_key TEXT NOT NULL,
+            observed_state TEXT NOT NULL,
+            reported_trend TEXT NOT NULL,
+            state_before TEXT,
+            previous_event_id TEXT REFERENCES class_commentary_student_learning_events(event_id),
+            improved_from_trusted_state INTEGER NOT NULL DEFAULT 0,
+            confirmed_teacher_user_id INTEGER NOT NULL REFERENCES users(id),
+            confirmed_at TEXT NOT NULL,
+            source_revision_hash TEXT NOT NULL,
+            extractor_provider TEXT NOT NULL,
+            extractor_model TEXT NOT NULL,
+            extractor_prompt_version TEXT NOT NULL,
+            event_schema_version TEXT NOT NULL,
+            registry_version INTEGER NOT NULL,
+            desired_status TEXT NOT NULL DEFAULT 'active',
+            superseded_by_event_id TEXT REFERENCES class_commentary_student_learning_events(event_id),
+            supersedes_event_id TEXT REFERENCES class_commentary_student_learning_events(event_id),
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(revision_id, student_id, subject_key, knowledge_point_key),
+            CHECK(observed_state IN ('unknown','weak','developing','secure','mastered')),
+            CHECK(reported_trend IN ('new_observation','regressed','stable','improved')),
+            CHECK(state_before IS NULL OR state_before IN ('unknown','weak','developing','secure','mastered')),
+            CHECK(improved_from_trusted_state IN (0,1)),
+            CHECK(desired_status IN ('active','superseded','deleted')),
+            CHECK(event_id<>''),
+            CHECK(subject_key<>''),
+            CHECK(knowledge_point_key<>''),
+            CHECK(source_revision_hash<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_learning_evidence (
+            evidence_id TEXT PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            event_id TEXT NOT NULL REFERENCES class_commentary_student_learning_events(event_id) ON DELETE CASCADE,
+            revision_id INTEGER NOT NULL REFERENCES class_commentary_revisions(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            quote TEXT NOT NULL,
+            start_offset INTEGER NOT NULL,
+            end_offset INTEGER NOT NULL,
+            content_hash TEXT NOT NULL,
+            source_revision_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(event_id),
+            CHECK(quote<>''),
+            CHECK(end_offset > start_offset),
+            CHECK(content_hash<>''),
+            CHECK(source_revision_hash<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_learning_teaching_methods (
+            method_id TEXT PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            event_id TEXT NOT NULL REFERENCES class_commentary_student_learning_events(event_id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            method_text TEXT NOT NULL,
+            causal_supported INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(event_id, method_text),
+            CHECK(causal_supported IN (0,1)),
+            CHECK(method_text<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_learning_next_steps (
+            next_step_id TEXT PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            event_id TEXT NOT NULL REFERENCES class_commentary_student_learning_events(event_id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            next_step_text TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'confirmed',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(event_id, next_step_text),
+            CHECK(status IN ('confirmed','completed','dismissed')),
+            CHECK(next_step_text<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_learning_state_current (
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            knowledge_point_key TEXT NOT NULL,
+            event_id TEXT NOT NULL REFERENCES class_commentary_student_learning_events(event_id) ON DELETE CASCADE,
+            observed_state TEXT NOT NULL,
+            confirmed_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            PRIMARY KEY(organization_id, student_id, subject_key, knowledge_point_key),
+            CHECK(observed_state IN ('unknown','weak','developing','secure','mastered'))
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_graph_sync_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            event_id TEXT NOT NULL REFERENCES class_commentary_student_learning_events(event_id) ON DELETE CASCADE,
+            operation_key TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            payload_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            claim_token TEXT,
+            claim_owner TEXT,
+            lease_until TEXT,
+            rq_job_id TEXT,
+            enqueued_at TEXT,
+            next_attempt_at TEXT,
+            last_error TEXT,
+            result_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            applied_at TEXT,
+            UNIQUE(operation_key),
+            UNIQUE(event_id),
+            CHECK(status IN ('pending','running','applied','retry_wait','reconcile_needed','failed','obsolete')),
+            CHECK(attempt_count >= 0 AND attempt_count <= 8),
+            CHECK(operation_key<>''),
+            CHECK(payload_hash<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_graph_retry_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            revision_id INTEGER NOT NULL REFERENCES class_commentary_revisions(id) ON DELETE CASCADE,
+            extraction_job_id INTEGER REFERENCES class_commentary_graph_extraction_jobs(id) ON DELETE SET NULL,
+            request_id TEXT NOT NULL,
+            payload_hash TEXT NOT NULL,
+            actor_user_id INTEGER NOT NULL REFERENCES users(id),
+            previous_state_snapshot_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            UNIQUE(organization_id, revision_id, request_id),
+            CHECK(request_id<>''),
+            CHECK(payload_hash<>'')
+        );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_graph_cleanup_requests (
+            request_key TEXT PRIMARY KEY,
+            organization_id INTEGER NOT NULL,
+            student_id INTEGER,
+            actor_user_id INTEGER,
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            event_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            applied_at TEXT,
+            CHECK(status IN ('pending','applied','failed')),
+            CHECK(event_count >= 0),
+            CHECK(reason<>'')
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_graph_extraction_dispatch
+        ON class_commentary_graph_extraction_jobs(status, next_attempt_at, created_at);
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_graph_sync_dispatch
+        ON class_commentary_graph_sync_outbox(status, next_attempt_at, lease_until, created_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_class_commentary_graph_retry_request
+        ON class_commentary_graph_retry_events(organization_id, request_id);
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_learning_event_scope
+        ON class_commentary_student_learning_events(organization_id, student_id, subject_key, confirmed_at, event_id);
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_graph_unmapped_scope
+        ON class_commentary_graph_unmapped_candidates(organization_id, student_id, subject_key, status);
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_graph_revision_scope
+        ON class_commentary_graph_revision_scopes(
+            organization_id, student_id, subject_key, task_id, revision_no
+        );
+        """
+    )
+    student_run_columns = {
+        "graph_context_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+        "graph_context_hash": "TEXT NOT NULL DEFAULT ''",
+        "graph_allowed_evidence_refs_json": "TEXT NOT NULL DEFAULT '[]'",
+        "graph_retrieval_status": "TEXT NOT NULL DEFAULT 'pending'",
+        "used_graph_evidence_refs_json": "TEXT NOT NULL DEFAULT '[]'",
+    }
+    for column, ddl in student_run_columns.items():
+        _ensure_column(conn, "class_commentary_student_generation_runs", column, ddl)
+    _ensure_column(conn, "class_commentary_graph_extraction_jobs", "started_at", "TEXT")
+    _ensure_column(conn, "class_commentary_graph_cleanup_requests", "actor_user_id", "INTEGER")
+    _ensure_column(conn, "class_commentary_graph_sync_outbox", "payload_json", "TEXT NOT NULL DEFAULT '{}'")
+    _ensure_column(
+        conn,
+        "class_commentary_student_learning_events",
+        "supersedes_event_id",
+        "TEXT REFERENCES class_commentary_student_learning_events(event_id)",
+    )
+    _ensure_column(
+        conn,
+        "class_commentary_revisions",
+        "graph_extraction_requested",
+        "INTEGER NOT NULL DEFAULT 0 CHECK(graph_extraction_requested IN (0,1))",
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO class_commentary_graph_revision_scopes (
+            organization_id, task_id, generation_id, revision_id, revision_no,
+            extraction_job_id, student_id, subject_key
+        )
+        SELECT DISTINCT organization_id, task_id, generation_id, revision_id,
+               revision_no, extraction_job_id, student_id, subject_key
+        FROM class_commentary_student_learning_events
+        """
+    )
+
+
+def register_knowledge_point(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    subject_key: str,
+    knowledge_point_key: str,
+    canonical_name: str,
+    aliases: Iterable[str],
+    parent_key: Optional[str] = None,
+    registry_version: int = GRAPH_REGISTRY_VERSION,
+    active: bool = True,
+) -> dict:
+    subject_key = str(subject_key).strip()
+    knowledge_point_key = str(knowledge_point_key).strip()
+    canonical_name = str(canonical_name).strip()
+    if not subject_key or not knowledge_point_key or not canonical_name:
+        raise ValueError("knowledge point identity is required")
+    conn.execute(
+        """
+        INSERT INTO class_commentary_knowledge_points (
+            organization_id, knowledge_point_key, subject_key, canonical_name,
+            parent_key, registry_version, active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(organization_id, knowledge_point_key) DO UPDATE SET
+            subject_key=excluded.subject_key,
+            canonical_name=excluded.canonical_name,
+            parent_key=excluded.parent_key,
+            registry_version=excluded.registry_version,
+            active=excluded.active,
+            updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        """,
+        (
+            int(organization_id),
+            knowledge_point_key,
+            subject_key,
+            canonical_name,
+            str(parent_key).strip() if parent_key else None,
+            int(registry_version),
+            1 if active else 0,
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM class_commentary_knowledge_points WHERE organization_id=? AND knowledge_point_key=?",
+        (int(organization_id), knowledge_point_key),
+    ).fetchone()
+    alias_values = [canonical_name, *list(aliases)]
+    for alias in alias_values:
+        alias_text = str(alias or "").strip()
+        normalized = normalize_knowledge_point_alias(alias_text)
+        if not alias_text or not normalized:
+            continue
+        conn.execute(
+            """
+            INSERT INTO class_commentary_knowledge_point_aliases (
+                organization_id, knowledge_point_id, subject_key, alias,
+                normalized_alias, registry_version
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(organization_id, subject_key, normalized_alias) DO UPDATE SET
+                knowledge_point_id=excluded.knowledge_point_id,
+                alias=excluded.alias,
+                registry_version=excluded.registry_version
+            """,
+            (
+                int(organization_id),
+                int(row["id"]),
+                subject_key,
+                alias_text,
+                normalized,
+                int(registry_version),
+            ),
+        )
+    return dict(row)
+
+
+def ensure_builtin_knowledge_points(conn: sqlite3.Connection, organization_id: int) -> None:
+    for item in _BUILTIN_KNOWLEDGE_POINTS:
+        register_knowledge_point(conn, organization_id=int(organization_id), **item)
+
+
+def resolve_knowledge_point(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    subject_key: str,
+    value: object,
+) -> Optional[dict]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    row = conn.execute(
+        """
+        SELECT * FROM class_commentary_knowledge_points
+        WHERE organization_id=? AND subject_key=? AND knowledge_point_key=? AND active=1
+        """,
+        (int(organization_id), str(subject_key).strip(), text),
+    ).fetchone()
+    if row:
+        return dict(row)
+    alias = conn.execute(
+        """
+        SELECT kp.*
+        FROM class_commentary_knowledge_point_aliases AS alias
+        JOIN class_commentary_knowledge_points AS kp ON kp.id=alias.knowledge_point_id
+        WHERE alias.organization_id=? AND alias.subject_key=?
+          AND alias.normalized_alias=? AND kp.active=1
+        """,
+        (
+            int(organization_id),
+            str(subject_key).strip(),
+            normalize_knowledge_point_alias(text),
+        ),
+    ).fetchone()
+    return dict(alias) if alias else None
+
+
+def create_graph_extraction_job_conn(
+    conn: sqlite3.Connection,
+    generation: Mapping[str, object],
+    revision: Mapping[str, object],
+) -> dict:
+    generation = dict(generation)
+    revision = dict(revision)
+    organization_id = int(generation["organization_id"])
+    ensure_builtin_knowledge_points(conn, organization_id)
+    revision_id = int(revision["id"])
+    task_id = int(revision["task_id"])
+    generation_id = int(revision["generation_id"])
+    source_revision_hash = str(revision.get("structured_feedback_hash") or "").strip()
+    if not source_revision_hash:
+        source_revision_hash = content_hash(str(revision.get("final_feedback_text") or ""))
+    extraction_identity = {
+        "revision_id": revision_id,
+        "source_revision_hash": source_revision_hash,
+        "extractor_version": GRAPH_EXTRACTOR_VERSION,
+        "prompt_version": GRAPH_PROMPT_VERSION,
+        "event_schema_version": GRAPH_EVENT_SCHEMA_VERSION,
+        "registry_version": GRAPH_REGISTRY_VERSION,
+    }
+    extraction_input_hash = content_hash(extraction_identity)
+    request_key = f"class-commentary-graph-extract:{content_hash(extraction_identity)}"
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO class_commentary_graph_extraction_jobs (
+            organization_id, revision_id, task_id, generation_id, request_key,
+            extractor_version, prompt_version, event_schema_version,
+            registry_version, extraction_input_hash, source_revision_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            organization_id,
+            revision_id,
+            task_id,
+            generation_id,
+            request_key,
+            GRAPH_EXTRACTOR_VERSION,
+            GRAPH_PROMPT_VERSION,
+            GRAPH_EVENT_SCHEMA_VERSION,
+            GRAPH_REGISTRY_VERSION,
+            extraction_input_hash,
+            source_revision_hash,
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM class_commentary_graph_extraction_jobs WHERE request_key=?",
+        (request_key,),
+    ).fetchone()
+    if not row:
+        raise RuntimeError("graph extraction job was not created")
+    return dict(row)
+
+
+def get_graph_extraction_job_for_revision_conn(
+    conn: sqlite3.Connection, revision_id: int
+) -> Optional[dict]:
+    row = conn.execute(
+        """
+        SELECT * FROM class_commentary_graph_extraction_jobs
+        WHERE revision_id=? ORDER BY id DESC LIMIT 1
+        """,
+        (int(revision_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_graph_extraction_job(job_id: int) -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?", (int(job_id),)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_dispatchable_graph_extraction_jobs(limit: int = 100) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM class_commentary_graph_extraction_jobs
+            WHERE status='queued'
+               OR (status='retry_wait' AND (next_attempt_at IS NULL OR next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
+            ORDER BY created_at, id LIMIT ?
+            """,
+            (max(1, min(int(limit), 500)),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_dispatchable_graph_sync_operations(limit: int = 100) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM class_commentary_graph_sync_outbox
+            WHERE status IN ('pending','reconcile_needed')
+               OR (status='retry_wait' AND (next_attempt_at IS NULL OR next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
+            ORDER BY created_at, id LIMIT ?
+            """,
+            (max(1, min(int(limit), 500)),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_graph_job_enqueued(job_id: int, rq_job_id: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET rq_job_id=?, enqueued_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND status IN ('queued','retry_wait')
+            """,
+            (str(rq_job_id), int(job_id)),
+        )
+
+
+def mark_graph_sync_enqueued(operation_id: int, rq_job_id: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_sync_outbox
+            SET rq_job_id=?, enqueued_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND status IN ('pending','retry_wait','reconcile_needed')
+            """,
+            (str(rq_job_id), int(operation_id)),
+        )
+
+
+def claim_graph_extraction_job(
+    job_id: int, *, claim_owner: str, rq_job_id: Optional[str] = None, lease_seconds: int = 600
+) -> Optional[dict]:
+    token = str(uuid.uuid4())
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET status='running', attempt_count=attempt_count+1,
+                claim_token=?, claim_owner=?, rq_job_id=COALESCE(?, rq_job_id),
+                lease_until=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?),
+                started_at=COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND attempt_count<4 AND (
+                status='queued' OR
+                (status='retry_wait' AND (next_attempt_at IS NULL OR next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
+            )
+            """,
+            (token, str(claim_owner), rq_job_id, f"+{max(1, int(lease_seconds))} seconds", int(job_id)),
+        )
+        if updated.rowcount != 1:
+            return None
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?", (int(job_id),)
+        ).fetchone()
+    return dict(row)
+
+
+def claim_graph_sync_operation(
+    operation_id: int, *, claim_owner: str, rq_job_id: Optional[str] = None, lease_seconds: int = 300
+) -> Optional[dict]:
+    token = str(uuid.uuid4())
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_graph_sync_outbox
+            SET status='running', attempt_count=attempt_count+1,
+                claim_token=?, claim_owner=?, rq_job_id=COALESCE(?, rq_job_id),
+                lease_until=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND attempt_count<8 AND (
+                status IN ('pending','reconcile_needed') OR
+                (status='retry_wait' AND (next_attempt_at IS NULL OR next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
+            )
+            """,
+            (token, str(claim_owner), rq_job_id, f"+{max(1, int(lease_seconds))} seconds", int(operation_id)),
+        )
+        if updated.rowcount != 1:
+            return None
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_sync_outbox WHERE id=?", (int(operation_id),)
+        ).fetchone()
+    return dict(row)
+
+
+def get_graph_extraction_input(job_id: int) -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute(
+            """
+            SELECT job.*, revision.revision_no, revision.teacher_user_id,
+                   revision.confirmed_at, revision.feedback_schema_version,
+                   revision.structured_feedback_json, revision.structured_feedback_hash,
+                   revision.final_feedback_text, generation.subject_key,
+                   generation.class_id, generation.attending_roster_snapshot_json,
+                   class.name AS class_name
+            FROM class_commentary_graph_extraction_jobs AS job
+            JOIN class_commentary_revisions AS revision ON revision.id=job.revision_id
+            JOIN class_commentary_generations AS generation ON generation.id=job.generation_id
+            JOIN classes AS class ON class.id=generation.class_id
+            WHERE job.id=?
+            """,
+            (int(job_id),),
+        ).fetchone()
+        if not row:
+            return None
+        ensure_builtin_knowledge_points(conn, int(row["organization_id"]))
+        registry = conn.execute(
+            """
+            SELECT kp.knowledge_point_key, kp.subject_key, kp.canonical_name,
+                   kp.parent_key, kp.registry_version,
+                   COALESCE(json_group_array(alias.alias), '[]') AS aliases_json
+            FROM class_commentary_knowledge_points AS kp
+            LEFT JOIN class_commentary_knowledge_point_aliases AS alias
+              ON alias.knowledge_point_id=kp.id
+            WHERE kp.organization_id=? AND kp.subject_key=? AND kp.active=1
+            GROUP BY kp.id ORDER BY kp.knowledge_point_key
+            """,
+            (int(row["organization_id"]), str(row["subject_key"] or "")),
+        ).fetchall()
+    structured = _json_object(row["structured_feedback_json"])
+    items = structured.get("items") if isinstance(structured.get("items"), list) else []
+    safe_items = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            student_id = int(item.get("student_id"))
+        except (TypeError, ValueError):
+            continue
+        feedback_text = str(item.get("feedback_text") or "")
+        if student_id > 0 and feedback_text.strip():
+            safe_items.append({"student_id": student_id, "feedback_text": feedback_text})
+    result = dict(row)
+    result["student_feedback_items"] = safe_items
+    result["registry"] = [
+        {
+            "knowledge_point_key": item["knowledge_point_key"],
+            "subject_key": item["subject_key"],
+            "canonical_name": item["canonical_name"],
+            "parent_key": item["parent_key"],
+            "registry_version": item["registry_version"],
+            "aliases": _json_list(item["aliases_json"]),
+        }
+        for item in registry
+    ]
+    result["lesson_id"] = int(row["task_id"])
+    result["lesson_name"] = f"{str(row['class_name'] or '').strip()} 课堂反馈".strip()
+    result["integrity_valid"] = (
+        str(row["source_revision_hash"])
+        == (str(row["structured_feedback_hash"] or "") or content_hash(str(row["final_feedback_text"] or "")))
+    )
+    return result
+
+
+def _validated_quote(candidate: Mapping[str, object], feedback_text: str) -> tuple[str, int, int, str]:
+    quote = str(candidate.get("evidence_quote") or "")
+    try:
+        start = int(candidate.get("evidence_start_offset"))
+        end = int(candidate.get("evidence_end_offset"))
+    except (TypeError, ValueError) as exc:
+        raise LearningGraphValidationError("evidence offsets are invalid") from exc
+    if not quote or start < 0 or end <= start or end > len(feedback_text):
+        raise LearningGraphValidationError("evidence span is invalid")
+    if feedback_text[start:end] != quote:
+        raise LearningGraphValidationError("evidence quote does not match confirmed feedback")
+    quote_hash = content_hash(quote)
+    supplied_hash = str(candidate.get("evidence_content_hash") or "")
+    if not supplied_hash or supplied_hash != quote_hash:
+        raise LearningGraphValidationError("evidence content hash mismatch")
+    return quote, start, end, quote_hash
+
+
+def _supported_texts(raw_values: object, feedback_text: str, *, limit: int) -> list[str]:
+    if not isinstance(raw_values, list):
+        return []
+    result = []
+    for value in raw_values[:limit]:
+        text = str(value.get("text") if isinstance(value, Mapping) else value).strip()
+        if text and text in feedback_text and text not in result:
+            result.append(text)
+    return result
+
+
+def _method_causal_supported(
+    method: str,
+    quote: str,
+    *,
+    requested: bool,
+    knowledge_point_name: str,
+    observed_state: str,
+    reported_trend: str,
+) -> bool:
+    if not requested or not method or method not in quote:
+        return False
+    causal_pattern = re.compile(
+        rf"{re.escape(method)}\s*(?:后|的使用|练习)?\s*(?:直接)?"
+        r"(?:帮助|促进|使得|使|让|导致|带来|led\s+to|resulted\s+in)",
+        re.IGNORECASE,
+    )
+    match = causal_pattern.search(quote)
+    if match is None:
+        return False
+    outcome_text = quote[match.end() :].casefold()
+    outcome_clause = re.split(r"[，,。.!?！？；;]", outcome_text, maxsplit=1)[0].strip()
+    if not outcome_clause or re.match(
+        r"^(?:老师|教师|家长|系统|平台|管理员|配置|设置|工具|我们|本人)",
+        outcome_clause,
+    ):
+        return False
+    state_markers = {
+        "unknown": ("状态", "表现"),
+        "weak": ("薄弱", "较弱", "weak"),
+        "developing": ("发展中", "逐步", "developing"),
+        "secure": ("稳固", "稳定掌握", "secure"),
+        "mastered": ("熟练掌握", "精通", "mastered"),
+    }.get(str(observed_state), ())
+    trend_markers = {
+        "new_observation": ("表现", "状态"),
+        "regressed": ("退步", "下降", "regressed"),
+        "stable": ("稳定", "保持", "stable"),
+        "improved": ("改善", "提升", "进步", "improved"),
+    }.get(str(reported_trend), ())
+    learning_markers = tuple(
+        marker.casefold()
+        for marker in (
+            "理解",
+            "掌握",
+            "表现",
+            "状态",
+            *state_markers,
+            *trend_markers,
+        )
+        if marker
+    )
+    direct_learning_outcome = re.match(
+        r"^(?:(?:学生|该生|孩子|学员|他|她)(?:的)?\s*)?"
+        r"(?:(?:已经|已|正在|逐步|明显|更|更加|更好地|进一步|开始|"
+        r"能够|可以|基本|较好地|稳定地|熟练地)\s*)*"
+        r"(?:理解|掌握|表现|状态)",
+        outcome_clause,
+    )
+    knowledge_point = str(knowledge_point_name or "").strip().casefold()
+    return bool(direct_learning_outcome) or bool(
+        knowledge_point
+        and knowledge_point in outcome_clause
+        and any(marker in outcome_clause for marker in learning_markers)
+    )
+
+
+def _validated_method_causal_quotes(
+    candidate: Mapping[str, object],
+    feedback_text: str,
+) -> dict[str, str]:
+    if not bool(candidate.get("teaching_method_causal_supported")):
+        return {}
+    raw_items = candidate.get("teaching_method_causal_evidence")
+    if not isinstance(raw_items, list):
+        raise LearningGraphValidationError("teaching method causal evidence is invalid")
+    result: dict[str, str] = {}
+    for raw_item in raw_items:
+        if not isinstance(raw_item, Mapping):
+            raise LearningGraphValidationError("teaching method causal evidence is invalid")
+        method_text = str(raw_item.get("method_text") or "").strip()
+        if not method_text:
+            raise LearningGraphValidationError("teaching method causal evidence is invalid")
+        quote, _, _, _ = _validated_quote(raw_item, feedback_text)
+        if method_text not in quote or method_text in result:
+            raise LearningGraphValidationError("teaching method causal evidence is invalid")
+        result[method_text] = quote
+    return result
+
+
+def _reproject_learning_state_conn(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    student_id: int,
+    subject_key: str,
+    knowledge_point_key: str,
+) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT * FROM class_commentary_student_learning_events
+        WHERE organization_id=? AND student_id=? AND subject_key=?
+          AND knowledge_point_key=? AND desired_status<>'deleted'
+        ORDER BY confirmed_at, revision_no, event_id
+        """,
+        (int(organization_id), int(student_id), str(subject_key), str(knowledge_point_key)),
+    ).fetchall()
+    if not rows:
+        conn.execute(
+            """
+            DELETE FROM class_commentary_learning_state_current
+            WHERE organization_id=? AND student_id=? AND subject_key=? AND knowledge_point_key=?
+            """,
+            (int(organization_id), int(student_id), str(subject_key), str(knowledge_point_key)),
+        )
+        return []
+    event_ids = [str(row["event_id"]) for row in rows]
+    rows_by_task: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        rows_by_task.setdefault(int(row["task_id"]), []).append(row)
+    previous = None
+    for index, row in enumerate(rows):
+        next_row = rows[index + 1] if index + 1 < len(rows) else None
+        correction_candidates = [
+            candidate
+            for candidate in rows_by_task.get(int(row["task_id"]), [])
+            if int(candidate["revision_no"]) < int(row["revision_no"])
+        ]
+        correction_previous = correction_candidates[-1] if correction_candidates else None
+        state_before = str(previous["observed_state"]) if previous is not None else None
+        previous_event_id = str(previous["event_id"]) if previous is not None else None
+        improved_from = bool(
+            previous is not None
+            and str(row["reported_trend"]) == "improved"
+            and STATE_RANK[str(row["observed_state"])]
+            > STATE_RANK[str(previous["observed_state"])]
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_student_learning_events
+            SET desired_status=?, superseded_by_event_id=?,
+                state_before=?, previous_event_id=?, improved_from_trusted_state=?,
+                supersedes_event_id=?
+            WHERE event_id=?
+            """,
+            (
+                "superseded" if next_row is not None else "active",
+                str(next_row["event_id"]) if next_row is not None else None,
+                state_before,
+                previous_event_id,
+                1 if improved_from else 0,
+                str(correction_previous["event_id"]) if correction_previous else None,
+                str(row["event_id"]),
+            ),
+        )
+        previous = row
+    latest = rows[-1]
+    conn.execute(
+        """
+        INSERT INTO class_commentary_learning_state_current (
+            organization_id, student_id, subject_key, knowledge_point_key,
+            event_id, observed_state, confirmed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(organization_id, student_id, subject_key, knowledge_point_key)
+        DO UPDATE SET event_id=excluded.event_id,
+                      observed_state=excluded.observed_state,
+                      confirmed_at=excluded.confirmed_at,
+                      updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        """,
+        (
+            int(organization_id),
+            int(student_id),
+            str(subject_key),
+            str(knowledge_point_key),
+            str(latest["event_id"]),
+            str(latest["observed_state"]),
+            str(latest["confirmed_at"]),
+        ),
+    )
+    return event_ids
+
+
+def _student_graph_scope_active_conn(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    student_id: int,
+) -> bool:
+    organization = conn.execute(
+        "SELECT status FROM organizations WHERE id=?",
+        (int(organization_id),),
+    ).fetchone()
+    student = conn.execute(
+        "SELECT organization_id, status FROM students WHERE id=? AND organization_id=?",
+        (int(student_id), int(organization_id)),
+    ).fetchone()
+    if (
+        not organization
+        or str(organization["status"] or "") != "active"
+        or not student
+        or int(student["organization_id"] or 0) != int(organization_id)
+        or str(student["status"] or "") != "active"
+    ):
+        return False
+    cleanup = conn.execute(
+        """
+        SELECT 1 FROM class_commentary_graph_cleanup_requests
+        WHERE organization_id=? AND (student_id IS NULL OR student_id=?)
+        LIMIT 1
+        """,
+        (int(organization_id), int(student_id)),
+    ).fetchone()
+    return cleanup is None
+
+
+def commit_graph_extraction(
+    job_id: int,
+    *,
+    claim_token: str,
+    candidates_by_student: Iterable[Mapping[str, object]],
+    extractor_provider: str,
+    extractor_model: str,
+    usage: Optional[Mapping[str, object]] = None,
+) -> dict:
+    frozen = get_graph_extraction_input(int(job_id))
+    if not frozen or not frozen.get("integrity_valid"):
+        raise LearningGraphValidationError("graph extraction input failed integrity")
+    feedback_by_student = {
+        int(item["student_id"]): str(item["feedback_text"])
+        for item in frozen["student_feedback_items"]
+    }
+    normalized_candidates = [dict(item) for item in candidates_by_student if isinstance(item, Mapping)]
+    trusted_events = []
+    unmapped = []
+    touched_projections = set()
+    seen_trusted_observations = set()
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        job = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?",
+            (int(job_id),),
+        ).fetchone()
+        if not job or str(job["status"]) != "running" or str(job["claim_token"]) != str(claim_token):
+            raise ValueError("graph extraction claim is stale")
+        subject_key = str(frozen.get("subject_key") or "").strip()
+        active_feedback_by_student = {
+            student_id: feedback_text
+            for student_id, feedback_text in feedback_by_student.items()
+            if _student_graph_scope_active_conn(
+                conn,
+                organization_id=int(job["organization_id"]),
+                student_id=student_id,
+            )
+        }
+        inactive_student_ids = sorted(
+            set(feedback_by_student).difference(active_feedback_by_student)
+        )
+        if not active_feedback_by_student:
+            result_summary = {
+                "trusted_event_count": 0,
+                "unmapped_candidate_count": 0,
+                "obsolete_student_ids": inactive_student_ids,
+                "usage": dict(usage or {}),
+            }
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET status='obsolete', result_summary_json=?, claim_token=NULL,
+                    claim_owner=NULL, lease_until=NULL,
+                    last_error='graph extraction scope is no longer active',
+                    completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE id=? AND claim_token=? AND status='running'
+                """,
+                (canonical_json(result_summary), int(job_id), str(claim_token)),
+            )
+            return {
+                "status": "obsolete",
+                "event_ids": [],
+                "unmapped_candidate_ids": [],
+            }
+        for student_id in sorted(active_feedback_by_student):
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO class_commentary_graph_revision_scopes (
+                    organization_id, task_id, generation_id, revision_id,
+                    revision_no, extraction_job_id, student_id, subject_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(job["organization_id"]),
+                    int(job["task_id"]),
+                    int(job["generation_id"]),
+                    int(job["revision_id"]),
+                    int(frozen["revision_no"]),
+                    int(job_id),
+                    int(student_id),
+                    subject_key,
+                ),
+            )
+            existing_kps = conn.execute(
+                """
+                SELECT DISTINCT knowledge_point_key
+                FROM class_commentary_student_learning_events
+                WHERE organization_id=? AND task_id=? AND student_id=?
+                  AND subject_key=? AND desired_status<>'deleted'
+                """,
+                (
+                    int(job["organization_id"]),
+                    int(job["task_id"]),
+                    int(student_id),
+                    subject_key,
+                ),
+            ).fetchall()
+            touched_projections.update(
+                (
+                    int(job["organization_id"]),
+                    int(student_id),
+                    subject_key,
+                    str(row["knowledge_point_key"]),
+                )
+                for row in existing_kps
+            )
+        for candidate in normalized_candidates:
+            try:
+                student_id = int(candidate.get("student_id"))
+            except (TypeError, ValueError):
+                continue
+            feedback_text = active_feedback_by_student.get(student_id)
+            if feedback_text is None:
+                continue
+            quote, start, end, quote_hash = _validated_quote(candidate, feedback_text)
+            raw_kp = candidate.get("knowledge_point_key")
+            raw_unmapped = candidate.get("unmapped_candidate")
+            resolved = resolve_knowledge_point(
+                conn,
+                organization_id=int(job["organization_id"]),
+                subject_key=subject_key,
+                value=raw_kp or raw_unmapped,
+            )
+            if not resolved:
+                candidate_text = str(raw_unmapped or raw_kp or "").strip()
+                if not candidate_text:
+                    continue
+                candidate_id = content_hash(
+                    [job_id, student_id, subject_key, normalize_knowledge_point_alias(candidate_text), quote_hash]
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO class_commentary_graph_unmapped_candidates (
+                        candidate_id, organization_id, extraction_job_id, revision_id,
+                        student_id, subject_key, candidate_text, normalized_candidate,
+                        evidence_quote, evidence_start_offset, evidence_end_offset,
+                        evidence_content_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        candidate_id,
+                        int(job["organization_id"]),
+                        int(job_id),
+                        int(job["revision_id"]),
+                        student_id,
+                        subject_key,
+                        candidate_text,
+                        normalize_knowledge_point_alias(candidate_text),
+                        quote,
+                        start,
+                        end,
+                        quote_hash,
+                    ),
+                )
+                unmapped.append(candidate_id)
+                continue
+            state = str(candidate.get("observed_state") or "").strip()
+            trend = str(candidate.get("reported_trend") or "new_observation").strip()
+            if state not in LEARNING_STATES or trend not in LEARNING_TRENDS:
+                raise LearningGraphValidationError("learning state or trend is invalid")
+            kp_key = str(resolved["knowledge_point_key"])
+            observation_key = (student_id, subject_key, kp_key)
+            if observation_key in seen_trusted_observations:
+                raise LearningGraphValidationError(
+                    "duplicate knowledge point observation for confirmed revision"
+                )
+            seen_trusted_observations.add(observation_key)
+            event_identity = {
+                "schema_version": GRAPH_EVENT_SCHEMA_VERSION,
+                "organization_id": int(job["organization_id"]),
+                "student_id": student_id,
+                "subject_key": subject_key,
+                "revision_id": int(job["revision_id"]),
+                "knowledge_point_key": kp_key,
+                "observed_state": state,
+                "evidence_content_hash": quote_hash,
+            }
+            event_id = content_hash(event_identity)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO class_commentary_student_learning_events (
+                    event_id, organization_id, student_id, subject_key, lesson_id,
+                    task_id, generation_id, revision_id, revision_no, extraction_job_id,
+                    knowledge_point_key, observed_state, reported_trend, state_before,
+                    previous_event_id, improved_from_trusted_state,
+                    confirmed_teacher_user_id, confirmed_at, source_revision_hash,
+                    extractor_provider, extractor_model, extractor_prompt_version,
+                    event_schema_version, registry_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    int(job["organization_id"]),
+                    student_id,
+                    subject_key,
+                    int(frozen["lesson_id"]),
+                    int(job["task_id"]),
+                    int(job["generation_id"]),
+                    int(job["revision_id"]),
+                    int(frozen["revision_no"]),
+                    int(job_id),
+                    kp_key,
+                    state,
+                    trend,
+                    None,
+                    None,
+                    0,
+                    int(frozen["teacher_user_id"]),
+                    str(frozen["confirmed_at"]),
+                    str(job["source_revision_hash"]),
+                    str(extractor_provider),
+                    str(extractor_model),
+                    str(job["prompt_version"]),
+                    str(job["event_schema_version"]),
+                    int(resolved["registry_version"]),
+                ),
+            )
+            evidence_id = content_hash(["evidence", event_id, quote_hash, start, end])
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO class_commentary_learning_evidence (
+                    evidence_id, organization_id, event_id, revision_id, student_id,
+                    subject_key, quote, start_offset, end_offset, content_hash,
+                    source_revision_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    evidence_id,
+                    int(job["organization_id"]),
+                    event_id,
+                    int(job["revision_id"]),
+                    student_id,
+                    subject_key,
+                    quote,
+                    start,
+                    end,
+                    quote_hash,
+                    str(job["source_revision_hash"]),
+                ),
+            )
+            methods = _supported_texts(candidate.get("teaching_methods"), feedback_text, limit=8)
+            causal_requested = bool(candidate.get("teaching_method_causal_supported"))
+            causal_quotes = _validated_method_causal_quotes(candidate, feedback_text)
+            if causal_requested and set(causal_quotes).difference(methods):
+                raise LearningGraphValidationError(
+                    "causal evidence references an unsupported teaching method"
+                )
+            for method in methods:
+                method_id = content_hash(["method", event_id, method])
+                causal_supported = _method_causal_supported(
+                    method,
+                    causal_quotes.get(method, ""),
+                    requested=causal_requested and method in causal_quotes,
+                    knowledge_point_name=str(resolved["canonical_name"]),
+                    observed_state=state,
+                    reported_trend=trend,
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO class_commentary_learning_teaching_methods (
+                        method_id, organization_id, event_id, student_id, subject_key,
+                        method_text, causal_supported
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (method_id, int(job["organization_id"]), event_id, student_id, subject_key, method, 1 if causal_supported else 0),
+                )
+            next_steps = _supported_texts(candidate.get("next_steps"), feedback_text, limit=8)
+            for next_step in next_steps:
+                next_step_id = content_hash(["next-step", event_id, next_step])
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO class_commentary_learning_next_steps (
+                        next_step_id, organization_id, event_id, student_id,
+                        subject_key, next_step_text
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (next_step_id, int(job["organization_id"]), event_id, student_id, subject_key, next_step),
+                )
+            touched_projections.add(
+                (int(job["organization_id"]), student_id, subject_key, kp_key)
+            )
+            trusted_events.append(event_id)
+        sync_event_ids = set(trusted_events)
+        for organization_id, student_id, subject_key, kp_key in sorted(touched_projections):
+            sync_event_ids.update(
+                _reproject_learning_state_conn(
+                    conn,
+                    organization_id=organization_id,
+                    student_id=student_id,
+                    subject_key=subject_key,
+                    knowledge_point_key=kp_key,
+                )
+            )
+        for event_id in sorted(sync_event_ids):
+            payload = _graph_event_payload_conn(conn, event_id)
+            operation_key = f"class-commentary-graph-sync:{event_id}"
+            payload_hash = _graph_sync_payload_hash(payload)
+            conn.execute(
+                """
+                INSERT INTO class_commentary_graph_sync_outbox (
+                    organization_id, event_id, operation_key, payload_json, payload_hash
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(event_id) DO UPDATE SET
+                    status=CASE
+                        WHEN class_commentary_graph_sync_outbox.payload_hash<>excluded.payload_hash
+                        THEN 'reconcile_needed'
+                        ELSE class_commentary_graph_sync_outbox.status
+                    END,
+                    payload_json=excluded.payload_json,
+                    payload_hash=excluded.payload_hash,
+                    claim_token=CASE
+                        WHEN class_commentary_graph_sync_outbox.payload_hash<>excluded.payload_hash
+                        THEN NULL ELSE class_commentary_graph_sync_outbox.claim_token END,
+                    claim_owner=CASE
+                        WHEN class_commentary_graph_sync_outbox.payload_hash<>excluded.payload_hash
+                        THEN NULL ELSE class_commentary_graph_sync_outbox.claim_owner END,
+                    lease_until=CASE
+                        WHEN class_commentary_graph_sync_outbox.payload_hash<>excluded.payload_hash
+                        THEN NULL ELSE class_commentary_graph_sync_outbox.lease_until END,
+                    next_attempt_at=CASE
+                        WHEN class_commentary_graph_sync_outbox.payload_hash<>excluded.payload_hash
+                        THEN NULL ELSE class_commentary_graph_sync_outbox.next_attempt_at END,
+                    last_error=CASE
+                        WHEN class_commentary_graph_sync_outbox.payload_hash<>excluded.payload_hash
+                        THEN NULL ELSE class_commentary_graph_sync_outbox.last_error END,
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                """,
+                (
+                    int(job["organization_id"]),
+                    event_id,
+                    operation_key,
+                    canonical_json(payload),
+                    payload_hash,
+                ),
+            )
+        pending_unmapped_rows = conn.execute(
+            """
+            SELECT candidate_id FROM class_commentary_graph_unmapped_candidates
+            WHERE extraction_job_id=? AND status='pending' ORDER BY candidate_id
+            """,
+            (int(job_id),),
+        ).fetchall()
+        pending_unmapped = [str(row["candidate_id"]) for row in pending_unmapped_rows]
+        status = "needs_mapping" if pending_unmapped else "extracted"
+        result_summary = {
+            "trusted_event_count": len(set(trusted_events)),
+            "unmapped_candidate_count": len(set(pending_unmapped)),
+            "unsafe_unstructured_revision": not bool(feedback_by_student),
+            "obsolete_student_ids": inactive_student_ids,
+            "usage": dict(usage or {}),
+        }
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET status=?, result_summary_json=?, claim_token=NULL, claim_owner=NULL,
+                lease_until=NULL, last_error=NULL,
+                completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND claim_token=? AND status='running'
+            """,
+            (status, canonical_json(result_summary), int(job_id), str(claim_token)),
+        )
+    return {
+        "status": status,
+        "event_ids": sorted(set(trusted_events)),
+        "unmapped_candidate_ids": sorted(set(pending_unmapped)),
+    }
+
+
+def mark_graph_extraction_integrity_failed(job_id: int, *, claim_token: str, error: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET status='integrity_failed', last_error=?, claim_token=NULL,
+                claim_owner=NULL, lease_until=NULL,
+                completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND claim_token=? AND status='running'
+            """,
+            (str(error)[:1000], int(job_id), str(claim_token)),
+        )
+
+
+def fail_graph_extraction_job(job_id: int, *, claim_token: str, error: str) -> dict:
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        job = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?", (int(job_id),)
+        ).fetchone()
+        if not job or str(job["claim_token"] or "") != str(claim_token):
+            raise ValueError("graph extraction claim is stale")
+        retryable = int(job["attempt_count"]) < 4
+        delay = (30, 120, 600, 1800)[min(max(int(job["attempt_count"]) - 1, 0), 3)]
+        status = "retry_wait" if retryable else "failed"
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET status=?, last_error=?, claim_token=NULL, claim_owner=NULL,
+                lease_until=NULL,
+                next_attempt_at=CASE WHEN ?='retry_wait' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now', ?) ELSE NULL END,
+                completed_at=CASE WHEN ?='failed' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=?
+            """,
+            (status, str(error)[:1000], status, f"+{delay} seconds", status, int(job_id)),
+        )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?", (int(job_id),)
+        ).fetchone()
+    return dict(row)
+
+
+def _graph_event_payload_conn(conn: sqlite3.Connection, event_id: str) -> dict:
+    row = conn.execute(
+        """
+        SELECT event.*, evidence.evidence_id, evidence.quote AS evidence_quote,
+               evidence.start_offset AS evidence_start_offset,
+               evidence.end_offset AS evidence_end_offset,
+               evidence.content_hash AS evidence_content_hash,
+               kp.canonical_name AS knowledge_point_name,
+               class.name AS class_name
+        FROM class_commentary_student_learning_events AS event
+        JOIN class_commentary_learning_evidence AS evidence ON evidence.event_id=event.event_id
+        JOIN class_commentary_knowledge_points AS kp
+          ON kp.organization_id=event.organization_id
+         AND kp.knowledge_point_key=event.knowledge_point_key
+        JOIN class_commentary_generations AS generation ON generation.id=event.generation_id
+        JOIN classes AS class ON class.id=generation.class_id
+        WHERE event.event_id=?
+        """,
+        (str(event_id),),
+    ).fetchone()
+    if not row:
+        raise ValueError("learning event not found")
+    methods = conn.execute(
+        "SELECT method_text AS text, causal_supported FROM class_commentary_learning_teaching_methods WHERE event_id=? ORDER BY method_id",
+        (str(event_id),),
+    ).fetchall()
+    next_steps = conn.execute(
+        "SELECT next_step_text AS text, status FROM class_commentary_learning_next_steps WHERE event_id=? ORDER BY next_step_id",
+        (str(event_id),),
+    ).fetchall()
+    payload = dict(row)
+    payload["lesson_name"] = f"{str(row['class_name'] or '').strip()} 课堂反馈".strip()
+    payload["teaching_methods"] = [dict(item) for item in methods]
+    payload["next_steps"] = [dict(item) for item in next_steps]
+    supersedes_event_id = str(row["supersedes_event_id"] or "").strip()
+    if supersedes_event_id:
+        supersedes = conn.execute(
+            "SELECT observed_state FROM class_commentary_student_learning_events WHERE event_id=?",
+            (supersedes_event_id,),
+        ).fetchone()
+        if not supersedes:
+            raise ValueError("superseded learning event not found")
+        payload["supersedes_state"] = str(supersedes["observed_state"])
+    return payload
+
+
+def get_graph_sync_payload(operation_id: int) -> Optional[dict]:
+    with _conn() as conn:
+        operation = conn.execute(
+            "SELECT * FROM class_commentary_graph_sync_outbox WHERE id=?", (int(operation_id),)
+        ).fetchone()
+        if not operation:
+            return None
+        payload = _json_object(operation["payload_json"])
+    result = dict(operation)
+    result["event"] = payload
+    result["integrity_valid"] = str(operation["payload_hash"]) == _graph_sync_payload_hash(payload)
+    return result
+
+
+def complete_graph_sync_operation(
+    operation_id: int, *, claim_token: str, result_snapshot: Mapping[str, object]
+) -> dict:
+    with _conn() as conn:
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_graph_sync_outbox
+            SET status='applied', result_snapshot_json=?, claim_token=NULL,
+                claim_owner=NULL, lease_until=NULL, last_error=NULL,
+                applied_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND claim_token=? AND status='running'
+            """,
+            (canonical_json(dict(result_snapshot)), int(operation_id), str(claim_token)),
+        )
+        if updated.rowcount != 1:
+            raise ValueError("graph sync claim is stale")
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_sync_outbox WHERE id=?", (int(operation_id),)
+        ).fetchone()
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_cleanup_requests AS cleanup
+            SET status='applied', last_error=NULL,
+                applied_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE cleanup.status='pending'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM class_commentary_student_learning_events AS event
+                  JOIN class_commentary_graph_sync_outbox AS outbox
+                    ON outbox.event_id=event.event_id
+                  WHERE event.organization_id=cleanup.organization_id
+                    AND (cleanup.student_id IS NULL OR event.student_id=cleanup.student_id)
+                    AND event.desired_status='deleted'
+                    AND outbox.status<>'applied'
+              )
+            """
+        )
+    return dict(row)
+
+
+def fail_graph_sync_operation(operation_id: int, *, claim_token: str, error: str) -> dict:
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        operation = conn.execute(
+            "SELECT * FROM class_commentary_graph_sync_outbox WHERE id=?", (int(operation_id),)
+        ).fetchone()
+        if not operation or str(operation["claim_token"] or "") != str(claim_token):
+            raise ValueError("graph sync claim is stale")
+        retryable = int(operation["attempt_count"]) < 8
+        delay = min(3600, 30 * (2 ** max(int(operation["attempt_count"]) - 1, 0)))
+        status = "retry_wait" if retryable else "failed"
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_sync_outbox
+            SET status=?, last_error=?, claim_token=NULL, claim_owner=NULL,
+                lease_until=NULL,
+                next_attempt_at=CASE WHEN ?='retry_wait' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now', ?) ELSE NULL END,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=?
+            """,
+            (status, str(error)[:1000], status, f"+{delay} seconds", int(operation_id)),
+        )
+        if status == "failed":
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_cleanup_requests AS cleanup
+                SET status='failed', last_error=?,
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE cleanup.status='pending'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM class_commentary_student_learning_events AS event
+                      WHERE event.event_id=?
+                        AND event.desired_status='deleted'
+                        AND event.organization_id=cleanup.organization_id
+                        AND (cleanup.student_id IS NULL OR event.student_id=cleanup.student_id)
+                  )
+                """,
+                (str(error)[:1000], str(operation["event_id"])),
+            )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_sync_outbox WHERE id=?", (int(operation_id),)
+        ).fetchone()
+    return dict(row)
+
+
+def _list_trusted_graph_events_conn(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT event_id FROM class_commentary_student_learning_events
+        WHERE desired_status<>'deleted'
+        ORDER BY confirmed_at, revision_no, event_id
+        """
+    ).fetchall()
+    return [_graph_event_payload_conn(conn, str(row["event_id"])) for row in rows]
+
+
+def list_trusted_graph_events() -> list[dict]:
+    with _conn() as conn:
+        return _list_trusted_graph_events_conn(conn)
+
+
+def rebuild_semantica_graph(adapter) -> dict:
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        events = _list_trusted_graph_events_conn(conn)
+        result = adapter.rebuild(events)
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_sync_outbox
+            SET status='applied', claim_token=NULL, claim_owner=NULL, lease_until=NULL,
+                last_error=NULL, applied_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE event_id IN (
+                SELECT event_id FROM class_commentary_student_learning_events
+            )
+              AND status<>'running'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_cleanup_requests AS cleanup
+            SET status='applied', last_error=NULL,
+                applied_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE cleanup.status IN ('pending','failed')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM class_commentary_student_learning_events AS event
+                  JOIN class_commentary_graph_sync_outbox AS outbox
+                    ON outbox.event_id=event.event_id
+                  WHERE event.organization_id=cleanup.organization_id
+                    AND (cleanup.student_id IS NULL OR event.student_id=cleanup.student_id)
+                    AND event.desired_status='deleted'
+                    AND outbox.status<>'applied'
+              )
+            """
+        )
+    return result
+
+
+def prepare_graph_cleanup_for_scope_conn(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    student_id: Optional[int] = None,
+    actor_user_id: Optional[int] = None,
+    reason: str,
+) -> dict:
+    organization_id = int(organization_id)
+    scoped_student_id = int(student_id) if student_id is not None else None
+    scoped_actor_user_id = int(actor_user_id) if actor_user_id is not None else None
+    reason = str(reason or "").strip()
+    if organization_id <= 0 or not reason:
+        raise ValueError("graph cleanup scope and reason are required")
+    params: list[object] = [organization_id]
+    student_sql = ""
+    if scoped_student_id is not None:
+        student_sql = " AND student_id=?"
+        params.append(scoped_student_id)
+    rows = conn.execute(
+        f"""
+        SELECT event_id FROM class_commentary_student_learning_events
+        WHERE organization_id=?{student_sql} AND desired_status<>'deleted'
+        ORDER BY event_id
+        """,
+        tuple(params),
+    ).fetchall()
+    event_ids = [str(row["event_id"]) for row in rows]
+    request_key = "class-commentary-graph-cleanup:" + content_hash(
+        [organization_id, scoped_student_id or "*", reason]
+    )
+    status = "pending" if event_ids else "applied"
+    conn.execute(
+        """
+        INSERT INTO class_commentary_graph_cleanup_requests (
+            request_key, organization_id, student_id, actor_user_id, reason, status,
+            event_count, applied_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ?='applied' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') END)
+        ON CONFLICT(request_key) DO UPDATE SET
+            actor_user_id=COALESCE(excluded.actor_user_id, class_commentary_graph_cleanup_requests.actor_user_id),
+            status=excluded.status,
+            event_count=excluded.event_count,
+            last_error=NULL,
+            applied_at=excluded.applied_at,
+            updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        """,
+        (
+            request_key,
+            organization_id,
+            scoped_student_id,
+            scoped_actor_user_id,
+            reason,
+            status,
+            len(event_ids),
+            status,
+        ),
+    )
+    if not event_ids:
+        return {"request_key": request_key, "operation_ids": [], "event_count": 0}
+    placeholders = ",".join("?" for _ in event_ids)
+    conn.execute(
+        f"""
+        UPDATE class_commentary_student_learning_events
+        SET desired_status='deleted', superseded_by_event_id=NULL
+        WHERE event_id IN ({placeholders})
+        """,
+        tuple(event_ids),
+    )
+    conn.execute(
+        f"DELETE FROM class_commentary_learning_state_current WHERE organization_id=?{student_sql}",
+        tuple(params),
+    )
+    operation_ids = []
+    for event_id in event_ids:
+        payload = _graph_event_payload_conn(conn, event_id)
+        payload_hash = _graph_sync_payload_hash(payload)
+        conn.execute(
+            """
+            INSERT INTO class_commentary_graph_sync_outbox (
+                organization_id, event_id, operation_key, payload_json, payload_hash, status
+            ) VALUES (?, ?, ?, ?, ?, 'reconcile_needed')
+            ON CONFLICT(event_id) DO UPDATE SET
+                payload_json=excluded.payload_json,
+                payload_hash=excluded.payload_hash,
+                status='reconcile_needed',
+                claim_token=NULL, claim_owner=NULL, lease_until=NULL,
+                next_attempt_at=NULL, last_error=NULL,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            """,
+            (
+                organization_id,
+                event_id,
+                f"class-commentary-graph-sync:{event_id}",
+                canonical_json(payload),
+                payload_hash,
+            ),
+        )
+        operation_ids.append(
+            int(
+                conn.execute(
+                    "SELECT id FROM class_commentary_graph_sync_outbox WHERE event_id=?",
+                    (event_id,),
+                ).fetchone()["id"]
+            )
+        )
+    return {
+        "request_key": request_key,
+        "operation_ids": operation_ids,
+        "event_count": len(event_ids),
+    }
+
+
+def reconcile_class_commentary_graph_store(*, limit: int = 100) -> dict:
+    recovered_jobs = 0
+    recovered_sync = 0
+    created_sync = 0
+    created_extraction = 0
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        missing_extractions = conn.execute(
+            """
+            SELECT revision.id AS revision_id, revision.generation_id
+            FROM class_commentary_revisions AS revision
+            WHERE revision.learn_requested=1
+              AND revision.graph_extraction_requested=1
+              AND NOT EXISTS (
+                  SELECT 1 FROM class_commentary_graph_extraction_jobs AS job
+                  WHERE job.revision_id=revision.id
+              )
+            ORDER BY revision.confirmed_at, revision.id LIMIT ?
+            """,
+            (max(1, min(int(limit), 500)),),
+        ).fetchall()
+        for missing_revision in missing_extractions:
+            revision = conn.execute(
+                "SELECT * FROM class_commentary_revisions WHERE id=?",
+                (int(missing_revision["revision_id"]),),
+            ).fetchone()
+            generation = conn.execute(
+                "SELECT * FROM class_commentary_generations WHERE id=?",
+                (int(missing_revision["generation_id"]),),
+            ).fetchone()
+            if revision and generation:
+                create_graph_extraction_job_conn(
+                    conn,
+                    dict(generation),
+                    dict(revision),
+                )
+                created_extraction += 1
+        recovered_jobs = conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET status=CASE WHEN attempt_count<4 THEN 'retry_wait' ELSE 'failed' END,
+                claim_token=NULL, claim_owner=NULL, lease_until=NULL,
+                next_attempt_at=CASE WHEN attempt_count<4
+                    THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END,
+                last_error='stale extraction lease recovered',
+                completed_at=CASE WHEN attempt_count>=4
+                    THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE completed_at END,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE status='running' AND lease_until<strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            """
+        ).rowcount
+        recovered_sync = conn.execute(
+            """
+            UPDATE class_commentary_graph_sync_outbox
+            SET status=CASE WHEN attempt_count<8 THEN 'reconcile_needed' ELSE 'failed' END,
+                claim_token=NULL, claim_owner=NULL, lease_until=NULL,
+                last_error='stale graph sync lease recovered',
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE status='running' AND lease_until<strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            """
+        ).rowcount
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_cleanup_requests AS cleanup
+            SET status='failed', last_error='stale graph sync exhausted retries',
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE cleanup.status='pending'
+              AND EXISTS (
+                  SELECT 1
+                  FROM class_commentary_student_learning_events AS event
+                  JOIN class_commentary_graph_sync_outbox AS outbox
+                    ON outbox.event_id=event.event_id
+                  WHERE event.organization_id=cleanup.organization_id
+                    AND (cleanup.student_id IS NULL OR event.student_id=cleanup.student_id)
+                    AND event.desired_status='deleted'
+                    AND outbox.status='failed'
+              )
+            """
+        )
+        missing = conn.execute(
+            """
+            SELECT event_id, organization_id
+            FROM class_commentary_student_learning_events AS event
+            WHERE NOT EXISTS (
+                SELECT 1 FROM class_commentary_graph_sync_outbox AS outbox
+                WHERE outbox.event_id=event.event_id
+              )
+            ORDER BY event.confirmed_at, event.event_id LIMIT ?
+            """,
+            (max(1, min(int(limit), 500)),),
+        ).fetchall()
+        for row in missing:
+            payload = _graph_event_payload_conn(conn, str(row["event_id"]))
+            conn.execute(
+                """
+                INSERT INTO class_commentary_graph_sync_outbox (
+                    organization_id, event_id, operation_key, payload_json, payload_hash, status
+                ) VALUES (?, ?, ?, ?, ?, 'reconcile_needed')
+                """,
+                (
+                    int(row["organization_id"]),
+                    str(row["event_id"]),
+                    f"class-commentary-graph-sync:{row['event_id']}",
+                    canonical_json(payload),
+                    _graph_sync_payload_hash(payload),
+                ),
+            )
+            created_sync += 1
+    return {
+        "created_missing_extraction_jobs": created_extraction,
+        "recovered_extraction_jobs": recovered_jobs,
+        "recovered_sync_operations": recovered_sync,
+        "created_missing_sync_operations": created_sync,
+        "dispatchable_extraction_jobs": list_dispatchable_graph_extraction_jobs(limit),
+        "dispatchable_sync_operations": list_dispatchable_graph_sync_operations(limit),
+    }
+
+
+def retry_graph_revision(
+    revision_id: int, *, organization_id: int, actor_user_id: int, request_id: str
+) -> dict:
+    request_id = str(request_id or "").strip()
+    if not request_id:
+        raise ValueError("request_id is required")
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        prior = conn.execute(
+            """
+            SELECT revision_id FROM class_commentary_graph_retry_events
+            WHERE organization_id=? AND request_id=?
+            """,
+            (int(organization_id), request_id),
+        ).fetchone()
+        if prior and int(prior["revision_id"]) != int(revision_id):
+            raise LearningGraphRetryConflict("graph_retry_request_conflict")
+        job = conn.execute(
+            """
+            SELECT job.* FROM class_commentary_graph_extraction_jobs AS job
+            JOIN class_commentary_revisions AS revision ON revision.id=job.revision_id
+            WHERE job.revision_id=? AND revision.organization_id=?
+            ORDER BY job.id DESC LIMIT 1
+            """,
+            (int(revision_id), int(organization_id)),
+        ).fetchone()
+        if not job:
+            raise ValueError("graph extraction job not found")
+        snapshot = dict(job)
+        payload_hash = content_hash([revision_id, request_id, snapshot.get("status")])
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO class_commentary_graph_retry_events (
+                organization_id, revision_id, extraction_job_id, request_id,
+                payload_hash, actor_user_id, previous_state_snapshot_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (int(organization_id), int(revision_id), int(job["id"]), request_id, payload_hash, int(actor_user_id), canonical_json(snapshot)),
+        )
+        if str(job["status"]) not in {"extracted", "needs_mapping"}:
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET status='queued', attempt_count=0, next_attempt_at=NULL, last_error=NULL,
+                    claim_token=NULL, claim_owner=NULL, lease_until=NULL,
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE id=?
+                """,
+                (int(job["id"]),),
+            )
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_sync_outbox
+            SET status='reconcile_needed', attempt_count=0,
+                claim_token=NULL, claim_owner=NULL, lease_until=NULL,
+                next_attempt_at=NULL, last_error=NULL,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE event_id IN (
+                SELECT event_id FROM class_commentary_student_learning_events WHERE revision_id=?
+            ) AND status<>'applied'
+            """,
+            (int(revision_id),),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_cleanup_requests AS cleanup
+            SET status='pending', last_error=NULL, applied_at=NULL,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE cleanup.status='failed'
+              AND EXISTS (
+                  SELECT 1
+                  FROM class_commentary_student_learning_events AS event
+                  WHERE event.revision_id=? AND event.desired_status='deleted'
+                    AND event.organization_id=cleanup.organization_id
+                    AND (cleanup.student_id IS NULL OR event.student_id=cleanup.student_id)
+              )
+            """,
+            (int(revision_id),),
+        )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?", (int(job["id"]),)
+        ).fetchone()
+    return dict(row)
+
+
+def get_student_learning_graph_summary(
+    *,
+    organization_id: int,
+    task_id: int,
+    student_id: int,
+    subject_key: str,
+    generation_id: Optional[int] = None,
+    event_limit: int = 24,
+) -> dict:
+    subject_key = str(subject_key or "").strip()
+    with _conn() as conn:
+        task = conn.execute(
+            "SELECT * FROM class_commentary_tasks WHERE id=? AND organization_id=?",
+            (int(task_id), int(organization_id)),
+        ).fetchone()
+        if not task:
+            raise ValueError("class commentary task not found")
+        current_rows = conn.execute(
+            """
+            SELECT current.*, kp.canonical_name
+            FROM class_commentary_learning_state_current AS current
+            JOIN class_commentary_knowledge_points AS kp
+              ON kp.organization_id=current.organization_id
+             AND kp.knowledge_point_key=current.knowledge_point_key
+            WHERE current.organization_id=? AND current.student_id=? AND current.subject_key=?
+            ORDER BY kp.canonical_name, current.knowledge_point_key
+            """,
+            (int(organization_id), int(student_id), subject_key),
+        ).fetchall()
+        event_rows = conn.execute(
+            """
+            SELECT event.*, evidence.evidence_id, evidence.quote,
+                   kp.canonical_name, class.name AS class_name
+            FROM class_commentary_student_learning_events AS event
+            JOIN class_commentary_learning_evidence AS evidence ON evidence.event_id=event.event_id
+            JOIN class_commentary_knowledge_points AS kp
+              ON kp.organization_id=event.organization_id
+             AND kp.knowledge_point_key=event.knowledge_point_key
+            JOIN class_commentary_generations AS generation ON generation.id=event.generation_id
+            JOIN classes AS class ON class.id=generation.class_id
+            WHERE event.organization_id=? AND event.student_id=? AND event.subject_key=?
+              AND (
+                  event.desired_status='active' OR
+                  (event.desired_status='superseded' AND event.superseded_by_event_id IS NOT NULL)
+              )
+            ORDER BY event.confirmed_at DESC, event.event_id DESC LIMIT ?
+            """,
+            (int(organization_id), int(student_id), subject_key, max(1, min(int(event_limit), 100))),
+        ).fetchall()
+        latest_revision = conn.execute(
+            """
+            SELECT job.status, job.last_error
+            FROM class_commentary_graph_extraction_jobs AS job
+            JOIN class_commentary_revisions AS revision ON revision.id=job.revision_id
+            WHERE revision.task_id=? AND revision.organization_id=?
+            ORDER BY revision.revision_no DESC, job.id DESC LIMIT 1
+            """,
+            (int(task_id), int(organization_id)),
+        ).fetchone()
+        sync_rows = conn.execute(
+            """
+            SELECT outbox.status, outbox.last_error
+            FROM class_commentary_student_learning_events AS event
+            LEFT JOIN class_commentary_graph_sync_outbox AS outbox
+              ON outbox.event_id=event.event_id
+            WHERE event.organization_id=? AND event.student_id=? AND event.subject_key=?
+              AND event.desired_status<>'deleted'
+            ORDER BY event.confirmed_at DESC, event.event_id DESC
+            """,
+            (int(organization_id), int(student_id), subject_key),
+        ).fetchall()
+        used_refs = []
+        if generation_id is not None:
+            run = conn.execute(
+                """
+                SELECT used_graph_evidence_refs_json
+                FROM class_commentary_student_generation_runs
+                WHERE generation_id=? AND organization_id=? AND student_id=?
+                """,
+                (int(generation_id), int(organization_id), int(student_id)),
+            ).fetchone()
+            if run:
+                used_refs = [str(value) for value in _json_list(run["used_graph_evidence_refs_json"])]
+        used_evidence_by_ref = {}
+        if used_refs:
+            placeholders = ",".join("?" for _ in used_refs)
+            used_evidence_rows = conn.execute(
+                f"""
+                SELECT evidence.evidence_id, evidence.quote, event.lesson_id,
+                       event.revision_id, event.revision_no, event.confirmed_at,
+                       class.name AS class_name
+                FROM class_commentary_learning_evidence AS evidence
+                JOIN class_commentary_student_learning_events AS event
+                  ON event.event_id=evidence.event_id
+                JOIN class_commentary_generations AS generation
+                  ON generation.id=event.generation_id
+                JOIN classes AS class ON class.id=generation.class_id
+                WHERE evidence.evidence_id IN ({placeholders})
+                  AND event.organization_id=? AND event.student_id=?
+                  AND event.subject_key=? AND event.desired_status<>'deleted'
+                """,
+                (
+                    *used_refs,
+                    int(organization_id),
+                    int(student_id),
+                    subject_key,
+                ),
+            ).fetchall()
+            used_evidence_by_ref = {
+                str(row["evidence_id"]): {
+                    "evidence_ref": str(row["evidence_id"]),
+                    "quote": str(row["quote"]),
+                    "lesson_id": int(row["lesson_id"]),
+                    "lesson_name": f"{str(row['class_name'] or '').strip()} 课堂反馈".strip(),
+                    "revision_id": int(row["revision_id"]),
+                    "revision_no": int(row["revision_no"]),
+                    "confirmed_at": str(row["confirmed_at"]),
+                }
+                for row in used_evidence_rows
+            }
+        timeline = []
+        for row in reversed(event_rows):
+            methods = conn.execute(
+                "SELECT method_text FROM class_commentary_learning_teaching_methods WHERE event_id=? ORDER BY method_id",
+                (str(row["event_id"]),),
+            ).fetchall()
+            next_steps = conn.execute(
+                "SELECT next_step_text FROM class_commentary_learning_next_steps WHERE event_id=? AND status='confirmed' ORDER BY next_step_id",
+                (str(row["event_id"]),),
+            ).fetchall()
+            timeline.append(
+                {
+                    "event_ref": str(row["event_id"]),
+                    "knowledge_point_key": str(row["knowledge_point_key"]),
+                    "knowledge_point_name": str(row["canonical_name"]),
+                    "state": str(row["observed_state"]),
+                    "previous_state": str(row["state_before"]) if row["state_before"] is not None else None,
+                    "trend": str(row["reported_trend"]),
+                    "observed_at": str(row["confirmed_at"]),
+                    "evidence": {
+                        "evidence_ref": str(row["evidence_id"]),
+                        "quote": str(row["quote"]),
+                        "lesson_id": int(row["lesson_id"]),
+                        "lesson_name": f"{str(row['class_name'] or '').strip()} 课堂反馈".strip(),
+                        "revision_id": int(row["revision_id"]),
+                        "revision_no": int(row["revision_no"]),
+                        "confirmed_at": str(row["confirmed_at"]),
+                    },
+                    "teaching_methods": [str(item["method_text"]) for item in methods],
+                    "next_steps": [str(item["next_step_text"]) for item in next_steps],
+                }
+            )
+        pending_mapping = conn.execute(
+            """
+            SELECT COUNT(*) AS count FROM class_commentary_graph_unmapped_candidates
+            WHERE organization_id=? AND student_id=? AND subject_key=? AND status='pending'
+            """,
+            (int(organization_id), int(student_id), subject_key),
+        ).fetchone()["count"]
+    raw_status = str(latest_revision["status"] if latest_revision else "")
+    if int(pending_mapping or 0) > 0:
+        sync_status = "needs_mapping"
+    elif raw_status in {"failed", "integrity_failed"}:
+        sync_status = "failed"
+    elif any(str(row["status"] or "") == "failed" for row in sync_rows):
+        sync_status = "failed"
+    elif raw_status in {"queued", "running", "retry_wait"} or any(
+        str(row["status"] or "") != "applied" for row in sync_rows
+    ):
+        sync_status = "pending"
+    else:
+        sync_status = "learned"
+    graph_error = next(
+        (
+            str(row["last_error"] or "")
+            for row in sync_rows
+            if str(row["last_error"] or "")
+        ),
+        "",
+    )
+    return {
+        "organization_id": int(organization_id),
+        "task_id": int(task_id),
+        "student_id": int(student_id),
+        "subject_key": subject_key,
+        "sync_status": sync_status,
+        "can_retry": sync_status in {"failed", "pending"},
+        "error": (
+            str(latest_revision["last_error"] or "") if latest_revision else ""
+        )
+        or graph_error,
+        "current_states": [
+            {
+                "knowledge_point_key": str(row["knowledge_point_key"]),
+                "knowledge_point_name": str(row["canonical_name"]),
+                "state": str(row["observed_state"]),
+                "observed_at": str(row["confirmed_at"]),
+            }
+            for row in current_rows
+        ],
+        "timeline": timeline,
+        "used_graph_evidence_refs": used_refs,
+        "used_graph_evidence": [
+            used_evidence_by_ref[evidence_ref]
+            for evidence_ref in used_refs
+            if evidence_ref in used_evidence_by_ref
+        ],
+    }

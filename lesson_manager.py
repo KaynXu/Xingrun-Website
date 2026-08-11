@@ -2462,6 +2462,13 @@ def _ensure_class_commentary_structured_feedback_schema(conn: sqlite3.Connection
             "class_context_hash": (
                 "TEXT NOT NULL DEFAULT '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'"
             ),
+            "graph_context_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+            "graph_context_hash": (
+                "TEXT NOT NULL DEFAULT '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'"
+            ),
+            "graph_allowed_evidence_refs_json": "TEXT NOT NULL DEFAULT '[]'",
+            "graph_retrieval_status": "TEXT NOT NULL DEFAULT 'pending'",
+            "used_graph_evidence_refs_json": "TEXT NOT NULL DEFAULT '[]'",
             "charge_usage_id": "INTEGER REFERENCES ai_usage_ledger(id) ON DELETE SET NULL",
         },
         "ai_usage_ledger": {
@@ -2765,6 +2772,11 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             memory_context_snapshot_json TEXT NOT NULL DEFAULT '{}',
             memory_context_hash TEXT NOT NULL,
             memory_retrieval_status TEXT NOT NULL DEFAULT 'pending',
+            graph_context_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            graph_context_hash TEXT NOT NULL DEFAULT '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+            graph_allowed_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+            graph_retrieval_status TEXT NOT NULL DEFAULT 'pending',
+            used_graph_evidence_refs_json TEXT NOT NULL DEFAULT '[]',
             provider TEXT NOT NULL,
             model TEXT NOT NULL,
             model_parameters_json TEXT NOT NULL,
@@ -2791,6 +2803,7 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             UNIQUE(organization_id, charge_request_key),
             CHECK(memory_mode IN ('isolated_v2')),
             CHECK(memory_retrieval_status IN ('pending','empty','ready','degraded','failed')),
+            CHECK(graph_retrieval_status IN ('pending','disabled','empty','ready','degraded','failed')),
             CHECK(status IN ('queued','generating','retry_wait','response_received','succeeded','failed')),
             CHECK(charge_status IN ('pending','charged')),
             CHECK(attempt_count >= 0),
@@ -4631,6 +4644,9 @@ def init_db():
         _ensure_column(conn, "class_commentary_tasks", "transcript_polish_error", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "class_commentary_tasks", "transcript_polished_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_class_commentary_evolution_schema(conn)
+        from class_commentary_learning_graph import ensure_class_commentary_graph_schema
+
+        ensure_class_commentary_graph_schema(conn)
         _migrate_legacy_organization_scope(conn)
         _ensure_column(conn, "lessons", "created_by_user_id", "INTEGER NOT NULL DEFAULT 0")
         _ensure_review_plan_versions_schema(conn)
@@ -11565,12 +11581,31 @@ def finalize_class_commentary_student_generation_prompt(
     memory_context: object,
     memory_retrieval_status: str,
     prompt_payload: object,
+    graph_context: object = None,
+    graph_retrieval_status: str = "empty",
+    graph_allowed_evidence_refs: object = None,
 ) -> dict:
     normalized_status = str(memory_retrieval_status or "").strip()
     if normalized_status not in {"empty", "ready", "degraded"}:
         raise ValueError("student memory retrieval status is invalid")
+    normalized_graph_status = str(graph_retrieval_status or "").strip()
+    if normalized_graph_status not in {"disabled", "empty", "ready", "degraded"}:
+        raise ValueError("student graph retrieval status is invalid")
+    if graph_allowed_evidence_refs is None:
+        normalized_graph_refs = []
+    elif isinstance(graph_allowed_evidence_refs, list) and all(
+        isinstance(value, str) and value for value in graph_allowed_evidence_refs
+    ):
+        normalized_graph_refs = list(dict.fromkeys(graph_allowed_evidence_refs))
+    else:
+        raise ValueError("student graph evidence allowlist is invalid")
     memory_json = class_commentary_student_canonical_json(memory_context)
     memory_hash = _class_commentary_content_hash(memory_json)
+    graph_json = class_commentary_student_canonical_json(
+        graph_context if graph_context is not None else {}
+    )
+    graph_hash = _class_commentary_content_hash(graph_json)
+    graph_refs_json = class_commentary_student_canonical_json(normalized_graph_refs)
     prompt_json = class_commentary_student_canonical_json(prompt_payload)
     prompt_hash = _class_commentary_content_hash(prompt_json)
     with get_conn() as conn:
@@ -11581,11 +11616,27 @@ def finalize_class_commentary_student_generation_prompt(
         ).fetchone()
         if not run:
             raise ValueError("student generation run not found")
-        if str(run["memory_retrieval_status"] or "") != "pending":
-            if (
-                str(run["memory_context_hash"] or "") != memory_hash
-                or str(run["prompt_payload_hash"] or "") != prompt_hash
-            ):
+        stored_memory_status = str(run["memory_retrieval_status"] or "pending")
+        stored_graph_status = str(run["graph_retrieval_status"] or "pending")
+        memory_finalized = stored_memory_status != "pending"
+        graph_finalized = stored_graph_status != "pending"
+        if memory_finalized and (
+            str(run["memory_context_hash"] or "") != memory_hash
+            or stored_memory_status != normalized_status
+        ):
+            raise ClassCommentaryGenerationRequestConflict(
+                "student memory prompt is already finalized"
+            )
+        if graph_finalized and (
+            str(run["graph_context_hash"] or "") != graph_hash
+            or str(run["graph_allowed_evidence_refs_json"] or "") != graph_refs_json
+            or stored_graph_status != normalized_graph_status
+        ):
+            raise ClassCommentaryGenerationRequestConflict(
+                "student graph prompt is already finalized"
+            )
+        if memory_finalized and graph_finalized:
+            if str(run["prompt_payload_hash"] or "") != prompt_hash:
                 raise ClassCommentaryGenerationRequestConflict(
                     "student generation prompt is already finalized"
                 )
@@ -11594,19 +11645,28 @@ def finalize_class_commentary_student_generation_prompt(
             """
             UPDATE class_commentary_student_generation_runs
             SET memory_context_snapshot_json=?, memory_context_hash=?,
-                memory_retrieval_status=?, prompt_payload_snapshot_json=?,
+                memory_retrieval_status=?, graph_context_snapshot_json=?,
+                graph_context_hash=?, graph_allowed_evidence_refs_json=?,
+                graph_retrieval_status=?, prompt_payload_snapshot_json=?,
                 prompt_payload_hash=?
             WHERE id=? AND status='generating' AND claim_token=?
-              AND memory_retrieval_status='pending'
+              AND memory_retrieval_status=?
+              AND graph_retrieval_status=?
             """,
             (
                 memory_json,
                 memory_hash,
                 normalized_status,
+                graph_json,
+                graph_hash,
+                graph_refs_json,
+                normalized_graph_status,
                 prompt_json,
                 prompt_hash,
                 int(run_id),
                 str(claim_token),
+                stored_memory_status,
+                stored_graph_status,
             ),
         )
         if updated.rowcount != 1:
@@ -11627,6 +11687,7 @@ def persist_class_commentary_student_generation_response(
     response_snapshot: object,
     structured_feedback_json: str,
     structured_feedback_hash: str,
+    used_graph_evidence_refs: object = None,
 ) -> dict:
     response_json = class_commentary_student_canonical_json(response_snapshot)
     response_hash = _class_commentary_content_hash(response_json)
@@ -11634,6 +11695,17 @@ def persist_class_commentary_student_generation_response(
     normalized_structured_hash = str(structured_feedback_hash or "").strip()
     if not normalized_structured_json or not normalized_structured_hash:
         raise ValueError("student generation structured response is required")
+    if used_graph_evidence_refs is None:
+        normalized_graph_refs = []
+    elif isinstance(used_graph_evidence_refs, list) and all(
+        isinstance(value, str) and value for value in used_graph_evidence_refs
+    ):
+        normalized_graph_refs = list(dict.fromkeys(used_graph_evidence_refs))
+    else:
+        raise ValueError("used graph evidence refs are invalid")
+    used_graph_refs_json = class_commentary_student_canonical_json(
+        normalized_graph_refs
+    )
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         run = conn.execute(
@@ -11647,6 +11719,8 @@ def persist_class_commentary_student_generation_response(
                 str(run["response_hash"] or "") != response_hash
                 or str(run["structured_feedback_hash"] or "")
                 != normalized_structured_hash
+                or str(run["used_graph_evidence_refs_json"] or "")
+                != used_graph_refs_json
             ):
                 raise ClassCommentaryGenerationRequestConflict(
                     "student generation response is already persisted"
@@ -11657,7 +11731,8 @@ def persist_class_commentary_student_generation_response(
             UPDATE class_commentary_student_generation_runs
             SET status='response_received', response_snapshot_json=?,
                 response_hash=?, structured_feedback_json=?,
-                structured_feedback_hash=?, error_code=NULL, next_attempt_at=NULL
+                structured_feedback_hash=?, used_graph_evidence_refs_json=?,
+                error_code=NULL, next_attempt_at=NULL
             WHERE id=? AND status='generating' AND claim_token=?
             """,
             (
@@ -11665,6 +11740,7 @@ def persist_class_commentary_student_generation_response(
                 response_hash,
                 normalized_structured_json,
                 normalized_structured_hash,
+                used_graph_refs_json,
                 int(run_id),
                 str(claim_token),
             ),
@@ -13631,6 +13707,10 @@ def _class_commentary_memory_enabled() -> bool:
     return bool(get_runtime_config().get("class_commentary_memory_enabled"))
 
 
+def _class_commentary_graph_enabled() -> bool:
+    return bool(get_runtime_config().get("class_commentary_graph_enabled"))
+
+
 def _class_commentary_utc_timestamp(value: Optional[datetime] = None) -> str:
     return (value or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -14524,6 +14604,14 @@ def confirm_class_commentary_feedback(
                 (existing["id"],),
             ).fetchone()
             result["memory_job"] = dict(job) if job else None
+            from class_commentary_learning_graph import (
+                get_graph_extraction_job_for_revision_conn,
+            )
+
+            result["graph_job"] = get_graph_extraction_job_for_revision_conn(
+                conn,
+                int(existing["id"]),
+            )
             return result
         (
             generation_id,
@@ -14872,8 +14960,26 @@ def confirm_class_commentary_feedback(
                 generation,
                 revision,
             )
+        graph_job = None
+        if learn_requested and _class_commentary_graph_enabled():
+            from class_commentary_learning_graph import create_graph_extraction_job_conn
+
+            conn.execute(
+                "UPDATE class_commentary_revisions SET graph_extraction_requested=1 WHERE id=?",
+                (revision_id,),
+            )
+            revision = conn.execute(
+                "SELECT * FROM class_commentary_revisions WHERE id=?",
+                (revision_id,),
+            ).fetchone()
+            graph_job = create_graph_extraction_job_conn(
+                conn,
+                dict(generation),
+                dict(revision),
+            )
         result = _serialize_class_commentary_revision_row(revision)
         result["memory_job"] = dict(memory_job) if memory_job else None
+        result["graph_job"] = dict(graph_job) if graph_job else None
         return result
 
 
@@ -17663,6 +17769,7 @@ def _count_student_profile_references(conn: sqlite3.Connection, student_id: int)
         "weekly_wrong_question_followup_messages",
         "class_commentary_memory_records",
         "class_commentary_student_generation_runs",
+        "class_commentary_student_learning_events",
     ]
     total = 0
     for table in reference_tables:
@@ -17671,7 +17778,11 @@ def _count_student_profile_references(conn: sqlite3.Connection, student_id: int)
     return total
 
 
-def delete_or_archive_student_profile(student_id: int, organization_id: int | None = None) -> dict:
+def delete_or_archive_student_profile(
+    student_id: int,
+    organization_id: int | None = None,
+    actor_user_id: int | None = None,
+) -> dict:
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         params: list[object] = [student_id]
@@ -17687,6 +17798,15 @@ def delete_or_archive_student_profile(student_id: int, organization_id: int | No
             organization_id=int(row["organization_id"]),
             student_id=student_id,
         )
+        from class_commentary_learning_graph import prepare_graph_cleanup_for_scope_conn
+
+        graph_cleanup = prepare_graph_cleanup_for_scope_conn(
+            conn,
+            organization_id=int(row["organization_id"]),
+            student_id=student_id,
+            actor_user_id=actor_user_id,
+            reason="student_profile_delete",
+        )
         reference_count = _count_student_profile_references(conn, student_id)
         if reference_count == 0:
             conn.execute("DELETE FROM students WHERE id=?", (student_id,))
@@ -17695,6 +17815,7 @@ def delete_or_archive_student_profile(student_id: int, organization_id: int | No
                 "student_id": student_id,
                 "reference_count": 0,
                 "memory_cleanup": memory_cleanup,
+                "graph_cleanup": graph_cleanup,
             }
         conn.execute(
             """
@@ -17711,6 +17832,7 @@ def delete_or_archive_student_profile(student_id: int, organization_id: int | No
             "reference_count": reference_count,
             "student": _build_student_profile_from_row(conn, archived_row),
             "memory_cleanup": memory_cleanup,
+            "graph_cleanup": graph_cleanup,
         }
 
 
@@ -18990,7 +19112,7 @@ def reject_organization_request(request_id: int, reviewer_id: int) -> None:
         )
 
 
-def delete_organization(org_id: int) -> dict:
+def delete_organization(org_id: int, actor_user_id: int | None = None) -> dict:
     """Delete an organization and all its data. Cannot delete the default org."""
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -19032,6 +19154,14 @@ def delete_organization(org_id: int) -> dict:
             memory_cleanup = _prepare_class_commentary_organization_memory_cleanup_conn(
                 conn,
                 org_id,
+            )
+            from class_commentary_learning_graph import prepare_graph_cleanup_for_scope_conn
+
+            graph_cleanup = prepare_graph_cleanup_for_scope_conn(
+                conn,
+                organization_id=org_id,
+                actor_user_id=actor_user_id,
+                reason="organization_delete",
             )
             deleted_at = _class_commentary_utc_timestamp()
             conn.execute(
@@ -19125,6 +19255,7 @@ def delete_organization(org_id: int) -> dict:
                 "action": "deactivated",
                 "organization_id": org_id,
                 "memory_cleanup": memory_cleanup,
+                "graph_cleanup": graph_cleanup,
             }
         conn.execute("DELETE FROM monthly_plan_jobs WHERE organization_id=?", (org_id,))
         conn.execute("DELETE FROM wrong_question_practice_pack_jobs WHERE organization_id=?", (org_id,))

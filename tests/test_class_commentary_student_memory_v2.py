@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import lesson_manager
 from class_commentary import CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2
@@ -15,6 +16,9 @@ from class_commentary_memory_retrieval import (
     ClassCommentaryStudentMemoryRetrievalError,
     retrieve_isolated_student_memory_context,
     validate_isolated_student_memory_context_snapshot,
+)
+from class_commentary_graph_retrieval import (
+    ClassCommentaryStudentGraphRetrievalError,
 )
 from class_commentary_student_generation_jobs import (
     process_class_commentary_student_generation_run,
@@ -561,6 +565,90 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
                 "request-conflict",
                 credit_hold_amount_per_student=9,
             )
+
+    def test_retry_initializes_pending_graph_for_pre_graph_frozen_memory_run(self):
+        generation = self._reserve("pre-graph-frozen-memory", students=[self.students[0]])
+        run = lesson_manager.list_class_commentary_student_generation_runs(
+            generation["id"]
+        )[0]
+
+        class RateLimitError(RuntimeError):
+            def __init__(self):
+                super().__init__("429 rate limit")
+                self.headers = {"Retry-After": "1"}
+
+        def limited(**_kwargs):
+            raise RateLimitError()
+
+        first_service = EmptyMemoryService()
+        first = process_class_commentary_student_generation_run(
+            run["id"],
+            runtime_config={"class_commentary_graph_enabled": False},
+            memory_service=first_service,
+            generator=limited,
+            claim_owner="pre-graph-first",
+        )
+        self.assertEqual(first["status"], "retry_wait")
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_student_generation_runs
+                SET graph_context_snapshot_json='{}', graph_context_hash='',
+                    graph_allowed_evidence_refs_json='[]',
+                    graph_retrieval_status='pending',
+                    next_attempt_at='2000-01-01T00:00:00.000Z'
+                WHERE id=?
+                """,
+                (run["id"],),
+            )
+
+        second_service = EmptyMemoryService()
+        second = process_class_commentary_student_generation_run(
+            run["id"],
+            runtime_config={"class_commentary_graph_enabled": False},
+            memory_service=second_service,
+            generator=lambda **_: (
+                self._success_response(run["student_id"]),
+                {
+                    "provider": "openai",
+                    "model": "deterministic-fake",
+                    "input_tokens": 60,
+                    "output_tokens": 30,
+                },
+            ),
+            claim_owner="pre-graph-retry",
+        )
+        self.assertEqual(second["status"], "succeeded")
+        saved = lesson_manager.get_class_commentary_student_generation_run(run["id"])
+        self.assertEqual(saved["graph_retrieval_status"], "disabled")
+        self.assertTrue(saved["graph_context_hash"])
+        self.assertEqual(second_service.calls, [])
+
+    def test_graph_scope_corruption_fails_before_provider_dispatch(self):
+        generation = self._reserve("graph-scope-corruption", students=[self.students[0]])
+        run = lesson_manager.list_class_commentary_student_generation_runs(
+            generation["id"]
+        )[0]
+        provider_calls = []
+
+        with patch(
+            "class_commentary_student_generation_jobs.retrieve_isolated_student_graph_context",
+            side_effect=ClassCommentaryStudentGraphRetrievalError(
+                "graph_scope_mismatch"
+            ),
+        ):
+            result = process_class_commentary_student_generation_run(
+                run["id"],
+                runtime_config={"class_commentary_graph_enabled": True},
+                memory_service=EmptyMemoryService(),
+                generator=lambda **kwargs: provider_calls.append(kwargs),
+                claim_owner="graph-scope-corruption",
+            )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(provider_calls, [])
+        saved = lesson_manager.get_class_commentary_student_generation_run(run["id"])
+        self.assertEqual(saved["error_code"], "graph_scope_mismatch")
 
     def test_isolated_replay_uses_frozen_mode_after_kill_switch_change(self):
         first = self._reserve("isolated-replay-after-kill-switch")

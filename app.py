@@ -346,6 +346,13 @@ from class_commentary_memory_queue import (
     class_commentary_memory_queue_healthcheck,
     dispatch_class_commentary_memory_work,
 )
+from class_commentary_graph_queue import dispatch_class_commentary_graph_work
+from class_commentary_learning_graph import (
+    LearningGraphRetryConflict,
+    get_student_learning_graph_summary,
+    retry_graph_revision,
+)
+from class_commentary_semantica import SemanticaGraphAdapter
 from class_commentary_memory_retrieval import (
     empty_class_commentary_memory_context,
     retrieve_class_commentary_memory_context,
@@ -497,6 +504,7 @@ def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
 
 def _class_commentary_capabilities(*, force: bool = False) -> dict:
     memory_capabilities = _class_commentary_memory_capabilities(force=force)
+    graph_capabilities = _class_commentary_graph_capabilities()
     runtime = get_config()
     isolated_v2_enabled = bool(
         runtime.get("class_commentary_student_memory_v2_enabled")
@@ -505,6 +513,7 @@ def _class_commentary_capabilities(*, force: bool = False) -> dict:
     )
     return {
         **memory_capabilities,
+        **graph_capabilities,
         "structured_feedback_enabled": bool(
             runtime.get("class_commentary_structured_feedback_enabled")
         ),
@@ -512,6 +521,31 @@ def _class_commentary_capabilities(*, force: bool = False) -> dict:
         "student_history_memory_v2_max_credits_per_student": (
             max_configured_charge_for_feature("class_commentary_generate")
         ),
+    }
+
+
+def _class_commentary_graph_capabilities() -> dict:
+    runtime = get_config()
+    enabled = bool(runtime.get("class_commentary_graph_enabled"))
+    if not enabled:
+        return {
+            "graph_enabled": False,
+            "graph_healthy": False,
+            "graph_degraded": False,
+        }
+    adapter = SemanticaGraphAdapter(
+        str(runtime.get("class_commentary_graph_store_path") or ""),
+        timeout_seconds=int(runtime.get("class_commentary_graph_timeout") or 10),
+    )
+    graph_health = adapter.health()
+    queue_health = class_commentary_memory_queue_healthcheck(
+        runtime_config={**runtime, "class_commentary_memory_enabled": True}
+    )
+    healthy = bool(graph_health.get("healthy")) and bool(queue_health.get("healthy"))
+    return {
+        "graph_enabled": True,
+        "graph_healthy": healthy,
+        "graph_degraded": not healthy,
     }
 
 
@@ -527,6 +561,22 @@ def _dispatch_class_commentary_memory_best_effort() -> dict:
             "enabled": bool(get_config().get("class_commentary_memory_enabled")),
             "extractions": 0,
             "operations": 0,
+            "errors": [type(exc).__name__],
+        }
+
+
+def _dispatch_class_commentary_graph_best_effort() -> dict:
+    try:
+        return dispatch_class_commentary_graph_work(runtime_config=get_config())
+    except Exception as exc:
+        logger.warning(
+            "class commentary graph dispatch unavailable: %s",
+            type(exc).__name__,
+        )
+        return {
+            "enabled": bool(get_config().get("class_commentary_graph_enabled")),
+            "extractions": 0,
+            "sync_operations": 0,
             "errors": [type(exc).__name__],
         }
 
@@ -5973,11 +6023,11 @@ def api_admin_wrong_question_activity_summary():
 
 @app.route("/api/admin/organizations/<int:org_id>", methods=["DELETE"])
 def api_admin_organization_delete(org_id: int):
-    _, error = _require_super_owner()
+    user, error = _require_super_owner()
     if error:
         return error
     try:
-        result = delete_organization(org_id)
+        result = delete_organization(org_id, actor_user_id=int(user["id"]))
     except LookupError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -5987,6 +6037,9 @@ def api_admin_organization_delete(org_id: int):
     memory_cleanup = result.pop("memory_cleanup", None)
     if isinstance(memory_cleanup, dict) and memory_cleanup.get("operation_ids"):
         _dispatch_class_commentary_memory_best_effort()
+    graph_cleanup = result.pop("graph_cleanup", None)
+    if isinstance(graph_cleanup, dict) and graph_cleanup.get("operation_ids"):
+        _dispatch_class_commentary_graph_best_effort()
     return jsonify({"ok": True, **result})
 
 
@@ -8443,12 +8496,19 @@ def api_student_profile_delete(student_id):
     if error:
         return error
     try:
-        result = delete_or_archive_student_profile(student_id, user.get("organization_id"))
+        result = delete_or_archive_student_profile(
+            student_id,
+            user.get("organization_id"),
+            actor_user_id=int(user["id"]),
+        )
     except LookupError:
         return jsonify({"error": "not found"}), 404
     memory_cleanup = result.pop("memory_cleanup", {}) or {}
     if memory_cleanup.get("operation_ids"):
         _dispatch_class_commentary_memory_best_effort()
+    graph_cleanup = result.pop("graph_cleanup", {}) or {}
+    if graph_cleanup.get("operation_ids"):
+        _dispatch_class_commentary_graph_best_effort()
     return jsonify(result)
 
 
@@ -10314,6 +10374,10 @@ def api_class_commentary_feedback_confirm(task_id: int):
     memory_summary = None
     if bool(get_config().get("class_commentary_memory_enabled")):
         _dispatch_class_commentary_memory_best_effort()
+    if bool((data or {}).get("learn")) and bool(
+        get_config().get("class_commentary_graph_enabled")
+    ):
+        _dispatch_class_commentary_graph_best_effort()
     if bool((data or {}).get("learn")):
         memory_summary = _serialize_class_commentary_memory_summary(
             list_class_commentary_revision_memories(
@@ -10355,6 +10419,135 @@ def api_class_commentary_feedback_revisions(task_id: int):
             for revision in revisions
         ]
     })
+
+
+@app.route(
+    "/api/class-commentary/tasks/<int:task_id>/students/<int:student_id>/learning-graph",
+    methods=["GET"],
+)
+def api_class_commentary_student_learning_graph(task_id: int, student_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    task, task_error = _get_owned_class_commentary_task_or_error(user, task_id)
+    if task_error:
+        return task_error
+    if not bool(get_config().get("class_commentary_graph_enabled")):
+        return jsonify({"error": "learning_graph_not_enabled"}), 409
+    class_row = get_class(int(task["class_id"]))
+    if (
+        not class_row
+        or int(class_row.get("organization_id") or 0)
+        != int(user.get("organization_id") or 0)
+    ):
+        return jsonify({"error": "not found"}), 404
+    class_student_ids = {
+        int(student.get("id") or 0)
+        for student in list_students_for_class(int(task["class_id"]))
+    }
+    if int(student_id) not in class_student_ids:
+        return jsonify({"error": "not found"}), 404
+    subject_key = str(class_row.get("subject_key") or "").strip()
+    if not subject_key:
+        return jsonify({"error": "class_subject_not_supported"}), 409
+
+    generation_id = None
+    raw_generation_id = request.args.get("generation_id")
+    if raw_generation_id is not None:
+        try:
+            generation_id = int(raw_generation_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "generation_id must be an integer"}), 400
+        if generation_id <= 0:
+            return jsonify({"error": "generation_id must be positive"}), 400
+        generation = get_class_commentary_generation(generation_id)
+        if (
+            not generation
+            or int(generation.get("task_id") or 0) != int(task["id"])
+            or int(generation.get("organization_id") or 0)
+            != int(user.get("organization_id") or 0)
+        ):
+            return jsonify({"error": "not found"}), 404
+        try:
+            roster = json.loads(
+                str(generation.get("attending_roster_snapshot_json") or "[]")
+            )
+        except json.JSONDecodeError:
+            return jsonify({"error": "generation_scope_invalid"}), 409
+        roster_student_ids = {
+            int(item.get("student_id") or 0)
+            for item in roster
+            if isinstance(item, dict)
+        }
+        if int(student_id) not in roster_student_ids:
+            return jsonify({"error": "not found"}), 404
+        generation_subject_key = str(generation.get("subject_key") or "").strip()
+        if not generation_subject_key:
+            return jsonify({"error": "generation_subject_not_supported"}), 409
+        subject_key = generation_subject_key
+
+    try:
+        summary = get_student_learning_graph_summary(
+            organization_id=int(user["organization_id"]),
+            task_id=int(task["id"]),
+            student_id=int(student_id),
+            subject_key=subject_key,
+            generation_id=generation_id,
+            event_limit=int(
+                get_config().get("class_commentary_graph_retrieval_event_limit") or 24
+            ),
+        )
+    except ValueError:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"learning_graph": summary})
+
+
+@app.route(
+    "/api/class-commentary/revisions/<int:revision_id>/graph-retry",
+    methods=["POST"],
+)
+def api_class_commentary_revision_graph_retry(revision_id: int):
+    user, error = _require_auth()
+    if error:
+        return error
+    _, _, revision_error = _get_owned_class_commentary_revision_or_error(
+        user,
+        revision_id,
+    )
+    if revision_error:
+        return revision_error
+    if not bool(get_config().get("class_commentary_graph_enabled")):
+        return jsonify({"error": "learning_graph_not_enabled"}), 409
+    data, payload_error = _get_json_object_payload()
+    if payload_error:
+        return payload_error
+    request_id = str((data or {}).get("request_id") or "").strip()
+    if not request_id:
+        return jsonify({"error": "request_id is required"}), 400
+    with get_conn() as conn:
+        prior = conn.execute(
+            """
+            SELECT revision_id
+            FROM class_commentary_graph_retry_events
+            WHERE organization_id=? AND request_id=?
+            """,
+            (int(user["organization_id"]), request_id),
+        ).fetchone()
+    if prior and int(prior["revision_id"]) != int(revision_id):
+        return jsonify({"error": "graph_retry_request_conflict"}), 409
+    try:
+        job = retry_graph_revision(
+            revision_id,
+            organization_id=int(user["organization_id"]),
+            actor_user_id=int(user["id"]),
+            request_id=request_id,
+        )
+    except LearningGraphRetryConflict:
+        return jsonify({"error": "graph_retry_request_conflict"}), 409
+    except ValueError:
+        return jsonify({"error": "not found"}), 404
+    dispatch = _dispatch_class_commentary_graph_best_effort()
+    return jsonify({"graph_job": job, "dispatch": dispatch})
 
 
 @app.route(
