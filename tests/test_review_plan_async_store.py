@@ -20,6 +20,103 @@ class ReviewPlanAsyncStoreTestCase(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_failure_notification_receipts_are_per_user_and_per_version(self):
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-08-11",
+            subject="数学",
+            grade="初二",
+            topic="一次函数",
+            summary="课堂总结",
+            weak_points="",
+            class_id=self.class_id,
+            created_by_user_id=self.owner["id"],
+        )
+        first_version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=self.owner["id"],
+        )
+        lesson_manager.fail_review_plan_version(first_version["id"], "第一次失败")
+
+        with lesson_manager.get_conn() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO users (username, password_hash, display_name, role, status, organization_id)
+                VALUES ('receipt-test-user', 'unused', '回执测试用户', 'member', 'active', ?)
+                """,
+                (self.owner["organization_id"],),
+            )
+            other_user_id = int(cursor.lastrowid)
+
+        owner_unseen = lesson_manager.list_unseen_review_plan_failure_notifications(self.owner["id"])
+        other_unseen = lesson_manager.list_unseen_review_plan_failure_notifications(other_user_id)
+        self.assertEqual([item["version_id"] for item in owner_unseen], [first_version["id"]])
+        self.assertEqual([item["version_id"] for item in other_unseen], [first_version["id"]])
+
+        self.assertEqual(
+            lesson_manager.mark_review_plan_failure_notifications_seen(
+                self.owner["id"],
+                [first_version["id"], first_version["id"]],
+            ),
+            [first_version["id"]],
+        )
+        self.assertEqual(
+            lesson_manager.mark_review_plan_failure_notifications_seen(self.owner["id"], [first_version["id"]]),
+            [first_version["id"]],
+        )
+        self.assertEqual(lesson_manager.list_unseen_review_plan_failure_notifications(self.owner["id"]), [])
+        self.assertEqual(
+            [item["version_id"] for item in lesson_manager.list_unseen_review_plan_failure_notifications(other_user_id)],
+            [first_version["id"]],
+        )
+
+        second_version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="generating",
+            created_by_user_id=self.owner["id"],
+        )
+        lesson_manager.fail_review_plan_version(second_version["id"], "第二次失败")
+        self.assertEqual(
+            [item["version_id"] for item in lesson_manager.list_unseen_review_plan_failure_notifications(self.owner["id"])],
+            [second_version["id"]],
+        )
+        self.assertEqual(
+            [version["id"] for version in lesson_manager.list_review_plan_versions(lesson_id)],
+            [second_version["id"], first_version["id"]],
+        )
+
+    def test_notification_schema_does_not_backfill_historical_failures(self):
+        with lesson_manager.get_conn() as conn:
+            conn.execute("DROP TRIGGER IF EXISTS trg_review_plan_failed_notification_insert")
+            conn.execute("DROP TRIGGER IF EXISTS trg_review_plan_failed_notification_update")
+            conn.execute("DROP TABLE IF EXISTS review_plan_notification_receipts")
+            conn.execute("DROP TABLE IF EXISTS review_plan_notification_events")
+
+        lesson_id = lesson_manager.create_pending_lesson(
+            date_str="2026-08-11",
+            subject="数学",
+            grade="初二",
+            topic="历史失败",
+            summary="课堂总结",
+            weak_points="",
+            class_id=self.class_id,
+            created_by_user_id=self.owner["id"],
+        )
+        historical_version = lesson_manager.create_review_plan_version(
+            lesson_id=lesson_id,
+            status="failed",
+            created_by_user_id=self.owner["id"],
+        )
+
+        with lesson_manager.get_conn() as conn:
+            lesson_manager._ensure_review_plan_failure_notification_schema(conn)
+
+        self.assertEqual(lesson_manager.list_unseen_review_plan_failure_notifications(self.owner["id"]), [])
+        self.assertEqual(
+            [version["id"] for version in lesson_manager.list_review_plan_versions(lesson_id)],
+            [historical_version["id"]],
+        )
+
     def test_create_pending_lesson_and_complete_version(self):
         lesson_id = lesson_manager.create_pending_lesson(
             date_str="2026-04-09",

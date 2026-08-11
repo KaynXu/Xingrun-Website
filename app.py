@@ -214,6 +214,7 @@ from lesson_manager import (
     list_lessons_for_actor,
     list_lessons_page_for_actor,
     list_review_plan_versions,
+    list_unseen_review_plan_failure_notifications,
     list_wrong_question_practice_sheets_for_student,
     list_wrong_question_practice_pack_jobs_for_class,
     list_targeted_wrong_question_practice_candidates,
@@ -269,6 +270,7 @@ from lesson_manager import (
     mark_lesson_generation_failed,
     mark_lesson_generation_succeeded,
     mark_lesson_transcription_succeeded,
+    mark_review_plan_failure_notifications_seen,
     mark_wrong_question_practice_pack_job_status,
     mark_wrong_question_practice_sheet_failed,
     mark_wrong_question_practice_sheet_succeeded,
@@ -3203,6 +3205,39 @@ def _serialize_lessons_for_response(lessons: object) -> list[dict]:
         ),
         reverse=True,
     )
+
+
+def _serialize_review_plan_failure_notification(user: dict, notification: object) -> Optional[dict]:
+    if not isinstance(notification, dict):
+        return None
+    lesson = get_lesson(int(notification.get("lesson_id") or 0))
+    if not lesson or not _can_access_lesson(user, lesson):
+        return None
+    serialized = _serialize_lesson_for_response(lesson)
+    if serialized is None:
+        return None
+    version_id = int(notification.get("version_id") or 0)
+    generation_error = str(notification.get("generation_error") or "")
+    serialized.update(
+        {
+            "notification_version_id": version_id,
+            "notification_created_at": str(notification.get("notification_created_at") or ""),
+            "latest_failed_version_id": version_id,
+            "latest_failed_version_no": int(notification.get("version_no") or 0),
+            "latest_failed_at": str(notification.get("failed_at") or ""),
+            "latest_generation_error": generation_error,
+            "generation_error": generation_error,
+            "record_status": "failed",
+            "has_version_generating": False,
+            "active_version_status": "",
+            "active_version_created_at": "",
+            "current_status": "",
+            "current_pdf_url": "",
+            "current_download_url": "",
+            "pdf_path": "",
+        }
+    )
+    return serialized
 
 
 def _serialize_class_commentary_task_for_response(
@@ -9153,6 +9188,40 @@ def api_lessons_list():
         "page": int(result.get("page") or page),
         "page_size": int(result.get("page_size") or page_size),
     })
+
+
+@app.route("/api/review-plans/failure-notifications", methods=["GET"])
+def api_review_plan_failure_notifications_list():
+    user, error = _require_auth()
+    if error:
+        return error
+    items = []
+    for notification in list_unseen_review_plan_failure_notifications(int(user["id"]), limit=500):
+        serialized = _serialize_review_plan_failure_notification(user, notification)
+        if serialized is not None:
+            items.append(serialized)
+    return jsonify({"items": items})
+
+
+@app.route("/api/review-plans/failure-notifications/seen", methods=["POST"])
+def api_review_plan_failure_notifications_seen():
+    user, error = _require_auth()
+    if error:
+        return error
+    payload = request.json if request.is_json else {}
+    raw_version_ids = payload.get("version_ids") if isinstance(payload, dict) else None
+    if not isinstance(raw_version_ids, list) or len(raw_version_ids) > 100:
+        return jsonify({"error": "version_ids must be a list with at most 100 items"}), 400
+    if any(isinstance(version_id, bool) or not isinstance(version_id, int) or version_id <= 0 for version_id in raw_version_ids):
+        return jsonify({"error": "version_ids must contain positive integers"}), 400
+    version_ids = sorted(set(raw_version_ids))
+    for version_id in version_ids:
+        version = get_review_plan_version(version_id)
+        lesson = get_lesson(int((version or {}).get("lesson_id") or 0))
+        if not version or str(version.get("status") or "") != "failed" or not lesson or not _can_access_lesson(user, lesson):
+            return jsonify({"error": "not found"}), 404
+    seen_version_ids = mark_review_plan_failure_notifications_seen(int(user["id"]), version_ids)
+    return jsonify({"seen_version_ids": seen_version_ids})
 
 
 @app.route("/api/review-plans/<int:lesson_id>", methods=["GET"])

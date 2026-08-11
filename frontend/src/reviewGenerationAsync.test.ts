@@ -24,12 +24,14 @@ test('review task dock keeps pending work but does not revive historical failure
       id: 31,
       subject: '数学',
       record_status: 'failed',
+      latest_failed_version_id: 310,
       generation_error: '很久以前的失败',
     },
     {
       id: 32,
       subject: '数学',
       record_status: 'failed',
+      latest_failed_version_id: 320,
       generation_error: '本次任务失败',
     },
     {
@@ -41,7 +43,38 @@ test('review task dock keeps pending work but does not revive historical failure
   ]);
 
   assert.deepEqual(getReviewTaskDockLessons(lessons, new Set()).map((lesson) => lesson.id), [30]);
-  assert.deepEqual(getReviewTaskDockLessons(lessons, new Set([32])).map((lesson) => lesson.id), [30, 32]);
+  assert.deepEqual(getReviewTaskDockLessons(lessons, new Set([320])).map((lesson) => lesson.id), [30, 32]);
+});
+
+test('review task dock keys failures by version so a later failure of the same lesson can notify', () => {
+  const lessons = normalizeReviewLessonsResponse([
+    {
+      id: 32,
+      subject: '数学',
+      record_status: 'failed',
+      latest_failed_version_id: 320,
+      generation_error: '第一次失败',
+    },
+    {
+      id: 32,
+      subject: '数学',
+      record_status: 'failed',
+      latest_failed_version_id: 321,
+      generation_error: '第二次失败',
+    },
+    {
+      id: 32,
+      subject: '数学',
+      record_status: 'failed',
+      latest_failed_version_id: 321,
+      generation_error: '第二次失败重复响应',
+    },
+  ]);
+
+  assert.deepEqual(
+    getReviewTaskDockLessons(lessons, new Set([320, 321])).map((lesson) => lesson.latest_failed_version_id),
+    [320, 321],
+  );
 });
 
 test('normalizeReviewLessonsResponse keeps current version and active generation fields', () => {
@@ -68,6 +101,7 @@ test('normalizeReviewLessonsResponse keeps current version and active generation
       has_version_generating: true,
       active_version_status: 'generating',
       active_version_created_at: '2026-05-02T12:35:00',
+      latest_failed_version_id: 30,
       latest_generation_error: '',
     },
     { id: 'bad' },
@@ -84,6 +118,7 @@ test('normalizeReviewLessonsResponse keeps current version and active generation
   assert.equal(lessons[0]?.has_version_generating, true);
   assert.equal(lessons[0]?.active_version_status, 'generating');
   assert.equal(lessons[0]?.active_version_created_at, '2026-05-02T12:35:00');
+  assert.equal(lessons[0]?.latest_failed_version_id, 30);
   assert.equal(lessons[0]?.latest_generation_error, '');
 });
 

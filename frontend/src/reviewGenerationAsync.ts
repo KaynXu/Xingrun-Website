@@ -21,6 +21,7 @@ export interface ReviewLessonRecord {
   has_version_generating: boolean;
   active_version_status: string;
   active_version_created_at: string;
+  latest_failed_version_id: number | null;
   latest_generation_error: string;
   pdf_path: string;
   record_status?: string;
@@ -100,6 +101,7 @@ function normalizeReviewLessonItems(payload: unknown): ReviewLessonRecord[] {
       has_version_generating: pickBoolean(item.has_version_generating),
       active_version_status: pickString(item.active_version_status),
       active_version_created_at: pickString(item.active_version_created_at),
+      latest_failed_version_id: pickNullableNumber(item.latest_failed_version_id),
       latest_generation_error: pickString(item.latest_generation_error),
       pdf_path: pickString(item.pdf_path),
       record_status: pickString(item.record_status),
@@ -187,11 +189,23 @@ export function isReviewLessonPending(
 
 export function getReviewTaskDockLessons(
   lessons: ReviewLessonRecord[],
-  visibleFailedTaskIds: ReadonlySet<number>,
+  visibleFailedVersionIds: ReadonlySet<number>,
 ): ReviewLessonRecord[] {
+  const seenKeys = new Set<string>();
   return lessons.filter((lesson) => {
     const state = getReviewLessonTaskState(lesson);
-    return state === 'pending' || (state === 'failed' && visibleFailedTaskIds.has(lesson.id));
+    const failedVersionId = lesson.latest_failed_version_id;
+    const visible = state === 'pending'
+      || (state === 'failed' && failedVersionId !== null && visibleFailedVersionIds.has(failedVersionId));
+    if (!visible) {
+      return false;
+    }
+    const key = state === 'failed' ? `failed:${failedVersionId}` : `pending:${lesson.id}`;
+    if (seenKeys.has(key)) {
+      return false;
+    }
+    seenKeys.add(key);
+    return true;
   }).slice(0, 4);
 }
 
