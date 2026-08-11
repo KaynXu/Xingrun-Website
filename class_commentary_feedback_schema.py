@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationError
 
 from class_commentary import (
+    CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
@@ -22,6 +23,10 @@ CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1 = "class_commentary.student_name_matche
 CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1 = "class_commentary.attending_roster_scope.v1"
 CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT = {"type": "json_object"}
 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1 = "disabled_v1"
+CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2 = "isolated_v2"
+CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1 = (
+    "class_commentary.student_evidence_matcher.v1"
+)
 CLASS_COMMENTARY_STUDENT_FEEDBACK_ITEM_LIMIT = 2000
 CLASS_COMMENTARY_STUDENT_FEEDBACK_TOTAL_LIMIT = 30000
 
@@ -280,15 +285,25 @@ def validate_class_commentary_structured_generation_contract(
             raise ValueError("structured feedback attending roster scope is invalid")
         if not bool(generation.get("attending_roster_explicit")):
             raise ValueError("structured feedback attending roster scope must be explicit")
+    elif contract_pair == (
+        CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
+        CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+    ):
+        if eligible_ids != list(names_by_id):
+            raise ValueError("isolated feedback attending roster scope is invalid")
+        if not bool(generation.get("attending_roster_explicit")):
+            raise ValueError("isolated feedback attending roster scope must be explicit")
     else:
         raise ValueError("structured feedback prompt and scope contract is invalid")
     response_format = _parse_json(generation.get("response_format_json"))
     if response_format != CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT:
         raise ValueError("structured feedback response format contract is invalid")
-    if (
-        str(generation.get("student_history_memory_mode") or "")
-        != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
-    ):
+    expected_memory_mode = (
+        CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+        if prompt_version == CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2
+        else CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
+    )
+    if str(generation.get("student_history_memory_mode") or "") != expected_memory_mode:
         raise ValueError("structured feedback memory contract is invalid")
     expected_scope_hash = build_class_commentary_eligible_scope_hash(
         transcript_hash=str(generation.get("confirmed_transcript_hash") or ""),

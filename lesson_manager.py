@@ -32,6 +32,7 @@ from typing import Optional
 
 from config_runtime import get_runtime_config
 from class_commentary import (
+    CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
@@ -42,6 +43,8 @@ from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
+    CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V1,
     CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1,
     CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT,
     ClassCommentaryStudentScopeError,
@@ -2717,6 +2720,63 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
                 )
             )
         );
+
+        CREATE TABLE IF NOT EXISTS class_commentary_student_generation_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            generation_id INTEGER NOT NULL REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            student_name_snapshot TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            request_payload_hash TEXT NOT NULL,
+            prompt_version TEXT NOT NULL,
+            memory_mode TEXT NOT NULL,
+            current_evidence_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            current_evidence_hash TEXT NOT NULL,
+            memory_context_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            memory_context_hash TEXT NOT NULL,
+            memory_retrieval_status TEXT NOT NULL DEFAULT 'pending',
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            model_parameters_json TEXT NOT NULL,
+            prompt_payload_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            prompt_payload_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            claim_token TEXT,
+            claim_owner TEXT,
+            next_attempt_at TEXT,
+            charge_request_key TEXT NOT NULL,
+            charge_status TEXT NOT NULL DEFAULT 'pending',
+            response_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            response_hash TEXT NOT NULL DEFAULT '',
+            structured_feedback_json TEXT NOT NULL DEFAULT '',
+            structured_feedback_hash TEXT NOT NULL DEFAULT '',
+            error_code TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            started_at TEXT,
+            completed_at TEXT,
+            UNIQUE(generation_id, student_id),
+            UNIQUE(organization_id, request_id),
+            UNIQUE(organization_id, charge_request_key),
+            CHECK(memory_mode IN ('isolated_v2')),
+            CHECK(memory_retrieval_status IN ('pending','empty','ready','degraded','failed')),
+            CHECK(status IN ('queued','generating','retry_wait','response_received','succeeded','failed')),
+            CHECK(charge_status IN ('pending','charged')),
+            CHECK(attempt_count >= 0),
+            CHECK(request_id<>''),
+            CHECK(request_payload_hash<>''),
+            CHECK(current_evidence_hash<>''),
+            CHECK(memory_context_hash<>''),
+            CHECK(prompt_payload_hash<>''),
+            CHECK(charge_request_key<>'')
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_student_runs_generation_status
+        ON class_commentary_student_generation_runs (generation_id, status, student_id);
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_student_runs_retry
+        ON class_commentary_student_generation_runs (status, next_attempt_at, generation_id);
 
         CREATE TABLE IF NOT EXISTS class_commentary_feedback_drafts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11042,6 +11102,64 @@ def get_class_commentary_generation(generation_id: int) -> Optional[dict]:
             (generation_id,),
         ).fetchone()
     return _serialize_class_commentary_generation_row(row) if row else None
+
+
+def list_class_commentary_student_generation_runs(
+    generation_id: int,
+) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_student_generation_runs
+            WHERE generation_id=?
+            ORDER BY id
+            """,
+            (generation_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_class_commentary_student_generation_progress(
+    generation_id: int,
+) -> dict:
+    runs = list_class_commentary_student_generation_runs(generation_id)
+    counts = {
+        "total": len(runs),
+        "queued": 0,
+        "generating": 0,
+        "succeeded": 0,
+        "failed": 0,
+    }
+    public_runs = []
+    for run in runs:
+        status = str(run.get("status") or "")
+        if status in {"queued", "retry_wait"}:
+            counts["queued"] += 1
+        elif status in {"generating", "response_received"}:
+            counts["generating"] += 1
+        elif status == "succeeded":
+            counts["succeeded"] += 1
+        elif status == "failed":
+            counts["failed"] += 1
+        public_runs.append(
+            {
+                "id": int(run["id"]),
+                "student_id": int(run["student_id"]),
+                "student_name": str(run.get("student_name_snapshot") or ""),
+                "status": status,
+                "attempt_count": int(run.get("attempt_count") or 0),
+                "memory_retrieval_status": str(
+                    run.get("memory_retrieval_status") or "pending"
+                ),
+                "charge_status": str(run.get("charge_status") or "pending"),
+                "error_code": str(run.get("error_code") or ""),
+                "created_at": str(run.get("created_at") or ""),
+                "started_at": str(run.get("started_at") or ""),
+                "completed_at": str(run.get("completed_at") or ""),
+            }
+        )
+    return {**counts, "runs": public_runs}
 
 
 def get_class_commentary_generation_by_request(

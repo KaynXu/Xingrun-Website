@@ -197,6 +197,7 @@ from lesson_manager import (
     list_class_commentary_tasks_for_classes,
     list_class_commentary_tasks_for_organization,
     list_class_commentary_generations,
+    get_class_commentary_student_generation_progress,
     list_class_commentary_revision_memories,
     list_class_commentary_revisions,
     list_class_commentary_skill_versions,
@@ -361,6 +362,7 @@ from credit_manager import (
     list_credit_ledger,
     list_member_usage_detail,
     list_member_usage_summary,
+    max_configured_charge_for_feature,
     redeem_xhs_order,
 )
 from xhs_open_platform import fetch_xhs_order_for_redemption
@@ -488,10 +490,21 @@ def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
 
 
 def _class_commentary_capabilities(*, force: bool = False) -> dict:
+    memory_capabilities = _class_commentary_memory_capabilities(force=force)
+    runtime = get_config()
+    isolated_v2_enabled = bool(
+        runtime.get("class_commentary_student_memory_v2_enabled")
+        and runtime.get("class_commentary_structured_feedback_enabled")
+        and memory_capabilities.get("memory_learning_enabled")
+    )
     return {
-        **_class_commentary_memory_capabilities(force=force),
+        **memory_capabilities,
         "structured_feedback_enabled": bool(
-            get_config().get("class_commentary_structured_feedback_enabled")
+            runtime.get("class_commentary_structured_feedback_enabled")
+        ),
+        "student_history_memory_v2_enabled": isolated_v2_enabled,
+        "student_history_memory_v2_max_credits_per_student": (
+            max_configured_charge_for_feature("class_commentary_generate")
         ),
     }
 
@@ -3360,6 +3373,9 @@ def _serialize_class_commentary_generation_for_response(
         generation=generation,
         allow_empty_generation_payload=True,
     )
+    student_run_progress = get_class_commentary_student_generation_progress(
+        int(generation["id"])
+    )
     item = {
         "id": int(generation["id"]),
         "generation_id": int(generation["id"]),
@@ -3405,6 +3421,7 @@ def _serialize_class_commentary_generation_for_response(
         "student_history_memory_mode": str(
             generation.get("student_history_memory_mode") or ""
         ),
+        "student_run_progress": student_run_progress,
         "missing_snapshot_fields": _class_commentary_json_value(
             generation.get("missing_snapshot_fields_json"),
             [],
