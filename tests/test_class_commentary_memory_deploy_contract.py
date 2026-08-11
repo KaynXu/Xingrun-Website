@@ -8,6 +8,8 @@ import tempfile
 import textwrap
 import unittest
 
+from scripts.check_class_commentary_graph_deploy import validate_rebuild_health
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,7 +20,14 @@ class ClassCommentaryMemoryDeployContractTests(unittest.TestCase):
         path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
         path.chmod(0o755)
 
-    def _make_deploy_fixture(self, temp_root, *, existing_processes, memory_enabled=True):
+    def _make_deploy_fixture(
+        self,
+        temp_root,
+        *,
+        existing_processes,
+        memory_enabled=True,
+        graph_enabled=False,
+    ):
         script = temp_root / "scripts" / "deploy_backend.sh"
         script.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "scripts" / "deploy_backend.sh", script)
@@ -37,6 +46,9 @@ class ClassCommentaryMemoryDeployContractTests(unittest.TestCase):
               case "${2:-}" in
                 *class_commentary_memory_enabled*)
                   if [ "$FAKE_MEMORY_ENABLED" = "1" ]; then exit 0; else exit 1; fi
+                  ;;
+                *class_commentary_graph_enabled*)
+                  if [ "$FAKE_GRAPH_ENABLED" = "1" ]; then exit 0; else exit 1; fi
                   ;;
               esac
               cat >/dev/null || true
@@ -98,9 +110,11 @@ class ClassCommentaryMemoryDeployContractTests(unittest.TestCase):
                 "PM2_STATE": str(pm2_state),
                 "PM2_EXISTING": "1" if existing_processes else "0",
                 "FAKE_MEMORY_ENABLED": "1" if memory_enabled else "0",
+                "FAKE_GRAPH_ENABLED": "1" if graph_enabled else "0",
                 "XR_PYTHON_BIN": str(python),
                 "XR_SKIP_GIT_SYNC": "1",
                 "XR_CLASS_COMMENTARY_MEMORY_ENABLED": "1" if memory_enabled else "0",
+                "XR_CLASS_COMMENTARY_GRAPH_ENABLED": "1" if graph_enabled else "0",
             }
         )
         return script, env, pm2_log
@@ -167,6 +181,53 @@ class ClassCommentaryMemoryDeployContractTests(unittest.TestCase):
             self.assertIn("skipping Mem0, Qdrant, Redis, and RQ checks", output)
             self.assertIn("class commentary memory is disabled", output)
             self.assertIn("save", commands)
+
+    def test_deploy_with_graph_only_keeps_shared_worker_online(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            script, env, pm2_log = self._make_deploy_fixture(
+                temp_root,
+                existing_processes=True,
+                memory_enabled=False,
+                graph_enabled=True,
+            )
+            result = subprocess.run(
+                ["bash", str(script)],
+                cwd=temp_root,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            output = result.stdout + result.stderr
+
+            self.assertEqual(result.returncode, 0, output)
+            commands = pm2_log.read_text(encoding="utf-8")
+            self.assertIn(
+                "restart xingrun-class-commentary-memory-worker --update-env",
+                commands,
+            )
+            self.assertNotIn("stop xingrun-class-commentary-memory-worker", commands)
+            self.assertIn("skipping Mem0, Qdrant, Redis, and RQ checks", output)
+            self.assertIn("Checking class commentary graph capability", output)
+            self.assertIn("class commentary worker are healthy", output)
+
+    def test_graph_deploy_gate_rejects_partial_rebuild_health(self):
+        rebuild = {
+            "event_count": 2,
+            "node_count": 2250,
+            "edge_count": 4020,
+            "curriculum_node_count": 2237,
+            "curriculum_edge_count": 4007,
+            "store_hash": "expected-store-hash",
+        }
+        validate_rebuild_health(rebuild, dict(rebuild, healthy=True))
+
+        with self.assertRaisesRegex(SystemExit, "curriculum_node_count"):
+            validate_rebuild_health(
+                rebuild,
+                dict(rebuild, healthy=True, curriculum_node_count=2236),
+            )
 
     def test_deploy_rejects_short_worker_kill_timeout_before_pm2(self):
         with tempfile.TemporaryDirectory() as temp_dir:

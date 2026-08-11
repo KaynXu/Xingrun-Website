@@ -233,6 +233,7 @@ class ClassCommentaryStoreTest(unittest.TestCase):
                 "learning_evidence_completeness",
                 "learning_evidence_missing_sources_json",
                 "learn_requested",
+                "graph_extraction_requested",
                 "accepted_without_edit",
                 "unchanged_from_previous_revision",
                 "confirmed_at",

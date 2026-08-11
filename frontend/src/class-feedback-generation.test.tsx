@@ -3,6 +3,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const source = readFileSync(new URL('./features/class-feedback/ClassFeedbackGenerationPage.tsx', import.meta.url), 'utf8');
+const learningGraphDialogSource = readFileSync(
+  new URL('./features/class-feedback/StudentLearningGraphDialog.tsx', import.meta.url),
+  'utf8',
+);
 const alertDialogSource = readFileSync(new URL('../components/ui/alert-dialog.tsx', import.meta.url), 'utf8');
 
 function cardSource(title: string): string {
@@ -197,7 +201,7 @@ test('class feedback result actions use shadcn buttons and gate learning from se
   assertSourceMatches(source, /loadClassCommentaryCapabilities\(\)[\s\S]*setCapabilitiesState\(nextCapabilitiesResult\.state\)/, 'capability failure must remain distinguishable from a disabled server feature');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{handleSaveFeedbackDraft\} disabled=\{!canSaveFeedbackDraft\}>\s*保存草稿\s*<\/Button>/, 'save draft must be a shadcn Button');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{\(\) => handleConfirmFeedback\(false\)\} disabled=\{!canConfirmFeedback\}>\s*确认但不学习\s*<\/Button>/, 'confirm without learning must be a shadcn Button independent of memory capability');
-  assertSourceMatches(feedbackCard, /<Button type="button" onClick=\{\(\) => handleConfirmFeedback\(true\)\} disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}>\s*确认并让 AI 学习修改\s*<\/Button>/, 'confirm and learn must be disabled when the server capability is off');
+  assertSourceMatches(feedbackCard, /disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}[\s\S]*确认并让 AI 学习修改/, 'confirm and learn must keep the Mem0 learning prerequisite');
   assertSourceMatches(source, /saveClassCommentaryFeedbackDraft\(/, 'save draft client is not used');
   assertSourceMatches(source, /confirmClassCommentaryFeedback\(/, 'confirmation client is not used');
 });
@@ -277,6 +281,82 @@ test('memory learning stays inside the feedback card and reuses shadcn actions',
   assertSourceMatches(alertDialogSource, /AlertDialogPrimitive\.Action/, 'the official shadcn AlertDialog action is missing');
   assertSourceExcludes(source, /<CardTitle>记忆学习<\/CardTitle>/, 'memory learning must not add a new page-level Card');
   assertSourceExcludes(source, /<DialogTitle>记忆学习<\/DialogTitle>/, 'memory learning must not add a custom workflow Dialog');
+});
+
+test('student growth entry stays inside each student editor and uses one shared dialog', () => {
+  const accordionStart = source.indexOf('const structuredFeedbackAccordion');
+  const accordionEnd = source.indexOf('\n  return (\n    <div', accordionStart);
+  const accordionSource = source.slice(accordionStart, accordionEnd);
+
+  assertSourceMatches(source, /StudentLearningGraphDialog/, 'the shared student growth dialog must be mounted once');
+  assertSourceMatches(accordionSource, /<AccordionContent[\s\S]*学生成长轨迹[\s\S]*<\/AccordionContent>/, 'the growth entry must stay in the expanded student content');
+  assertSourceExcludes(accordionSource.match(/<AccordionTrigger>[\s\S]*?<\/AccordionTrigger>/)?.[0] || '', /<Button/, 'the accordion trigger must not contain a nested button');
+  assertSourceMatches(accordionSource, /handleOpenStudentLearningGraph\(item\)/, 'the entry must use the server-owned student item');
+  assertSourceMatches(accordionSource, /capabilities\.graph_enabled/, 'the graph entry must be capability gated');
+  assertSourceExcludes(source, /api\/class-feedback/, 'the new flow must remain in the class-commentary namespace');
+});
+
+test('student growth dialog covers safe product states without exposing graph internals', () => {
+  for (const stateTestId of [
+    'student-learning-graph-loading',
+    'student-learning-graph-empty',
+    'student-learning-graph-unavailable',
+    'student-learning-graph-needs-mapping',
+    'student-learning-graph-failed',
+  ]) {
+    assertSourceMatches(
+      learningGraphDialogSource,
+      new RegExp(`data-testid="${stateTestId}"`),
+      `${stateTestId} is missing`,
+    );
+  }
+  assertSourceMatches(learningGraphDialogSource, /pending: '学习中'/, 'pending status needs product copy');
+  assertSourceMatches(learningGraphDialogSource, /learned: '已学习'/, 'learned status needs product copy');
+  assertSourceMatches(learningGraphDialogSource, /needs_mapping: '待匹配知识点'/, 'needs-mapping status needs product copy');
+  assertSourceMatches(learningGraphDialogSource, /failed: '学习失败'/, 'failed status needs product copy');
+  assertSourceMatches(learningGraphDialogSource, /当前知识点状态/, 'current states are missing');
+  assertSourceMatches(learningGraphDialogSource, /状态变化/, 'timeline is missing');
+  assertSourceMatches(learningGraphDialogSource, /查看第 \{event\.evidence\.revision_no\} 次已确认反馈证据/, 'evidence provenance is missing');
+  assertSourceMatches(learningGraphDialogSource, /本次使用的教学方法/, 'teaching methods are missing');
+  assertSourceMatches(learningGraphDialogSource, /下一步建议/, 'next steps are missing');
+  assertSourceMatches(learningGraphDialogSource, /本次生成参考了/, 'used evidence is missing');
+  assertSourceExcludes(learningGraphDialogSource, />[^<]*(?:Semantica|node id|edge id|Cypher|SPARQL)[^<]*</i, 'teacher-facing copy must hide graph implementation terms');
+  assertSourceExcludes(learningGraphDialogSource, /\b\d+%\b/, 'the UI must not fabricate mastery percentages');
+});
+
+test('student growth requests fail closed on stale student task or subject responses', () => {
+  assertSourceMatches(
+    learningGraphDialogSource,
+    /currentScopeKeyRef\.current !== scopeKey/,
+    'stale student responses must be ignored',
+  );
+  assertSourceMatches(
+    learningGraphDialogSource,
+    /retryToken !== retryRequestTokenRef\.current/,
+    'stale retry responses must be ignored after the dialog scope changes',
+  );
+  assertSourceMatches(
+    learningGraphDialogSource,
+    /!subjectKey\.trim\(\)[\s\S]*课程科目范围缺失/,
+    'a missing subject scope must fail closed before rendering graph data',
+  );
+  assertSourceMatches(
+    learningGraphDialogSource,
+    /isClassCommentaryStudentLearningGraphSummaryInScope\([\s\S]*taskId,[\s\S]*studentId,[\s\S]*subjectKey/,
+    'task student and subject scope must be checked before rendering',
+  );
+  assertSourceMatches(
+    learningGraphDialogSource,
+    /nextSummary\.sync_status === 'pending'[\s\S]*window\.setTimeout\(loadSummary/,
+    'pending graph learning must poll automatically',
+  );
+  assertSourceMatches(
+    learningGraphDialogSource,
+    /isClassCommentaryMutationOutcomeAmbiguous\(error\)/,
+    'retry request identity must survive ambiguous outcomes',
+  );
+  const confirmationHandler = functionSource('handleConfirmFeedback', 'handleRetryRevisionMemory');
+  assertSourceExcludes(confirmationHandler, /LearningGraph|graph-retry|learning-graph/, 'confirmation must not start graph work from the browser');
 });
 
 test('confirmation retry and revoke keep idempotency keys after unknown network outcomes', () => {

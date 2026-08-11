@@ -13,7 +13,7 @@ import type {
 } from './features/dashboard/dashboardTypes';
 
 type WorkspaceRole = 'super_owner' | 'owner' | 'admin' | 'member';
-type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'classes' | 'accounts' | 'credit' | 'settings';
+type WorkspacePage = 'dashboard' | 'review-generation' | 'class-feedback-generation' | 'consultation' | 'calendar' | 'smartWrongQuestions' | 'curriculum-knowledge' | 'classes' | 'accounts' | 'credit' | 'settings';
 type WorkspaceStyles = {
   pageClass: string;
   cardClass: string;

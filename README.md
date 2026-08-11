@@ -138,6 +138,18 @@ start.bat
 - `XR_WRONG_QUESTION_SERVICE_URL`
 - `XR_WRONG_QUESTION_SERVICE_TOKEN`
 - `XR_CLASS_COMMENTARY_MEMORY_ENABLED`
+- `XR_CLASS_COMMENTARY_GRAPH_ENABLED`
+- `XR_CLASS_COMMENTARY_GRAPH_STORE_PATH`
+- `XR_CLASS_COMMENTARY_GRAPH_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_EVENT_LIMIT`
+- `XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_CHAR_LIMIT`
+- `XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_TOKEN_LIMIT` (uses a conservative UTF-8 byte upper bound)
+- `XR_CLASS_COMMENTARY_GRAPH_EXTRACTION_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_SYNC_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_RECONCILE_INTERVAL`
+- `XR_CLASS_COMMENTARY_GRAPH_RECONCILE_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_RECONCILE_LIMIT`
+- `XR_CLASS_COMMENTARY_GRAPH_EXPLORER_ENABLED`
 - `XR_REDIS_URL`
 - `XR_CLASS_COMMENTARY_MEMORY_QUEUE`
 - `XR_MEM0_QDRANT_URL`
@@ -173,6 +185,50 @@ start.bat
 ```
 
 `确认并学习`只会在 Mem0 写入, 检索, 删除探针和 Redis worker 均健康时开放. 服务端仍以 SQLite 为事实源, Mem0 或队列短时故障不会回滚已经确认的老师终稿.
+
+### 4.2 课堂反馈学习图谱
+
+课堂反馈学习图谱默认关闭. 启用 `XR_CLASS_COMMENTARY_GRAPH_ENABLED=1` 后, 已确认且选择学习的终稿会在同一 SQLite 事务中创建 graph extraction outbox. 共用的 Redis/RQ worker 异步完成结构化提取, SQLite canonical event 写入和 Semantica derived graph 同步. Semantica 临时不可用不会改变 SQLite 中的确认终稿或 canonical event.
+
+`XR_CLASS_COMMENTARY_GRAPH_STORE_PATH` 必须指向 worker 可写的持久路径. `XR_CLASS_COMMENTARY_GRAPH_EXPLORER_ENABLED` 默认并保持为 `0`; 应用没有挂载公开 Explorer 或任意 graph query route. 如果内部调试显式启用 Explorer, 也必须在应用外部按管理员网络边界运行.
+
+运行时固定使用官方 `semantica-agi/semantica` 的 PyPI 包 `semantica==0.6.0` (MIT License), 不从 GitHub `main` 安装, 也不执行运行时自动升级. SQLite 是唯一 canonical source of truth; Semantica JSON store 可以随时重建. 重建命令默认只预览, 只有显式确认才写 derived store:
+
+```bash
+python scripts/rebuild_class_commentary_semantica_graph.py
+python scripts/rebuild_class_commentary_semantica_graph.py --confirm
+```
+
+该命令不会扫描未确认草稿或原始 transcript. 学生或机构删除会先在 SQLite 中留下 cleanup audit 和 durable sync 操作, 再异步移除 derived graph 数据.
+
+### 4.3 人教版数学课程知识点 registry
+
+仓库内的 `data/curriculum/pep_math_k12_kgraph_d8522c2b.json` 是从固定的 K12-KGraph 数据集 revision 确定性过滤出的非商业用途数据包. 来源、SHA-256、许可和统计见 `data/curriculum/ATTRIBUTION.md` 及同目录机器收据. 数据包包含 23 册、2237 个 Book/Chapter/Section/Concept/Skill 节点、4007 条允许关系和 1898 个可追踪知识点, 不包含 Exercise、题目、图片或训练数据.
+
+生产启动不会联网下载或自动激活新版本. 管理命令必须显式指定 SQLite、active super owner 和固定确认字符串; 写入前会创建 SQLite 在线备份并检查完整性:
+
+```bash
+.venv/bin/python scripts/manage_curriculum_registry.py --db /absolute/path/to/xingrun.db dry-run
+.venv/bin/python scripts/manage_curriculum_registry.py --db /absolute/path/to/xingrun.db diff
+.venv/bin/python scripts/manage_curriculum_registry.py \
+  --db /absolute/path/to/xingrun.db \
+  --actor-user-id <super-owner-id> \
+  --confirm pep.math.k12-kgraph.d8522c2b336e \
+  apply
+.venv/bin/python scripts/manage_curriculum_registry.py \
+  --db /absolute/path/to/xingrun.db \
+  --actor-user-id <super-owner-id> \
+  --confirm pep.math.k12-kgraph.d8522c2b336e \
+  review <version-id>
+.venv/bin/python scripts/manage_curriculum_registry.py \
+  --db /absolute/path/to/xingrun.db \
+  --actor-user-id <super-owner-id> \
+  --confirm pep.math.k12-kgraph.d8522c2b336e \
+  activate <version-id>
+.venv/bin/python scripts/manage_curriculum_registry.py --db /absolute/path/to/xingrun.db verify <version-id>
+```
+
+课程目录和机构 mapping 以 SQLite 为 canonical source. Semantica rebuild 会同步全部 reviewed/active/deprecated 课程节点和关系, 再叠加可信学生事件; 同一个 registry version 可从 SQLite 完整重建. 普通老师只可查看其班级范围并提交新知识点建议, 机构管理员管理本机构分配和 mapping, 课程版本 review/activate/rollback 仅允许 super owner.
 
 ## 5. 测试与构建
 

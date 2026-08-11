@@ -17,6 +17,7 @@ import { CreditCenterPage } from '../credits/CreditCenterPage';
 import { SettingsPage } from '../settings/SettingsPage';
 import { ApprovalPage } from '../approval/ApprovalPage';
 import { ConsultationMeetingWorkbench } from '../consultation/ConsultationMeetingWorkbench';
+import { CurriculumKnowledgePage } from '../curriculum/CurriculumKnowledgePage';
 import {
   getReviewTaskDockLessons,
   isReviewLessonPending,
@@ -38,6 +39,7 @@ type WorkspaceShellPage =
   | 'consultation'
   | 'calendar'
   | 'smartWrongQuestions'
+  | 'curriculum-knowledge'
   | 'classes'
   | 'accounts'
   | 'credit'
@@ -349,6 +351,9 @@ export function WorkspacePageContent({
           {activeWorkspacePage === 'smartWrongQuestions' &&
             canOpenWorkspacePage(currentUser, 'smartWrongQuestions') &&
             <SmartWrongQuestionsPage currentUser={currentUser} />}
+          {activeWorkspacePage === 'curriculum-knowledge' && canOpenWorkspacePage(currentUser, 'curriculum-knowledge') && (
+            <CurriculumKnowledgePage currentUser={currentUser} />
+          )}
           {activeWorkspacePage === 'classes' && canOpenWorkspacePage(currentUser, 'classes') && (
             <StudentCenterPage currentUser={currentUser} classBindingTarget={classBindingTarget} onClearClassBindingTarget={handleClearClassBindingTarget} />
           )}

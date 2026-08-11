@@ -19,6 +19,12 @@ from class_commentary_memory_retrieval import (
     retrieve_isolated_student_memory_context,
     validate_isolated_student_memory_context_snapshot,
 )
+from class_commentary_graph_retrieval import (
+    ClassCommentaryStudentGraphRetrievalError,
+    retrieve_isolated_student_graph_context,
+    validate_isolated_student_graph_context_snapshot,
+    validate_used_graph_evidence_refs,
+)
 from class_commentary_student_memory_v2 import (
     CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1,
     build_isolated_student_chat_request,
@@ -358,20 +364,74 @@ def process_class_commentary_student_generation_run(
         record_loader = _record_loader(target_store, generation)
 
         if str(claimed.get("status") or "") != "response_received":
-            retrieval_status = str(claimed.get("memory_retrieval_status") or "pending")
-            if retrieval_status == "pending":
-                service = memory_service or ClassCommentaryMemoryService(
-                    runtime_config=config
-                )
-                memory_context = retrieve_isolated_student_memory_context(
-                    generation=generation,
-                    student_id=target_student_id,
-                    evidence_snapshot=evidence_snapshot,
-                    class_context=class_context,
-                    record_loader=record_loader,
-                    memory_service=service,
-                    reconciliation_marker=_reconciliation_marker(target_store),
-                )
+            memory_retrieval_status = str(
+                claimed.get("memory_retrieval_status") or "pending"
+            )
+            graph_retrieval_status = str(
+                claimed.get("graph_retrieval_status") or "pending"
+            )
+            if "pending" in {memory_retrieval_status, graph_retrieval_status}:
+                if memory_retrieval_status == "pending":
+                    service = memory_service or ClassCommentaryMemoryService(
+                        runtime_config=config
+                    )
+                    memory_context = retrieve_isolated_student_memory_context(
+                        generation=generation,
+                        student_id=target_student_id,
+                        evidence_snapshot=evidence_snapshot,
+                        class_context=class_context,
+                        record_loader=record_loader,
+                        memory_service=service,
+                        reconciliation_marker=_reconciliation_marker(target_store),
+                    )
+                    memory_retrieval_status = str(
+                        memory_context.get("retrieval_status") or "empty"
+                    )
+                else:
+                    memory_context = _json_object(
+                        claimed.get("memory_context_snapshot_json")
+                    )
+                    if canonical_hash(memory_context) != str(
+                        claimed.get("memory_context_hash") or ""
+                    ):
+                        raise ValueError("student memory snapshot hash mismatch")
+                    validate_isolated_student_memory_context_snapshot(
+                        generation=generation,
+                        student_id=target_student_id,
+                        memory_context=memory_context,
+                        record_loader=record_loader,
+                    )
+                if graph_retrieval_status == "pending":
+                    graph_context = retrieve_isolated_student_graph_context(
+                        generation=generation,
+                        student_id=target_student_id,
+                        class_context=class_context,
+                        runtime_config=config,
+                    )
+                    graph_retrieval_status = str(
+                        graph_context.get("retrieval_status") or "empty"
+                    )
+                else:
+                    graph_context = _json_object(
+                        claimed.get("graph_context_snapshot_json")
+                    )
+                    if canonical_hash(graph_context) != str(
+                        claimed.get("graph_context_hash") or ""
+                    ):
+                        raise ValueError("student graph snapshot hash mismatch")
+                    validate_isolated_student_graph_context_snapshot(
+                        generation=generation,
+                        student_id=target_student_id,
+                        graph_context=graph_context,
+                        class_context=class_context,
+                    )
+                    if list(graph_context.get("allowed_evidence_refs") or []) != [
+                        str(value)
+                        for value in _json_list(
+                            claimed.get("graph_allowed_evidence_refs_json")
+                        )
+                    ]:
+                        raise ValueError("student graph evidence allowlist mismatch")
                 chat_request = build_isolated_student_chat_request(
                     student_id=target_student_id,
                     student_name=target_student_name,
@@ -383,6 +443,7 @@ def process_class_commentary_student_generation_run(
                     teacher_style_memories=memory_context.get(
                         "teacher_style_memories"
                     ),
+                    graph_context=graph_context,
                     skill_content=str(generation.get("skill_content_snapshot") or ""),
                     model_parameters=_json_object(
                         claimed.get("model_parameters_json")
@@ -398,10 +459,13 @@ def process_class_commentary_student_generation_run(
                     int(run_id),
                     claim_token=claim_token,
                     memory_context=memory_context,
-                    memory_retrieval_status=str(
-                        memory_context.get("retrieval_status") or "empty"
-                    ),
+                    memory_retrieval_status=memory_retrieval_status,
                     prompt_payload=chat_request,
+                    graph_context=graph_context,
+                    graph_retrieval_status=graph_retrieval_status,
+                    graph_allowed_evidence_refs=list(
+                        graph_context.get("allowed_evidence_refs") or []
+                    ),
                 )
             else:
                 memory_context = _json_object(
@@ -410,11 +474,16 @@ def process_class_commentary_student_generation_run(
                 chat_request = _json_object(
                     claimed.get("prompt_payload_snapshot_json")
                 )
+                graph_context = _json_object(
+                    claimed.get("graph_context_snapshot_json")
+                )
                 if (
                     canonical_hash(memory_context)
                     != str(claimed.get("memory_context_hash") or "")
                     or canonical_hash(chat_request)
                     != str(claimed.get("prompt_payload_hash") or "")
+                    or canonical_hash(graph_context)
+                    != str(claimed.get("graph_context_hash") or "")
                 ):
                     raise ValueError("student prompt snapshot hash mismatch")
                 validate_isolated_student_memory_context_snapshot(
@@ -423,6 +492,19 @@ def process_class_commentary_student_generation_run(
                     memory_context=memory_context,
                     record_loader=record_loader,
                 )
+                validate_isolated_student_graph_context_snapshot(
+                    generation=generation,
+                    student_id=target_student_id,
+                    graph_context=graph_context,
+                    class_context=class_context,
+                )
+                if list(graph_context.get("allowed_evidence_refs") or []) != [
+                    str(value)
+                    for value in _json_list(
+                        claimed.get("graph_allowed_evidence_refs_json")
+                    )
+                ]:
+                    raise ValueError("student graph evidence allowlist mismatch")
                 validate_isolated_prompt_privacy(
                     chat_request=chat_request,
                     target_student_id=target_student_id,
@@ -474,6 +556,10 @@ def process_class_commentary_student_generation_run(
                 target_student_name=target_student_name,
                 other_students=other_students,
             )
+            used_graph_evidence_refs = validate_used_graph_evidence_refs(
+                validated.get("used_graph_evidence_refs") or [],
+                allowed_refs=graph_context.get("allowed_evidence_refs") or [],
+            )
             access_after = target_store.validate_class_commentary_student_generation_access(
                 int(run_id)
             )
@@ -490,6 +576,7 @@ def process_class_commentary_student_generation_run(
                 },
                 structured_feedback_json=str(validated["structured_feedback_json"]),
                 structured_feedback_hash=str(validated["structured_feedback_hash"]),
+                used_graph_evidence_refs=used_graph_evidence_refs,
             )
 
         response_snapshot = _json_object(claimed.get("response_snapshot_json"))
@@ -545,6 +632,10 @@ def process_class_commentary_student_generation_run(
         error_code = str(exc) if str(exc).startswith("memory_") else "memory_retrieval_failed"
         retryable = error_code not in {"memory_snapshot_stale", "memory_snapshot_invalid"}
         retry_after = 30
+    except ClassCommentaryStudentGraphRetrievalError as exc:
+        error_code = str(exc) if str(exc).startswith("graph_") else "graph_retrieval_failed"
+        retryable = error_code == "graph_retrieval_failed"
+        retry_after = 30 if retryable else 0
     except ClassCommentaryStructuredFeedbackValidationError:
         error_code = "structured_feedback_invalid"
         retryable = False

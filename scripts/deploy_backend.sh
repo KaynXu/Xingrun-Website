@@ -111,7 +111,23 @@ raise SystemExit(
 '; then
   MEMORY_ENABLED=1
 fi
-if (( MEMORY_ENABLED )) \
+GRAPH_ENABLED=0
+if .venv/bin/python -c '
+import config_runtime
+
+raise SystemExit(
+    0
+    if config_runtime.get_runtime_config().get("class_commentary_graph_enabled")
+    else 1
+)
+'; then
+  GRAPH_ENABLED=1
+fi
+WORKER_ENABLED=0
+if (( MEMORY_ENABLED || GRAPH_ENABLED )); then
+  WORKER_ENABLED=1
+fi
+if (( WORKER_ENABLED )) \
   && { ! [[ "$MEMORY_KILL_TIMEOUT_MS" =~ ^[0-9]+$ ]] \
     || (( MEMORY_KILL_TIMEOUT_MS < 330000 )); }; then
   echo "XR_CLASS_COMMENTARY_MEMORY_WORKER_KILL_TIMEOUT must be at least 330000 ms." >&2
@@ -205,7 +221,7 @@ raise SystemExit(
 
 echo "==> Starting PM2 services"
 start_or_restart_web
-if (( MEMORY_ENABLED )); then
+if (( WORKER_ENABLED )); then
   start_or_restart_memory_worker
 elif pm2 describe "$MEMORY_PROCESS_NAME" >/dev/null 2>&1; then
   echo "==> Memory feature is disabled; stopping PM2 worker"
@@ -217,7 +233,7 @@ fi
 echo "==> Waiting for PM2 services"
 for _ in $(seq 1 30); do
   if pm2_process_online "$WEB_PROCESS_NAME" \
-    && { (( ! MEMORY_ENABLED )) \
+    && { (( ! WORKER_ENABLED )) \
       || { pm2_process_online "$MEMORY_PROCESS_NAME" \
         && memory_worker_timeout_valid; }; }; then
     break
@@ -230,7 +246,7 @@ if ! pm2_process_online "$WEB_PROCESS_NAME"; then
   pm2 status "$WEB_PROCESS_NAME" "$MEMORY_PROCESS_NAME" || true
   exit 1
 fi
-if (( MEMORY_ENABLED )); then
+if (( WORKER_ENABLED )); then
   if ! pm2_process_online "$MEMORY_PROCESS_NAME"; then
     echo "PM2 process is not online: $MEMORY_PROCESS_NAME" >&2
     pm2 status "$WEB_PROCESS_NAME" "$MEMORY_PROCESS_NAME" || true
@@ -411,9 +427,16 @@ else
   echo "==> Memory feature is disabled; skipping Mem0, Qdrant, Redis, and RQ checks"
 fi
 
+if (( GRAPH_ENABLED )); then
+  echo "==> Checking class commentary graph capability"
+  .venv/bin/python scripts/check_class_commentary_graph_deploy.py
+else
+  echo "==> Graph feature is disabled; skipping Semantica checks"
+fi
+
 pm2 save
-if (( MEMORY_ENABLED )); then
-  echo "Deploy complete. Web and class commentary memory worker are healthy."
+if (( WORKER_ENABLED )); then
+  echo "Deploy complete. Web and class commentary worker are healthy."
 else
   echo "Deploy complete. Web is healthy and class commentary memory is disabled."
 fi

@@ -31,6 +31,18 @@ ENV_VAR_MAP = {
     "class_commentary_student_memory_v2_enabled": "XR_CLASS_COMMENTARY_STUDENT_MEMORY_V2_ENABLED",
     "class_commentary_student_generation_timeout": "XR_CLASS_COMMENTARY_STUDENT_GENERATION_TIMEOUT",
     "class_commentary_student_generation_max_attempts": "XR_CLASS_COMMENTARY_STUDENT_GENERATION_MAX_ATTEMPTS",
+    "class_commentary_graph_enabled": "XR_CLASS_COMMENTARY_GRAPH_ENABLED",
+    "class_commentary_graph_store_path": "XR_CLASS_COMMENTARY_GRAPH_STORE_PATH",
+    "class_commentary_graph_timeout": "XR_CLASS_COMMENTARY_GRAPH_TIMEOUT",
+    "class_commentary_graph_retrieval_event_limit": "XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_EVENT_LIMIT",
+    "class_commentary_graph_retrieval_char_limit": "XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_CHAR_LIMIT",
+    "class_commentary_graph_retrieval_token_limit": "XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_TOKEN_LIMIT",
+    "class_commentary_graph_extraction_timeout": "XR_CLASS_COMMENTARY_GRAPH_EXTRACTION_TIMEOUT",
+    "class_commentary_graph_sync_timeout": "XR_CLASS_COMMENTARY_GRAPH_SYNC_TIMEOUT",
+    "class_commentary_graph_reconcile_interval": "XR_CLASS_COMMENTARY_GRAPH_RECONCILE_INTERVAL",
+    "class_commentary_graph_reconcile_timeout": "XR_CLASS_COMMENTARY_GRAPH_RECONCILE_TIMEOUT",
+    "class_commentary_graph_reconcile_limit": "XR_CLASS_COMMENTARY_GRAPH_RECONCILE_LIMIT",
+    "class_commentary_graph_explorer_enabled": "XR_CLASS_COMMENTARY_GRAPH_EXPLORER_ENABLED",
     "redis_url": "XR_REDIS_URL",
     "class_commentary_memory_queue": "XR_CLASS_COMMENTARY_MEMORY_QUEUE",
     "class_commentary_memory_extraction_timeout": "XR_CLASS_COMMENTARY_MEMORY_EXTRACTION_TIMEOUT",
@@ -100,6 +112,20 @@ DEFAULTS = {
     "class_commentary_student_memory_v2_enabled": False,
     "class_commentary_student_generation_timeout": 300,
     "class_commentary_student_generation_max_attempts": 3,
+    "class_commentary_graph_enabled": False,
+    "class_commentary_graph_store_path": str(
+        BASE_DIR / "data" / "class_commentary_semantica_graph.json"
+    ),
+    "class_commentary_graph_timeout": 10,
+    "class_commentary_graph_retrieval_event_limit": 24,
+    "class_commentary_graph_retrieval_char_limit": 4000,
+    "class_commentary_graph_retrieval_token_limit": 8000,
+    "class_commentary_graph_extraction_timeout": 300,
+    "class_commentary_graph_sync_timeout": 120,
+    "class_commentary_graph_reconcile_interval": 600,
+    "class_commentary_graph_reconcile_timeout": 300,
+    "class_commentary_graph_reconcile_limit": 100,
+    "class_commentary_graph_explorer_enabled": False,
     "redis_url": "redis://127.0.0.1:6379/0",
     "class_commentary_memory_queue": "class_commentary_memory",
     "class_commentary_memory_extraction_timeout": 300,
@@ -267,6 +293,43 @@ def get_runtime_config() -> dict:
     )
     cfg["class_commentary_student_generation_max_attempts"] = normalize_positive_int(
         cfg.get("class_commentary_student_generation_max_attempts"), 3
+    )
+    cfg["class_commentary_graph_enabled"] = normalize_bool_flag(
+        cfg.get("class_commentary_graph_enabled")
+    )
+    cfg["class_commentary_graph_store_path"] = str(
+        cfg.get("class_commentary_graph_store_path")
+        or BASE_DIR / "data" / "class_commentary_semantica_graph.json"
+    ).strip()
+    cfg["class_commentary_graph_timeout"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_timeout"), 10
+    )
+    cfg["class_commentary_graph_retrieval_event_limit"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_retrieval_event_limit"), 24
+    )
+    cfg["class_commentary_graph_retrieval_char_limit"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_retrieval_char_limit"), 4000
+    )
+    cfg["class_commentary_graph_retrieval_token_limit"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_retrieval_token_limit"), 8000
+    )
+    cfg["class_commentary_graph_extraction_timeout"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_extraction_timeout"), 300
+    )
+    cfg["class_commentary_graph_sync_timeout"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_sync_timeout"), 120
+    )
+    cfg["class_commentary_graph_reconcile_interval"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_reconcile_interval"), 600
+    )
+    cfg["class_commentary_graph_reconcile_timeout"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_reconcile_timeout"), 300
+    )
+    cfg["class_commentary_graph_reconcile_limit"] = normalize_positive_int(
+        cfg.get("class_commentary_graph_reconcile_limit"), 100
+    )
+    cfg["class_commentary_graph_explorer_enabled"] = normalize_bool_flag(
+        cfg.get("class_commentary_graph_explorer_enabled")
     )
     cfg["redis_url"] = str(cfg.get("redis_url") or "redis://127.0.0.1:6379/0").strip()
     cfg["class_commentary_memory_queue"] = (

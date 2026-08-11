@@ -403,6 +403,41 @@ class ClassCommentaryMemoryWorkerTests(unittest.TestCase):
         worker_factory.assert_called_once_with([queue], connection=connection)
         worker.work.assert_called_once_with(with_scheduler=True)
 
+    @patch("class_commentary_memory_worker.ensure_class_commentary_memory_reconciliation_scheduled")
+    @patch("class_commentary_memory_worker.ensure_class_commentary_graph_reconciliation_scheduled")
+    @patch("class_commentary_memory_worker.get_class_commentary_memory_queue")
+    def test_worker_supports_graph_without_mem0(
+        self,
+        get_queue,
+        ensure_graph_scheduled,
+        ensure_memory_scheduled,
+    ):
+        config = {
+            "class_commentary_memory_enabled": False,
+            "class_commentary_graph_enabled": True,
+        }
+        connection = object()
+        queue = object()
+        get_queue.return_value = queue
+        worker = Mock()
+        worker_factory = Mock(return_value=worker)
+
+        result = run_worker(
+            runtime_config=config,
+            connection=connection,
+            worker_factory=worker_factory,
+        )
+
+        self.assertEqual(result, 0)
+        get_queue.assert_called_once_with(runtime_config=config, connection=connection)
+        ensure_memory_scheduled.assert_not_called()
+        ensure_graph_scheduled.assert_called_once_with(
+            queue=queue,
+            runtime_config=config,
+        )
+        worker_factory.assert_called_once_with([queue], connection=connection)
+        worker.work.assert_called_once_with(with_scheduler=True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,11 +30,14 @@ import config_runtime
 
 raise SystemExit(
     0
-    if config_runtime.get_runtime_config().get("class_commentary_memory_enabled")
+    if (
+        config_runtime.get_runtime_config().get("class_commentary_memory_enabled")
+        or config_runtime.get_runtime_config().get("class_commentary_graph_enabled")
+    )
     else 1
 )
 '; then
-  echo "XR_CLASS_COMMENTARY_MEMORY_ENABLED must be enabled before starting the memory worker." >&2
+  echo "XR_CLASS_COMMENTARY_MEMORY_ENABLED or XR_CLASS_COMMENTARY_GRAPH_ENABLED must be enabled before starting the worker." >&2
   exit 1
 fi
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { AlertCircle, CheckCheck, Copy, FileAudio, History, Sparkles, Upload } from 'lucide-react';
+import { AlertCircle, CheckCheck, Copy, FileAudio, History, Sparkles, TrendingUp, Upload } from 'lucide-react';
 
 import {
   Accordion,
@@ -117,6 +117,10 @@ import {
   type ClassCommentaryNavigationRequestDetail,
 } from '../../classCommentaryNavigationGuard';
 import { ApiFetchError, apiFetch } from '../../workspaceShared';
+import {
+  StudentLearningGraphDialog,
+  type StudentLearningGraphStudent,
+} from './StudentLearningGraphDialog';
 
 type ClassFeedbackGenerationPageProps = {
   currentUser: CurrentUser;
@@ -175,6 +179,9 @@ const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   structured_feedback_enabled: false,
   student_history_memory_v2_enabled: false,
   student_history_memory_v2_max_credits_per_student: 0,
+  graph_enabled: false,
+  graph_healthy: false,
+  graph_degraded: false,
 };
 
 function createClassCommentaryRequestId(prefix: string): string {
@@ -488,6 +495,8 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [memoryLoadError, setMemoryLoadError] = useState('');
   const [memoryRefreshVersion, setMemoryRefreshVersion] = useState(0);
   const [memoryActionKey, setMemoryActionKey] = useState('');
+  const [learningGraphDialogOpen, setLearningGraphDialogOpen] = useState(false);
+  const [learningGraphStudent, setLearningGraphStudent] = useState<StudentLearningGraphStudent | null>(null);
   const [skillEvolutionDialogOpen, setSkillEvolutionDialogOpen] = useState(false);
   const [skillEvolution, setSkillEvolution] = useState<ClassCommentarySkillEvolution | null>(null);
   const [selectedSkillVersionId, setSelectedSkillVersionId] = useState('');
@@ -567,6 +576,8 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setMemoryLoadError('');
     setMemoryRefreshVersion(0);
     setMemoryActionKey('');
+    setLearningGraphDialogOpen(false);
+    setLearningGraphStudent(null);
     confirmationRequestRef.current = null;
     generationRequestRef.current = null;
     studentGenerationRetryRequestRef.current = null;
@@ -2645,6 +2656,18 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     });
   }
 
+  function handleOpenStudentLearningGraph(student: ClassCommentaryStudentFeedbackItem) {
+    setLearningGraphStudent({ id: student.student_id, name: student.student_name });
+    setLearningGraphDialogOpen(true);
+  }
+
+  function handleLearningGraphDialogOpenChange(open: boolean) {
+    setLearningGraphDialogOpen(open);
+    if (!open) {
+      setLearningGraphStudent(null);
+    }
+  }
+
   const showStructuredFeedbackEditor = previewRevision
     ? previewStructuredFeedbackMode
     : structuredFeedbackMode;
@@ -2689,7 +2712,18 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
               {itemError ? (
                 <p id={errorId} className="text-xs text-destructive">{itemError}</p>
               ) : null}
-              <div className="flex justify-end">
+              <div className="flex flex-wrap justify-end gap-2">
+                {capabilities.graph_enabled && selectedGeneration ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleOpenStudentLearningGraph(item)}
+                  >
+                    <TrendingUp data-icon="inline-start" />
+                    学生成长轨迹
+                  </Button>
+                ) : null}
                 <Button type="button" variant="outline" size="sm" onClick={() => handleCopyStudent(item.student_id)}>
                   {copiedStudentId === item.student_id
                     ? <CheckCheck data-icon="inline-start" />
@@ -3165,7 +3199,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     <Button type="button" variant="outline" onClick={() => handleConfirmFeedback(false)} disabled={!canConfirmFeedback}>
                       确认但不学习
                     </Button>
-                    <Button type="button" onClick={() => handleConfirmFeedback(true)} disabled={!canConfirmFeedback || !capabilities.memory_learning_enabled}>
+                    <Button
+                      type="button"
+                      onClick={() => handleConfirmFeedback(true)}
+                      disabled={!canConfirmFeedback || !capabilities.memory_learning_enabled}
+                    >
                       确认并让 AI 学习修改
                     </Button>
                   </div>
@@ -3545,6 +3583,19 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
           </CardContent>
         </Card>
       </div>
+
+      <StudentLearningGraphDialog
+        open={learningGraphDialogOpen}
+        onOpenChange={handleLearningGraphDialogOpenChange}
+        taskId={task?.id || 0}
+        generationId={selectedGeneration?.id || 0}
+        revisionId={!revisionPreview && !isTaskReadOnly ? selectedRevision?.id || 0 : 0}
+        subjectKey={task?.subject_key || ''}
+        student={learningGraphStudent}
+        graphHealthy={capabilities.graph_healthy}
+        graphDegraded={capabilities.graph_degraded}
+        usedGraphEvidenceRefs={selectedGeneration?.used_graph_evidence_refs || []}
+      />
 
       <Dialog open={Boolean(draftConflict)} onOpenChange={handleDraftConflictOpenChange}>
         <DialogContent>
