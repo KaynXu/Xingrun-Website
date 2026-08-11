@@ -50,6 +50,14 @@ npm --prefix frontend run build
 XR_SKIP_GIT_SYNC=1 XR_PYTHON_BIN=python3.12 ./scripts/deploy_backend.sh master
 ```
 
+若发布包含新的固定课程包, Web/worker 健康后再执行显式课程导入. 不得在启动脚本中联网拉取或自动激活. 先确认 `.env.runtime` 解析出的 `XR_DB_PATH` 实际绝对路径和 active super owner id, 对该 SQLite 做在线备份和完整性检查, 然后按 `README.md` 的 `apply -> review -> activate -> verify` 顺序执行. 最后运行:
+
+```bash
+.venv/bin/python scripts/rebuild_class_commentary_semantica_graph.py --confirm
+```
+
+重建验收必须同时看到固定课程包的 2237 个基础节点、4007 条基础关系, 以及现有可信 learning event. 课程数据采用 CC BY-NC-SA 4.0, 只允许在已确认的非商业用途边界内发布.
+
 生产机 `origin` 应为 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`. 如果 GitHub 暂时不可达, 使用一次性 `git bundle` 传输 `master`, 只做 fast-forward, 发布成功后删除 bundle.
 
 ## 为什么保留部署脚本
@@ -59,9 +67,10 @@ XR_SKIP_GIT_SYNC=1 XR_PYTHON_BIN=python3.12 ./scripts/deploy_backend.sh master
 - 校验 Python 3.12 和必要命令.
 - 安装后端依赖并初始化数据库.
 - 创建或重启 PM2 Web 进程.
-- 根据 `XR_CLASS_COMMENTARY_MEMORY_ENABLED` 启停 memory worker.
+- 当 `XR_CLASS_COMMENTARY_MEMORY_ENABLED` 或 `XR_CLASS_COMMENTARY_GRAPH_ENABLED` 任一开启时启动共享 worker; 两者都关闭时停止它.
 - 检查 Web `online` 和根路由 HTTP `302`.
 - Memory 开启时检查 worker, Redis/RQ, Mem0/Qdrant 和 reconciliation job.
+- Graph 开启时确认 Explorer 关闭, graph store 为持久绝对路径, 从 SQLite rebuild 后的节点/关系/hash 完整一致, Redis/RQ 健康且 graph reconciliation 已排期.
 - 全部通过后执行 `pm2 save`.
 
 模型可以辅助诊断, 但不能替代这些可重复的状态变更和健康门槛. `scripts/ralph/` 中的历史 proof 脚本不属于发布入口.
@@ -82,7 +91,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5001/
 
 - Web 为 `online`, HTTP 为 `302`.
 - Memory 开启时 worker 为 `online`, 相关 capability 检查全部通过.
-- Memory 关闭时已有 worker 为 `stopped`.
+- Graph 开启时 worker 为 `online`, Explorer 为关闭, Semantica rebuild 与 SQLite canonical counts 一致.
+- Memory 和 Graph 都关闭时已有 worker 为 `stopped`.
 
 失败时只查看必要日志, 不输出 `.env.runtime`, `pm2 env` 或完整 memory 内容:
 

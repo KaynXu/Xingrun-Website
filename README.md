@@ -201,6 +201,35 @@ python scripts/rebuild_class_commentary_semantica_graph.py --confirm
 
 该命令不会扫描未确认草稿或原始 transcript. 学生或机构删除会先在 SQLite 中留下 cleanup audit 和 durable sync 操作, 再异步移除 derived graph 数据.
 
+### 4.3 人教版数学课程知识点 registry
+
+仓库内的 `data/curriculum/pep_math_k12_kgraph_d8522c2b.json` 是从固定的 K12-KGraph 数据集 revision 确定性过滤出的非商业用途数据包. 来源、SHA-256、许可和统计见 `data/curriculum/ATTRIBUTION.md` 及同目录机器收据. 数据包包含 23 册、2237 个 Book/Chapter/Section/Concept/Skill 节点、4007 条允许关系和 1898 个可追踪知识点, 不包含 Exercise、题目、图片或训练数据.
+
+生产启动不会联网下载或自动激活新版本. 管理命令必须显式指定 SQLite、active super owner 和固定确认字符串; 写入前会创建 SQLite 在线备份并检查完整性:
+
+```bash
+.venv/bin/python scripts/manage_curriculum_registry.py --db /absolute/path/to/xingrun.db dry-run
+.venv/bin/python scripts/manage_curriculum_registry.py --db /absolute/path/to/xingrun.db diff
+.venv/bin/python scripts/manage_curriculum_registry.py \
+  --db /absolute/path/to/xingrun.db \
+  --actor-user-id <super-owner-id> \
+  --confirm pep.math.k12-kgraph.d8522c2b336e \
+  apply
+.venv/bin/python scripts/manage_curriculum_registry.py \
+  --db /absolute/path/to/xingrun.db \
+  --actor-user-id <super-owner-id> \
+  --confirm pep.math.k12-kgraph.d8522c2b336e \
+  review <version-id>
+.venv/bin/python scripts/manage_curriculum_registry.py \
+  --db /absolute/path/to/xingrun.db \
+  --actor-user-id <super-owner-id> \
+  --confirm pep.math.k12-kgraph.d8522c2b336e \
+  activate <version-id>
+.venv/bin/python scripts/manage_curriculum_registry.py --db /absolute/path/to/xingrun.db verify <version-id>
+```
+
+课程目录和机构 mapping 以 SQLite 为 canonical source. Semantica rebuild 会同步全部 reviewed/active/deprecated 课程节点和关系, 再叠加可信学生事件; 同一个 registry version 可从 SQLite 完整重建. 普通老师只可查看其班级范围并提交新知识点建议, 机构管理员管理本机构分配和 mapping, 课程版本 review/activate/rollback 仅允许 super owner.
+
 ## 5. 测试与构建
 
 ### 5.1 后端测试
