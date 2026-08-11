@@ -194,7 +194,7 @@ npm --prefix frontend run build
 
 ## 6. 部署（当前约定）
 
-生产服务器信息见：`AGENTS.md`。
+生产服务器信息和完整发布流程见: `deploy-release.md`.
 
 常用脚本：
 
