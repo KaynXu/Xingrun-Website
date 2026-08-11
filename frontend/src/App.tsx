@@ -332,6 +332,7 @@ export default function App() {
     consultation: '咨询记录',
     calendar: '课程日历',
     smartWrongQuestions: '智能错题',
+    'curriculum-knowledge': '课程知识点',
     classes: '学管中心',
     accounts: '账号审批',
     credit: '积分中心',

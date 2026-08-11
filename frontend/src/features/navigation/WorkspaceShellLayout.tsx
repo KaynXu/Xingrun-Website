@@ -14,6 +14,7 @@ type WorkspaceShellPage =
   | 'consultation'
   | 'calendar'
   | 'smartWrongQuestions'
+  | 'curriculum-knowledge'
   | 'classes'
   | 'accounts'
   | 'credit'

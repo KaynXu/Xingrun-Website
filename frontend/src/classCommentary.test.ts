@@ -344,11 +344,27 @@ test('student learning graph normalizer validates scope enums and exact evidence
     sync_status: 'learned',
     can_retry: false,
     error: '',
+    curriculum_assignment: {
+      id: 6,
+      class_id: 3,
+      version_id: 2,
+      version_key: 'pep-math-k12@d8522c2b',
+      version_status: 'active',
+      book_node_id: 8,
+      book_name: '三年级上册',
+      data_license: 'CC BY-NC-SA 4.0',
+    },
     current_states: [{
       knowledge_point_key: 'quadratic-graphs',
       knowledge_point_name: '二次函数图像',
       state: 'developing',
       observed_at: '2026-08-11T10:00:00Z',
+      curriculum: {
+        path: [{ node_key: 'book-3a', node_type: 'Book', name: '三年级上册' }],
+        prerequisites: [{ node_key: 'kp-before', node_type: 'Concept', canonical_name: '数的认识' }],
+        follow_ups: [{ node_key: 'kp-after', node_type: 'Skill', canonical_name: '综合应用' }],
+        source: { version_key: 'pep-math-k12@d8522c2b', dataset_revision: 'd8522c2b' },
+      },
     }],
     timeline: [{
       event_ref: 'event-2',
@@ -369,6 +385,12 @@ test('student learning graph normalizer validates scope enums and exact evidence
       },
       teaching_methods: ['图像与参数联动练习'],
       next_steps: ['继续练习顶点式与图像平移'],
+      curriculum: {
+        path: [{ node_key: 'book-3a', node_type: 'Book', name: '三年级上册' }],
+        prerequisites: [{ node_key: 'kp-before', node_type: 'Concept', canonical_name: '数的认识' }],
+        follow_ups: [{ node_key: 'kp-after', node_type: 'Skill', canonical_name: '综合应用' }],
+        source: { version_key: 'pep-math-k12@d8522c2b', dataset_revision: 'd8522c2b' },
+      },
     }],
     used_graph_evidence_refs: ['evidence-2'],
     used_graph_evidence: [],
@@ -380,6 +402,11 @@ test('student learning graph normalizer validates scope enums and exact evidence
   assert.equal(summary.timeline[0].previous_state, 'weak');
   assert.equal(summary.timeline[0].evidence.quote, '已经能结合参数变化判断图像移动方向.');
   assert.deepEqual(summary.timeline[0].teaching_methods, ['图像与参数联动练习']);
+  assert.equal(summary.curriculum_assignment?.book_name, '三年级上册');
+  assert.equal(summary.current_states[0].curriculum?.path[0].name, '三年级上册');
+  assert.equal(summary.timeline[0].curriculum?.prerequisites[0].canonical_name, '数的认识');
+  assert.equal(summary.timeline[0].curriculum?.follow_ups[0].canonical_name, '综合应用');
+  assert.equal(summary.timeline[0].curriculum?.source.version_key, 'pep-math-k12@d8522c2b');
   assert.deepEqual(summary.used_graph_evidence_refs, ['evidence-2']);
   assert.equal(isClassCommentaryStudentLearningGraphSummaryInScope(summary, 9, 11, 'math'), true);
   assert.equal(isClassCommentaryStudentLearningGraphSummaryInScope(summary, 9, 12, 'math'), false);
