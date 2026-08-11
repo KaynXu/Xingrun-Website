@@ -6,6 +6,7 @@ import {
   buildClassCommentaryFeedbackWorkspaceKey,
   buildClassCommentaryRevisionPreviewKey,
   buildClassCommentarySkillPreferenceKey,
+  buildClassCommentaryStudentLearningGraphPath,
   buildClassCommentaryTaskPath,
   classCommentaryStatusLabel,
   activateClassCommentarySkillVersion,
@@ -16,6 +17,7 @@ import {
   fetchClassCommentaryFeedbackDraft,
   fetchClassCommentaryFeedbackRevisions,
   fetchClassCommentaryRevisionMemories,
+  fetchClassCommentaryStudentLearningGraph,
   fetchClassCommentarySkillEvolution,
   fetchClassCommentaryGeneration,
   fetchClassCommentaryGenerations,
@@ -26,13 +28,16 @@ import {
   isClassCommentaryFeedbackRecordInScope,
   isClassCommentaryMutationOutcomeAmbiguous,
   isClassCommentaryTaskLatestSchemaCompatible,
+  isClassCommentaryStudentLearningGraphSummaryInScope,
   loadClassCommentaryCapabilities,
   normalizeClassCommentaryGeneration,
+  normalizeClassCommentaryStudentLearningGraphSummary,
   normalizeClassCommentaryStudentGenerationProgress,
   normalizeClassCommentaryTask,
   readClassCommentarySkillPreference,
   rollbackClassCommentarySkillVersion,
   retryClassCommentaryRevisionMemory,
+  retryClassCommentaryRevisionLearningGraph,
   retryClassCommentaryStudentGenerationRuns,
   revokeClassCommentaryMemoryEvidence,
   resolveClassCommentaryCopyText,
@@ -135,6 +140,7 @@ test('normalizes feedback envelopes into plain, supported, unsupported, and inva
     feedback_schema_status: 'supported',
     structured_feedback_hash: 'known-hash',
     derived_feedback_text: '小王:\n课堂计算更稳定.',
+    used_graph_evidence_refs: ['evidence-11'],
     student_feedback_items: [{
       student_id: 11,
       student_name: '小王',
@@ -144,6 +150,7 @@ test('normalizes feedback envelopes into plain, supported, unsupported, and inva
   assert.equal(supported.feedback_schema_status, 'supported');
   assert.equal(supported.student_feedback_items[0].student_name, '小王');
   assert.equal(supported.generated_feedback_text, '小王:\n课堂计算更稳定.');
+  assert.deepEqual(supported.used_graph_evidence_refs, ['evidence-11']);
   assert.equal(supported.writable, true);
 
   const unknown = normalizeClassCommentaryGeneration({
@@ -223,6 +230,9 @@ test('class commentary capabilities keep structured feedback disabled by default
     structured_feedback_enabled: false,
     student_history_memory_v2_enabled: false,
     student_history_memory_v2_max_credits_per_student: 0,
+    graph_enabled: false,
+    graph_healthy: false,
+    graph_degraded: false,
   });
 });
 
@@ -276,6 +286,9 @@ test('capabilities expose isolated generation call and credit impact', async () 
     structured_feedback_enabled: true,
     student_history_memory_v2_enabled: true,
     student_history_memory_v2_max_credits_per_student: 10,
+    graph_enabled: false,
+    graph_healthy: false,
+    graph_degraded: false,
   });
 
   assert.deepEqual(await fetchClassCommentaryCapabilities(), {
@@ -284,6 +297,9 @@ test('capabilities expose isolated generation call and credit impact', async () 
     structured_feedback_enabled: true,
     student_history_memory_v2_enabled: true,
     student_history_memory_v2_max_credits_per_student: 10,
+    graph_enabled: false,
+    graph_healthy: false,
+    graph_degraded: false,
   });
 });
 
@@ -298,8 +314,134 @@ test('capability transport failures return unavailable instead of a zero-cost mo
       structured_feedback_enabled: false,
       student_history_memory_v2_enabled: false,
       student_history_memory_v2_max_credits_per_student: 0,
+      graph_enabled: false,
+      graph_healthy: false,
+      graph_degraded: false,
     },
   });
+});
+
+test('capabilities expose graph health without enabling it by default', async () => {
+  mockJsonFetch({
+    graph_enabled: true,
+    graph_healthy: false,
+    graph_degraded: true,
+  });
+
+  const capabilities = await fetchClassCommentaryCapabilities();
+
+  assert.equal(capabilities.graph_enabled, true);
+  assert.equal(capabilities.graph_healthy, false);
+  assert.equal(capabilities.graph_degraded, true);
+  assert.equal(capabilities.memory_learning_enabled, false);
+});
+
+test('student learning graph normalizer validates scope enums and exact evidence fields', () => {
+  const payload = {
+    task_id: 9,
+    student_id: 11,
+    subject_key: 'math',
+    sync_status: 'learned',
+    can_retry: false,
+    error: '',
+    current_states: [{
+      knowledge_point_key: 'quadratic-graphs',
+      knowledge_point_name: '二次函数图像',
+      state: 'developing',
+      observed_at: '2026-08-11T10:00:00Z',
+    }],
+    timeline: [{
+      event_ref: 'event-2',
+      knowledge_point_key: 'quadratic-graphs',
+      knowledge_point_name: '二次函数图像',
+      state: 'developing',
+      previous_state: 'weak',
+      trend: 'improved',
+      observed_at: '2026-08-11T10:00:00Z',
+      evidence: {
+        evidence_ref: 'evidence-2',
+        quote: '已经能结合参数变化判断图像移动方向.',
+        lesson_id: 18,
+        lesson_name: '第 18 次课程',
+        revision_id: 52,
+        revision_no: 2,
+        confirmed_at: '2026-08-11T10:00:00Z',
+      },
+      teaching_methods: ['图像与参数联动练习'],
+      next_steps: ['继续练习顶点式与图像平移'],
+    }],
+    used_graph_evidence_refs: ['evidence-2'],
+    used_graph_evidence: [],
+  };
+
+  const summary = normalizeClassCommentaryStudentLearningGraphSummary(payload);
+
+  assert.equal(summary.current_states[0].state, 'developing');
+  assert.equal(summary.timeline[0].previous_state, 'weak');
+  assert.equal(summary.timeline[0].evidence.quote, '已经能结合参数变化判断图像移动方向.');
+  assert.deepEqual(summary.timeline[0].teaching_methods, ['图像与参数联动练习']);
+  assert.deepEqual(summary.used_graph_evidence_refs, ['evidence-2']);
+  assert.equal(isClassCommentaryStudentLearningGraphSummaryInScope(summary, 9, 11, 'math'), true);
+  assert.equal(isClassCommentaryStudentLearningGraphSummaryInScope(summary, 9, 12, 'math'), false);
+  assert.equal(isClassCommentaryStudentLearningGraphSummaryInScope(summary, 9, 11, 'physics'), false);
+  assert.equal(isClassCommentaryStudentLearningGraphSummaryInScope(summary, 9, 11, ''), false);
+  assert.throws(
+    () => normalizeClassCommentaryStudentLearningGraphSummary({ ...payload, subject_key: '' }),
+    /subject_key/,
+  );
+  assert.throws(
+    () => normalizeClassCommentaryStudentLearningGraphSummary({ ...payload, sync_status: 'complete' }),
+    /sync_status/,
+  );
+  assert.throws(
+    () => normalizeClassCommentaryStudentLearningGraphSummary({
+      ...payload,
+      timeline: [{ ...payload.timeline[0], state: '70%' }],
+    }),
+    /state/,
+  );
+  assert.throws(
+    () => normalizeClassCommentaryStudentLearningGraphSummary({
+      ...payload,
+      timeline: [{
+        ...payload.timeline[0],
+        evidence: { ...payload.timeline[0].evidence, quote: '' },
+      }],
+    }),
+    /evidence quote/,
+  );
+});
+
+test('student learning graph API is task scoped and retry preserves the request id', async () => {
+  const learningGraph = {
+    task_id: 9,
+    student_id: 11,
+    subject_key: 'math',
+    sync_status: 'pending',
+    can_retry: false,
+    error: '',
+    current_states: [],
+    timeline: [],
+    used_graph_evidence_refs: [],
+    used_graph_evidence: [],
+  };
+  const fetchCalls = mockJsonFetch({ learning_graph: learningGraph });
+
+  const summary = await fetchClassCommentaryStudentLearningGraph(9, 11, 27);
+
+  assert.equal(
+    buildClassCommentaryStudentLearningGraphPath(9, 11, 27),
+    '/api/class-commentary/tasks/9/students/11/learning-graph?generation_id=27',
+  );
+  assert.equal(fetchCalls[0].path, '/api/class-commentary/tasks/9/students/11/learning-graph?generation_id=27');
+  assert.equal(fetchCalls[0].path.includes('organization'), false);
+  assert.equal(summary.sync_status, 'pending');
+
+  const retryCalls = mockJsonFetch({ graph_job: { id: 7, status: 'queued' } });
+  await retryClassCommentaryRevisionLearningGraph(52, 'graph-retry-52');
+
+  assert.equal(retryCalls[0].path, '/api/class-commentary/revisions/52/graph-retry');
+  assert.deepEqual(JSON.parse(String(retryCalls[0].options?.body)), { request_id: 'graph-retry-52' });
 });
 
 test('polling is limited to async task states', () => {

@@ -138,6 +138,18 @@ start.bat
 - `XR_WRONG_QUESTION_SERVICE_URL`
 - `XR_WRONG_QUESTION_SERVICE_TOKEN`
 - `XR_CLASS_COMMENTARY_MEMORY_ENABLED`
+- `XR_CLASS_COMMENTARY_GRAPH_ENABLED`
+- `XR_CLASS_COMMENTARY_GRAPH_STORE_PATH`
+- `XR_CLASS_COMMENTARY_GRAPH_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_EVENT_LIMIT`
+- `XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_CHAR_LIMIT`
+- `XR_CLASS_COMMENTARY_GRAPH_RETRIEVAL_TOKEN_LIMIT` (uses a conservative UTF-8 byte upper bound)
+- `XR_CLASS_COMMENTARY_GRAPH_EXTRACTION_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_SYNC_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_RECONCILE_INTERVAL`
+- `XR_CLASS_COMMENTARY_GRAPH_RECONCILE_TIMEOUT`
+- `XR_CLASS_COMMENTARY_GRAPH_RECONCILE_LIMIT`
+- `XR_CLASS_COMMENTARY_GRAPH_EXPLORER_ENABLED`
 - `XR_REDIS_URL`
 - `XR_CLASS_COMMENTARY_MEMORY_QUEUE`
 - `XR_MEM0_QDRANT_URL`
@@ -173,6 +185,21 @@ start.bat
 ```
 
 `确认并学习`只会在 Mem0 写入, 检索, 删除探针和 Redis worker 均健康时开放. 服务端仍以 SQLite 为事实源, Mem0 或队列短时故障不会回滚已经确认的老师终稿.
+
+### 4.2 课堂反馈学习图谱
+
+课堂反馈学习图谱默认关闭. 启用 `XR_CLASS_COMMENTARY_GRAPH_ENABLED=1` 后, 已确认且选择学习的终稿会在同一 SQLite 事务中创建 graph extraction outbox. 共用的 Redis/RQ worker 异步完成结构化提取, SQLite canonical event 写入和 Semantica derived graph 同步. Semantica 临时不可用不会改变 SQLite 中的确认终稿或 canonical event.
+
+`XR_CLASS_COMMENTARY_GRAPH_STORE_PATH` 必须指向 worker 可写的持久路径. `XR_CLASS_COMMENTARY_GRAPH_EXPLORER_ENABLED` 默认并保持为 `0`; 应用没有挂载公开 Explorer 或任意 graph query route. 如果内部调试显式启用 Explorer, 也必须在应用外部按管理员网络边界运行.
+
+运行时固定使用官方 `semantica-agi/semantica` 的 PyPI 包 `semantica==0.6.0` (MIT License), 不从 GitHub `main` 安装, 也不执行运行时自动升级. SQLite 是唯一 canonical source of truth; Semantica JSON store 可以随时重建. 重建命令默认只预览, 只有显式确认才写 derived store:
+
+```bash
+python scripts/rebuild_class_commentary_semantica_graph.py
+python scripts/rebuild_class_commentary_semantica_graph.py --confirm
+```
+
+该命令不会扫描未确认草稿或原始 transcript. 学生或机构删除会先在 SQLite 中留下 cleanup audit 和 durable sync 操作, 再异步移除 derived graph 数据.
 
 ## 5. 测试与构建
 
