@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, BookMarked, BookOpen, ChevronRight, RefreshCw, TrendingUp } from 'lucide-react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, BookMarked, BookOpen, ChevronRight, RefreshCw, Share2, TrendingUp } from 'lucide-react';
 
 import {
   Accordion,
@@ -17,21 +17,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   fetchClassCommentaryStudentLearningGraph,
   isClassCommentaryMutationOutcomeAmbiguous,
   isClassCommentaryStudentLearningGraphSummaryInScope,
   retryClassCommentaryRevisionLearningGraph,
   type ClassCommentaryGraphLearningStatus,
-  type ClassCommentaryLearningTrend,
   type ClassCommentaryObservedLearningState,
   type ClassCommentaryStudentGraphEvidence,
   type ClassCommentaryStudentGraphCurriculumContext,
   type ClassCommentaryStudentLearningGraphSummary,
 } from '../../classCommentary';
+import {
+  formatStudentLearningGraphTime,
+  studentLearningStateLabels,
+  studentLearningTrendLabels,
+} from './studentLearningGraphPresentation';
 
 export type StudentLearningGraphStudent = {
   id: number;
@@ -58,20 +62,10 @@ type PendingRetryRequest = {
   requestId: string;
 };
 
-const learningStateLabels: Record<ClassCommentaryObservedLearningState, string> = {
-  unknown: '持续观察',
-  weak: '需要巩固',
-  developing: '正在发展',
-  secure: '已经掌握',
-  mastered: '熟练掌握',
-};
-
-const trendLabels: Record<ClassCommentaryLearningTrend, string> = {
-  new_observation: '新观察',
-  regressed: '需要关注',
-  stable: '保持稳定',
-  improved: '有所进步',
-};
+const StudentLearningRelationshipGraph = lazy(async () => {
+  const module = await import('./StudentLearningRelationshipGraph');
+  return { default: module.StudentLearningRelationshipGraph };
+});
 
 const syncStatusLabels: Record<ClassCommentaryGraphLearningStatus, string> = {
   pending: '学习中',
@@ -79,23 +73,6 @@ const syncStatusLabels: Record<ClassCommentaryGraphLearningStatus, string> = {
   needs_mapping: '待匹配知识点',
   failed: '学习失败',
 };
-
-function formatLearningGraphTime(value: string): string {
-  if (!value) {
-    return '-';
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 function createGraphRetryRequestId(): string {
   const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -121,7 +98,6 @@ function CurriculumContextBlock({
   compact?: boolean;
 }) {
   const path = curriculum.path.map((item) => item.name).filter(Boolean);
-  const sourceVersion = curriculum.source.version_key || curriculum.source.dataset_revision;
   return (
     <div className="mt-2 min-w-0 space-y-2 rounded-lg bg-muted/45 px-3 py-2.5" data-testid="student-learning-curriculum-context">
       {path.length ? (
@@ -142,11 +118,6 @@ function CurriculumContextBlock({
       {!compact && curriculum.follow_ups.length ? (
         <p className="break-words text-xs text-muted-foreground">
           后续知识: {curriculum.follow_ups.map((item) => item.canonical_name).join('、')}
-        </p>
-      ) : null}
-      {sourceVersion ? (
-        <p className="break-all text-[11px] text-muted-foreground">
-          课程版本: {sourceVersion}{curriculum.source.license ? ` · ${curriculum.source.license}` : ''}
         </p>
       ) : null}
     </div>
@@ -173,8 +144,17 @@ export function StudentLearningGraphDialog({
   const loadRequestTokenRef = useRef(0);
   const retryRequestTokenRef = useRef(0);
   const retryRequestRef = useRef<PendingRetryRequest | null>(null);
+  const graphPositionStoresRef = useRef(new Map<string, Map<string, { x: number; y: number }>>());
   const studentId = student?.id || 0;
   const scopeKey = `${taskId}:${generationId}:${studentId}:${subjectKey}`;
+  const graphPositionStoreRef = useMemo(() => {
+    let scopedStore = graphPositionStoresRef.current.get(scopeKey);
+    if (!scopedStore) {
+      scopedStore = new Map();
+      graphPositionStoresRef.current.set(scopeKey, scopedStore);
+    }
+    return { current: scopedStore };
+  }, [scopeKey]);
   const currentScopeKeyRef = useRef(scopeKey);
   currentScopeKeyRef.current = scopeKey;
 
@@ -350,10 +330,13 @@ export function StudentLearningGraphDialog({
   }
 
   const hasLearningHistory = Boolean(summary?.current_states.length || summary?.timeline.length);
+  const relationshipGraphModelKey = summary
+    ? `${scopeKey}:${summary.timeline.map((event) => event.event_ref).join(',')}`
+    : scopeKey;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] sm:max-w-3xl" data-testid="student-learning-graph-dialog">
+      <DialogContent className="max-h-[94vh] min-h-0 overflow-hidden sm:max-w-6xl" data-testid="student-learning-graph-dialog">
         <DialogHeader>
           <DialogTitle>{student ? `${student.name}的学生成长轨迹` : '学生成长轨迹'}</DialogTitle>
           <DialogDescription>
@@ -361,8 +344,8 @@ export function StudentLearningGraphDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="h-[min(70vh,680px)] overflow-hidden">
-          <div className="flex flex-col gap-4 pr-3 pb-2">
+        <div className="max-h-[min(78vh,790px)] min-h-0 overflow-y-auto pr-1">
+          <div className="flex min-h-0 flex-col gap-4 pr-3 pb-2">
             {loadState === 'loading' ? (
               <div className="flex flex-col gap-3" data-testid="student-learning-graph-loading">
                 <Skeleton className="h-6 w-28" />
@@ -412,9 +395,11 @@ export function StudentLearningGraphDialog({
                     <div className="flex min-w-0 items-start gap-2">
                       <BookMarked className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0">
-                        <p className="break-words text-sm font-medium text-foreground">
-                          {summary.curriculum_assignment.book_name}
-                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {summary.curriculum_assignment.books.map((book) => (
+                            <Badge key={book.book_node_id} variant="outline">{book.book_name}</Badge>
+                          ))}
+                        </div>
                         <p className="mt-1 break-words text-xs text-muted-foreground">
                           {[
                             summary.curriculum_assignment.curriculum_name,
@@ -422,9 +407,8 @@ export function StudentLearningGraphDialog({
                             summary.curriculum_assignment.edition_name,
                           ].filter(Boolean).join(' · ')}
                         </p>
-                        <p className="mt-1 break-all text-[11px] text-muted-foreground">
-                          课程版本: {summary.curriculum_assignment.version_key || summary.curriculum_assignment.source_dataset_revision}
-                          {summary.curriculum_assignment.data_license ? ` · ${summary.curriculum_assignment.data_license}` : ''}
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          已按班级自动匹配教材范围
                         </p>
                       </div>
                     </div>
@@ -480,7 +464,32 @@ export function StudentLearningGraphDialog({
                     </p>
                   </div>
                 ) : (
-                  <>
+                  <Tabs defaultValue="relationships" className="min-h-0 gap-0" data-testid="student-learning-graph-tabs">
+                    <TabsList variant="line" aria-label="学生成长轨迹视图" className="mb-3">
+                      <TabsTrigger value="relationships">
+                        <Share2 data-icon="inline-start" />
+                        关系图
+                      </TabsTrigger>
+                      <TabsTrigger value="timeline">
+                        <TrendingUp data-icon="inline-start" />
+                        成长轨迹
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="relationships" className="h-[min(62vh,620px)] min-h-[480px] overflow-hidden rounded-lg border">
+                      <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在整理学习关系...</div>}>
+                        <StudentLearningRelationshipGraph
+                          key={relationshipGraphModelKey}
+                          studentName={student?.name || '当前学生'}
+                          summary={summary}
+                          usedGraphEvidenceRefs={usedGraphEvidenceRefs}
+                          positionStoreRef={graphPositionStoreRef}
+                        />
+                      </Suspense>
+                    </TabsContent>
+
+                    <TabsContent value="timeline" className="min-h-0">
+                      <div className="flex flex-col gap-4">
                     <section className="flex flex-col gap-3" aria-labelledby="student-learning-current-state-title">
                       <h3 id="student-learning-current-state-title" className="text-sm font-medium text-foreground">
                         当前知识点状态
@@ -491,11 +500,11 @@ export function StudentLearningGraphDialog({
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <span className="text-sm font-medium text-foreground">{state.knowledge_point_name}</span>
                               <Badge variant={learningStateVariant(state.state)}>
-                                {learningStateLabels[state.state]}
+                                {studentLearningStateLabels[state.state]}
                               </Badge>
                             </div>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              最近确认于 {formatLearningGraphTime(state.observed_at)}
+                              最近确认于 {formatStudentLearningGraphTime(state.observed_at)}
                             </p>
                             {state.curriculum ? <CurriculumContextBlock curriculum={state.curriculum} compact /> : null}
                           </div>
@@ -516,15 +525,15 @@ export function StudentLearningGraphDialog({
                               <div className="flex flex-col gap-1">
                                 <span className="text-sm font-medium text-foreground">{event.knowledge_point_name}</span>
                                 <span className="text-xs text-muted-foreground">
-                                  {formatLearningGraphTime(event.observed_at)}
+                                  {formatStudentLearningGraphTime(event.observed_at)}
                                 </span>
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">{trendLabels[event.trend]}</Badge>
+                                <Badge variant="outline">{studentLearningTrendLabels[event.trend]}</Badge>
                                 <Badge variant={learningStateVariant(event.state)}>
                                   {event.previous_state
-                                    ? `${learningStateLabels[event.previous_state]} -> ${learningStateLabels[event.state]}`
-                                    : learningStateLabels[event.state]}
+                                    ? `${studentLearningStateLabels[event.previous_state]} -> ${studentLearningStateLabels[event.state]}`
+                                    : studentLearningStateLabels[event.state]}
                                 </Badge>
                               </div>
                             </div>
@@ -564,7 +573,7 @@ export function StudentLearningGraphDialog({
                                 </AccordionTrigger>
                                 <AccordionContent className="flex flex-col gap-2">
                                   <p className="text-xs text-muted-foreground">
-                                    {event.evidence.lesson_name} · {formatLearningGraphTime(event.evidence.confirmed_at)}
+                                    {event.evidence.lesson_name} · {formatStudentLearningGraphTime(event.evidence.confirmed_at)}
                                   </p>
                                   <blockquote className="border-l-2 border-border pl-3 text-sm text-foreground">
                                     {event.evidence.quote}
@@ -576,7 +585,9 @@ export function StudentLearningGraphDialog({
                         ))}
                       </ol>
                     </section>
-                  </>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 )}
 
                 <Separator />
@@ -605,7 +616,7 @@ export function StudentLearningGraphDialog({
               </>
             ) : null}
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
