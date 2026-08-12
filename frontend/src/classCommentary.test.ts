@@ -353,6 +353,25 @@ test('student learning graph normalizer validates scope enums and exact evidence
       book_node_id: 8,
       book_name: '三年级上册',
       data_license: 'CC BY-NC-SA 4.0',
+      books: [{
+        assignment_id: 6,
+        book_node_id: 8,
+        book_name: '三年级上册',
+        book_upstream_id: 'book-3a',
+        grade_key: 'grade_3',
+        semester_key: 'first',
+        version_id: 2,
+        knowledge_point_count: 72,
+      }, {
+        assignment_id: 7,
+        book_node_id: 9,
+        book_name: '三年级下册',
+        book_upstream_id: 'book-3b',
+        grade_key: 'grade_3',
+        semester_key: 'second',
+        version_id: 2,
+        knowledge_point_count: 68,
+      }],
     },
     current_states: [{
       knowledge_point_key: 'quadratic-graphs',
@@ -403,6 +422,10 @@ test('student learning graph normalizer validates scope enums and exact evidence
   assert.equal(summary.timeline[0].evidence.quote, '已经能结合参数变化判断图像移动方向.');
   assert.deepEqual(summary.timeline[0].teaching_methods, ['图像与参数联动练习']);
   assert.equal(summary.curriculum_assignment?.book_name, '三年级上册');
+  assert.deepEqual(
+    summary.curriculum_assignment?.books.map((book) => book.book_name),
+    ['三年级上册', '三年级下册'],
+  );
   assert.equal(summary.current_states[0].curriculum?.path[0].name, '三年级上册');
   assert.equal(summary.timeline[0].curriculum?.prerequisites[0].canonical_name, '数的认识');
   assert.equal(summary.timeline[0].curriculum?.follow_ups[0].canonical_name, '综合应用');

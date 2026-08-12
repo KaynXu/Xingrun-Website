@@ -49,6 +49,27 @@ function learningGraphPayload(studentId: number, knowledgePointName: string) {
         edition_name: 'K12-KGraph',
         source_dataset_revision: 'd8522c2b',
         data_license: 'CC BY-NC-SA 4.0',
+        books: [{
+          assignment_id: 6,
+          book_node_id: 8,
+          book_name: '三年级上册',
+          book_upstream_id: 'book-3a',
+          stage_key: 'primary',
+          grade_key: 'grade_3',
+          semester_key: 'first',
+          version_id: 2,
+          knowledge_point_count: 72,
+        }, {
+          assignment_id: 7,
+          book_node_id: 9,
+          book_name: '三年级下册',
+          book_upstream_id: 'book-3b',
+          stage_key: 'primary',
+          grade_key: 'grade_3',
+          semester_key: 'second',
+          version_id: 2,
+          knowledge_point_count: 68,
+        }],
       },
       current_states: [{
         knowledge_point_key: `kp-${studentId}`,
@@ -197,9 +218,11 @@ test('student learning graph dialog ignores stale cross-student responses', asyn
     assert.match(dom.window.document.body.textContent || '', /学生 B的学生成长轨迹/);
     assert.match(dom.window.document.body.textContent || '', /导数基础/);
     assert.match(dom.window.document.body.textContent || '', /三年级上册/);
+    assert.match(dom.window.document.body.textContent || '', /三年级下册/);
     assert.match(dom.window.document.body.textContent || '', /前置知识: 数的认识/);
     assert.match(dom.window.document.body.textContent || '', /后续知识: 综合应用/);
-    assert.match(dom.window.document.body.textContent || '', /课程版本: pep-math-k12@d8522c2b/);
+    assert.match(dom.window.document.body.textContent || '', /已按班级自动匹配教材范围/);
+    assert.doesNotMatch(dom.window.document.body.textContent || '', /pep-math-k12@d8522c2b/);
     assert.doesNotMatch(dom.window.document.body.textContent || '', /二次函数图像/);
 
     await act(async () => {
