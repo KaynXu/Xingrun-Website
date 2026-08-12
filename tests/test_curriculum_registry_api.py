@@ -479,6 +479,62 @@ class CurriculumRegistryApiTest(unittest.TestCase):
             proposed.get_json()["result"]["action"]["status"], "pending_review"
         )
 
+    def test_assignment_api_exposes_auto_pair_and_supports_manual_pair_and_reset(self):
+        self._activate_registry()
+        lesson_manager.update_class(
+            self.class_id,
+            "数学·九年级·7班",
+            subject="数学",
+            grade="九年级",
+            current_grade="九年级",
+            class_number="7",
+            actor_user_id=self.admin_id,
+        )
+        automatic_response = self.client.get(
+            f"/api/class-commentary/curriculum/classes/{self.class_id}/assignment",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(automatic_response.status_code, 200)
+        automatic = automatic_response.get_json()["assignment"]
+        self.assertEqual(automatic["assignment_mode"], "auto")
+        self.assertEqual(
+            [item["book_upstream_id"] for item in automatic["books"]],
+            ["math_9a_rjb", "math_9b_rjb"],
+        )
+        book_ids = [int(item["book_node_id"]) for item in automatic["books"]]
+        manual_response = self.client.put(
+            f"/api/class-commentary/curriculum/classes/{self.class_id}/assignment",
+            headers=self.admin_headers,
+            json={
+                "version_id": self.version_id,
+                "book_node_ids": list(reversed(book_ids)),
+                "primary_book_node_id": book_ids[0],
+                "expected_cas_token": automatic["cas_token"],
+                "request_id": "api-manual-grade-nine-pair",
+            },
+        )
+        self.assertEqual(manual_response.status_code, 200)
+        manual = manual_response.get_json()["assignment"]
+        self.assertEqual(manual["assignment_mode"], "manual")
+        self.assertEqual(manual["book_node_ids"], book_ids)
+        self.assertEqual(len(manual["assignment_ids"]), 2)
+
+        reset_response = self.client.put(
+            f"/api/class-commentary/curriculum/classes/{self.class_id}/assignment",
+            headers=self.admin_headers,
+            json={
+                "version_id": self.version_id,
+                "assignment_mode": "auto",
+                "expected_cas_token": manual["cas_token"],
+                "request_id": "api-reset-grade-nine-auto",
+            },
+        )
+        self.assertEqual(reset_response.status_code, 200)
+        reset = reset_response.get_json()["assignment"]
+        self.assertEqual(reset["assignment_mode"], "auto")
+        self.assertEqual(reset["book_node_ids"], book_ids)
+        self.assertEqual(reset["assignment_ids"], [])
+
     def test_org_admin_cannot_cross_organization_boundaries(self):
         self._activate_registry()
         first_book, _, _, _ = self._book_pair_with_private_targets()

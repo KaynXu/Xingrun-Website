@@ -14,6 +14,7 @@ GRAPH_EVENT_SCHEMA_VERSION = "student_learning_event.v1"
 GRAPH_EXTRACTOR_VERSION = "class_commentary.learning_graph.extractor.v1"
 GRAPH_PROMPT_VERSION = "class_commentary.learning_graph.prompt.v2"
 GRAPH_REGISTRY_VERSION = 1
+CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION = "class_curriculum_assignment.v2"
 LEARNING_STATES = ("unknown", "weak", "developing", "secure", "mastered")
 LEARNING_TRENDS = ("new_observation", "regressed", "stable", "improved")
 STATE_RANK = {value: index for index, value in enumerate(LEARNING_STATES)}
@@ -108,6 +109,172 @@ def _json_list(value: object) -> list:
             return []
         return parsed if isinstance(parsed, list) else []
     return []
+
+
+def _positive_int_list(value: object) -> Optional[list[int]]:
+    if not isinstance(value, list):
+        return None
+    result = []
+    for item in value:
+        try:
+            normalized = int(item)
+        except (TypeError, ValueError):
+            return None
+        if normalized <= 0 or normalized in result:
+            return None
+        result.append(normalized)
+    return sorted(result)
+
+
+def _curriculum_scope_v2_hash(assignment: Mapping[str, object]) -> str:
+    return content_hash(
+        {
+            "schema_version": CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION,
+            "class_id": int(assignment.get("class_id") or 0),
+            "organization_id": int(assignment.get("organization_id") or 0),
+            "subject_key": str(assignment.get("subject_key") or ""),
+            "assignment_mode": str(
+                assignment.get("assignment_mode") or "needs_review"
+            ),
+            "inferred_grade_key": str(assignment.get("inferred_grade_key") or ""),
+            "version_id": int(assignment.get("version_id") or 0),
+            "book_node_ids": sorted(
+                int(value) for value in assignment.get("book_node_ids") or []
+            ),
+            "assignment_ids": sorted(
+                int(value) for value in assignment.get("assignment_ids") or []
+            ),
+            "primary_book_node_id": int(
+                assignment.get("primary_book_node_id") or 0
+            ),
+        }
+    )
+
+
+def _frozen_curriculum_scope_valid(
+    row: Mapping[str, object],
+    assignment: Mapping[str, object],
+    *,
+    class_id: int,
+    organization_id: int,
+    subject_key: str,
+    registry: Iterable[Mapping[str, object]],
+) -> bool:
+    schema_version = str(assignment.get("schema_version") or "")
+    scalar_valid = (
+        int(assignment.get("id") or 0)
+        == int(row["curriculum_assignment_id"] or 0)
+        and int(assignment.get("version_id") or 0)
+        == int(row["curriculum_version_id"] or 0)
+        and int(assignment.get("book_node_id") or 0)
+        == int(row["curriculum_book_node_id"] or 0)
+    )
+    # Jobs created before multi-book scopes had no explicit snapshot schema.
+    if schema_version == "":
+        return scalar_valid
+    if schema_version != CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION or not scalar_valid:
+        return False
+
+    assignment_ids = _positive_int_list(assignment.get("assignment_ids"))
+    book_ids = _positive_int_list(assignment.get("book_node_ids"))
+    stored_assignment_ids = _positive_int_list(
+        _json_list(row["curriculum_assignment_ids_snapshot_json"])
+    )
+    stored_book_ids = _positive_int_list(
+        _json_list(row["curriculum_book_node_ids_snapshot_json"])
+    )
+    books = assignment.get("books")
+    if (
+        assignment_ids is None
+        or book_ids is None
+        or stored_assignment_ids is None
+        or stored_book_ids is None
+        or not isinstance(books, list)
+        or not book_ids
+        or assignment_ids != stored_assignment_ids
+        or book_ids != stored_book_ids
+        or int(assignment.get("class_id") or 0) != int(class_id)
+        or int(assignment.get("organization_id") or 0) != int(organization_id)
+        or str(assignment.get("subject_key") or "") != str(subject_key)
+    ):
+        return False
+
+    book_rows = [dict(item) for item in books if isinstance(item, Mapping)]
+    if len(book_rows) != len(books):
+        return False
+    books_book_ids = _positive_int_list(
+        [int(item.get("book_node_id") or 0) for item in book_rows]
+    )
+    books_assignment_ids = _positive_int_list(
+        [
+            int(item.get("assignment_id") or 0)
+            for item in book_rows
+            if int(item.get("assignment_id") or 0)
+        ]
+    )
+    primary_book_id = int(assignment.get("primary_book_node_id") or 0)
+    if (
+        books_book_ids != book_ids
+        or books_assignment_ids != assignment_ids
+        or primary_book_id not in book_ids
+        or int(assignment.get("book_node_id") or 0) != primary_book_id
+    ):
+        return False
+    primary_assignment_id = next(
+        (
+            int(item.get("assignment_id") or 0)
+            for item in book_rows
+            if int(item.get("book_node_id") or 0) == primary_book_id
+        ),
+        0,
+    )
+    if int(assignment.get("id") or 0) != primary_assignment_id:
+        return False
+
+    scope_hash = str(assignment.get("scope_hash") or "")
+    if (
+        not scope_hash
+        or scope_hash != str(assignment.get("cas_token") or "")
+        or scope_hash != str(row["curriculum_scope_hash"] or "")
+        or scope_hash != _curriculum_scope_v2_hash(assignment)
+    ):
+        return False
+
+    assigned_books = set(book_ids)
+    for item in registry:
+        item_book_ids = _positive_int_list(
+            item.get("curriculum_book_node_ids")
+            if isinstance(item, Mapping)
+            else None
+        )
+        if item_book_ids is None:
+            item_book_id = int(item.get("book_node_id") or 0)
+            item_book_ids = [item_book_id] if item_book_id else []
+        preferred_book_id = int(item.get("book_node_id") or 0)
+        if (
+            not item_book_ids
+            or not set(item_book_ids).issubset(assigned_books)
+            or preferred_book_id not in item_book_ids
+        ):
+            return False
+    return True
+
+
+def _frozen_assignment_id_for_book(
+    assignment: Mapping[str, object], book_node_id: int
+) -> int:
+    if (
+        str(assignment.get("schema_version") or "")
+        != CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION
+    ):
+        return int(assignment.get("id") or 0)
+    for item in assignment.get("books") or []:
+        if (
+            isinstance(item, Mapping)
+            and int(item.get("book_node_id") or 0) == int(book_node_id)
+        ):
+            return int(item.get("assignment_id") or 0)
+    return 0
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
@@ -433,6 +600,9 @@ def ensure_class_commentary_graph_schema(conn: sqlite3.Connection) -> None:
         "curriculum_registry_snapshot_json": "TEXT NOT NULL DEFAULT '[]'",
         "curriculum_content_hash": "TEXT NOT NULL DEFAULT ''",
         "curriculum_assignment_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+        "curriculum_assignment_ids_snapshot_json": "TEXT NOT NULL DEFAULT '[]'",
+        "curriculum_book_node_ids_snapshot_json": "TEXT NOT NULL DEFAULT '[]'",
+        "curriculum_scope_hash": "TEXT NOT NULL DEFAULT ''",
     }.items():
         _ensure_column(conn, "class_commentary_graph_extraction_jobs", column, ddl)
     for column, ddl in {
@@ -671,6 +841,13 @@ def create_graph_extraction_job_conn(
         "curriculum_assignment_id": int(curriculum_assignment.get("id") or 0),
         "curriculum_version_id": int(curriculum_assignment.get("version_id") or 0),
         "curriculum_book_node_id": int(curriculum_assignment.get("book_node_id") or 0),
+        "curriculum_assignment_ids": sorted(
+            int(value) for value in curriculum_assignment.get("assignment_ids") or []
+        ),
+        "curriculum_book_node_ids": sorted(
+            int(value) for value in curriculum_assignment.get("book_node_ids") or []
+        ),
+        "curriculum_scope_hash": str(curriculum_assignment.get("scope_hash") or ""),
         "curriculum_registry_snapshot_hash": curriculum_snapshot_hash,
         "curriculum_content_hash": str(curriculum_assignment.get("content_hash") or ""),
     }
@@ -685,8 +862,10 @@ def create_graph_extraction_job_conn(
             curriculum_assignment_id, curriculum_version_id,
             curriculum_book_node_id, curriculum_registry_snapshot_hash,
             curriculum_registry_snapshot_json, curriculum_content_hash,
-            curriculum_assignment_snapshot_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            curriculum_assignment_snapshot_json,
+            curriculum_assignment_ids_snapshot_json,
+            curriculum_book_node_ids_snapshot_json, curriculum_scope_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             organization_id,
@@ -707,6 +886,9 @@ def create_graph_extraction_job_conn(
             canonical_json(registry_snapshot),
             str(curriculum_assignment.get("content_hash") or ""),
             canonical_json(curriculum_assignment),
+            canonical_json(sorted(int(value) for value in curriculum_assignment.get("assignment_ids") or [])),
+            canonical_json(sorted(int(value) for value in curriculum_assignment.get("book_node_ids") or [])),
+            str(curriculum_assignment.get("scope_hash") or ""),
         ),
     )
     row = conn.execute(
@@ -855,14 +1037,24 @@ def get_graph_extraction_input(job_id: int) -> Optional[dict]:
         row = conn.execute(
             """
             SELECT job.*, revision.revision_no, revision.teacher_user_id,
+                   revision.organization_id AS revision_organization_id,
+                   revision.task_id AS revision_task_id,
+                   revision.generation_id AS revision_generation_id,
                    revision.confirmed_at, revision.feedback_schema_version,
                    revision.structured_feedback_json, revision.structured_feedback_hash,
-                   revision.final_feedback_text, generation.subject_key,
+                   revision.final_feedback_text,
+                   generation.organization_id AS generation_organization_id,
+                   generation.task_id AS generation_task_id,
+                   generation.subject_key,
                    generation.class_id, generation.attending_roster_snapshot_json,
+                   task.organization_id AS task_organization_id,
+                   task.class_id AS task_class_id,
+                   class.organization_id AS class_organization_id,
                    class.name AS class_name
             FROM class_commentary_graph_extraction_jobs AS job
             JOIN class_commentary_revisions AS revision ON revision.id=job.revision_id
             JOIN class_commentary_generations AS generation ON generation.id=job.generation_id
+            JOIN class_commentary_tasks AS task ON task.id=job.task_id
             JOIN classes AS class ON class.id=generation.class_id
             WHERE job.id=?
             """,
@@ -904,17 +1096,76 @@ def get_graph_extraction_input(job_id: int) -> Optional[dict]:
     result = dict(row)
     result["student_feedback_items"] = safe_items
     result["registry"] = frozen_registry
+    alias_owners: dict[str, set[str]] = {}
+    for item in frozen_registry:
+        if not isinstance(item, Mapping):
+            continue
+        key = str(item.get("knowledge_point_key") or "")
+        for value in [item.get("canonical_name"), *(item.get("aliases") or [])]:
+            normalized = normalize_knowledge_point_alias(value)
+            if normalized:
+                alias_owners.setdefault(normalized, set()).add(key)
+    compact_registry = []
+    ambiguous_keys = {
+        key
+        for owners in alias_owners.values()
+        if len(owners) != 1
+        for key in owners
+    }
+    for item in frozen_registry:
+        if not isinstance(item, Mapping):
+            continue
+        canonical_name = str(item.get("canonical_name") or "")
+        canonical_normalized = normalize_knowledge_point_alias(canonical_name)
+        if (
+            str(item.get("knowledge_point_key") or "") in ambiguous_keys
+            or len(alias_owners.get(canonical_normalized, set())) != 1
+        ):
+            continue
+        compact_registry.append(
+            {
+                "knowledge_point_key": str(item.get("knowledge_point_key") or ""),
+                "canonical_name": canonical_name,
+                "aliases": [
+                    str(alias)
+                    for alias in item.get("aliases") or []
+                    if len(
+                        alias_owners.get(normalize_knowledge_point_alias(alias), set())
+                    ) == 1
+                ],
+            }
+        )
+    result["model_registry"] = compact_registry
     frozen_assignment = _json_object(row["curriculum_assignment_snapshot_json"])
     result["curriculum_assignment"] = frozen_assignment or None
     result["lesson_id"] = int(row["task_id"])
     result["lesson_name"] = f"{str(row['class_name'] or '').strip()} 课堂反馈".strip()
+    identity_scope_valid = (
+        int(row["revision_organization_id"] or 0)
+        == int(row["organization_id"] or 0)
+        == int(row["generation_organization_id"] or 0)
+        == int(row["task_organization_id"] or 0)
+        == int(row["class_organization_id"] or 0)
+        and int(row["revision_task_id"] or 0) == int(row["task_id"] or 0)
+        and int(row["generation_task_id"] or 0) == int(row["task_id"] or 0)
+        and int(row["task_class_id"] or 0) == int(row["class_id"] or 0)
+        and int(row["revision_generation_id"] or 0)
+        == int(row["generation_id"] or 0)
+    )
+    scope_valid = _frozen_curriculum_scope_valid(
+        row,
+        frozen_assignment,
+        class_id=int(row["class_id"]),
+        organization_id=int(row["organization_id"]),
+        subject_key=str(row["subject_key"] or ""),
+        registry=frozen_registry,
+    )
     result["integrity_valid"] = (
         str(row["source_revision_hash"])
         == (str(row["structured_feedback_hash"] or "") or content_hash(str(row["final_feedback_text"] or "")))
         and str(row["curriculum_registry_snapshot_hash"] or "") == content_hash(frozen_registry)
-        and int(frozen_assignment.get("id") or 0) == int(row["curriculum_assignment_id"] or 0)
-        and int(frozen_assignment.get("version_id") or 0) == int(row["curriculum_version_id"] or 0)
-        and int(frozen_assignment.get("book_node_id") or 0) == int(row["curriculum_book_node_id"] or 0)
+        and identity_scope_valid
+        and scope_valid
         and (
             not int(row["curriculum_version_id"] or 0)
             or (
@@ -951,6 +1202,7 @@ def _resolve_frozen_knowledge_point(
     frozen: Mapping[str, object],
     value: object,
     allow_active_organization_target: bool = False,
+    require_model_eligible: bool = False,
 ) -> Optional[dict]:
     text = str(value or "").strip()
     if not text:
@@ -971,17 +1223,32 @@ def _resolve_frozen_knowledge_point(
         ]
     assignment = frozen.get("curriculum_assignment")
     unique = {str(item.get("knowledge_point_key") or ""): item for item in exact}
+    if require_model_eligible and unique:
+        eligible_keys = {
+            str(item.get("knowledge_point_key") or "")
+            for item in frozen.get("model_registry") or []
+            if isinstance(item, Mapping)
+        }
+        unique = {key: item for key, item in unique.items() if key in eligible_keys}
     if not unique and allow_active_organization_target and isinstance(assignment, Mapping):
+        assigned_book_ids = {
+            int(value) for value in assignment.get("book_node_ids") or []
+        } or {int(assignment.get("book_node_id") or 0)}
+        assigned_book_ids.discard(0)
+        if not assigned_book_ids:
+            raise LearningGraphValidationError("frozen curriculum book scope is invalid")
+        placeholders = ",".join("?" for _ in assigned_book_ids)
         custom = conn.execute(
-            """
+            f"""
             SELECT * FROM curriculum_organization_knowledge_points
-            WHERE organization_id=? AND version_id=? AND book_node_id=?
+            WHERE organization_id=? AND version_id=?
+              AND book_node_id IN ({placeholders})
               AND subject_key=? AND knowledge_point_key=? AND status='active'
             """,
             (
                 int(assignment.get("organization_id") or 0),
                 int(assignment.get("version_id") or 0),
-                int(assignment.get("book_node_id") or 0),
+                *sorted(assigned_book_ids),
                 str(assignment.get("subject_key") or ""),
                 text,
             ),
@@ -993,6 +1260,7 @@ def _resolve_frozen_knowledge_point(
                 "registry_version": int(assignment.get("stable_registry_version") or 0),
                 "curriculum_node_id": 0,
                 "organization_knowledge_point_id": int(custom["id"]),
+                "book_node_id": int(custom["book_node_id"]),
                 "node_content_hash": content_hash(
                     {
                         "knowledge_point_key": custom["knowledge_point_key"],
@@ -1009,16 +1277,47 @@ def _resolve_frozen_knowledge_point(
         snapshot["registry_version"] = int(snapshot.get("registry_version") or GRAPH_REGISTRY_VERSION)
         return snapshot
     if int(snapshot.get("organization_knowledge_point_id") or 0):
+        snapshot_book_id = int(snapshot.get("book_node_id") or 0)
+        if not snapshot_book_id and (
+            str(assignment.get("schema_version") or "")
+            != CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION
+        ):
+            snapshot_book_id = int(assignment.get("book_node_id") or 0)
+        assigned_book_ids = {
+            int(value) for value in assignment.get("book_node_ids") or []
+        } or {int(assignment.get("book_node_id") or 0)}
+        if snapshot_book_id not in assigned_book_ids:
+            raise LearningGraphValidationError("frozen curriculum book scope is invalid")
         result = dict(snapshot)
         result.update(
             {
                 "curriculum_version_id": int(assignment.get("version_id") or 0),
-                "book_node_id": int(assignment.get("book_node_id") or 0),
+                "book_node_id": snapshot_book_id,
                 "curriculum_content_hash": str(assignment.get("content_hash") or ""),
             }
         )
         return result
     node_id = int(snapshot.get("curriculum_node_id") or 0)
+    snapshot_book_ids = _positive_int_list(snapshot.get("curriculum_book_node_ids"))
+    snapshot_book_id = int(snapshot.get("book_node_id") or 0)
+    if not snapshot_book_id and snapshot_book_ids and len(snapshot_book_ids) == 1:
+        snapshot_book_id = snapshot_book_ids[0]
+    if not snapshot_book_id and (
+        str(assignment.get("schema_version") or "")
+        != CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION
+    ):
+        snapshot_book_id = int(assignment.get("book_node_id") or 0)
+    assigned_book_ids = {
+        int(value) for value in assignment.get("book_node_ids") or []
+    } or {int(assignment.get("book_node_id") or 0)}
+    if (
+        snapshot_book_id not in assigned_book_ids
+        or (
+            snapshot_book_ids is not None
+            and not set(snapshot_book_ids).issubset(assigned_book_ids)
+        )
+    ):
+        raise LearningGraphValidationError("frozen curriculum book scope is invalid")
     row = conn.execute(
         """
         SELECT node.* FROM curriculum_nodes node
@@ -1033,7 +1332,7 @@ def _resolve_frozen_knowledge_point(
             node_id,
             int(assignment.get("version_id") or 0),
             str(snapshot.get("knowledge_point_key") or ""),
-            int(assignment.get("book_node_id") or 0),
+            snapshot_book_id,
         ),
     ).fetchone()
     if not row:
@@ -1046,7 +1345,7 @@ def _resolve_frozen_knowledge_point(
             "registry_version": int(assignment.get("stable_registry_version") or 0),
             "curriculum_node_id": node_id,
             "curriculum_version_id": int(assignment.get("version_id") or 0),
-            "book_node_id": int(assignment.get("book_node_id") or 0),
+            "book_node_id": snapshot_book_id,
             "curriculum_content_hash": str(assignment.get("content_hash") or ""),
             "node_content_hash": str(snapshot.get("node_content_hash") or ""),
         }
@@ -1404,6 +1703,7 @@ def commit_graph_extraction(
                 frozen=frozen,
                 value=raw_kp or raw_unmapped,
                 allow_active_organization_target=allow_active_organization_targets,
+                require_model_eligible=not allow_active_organization_targets,
             )
             if not resolved:
                 candidate_text = str(raw_unmapped or raw_kp or "").strip()
@@ -1450,6 +1750,20 @@ def commit_graph_extraction(
                     "duplicate knowledge point observation for confirmed revision"
                 )
             seen_trusted_observations.add(observation_key)
+            curriculum_assignment = frozen.get("curriculum_assignment") or {}
+            resolved_book_id = int(resolved.get("book_node_id") or 0)
+            resolved_assignment_id = _frozen_assignment_id_for_book(
+                curriculum_assignment, resolved_book_id
+            )
+            if (
+                str(curriculum_assignment.get("schema_version") or "")
+                == CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION
+                and not resolved_assignment_id
+                and curriculum_assignment.get("assignment_ids")
+            ):
+                raise LearningGraphValidationError(
+                    "frozen curriculum assignment scope is invalid"
+                )
             event_identity = {
                 "schema_version": GRAPH_EVENT_SCHEMA_VERSION,
                 "organization_id": int(job["organization_id"]),
@@ -1503,11 +1817,11 @@ def commit_graph_extraction(
                     str(job["prompt_version"]),
                     str(job["event_schema_version"]),
                     int(resolved["registry_version"]),
-                    int(job["curriculum_assignment_id"] or 0) or None,
+                    resolved_assignment_id or None,
                     int(resolved.get("curriculum_version_id") or 0) or None,
                     int(resolved.get("curriculum_node_id") or 0) or None,
                     int(resolved.get("organization_knowledge_point_id") or 0) or None,
-                    int(resolved.get("book_node_id") or job["curriculum_book_node_id"] or 0) or None,
+                    resolved_book_id or int(job["curriculum_book_node_id"] or 0) or None,
                     str((frozen.get("curriculum_assignment") or {}).get("package_key") or ""),
                     str((frozen.get("curriculum_assignment") or {}).get("version_key") or ""),
                     str((frozen.get("curriculum_assignment") or {}).get("source_dataset_revision") or ""),
@@ -2566,6 +2880,9 @@ def resolve_graph_unmapped_candidate(
                    job.curriculum_registry_snapshot_hash,
                    job.curriculum_registry_snapshot_json,
                    job.curriculum_assignment_snapshot_json,
+                   job.curriculum_assignment_ids_snapshot_json,
+                   job.curriculum_book_node_ids_snapshot_json,
+                   job.curriculum_scope_hash,
                    generation.class_id
             FROM class_commentary_graph_unmapped_candidates candidate
             JOIN class_commentary_graph_extraction_jobs job ON job.id=candidate.extraction_job_id
@@ -2580,15 +2897,18 @@ def resolve_graph_unmapped_candidate(
             raise LearningGraphRetryConflict("unmapped candidate is no longer pending")
         frozen_registry = _json_list(candidate["curriculum_registry_snapshot_json"])
         frozen_assignment = _json_object(candidate["curriculum_assignment_snapshot_json"])
+        scope_valid = _frozen_curriculum_scope_valid(
+            candidate,
+            frozen_assignment,
+            class_id=int(candidate["class_id"]),
+            organization_id=int(organization_id),
+            subject_key=str(candidate["subject_key"] or ""),
+            registry=frozen_registry,
+        )
         if (
             str(candidate["curriculum_registry_snapshot_hash"] or "")
             != content_hash(frozen_registry)
-            or int(frozen_assignment.get("id") or 0)
-            != int(candidate["curriculum_assignment_id"] or 0)
-            or int(frozen_assignment.get("version_id") or 0)
-            != int(candidate["curriculum_version_id"] or 0)
-            or int(frozen_assignment.get("book_node_id") or 0)
-            != int(candidate["curriculum_book_node_id"] or 0)
+            or not scope_valid
             or int(frozen_assignment.get("organization_id") or 0)
             != int(organization_id)
             or str(frozen_assignment.get("content_hash") or "")
@@ -2604,6 +2924,13 @@ def resolve_graph_unmapped_candidate(
                 "curriculum_assignment_id": int(candidate["curriculum_assignment_id"] or 0),
                 "curriculum_version_id": int(candidate["curriculum_version_id"] or 0),
                 "curriculum_book_node_id": int(candidate["curriculum_book_node_id"] or 0),
+                "curriculum_assignment_ids": _json_list(
+                    candidate["curriculum_assignment_ids_snapshot_json"]
+                ),
+                "curriculum_book_node_ids": _json_list(
+                    candidate["curriculum_book_node_ids_snapshot_json"]
+                ),
+                "curriculum_scope_hash": str(candidate["curriculum_scope_hash"] or ""),
                 "curriculum_registry_snapshot_hash": str(
                     candidate["curriculum_registry_snapshot_hash"] or ""
                 ),
@@ -2624,7 +2951,25 @@ def resolve_graph_unmapped_candidate(
             assignment = frozen_assignment
             if not assignment:
                 raise LearningGraphValidationError("candidate has no frozen curriculum assignment")
-            proposal_key = f"org.{int(organization_id)}.custom.{content_hash([assignment['version_id'], assignment['book_node_id'], normalize_knowledge_point_alias(proposal_name)])[:24]}"
+            book_ids = _positive_int_list(assignment.get("book_node_ids"))
+            if (
+                str(assignment.get("schema_version") or "")
+                == CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION
+                and (book_ids is None or len(book_ids) != 1)
+            ):
+                raise LearningGraphValidationError(
+                    "proposal requires a single frozen curriculum book"
+                )
+            proposal_book_id = (
+                book_ids[0]
+                if book_ids
+                else int(assignment.get("book_node_id") or 0)
+            )
+            if not proposal_book_id:
+                raise LearningGraphValidationError(
+                    "candidate has no frozen curriculum book"
+                )
+            proposal_key = f"org.{int(organization_id)}.custom.{content_hash([assignment['version_id'], proposal_book_id, normalize_knowledge_point_alias(proposal_name)])[:24]}"
             conn.execute(
                 """
                 INSERT OR IGNORE INTO curriculum_organization_knowledge_points (
@@ -2635,7 +2980,7 @@ def resolve_graph_unmapped_candidate(
                 """,
                 (
                     int(organization_id), int(assignment["version_id"]),
-                    int(assignment["book_node_id"]), str(candidate["subject_key"]),
+                    proposal_book_id, str(candidate["subject_key"]),
                     proposal_key, proposal_name, str(note or ""), int(actor_user_id), now,
                 ),
             )

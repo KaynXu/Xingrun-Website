@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import lesson_manager
+import curriculum_registry
 from class_commentary_graph_jobs import (
     process_class_commentary_graph_extraction_job,
     process_class_commentary_graph_sync_operation,
@@ -34,6 +35,7 @@ from class_commentary_learning_graph import (
     rebuild_semantica_graph,
     reconcile_class_commentary_graph_store,
     retry_graph_revision,
+    resolve_graph_unmapped_candidate,
     resolve_knowledge_point,
 )
 from class_commentary_semantica import (
@@ -172,6 +174,38 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
             )
         return adapter
 
+    def _install_multibook_registry(self, grade="九年级"):
+        with lesson_manager.get_conn() as conn:
+            columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(classes)")
+            }
+            if "subject_key" not in columns:
+                conn.execute(
+                    "ALTER TABLE classes ADD COLUMN subject_key TEXT NOT NULL DEFAULT ''"
+                )
+            if "current_grade" not in columns:
+                conn.execute(
+                    "ALTER TABLE classes ADD COLUMN current_grade TEXT NOT NULL DEFAULT ''"
+                )
+            conn.execute(
+                "UPDATE classes SET subject_key='math', current_grade=? WHERE id=21",
+                (grade,),
+            )
+            imported = curriculum_registry.import_curriculum_bundle(
+                conn,
+                curriculum_registry.load_bundle(),
+                actor_user_id=11,
+            )
+            version_id = int(imported["version"]["id"])
+            curriculum_registry.review_curriculum_version(
+                conn, version_id, actor_user_id=11
+            )
+            curriculum_registry.activate_curriculum_version(
+                conn, version_id, actor_user_id=11
+            )
+        return version_id
+
     def test_registry_normalization_alias_and_subject_isolation(self):
         self.assertEqual(
             normalize_knowledge_point_alias("  QUADRATIC\u3000 FUNCTION   GRAPH "),
@@ -193,6 +227,155 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
             )
         self.assertEqual(math_match["knowledge_point_key"], "math.quadratic_function_graph")
         self.assertIsNone(physics_match)
+
+    def test_legacy_scalar_frozen_curriculum_snapshot_remains_valid(self):
+        job_id = self._job(
+            revision_id=51,
+            revision_no=1,
+            feedback_text="二次函数图像目前较薄弱.",
+            confirmed_at="2026-08-11T10:00:00Z",
+        )
+        frozen = get_graph_extraction_input(job_id)
+        self.assertTrue(frozen["integrity_valid"])
+        self.assertIsNone(frozen["curriculum_assignment"])
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET curriculum_assignment_ids_snapshot_json='[999]',
+                    curriculum_book_node_ids_snapshot_json='[999]',
+                    curriculum_scope_hash='legacy-column-default-is-not-authoritative'
+                WHERE id=?
+                """,
+                (job_id,),
+            )
+        self.assertTrue(get_graph_extraction_input(job_id)["integrity_valid"])
+
+    def test_legacy_snapshot_fails_closed_on_generation_scope_tamper(self):
+        job_id = self._job(
+            revision_id=51,
+            revision_no=1,
+            feedback_text="二次函数图像目前较薄弱.",
+            confirmed_at="2026-08-11T10:00:00Z",
+        )
+        self.assertTrue(get_graph_extraction_input(job_id)["integrity_valid"])
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "INSERT INTO classes(id, organization_id, name) VALUES (22, 1, 'Other Class')"
+            )
+            conn.execute(
+                "UPDATE class_commentary_generations SET class_id=22 WHERE id=41"
+            )
+        self.assertFalse(get_graph_extraction_input(job_id)["integrity_valid"])
+
+    def test_multibook_snapshot_uses_secondary_book_and_fails_closed_on_set_tamper(self):
+        self._install_multibook_registry("九年级")
+        text = "该知识点目前较薄弱."
+        job_id = self._job(
+            revision_id=51,
+            revision_no=1,
+            feedback_text=text,
+            confirmed_at="2026-08-11T10:00:00Z",
+        )
+        frozen = get_graph_extraction_input(job_id)
+        self.assertTrue(frozen["integrity_valid"])
+        assignment = frozen["curriculum_assignment"]
+        self.assertEqual(
+            assignment["schema_version"], "class_curriculum_assignment.v2"
+        )
+        self.assertEqual(len(assignment["book_node_ids"]), 2)
+        primary_book_id = int(assignment["primary_book_node_id"])
+        eligible_keys = {
+            str(item["knowledge_point_key"])
+            for item in frozen["model_registry"]
+        }
+        secondary = next(
+            item
+            for item in frozen["registry"]
+            if int(item["book_node_id"]) != primary_book_id
+            and len(item["curriculum_book_node_ids"]) == 1
+            and str(item["knowledge_point_key"]) in eligible_keys
+        )
+        result = self._run(
+            job_id,
+            self._extractor_for(
+                knowledge_point_key=str(secondary["knowledge_point_key"])
+            ),
+        )
+        self.assertEqual(result["status"], "extracted")
+        with lesson_manager.get_conn() as conn:
+            event = conn.execute(
+                """
+                SELECT curriculum_assignment_id, curriculum_book_node_id
+                FROM class_commentary_student_learning_events
+                WHERE extraction_job_id=?
+                """,
+                (job_id,),
+            ).fetchone()
+        self.assertIsNone(event["curriculum_assignment_id"])
+        self.assertEqual(
+            int(event["curriculum_book_node_id"]), int(secondary["book_node_id"])
+        )
+
+        tamper_job_id = self._job(
+            revision_id=52,
+            revision_no=2,
+            feedback_text=text,
+            confirmed_at="2026-08-11T10:05:00Z",
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET curriculum_book_node_ids_snapshot_json=?
+                WHERE id=?
+                """,
+                (canonical_json([primary_book_id]), tamper_job_id),
+            )
+        self.assertFalse(get_graph_extraction_input(tamper_job_id)["integrity_valid"])
+
+    def test_multibook_ambiguous_exact_key_and_unscoped_proposal_fail_closed(self):
+        self._install_multibook_registry("一年级")
+        text = "比较数量目前较薄弱."
+        job_id = self._job(
+            revision_id=51,
+            revision_no=1,
+            feedback_text=text,
+            confirmed_at="2026-08-11T10:00:00Z",
+        )
+        frozen = get_graph_extraction_input(job_id)
+        ambiguous = [
+            item
+            for item in frozen["registry"]
+            if item["canonical_name"] == "比较数量"
+        ]
+        self.assertEqual(len(ambiguous), 2)
+        self.assertTrue(
+            {str(item["knowledge_point_key"]) for item in ambiguous}.isdisjoint(
+                {
+                    str(item["knowledge_point_key"])
+                    for item in frozen["model_registry"]
+                }
+            )
+        )
+        result = self._run(
+            job_id,
+            self._extractor_for(
+                knowledge_point_key=str(ambiguous[0]["knowledge_point_key"])
+            ),
+        )
+        self.assertEqual(result["status"], "needs_mapping")
+        with self.assertRaisesRegex(
+            ValueError, "proposal requires a single frozen curriculum book"
+        ):
+            resolve_graph_unmapped_candidate(
+                result["unmapped_candidate_ids"][0],
+                organization_id=1,
+                actor_user_id=11,
+                request_id="ambiguous-proposal-without-book",
+                action="propose_new",
+                proposed_name="比较数量自定义观察点",
+            )
 
     def test_unknown_knowledge_point_needs_mapping_and_never_enters_trusted_graph(self):
         text = "新的自定义知识点仍然薄弱."
