@@ -10157,7 +10157,7 @@ def api_class_commentary_curriculum_class_assignment(class_id: int):
         return jsonify({"error": "not found"}), 404
     if request.method == "GET":
         with get_conn() as conn:
-            assignment = curriculum_registry.get_class_curriculum_assignment(conn, class_id)
+            assignment = curriculum_registry.get_effective_class_curriculum_scope(conn, class_id)
         return jsonify({"assignment": assignment})
     if user.get("role") not in {"super_owner", "owner", "admin"}:
         return jsonify({"error": "无权限"}), 403
@@ -10166,7 +10166,6 @@ def api_class_commentary_curriculum_class_assignment(class_id: int):
         return payload_error
     try:
         version_id = int((data or {}).get("version_id") or 0)
-        book_node_id = int((data or {}).get("book_node_id") or 0)
         raw_expected = (data or {}).get("expected_assignment_id")
         expected_assignment_id = int(raw_expected) if raw_expected not in (None, "") else None
     except (TypeError, ValueError):
@@ -10174,17 +10173,41 @@ def api_class_commentary_curriculum_class_assignment(class_id: int):
     request_id = str((data or {}).get("request_id") or "").strip()
     try:
         with get_conn() as conn:
-            assignment = curriculum_registry.assign_curriculum_book(
-                conn,
-                organization_id=int(user["organization_id"]),
-                class_id=class_id,
-                version_id=version_id,
-                book_node_id=book_node_id,
-                actor_user_id=int(user["id"]),
-                request_id=request_id,
-                expected_assignment_id=expected_assignment_id,
-                note=str((data or {}).get("note") or "").strip(),
-            )
+            if str((data or {}).get("assignment_mode") or "") == "auto":
+                assignment = curriculum_registry.reset_class_curriculum_to_auto(
+                    conn,
+                    organization_id=int(user["organization_id"]),
+                    class_id=class_id,
+                    actor_user_id=int(user["id"]),
+                    request_id=request_id,
+                    expected_cas_token=str((data or {}).get("expected_cas_token") or ""),
+                    note=str((data or {}).get("note") or "").strip(),
+                )
+            elif isinstance((data or {}).get("book_node_ids"), list):
+                assignment = curriculum_registry.replace_class_curriculum_books(
+                    conn,
+                    organization_id=int(user["organization_id"]),
+                    class_id=class_id,
+                    version_id=version_id,
+                    book_node_ids=(data or {}).get("book_node_ids") or [],
+                    primary_book_node_id=(data or {}).get("primary_book_node_id"),
+                    actor_user_id=int(user["id"]),
+                    request_id=request_id,
+                    expected_cas_token=str((data or {}).get("expected_cas_token") or ""),
+                    note=str((data or {}).get("note") or "").strip(),
+                )
+            else:
+                assignment = curriculum_registry.assign_curriculum_book(
+                    conn,
+                    organization_id=int(user["organization_id"]),
+                    class_id=class_id,
+                    version_id=version_id,
+                    book_node_id=int((data or {}).get("book_node_id") or 0),
+                    actor_user_id=int(user["id"]),
+                    request_id=request_id,
+                    expected_assignment_id=expected_assignment_id,
+                    note=str((data or {}).get("note") or "").strip(),
+                )
     except Exception as exc:
         return _curriculum_error_response(exc)
     return jsonify({"assignment": assignment})

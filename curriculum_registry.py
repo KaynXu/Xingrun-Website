@@ -15,6 +15,7 @@ CURRICULUM_SCHEMA_VERSION = "xingrun.curriculum-registry.v1"
 CURRICULUM_IMPORTER_VERSION = "xingrun.k12-kgraph-importer.v1"
 CURRICULUM_PACKAGE_KEY = "pep.math.k12-kgraph"
 CURRICULUM_VERSION_KEY = "pep.math.k12-kgraph.d8522c2b336e"
+CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION = "class_curriculum_assignment.v2"
 SOURCE_GITHUB_URL = "https://github.com/haolpku/K12-KGraph"
 SOURCE_GITHUB_COMMIT = "8716b6a80850790f509c01286f43e5bfe6858f49"
 SOURCE_DATASET_URL = "https://huggingface.co/datasets/lhpku20010120/K12-KGraph"
@@ -87,6 +88,32 @@ def canonical_json(value: object) -> str:
 def content_hash(value: object) -> str:
     payload = value if isinstance(value, str) else canonical_json(value)
     return hashlib.sha256(str(payload).encode("utf-8")).hexdigest()
+
+
+def _begin_immediate_if_needed(conn: sqlite3.Connection) -> None:
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+
+
+def _normalized_positive_ids(values: Iterable[object], *, label: str) -> list[int]:
+    normalized = set()
+    try:
+        items = list(values)
+    except TypeError as exc:
+        raise CurriculumValidationError(f"{label} must be a list of integers") from exc
+    for value in items:
+        if isinstance(value, bool):
+            raise CurriculumValidationError(f"{label} must contain only positive integers")
+        try:
+            normalized_value = int(value)
+        except (TypeError, ValueError) as exc:
+            raise CurriculumValidationError(
+                f"{label} must contain only positive integers"
+            ) from exc
+        if normalized_value <= 0 or str(value).strip() != str(normalized_value):
+            raise CurriculumValidationError(f"{label} must contain only positive integers")
+        normalized.add(normalized_value)
+    return sorted(normalized)
 
 
 def normalize_alias(value: object) -> str:
@@ -257,9 +284,6 @@ def ensure_curriculum_schema(conn: sqlite3.Connection) -> None:
             expected_previous_assignment_id INTEGER,
             CHECK(status IN ('active','superseded','removed'))
         );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_curriculum_class_assignment_active
-        ON curriculum_class_assignments(class_id) WHERE status='active';
 
         CREATE TABLE IF NOT EXISTS curriculum_assignment_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -467,6 +491,15 @@ def ensure_curriculum_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "curriculum_class_assignments", "request_id", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "curriculum_class_assignments", "payload_hash", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "curriculum_class_assignments", "expected_previous_assignment_id", "INTEGER")
+    _ensure_column(conn, "curriculum_class_assignments", "is_primary", "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("DROP INDEX IF EXISTS idx_curriculum_class_assignment_active")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_curriculum_class_assignment_active_book
+        ON curriculum_class_assignments(class_id, version_id, book_node_id)
+        WHERE status='active'
+        """
+    )
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_curriculum_class_assignment_request
@@ -1380,18 +1413,21 @@ def assign_curriculum_book(
     expected_assignment_id: Optional[int],
     note: str = "",
 ) -> dict:
+    """Backward-compatible single-book manual override."""
     request_id = str(request_id or "").strip()
     if not request_id:
         raise CurriculumValidationError("assignment request_id is required")
-    assignment_payload = {
-        "organization_id": int(organization_id),
-        "class_id": int(class_id),
-        "version_id": int(version_id),
-        "book_node_id": int(book_node_id),
-        "expected_assignment_id": int(expected_assignment_id or 0),
-        "note": str(note or ""),
-    }
-    payload_hash = content_hash(assignment_payload)
+    legacy_payload_hash = content_hash(
+        {
+            "organization_id": int(organization_id),
+            "class_id": int(class_id),
+            "version_id": int(version_id),
+            "book_node_id": int(book_node_id),
+            "expected_assignment_id": int(expected_assignment_id or 0),
+            "note": str(note or ""),
+        }
+    )
+    _begin_immediate_if_needed(conn)
     receipt = conn.execute(
         """
         SELECT * FROM curriculum_assignment_requests
@@ -1400,7 +1436,7 @@ def assign_curriculum_book(
         (int(organization_id), request_id),
     ).fetchone()
     if receipt:
-        if str(receipt["payload_hash"] or "") != payload_hash:
+        if str(receipt["payload_hash"] or "") != legacy_payload_hash:
             raise CurriculumConflictError("assignment request replay differs")
         if not receipt["assignment_id"]:
             raise CurriculumConflictError("assignment request receipt is incomplete")
@@ -1413,32 +1449,350 @@ def assign_curriculum_book(
         (int(organization_id), request_id),
     ).fetchone()
     if replay:
-        if str(replay["payload_hash"] or "") != payload_hash:
+        if str(replay["payload_hash"] or "") != legacy_payload_hash:
             raise CurriculumConflictError("assignment request replay differs")
-        return serialize_class_assignment(conn, int(replay["id"]))
+        result = serialize_class_assignment(conn, int(replay["id"]))
+        if not result:
+            raise CurriculumConflictError("assignment request result is unavailable")
+        return result
+    current_scope = get_effective_class_curriculum_scope(conn, class_id)
+    expected_scope_token = str(current_scope.get("cas_token") or "")
+    if expected_assignment_id is not None:
+        active_ids = [
+            int(item.get("assignment_id") or 0)
+            for item in current_scope.get("books") or []
+            if int(item.get("assignment_id") or 0)
+        ]
+        if active_ids != [int(expected_assignment_id)]:
+            raise CurriculumConflictError("class curriculum assignment changed")
+    elif current_scope.get("assignment_mode") == "manual":
+        raise CurriculumConflictError("class curriculum assignment changed")
+    scope = replace_class_curriculum_books(
+        conn,
+        organization_id=organization_id,
+        class_id=class_id,
+        version_id=version_id,
+        book_node_ids=[book_node_id],
+        primary_book_node_id=book_node_id,
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        expected_cas_token=expected_scope_token,
+        note=note,
+        legacy_expected_assignment_id=expected_assignment_id,
+        receipt_payload_hash=legacy_payload_hash,
+    )
+    primary = next(
+        (item for item in scope["books"] if int(item["book_node_id"]) == int(book_node_id)),
+        scope["books"][0],
+    )
+    return {**scope, **primary, "id": int(primary.get("assignment_id") or 0)}
+
+
+def _normalized_grade_key(value: object) -> str:
+    text = normalize_alias(value).replace(" ", "")
+    chinese = "一二三四五六七八九"
+    aliases = {
+        **{f"{index}年级": f"grade_{index}" for index in range(1, 10)},
+        **{f"{name}年级": f"grade_{index}" for index, name in enumerate(chinese, 1)},
+        **{f"初{name}": f"grade_{index + 6}" for index, name in enumerate(chinese[:3], 1)},
+        **{f"初{index}": f"grade_{index + 6}" for index in range(1, 4)},
+    }
+    return aliases.get(text, "")
+
+
+def _grade_key_from_class_name(value: object) -> str:
+    """Infer one unambiguous primary/junior grade from a structured class name."""
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    matches: set[str] = set()
+    chinese_grades = {name: index for index, name in enumerate("一二三四五六七八九", 1)}
+    for name, index in chinese_grades.items():
+        if re.search(rf"{name}\s*年级", text):
+            matches.add(f"grade_{index}")
+    for value_match in re.finditer(r"(?<!\d)([1-9])\s*年级(?!\d)", text):
+        matches.add(f"grade_{int(value_match.group(1))}")
+    junior_grades = {"一": 7, "二": 8, "三": 9, "1": 7, "2": 8, "3": 9}
+    for value_match in re.finditer(r"初\s*([一二三1-3])(?!\d)", text):
+        matches.add(f"grade_{junior_grades[value_match.group(1)]}")
+    return next(iter(matches)) if len(matches) == 1 else ""
+
+
+def _scope_cas_payload(scope: Mapping[str, object]) -> dict:
+    return {
+        "schema_version": CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION,
+        "class_id": int(scope.get("class_id") or 0),
+        "organization_id": int(scope.get("organization_id") or 0),
+        "subject_key": str(scope.get("subject_key") or ""),
+        "assignment_mode": str(scope.get("assignment_mode") or "needs_review"),
+        "inferred_grade_key": str(scope.get("inferred_grade_key") or ""),
+        "version_id": int(scope.get("version_id") or 0),
+        "book_node_ids": sorted(
+            int(item.get("book_node_id") or 0)
+            for item in scope.get("books") or []
+            if isinstance(item, Mapping) and int(item.get("book_node_id") or 0)
+        ),
+        "assignment_ids": sorted(
+            int(item.get("assignment_id") or 0)
+            for item in scope.get("books") or []
+            if isinstance(item, Mapping) and int(item.get("assignment_id") or 0)
+        ),
+        "primary_book_node_id": int(scope.get("primary_book_node_id") or 0),
+    }
+
+
+def _serialize_scope_book(
+    conn: sqlite3.Connection,
+    book_node_id: int,
+    *,
+    assignment_id: Optional[int] = None,
+) -> dict:
+    row = conn.execute(
+        """
+        SELECT book.id AS book_node_id, book.canonical_name AS book_name,
+               book.upstream_id AS book_upstream_id, book.stage_key,
+               book.grade_key, book.semester_key, book.version_id,
+               (SELECT COUNT(DISTINCT membership.node_id)
+                FROM curriculum_book_nodes membership
+                JOIN curriculum_nodes kp ON kp.id=membership.node_id
+                WHERE membership.version_id=book.version_id
+                  AND membership.book_node_id=book.id
+                  AND membership.membership_type='appears_in'
+                  AND kp.node_type IN ('Concept','Skill')) AS knowledge_point_count
+        FROM curriculum_nodes book
+        WHERE book.id=? AND book.node_type='Book'
+        """,
+        (int(book_node_id),),
+    ).fetchone()
+    if not row:
+        raise LookupError("curriculum book not found")
+    return {**dict(row), "assignment_id": int(assignment_id or 0) or None}
+
+
+def get_effective_class_curriculum_scope(
+    conn: sqlite3.Connection,
+    class_id: int,
+) -> dict:
+    class_row = conn.execute("SELECT * FROM classes WHERE id=?", (int(class_id),)).fetchone()
+    if not class_row:
+        raise LookupError("class not found")
+    active_rows = conn.execute(
+        """
+        SELECT * FROM curriculum_class_assignments
+        WHERE class_id=? AND status='active'
+        ORDER BY is_primary DESC, id
+        """,
+        (int(class_id),),
+    ).fetchall()
+    mode = "manual" if active_rows else "needs_review"
+    inference_source = ""
+    inferred_grade = ""
+    inferred_grade_key = ""
+    version = None
+    books: list[dict] = []
+    reason = ""
+    primary_book_node_id = 0
+    if active_rows:
+        version_ids = {int(row["version_id"]) for row in active_rows}
+        if len(version_ids) != 1:
+            raise CurriculumValidationError("class curriculum assignments span versions")
+        version = get_curriculum_version(conn, next(iter(version_ids)))
+        books = [
+            _serialize_scope_book(
+                conn,
+                int(row["book_node_id"]),
+                assignment_id=int(row["id"]),
+            )
+            for row in active_rows
+        ]
+        primary_book_node_id = int(active_rows[0]["book_node_id"])
+        if str(version.get("status") or "") != "active":
+            mode = "needs_review"
+            reason = "原教材分配引用的课程版本已停用, 请重新确认教材范围"
+    elif str(class_row["subject_key"] if "subject_key" in class_row.keys() else "") != "math":
+        reason = "当前科目不支持自动匹配教材"
+    else:
+        class_columns = set(class_row.keys())
+        current_grade = str(
+            class_row["current_grade"] if "current_grade" in class_columns else ""
+        ).strip()
+        fallback_grade = str(class_row["grade"] if "grade" in class_columns else "").strip()
+        inferred_grade_key = _normalized_grade_key(current_grade)
+        if inferred_grade_key:
+            inferred_grade = current_grade
+            inference_source = "classes.current_grade"
+        else:
+            inferred_grade_key = _normalized_grade_key(fallback_grade)
+            if inferred_grade_key:
+                inferred_grade = fallback_grade
+                inference_source = "classes.grade"
+        if not inferred_grade_key:
+            class_name = str(class_row["name"] or "").strip()
+            inferred_grade_key = _grade_key_from_class_name(class_name)
+            if inferred_grade_key:
+                grade_number = int(inferred_grade_key.removeprefix("grade_"))
+                inferred_grade = f"{'一二三四五六七八九'[grade_number - 1]}年级"
+                inference_source = "classes.name"
+        if not inferred_grade_key:
+            reason = "班级年级无法安全识别, 请手动设置教材"
+        else:
+            version = get_active_curriculum_version(conn, subject_key="math")
+            if not version:
+                reason = "当前没有使用中的数学课程版本"
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id FROM curriculum_nodes
+                    WHERE version_id=? AND node_type='Book' AND subject_key='math'
+                      AND grade_key=? AND semester_key IN ('first','second')
+                    ORDER BY CASE semester_key WHEN 'first' THEN 1 ELSE 2 END, id
+                    """,
+                    (int(version["id"]), inferred_grade_key),
+                ).fetchall()
+                if len(rows) != 2:
+                    reason = "当前年级没有唯一的上下册组合, 请手动设置教材"
+                else:
+                    mode = "auto"
+                    books = [_serialize_scope_book(conn, int(row["id"])) for row in rows]
+                    primary_book_node_id = int(books[0]["book_node_id"])
+    books.sort(
+        key=lambda item: (
+            {"first": 1, "second": 2, "required": 3, "selective_required": 4}.get(
+                str(item.get("semester_key") or ""), 9
+            ),
+            int(item.get("book_node_id") or 0),
+        )
+    )
+    scope = {
+        "schema_version": CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION,
+        "class_id": int(class_row["id"]),
+        "class_name": str(class_row["name"] or ""),
+        "organization_id": int(class_row["organization_id"] or 0),
+        "subject_key": str(
+            class_row["subject_key"] if "subject_key" in class_row.keys() else ""
+        ),
+        "assignment_mode": mode,
+        "inferred_grade": inferred_grade,
+        "inferred_grade_key": inferred_grade_key,
+        "inference_source": inference_source,
+        "needs_review_reason": reason,
+        "version_id": int(version["id"] if version else 0),
+        "version_key": str(version["version_key"] if version else ""),
+        "version_status": str(version["status"] if version else "draft"),
+        "stable_registry_version": int(version["registry_version"] if version else 0),
+        "content_hash": str(version["content_hash"] if version else ""),
+        "package_key": str(version["package_key"] if version else ""),
+        "curriculum_name": str(version["curriculum_name"] if version else ""),
+        "publisher_name": str(version["publisher_name"] if version else ""),
+        "edition_name": str(version["edition_name"] if version else ""),
+        "source_dataset_revision": str(version["source_dataset_revision"] if version else ""),
+        "source_sha256": str(version["source_sha256"] if version else ""),
+        "books": books,
+        "primary_book_node_id": primary_book_node_id or None,
+    }
+    scope["cas_token"] = content_hash(_scope_cas_payload(scope))
+    scope["scope_hash"] = scope["cas_token"]
+    primary_book = next(
+        (
+            item
+            for item in books
+            if int(item.get("book_node_id") or 0) == int(primary_book_node_id or 0)
+        ),
+        books[0] if books else {},
+    )
+    scope["id"] = int(primary_book.get("assignment_id") or 0)
+    scope["book_node_id"] = int(primary_book.get("book_node_id") or 0)
+    scope["book_name"] = str(primary_book.get("book_name") or "")
+    scope["book_upstream_id"] = str(primary_book.get("book_upstream_id") or "")
+    scope["stage_key"] = str(primary_book.get("stage_key") or "")
+    scope["grade_key"] = str(primary_book.get("grade_key") or "")
+    scope["semester_key"] = str(primary_book.get("semester_key") or "")
+    scope["assignment_ids"] = [
+        int(item["assignment_id"]) for item in books if item.get("assignment_id")
+    ]
+    scope["book_node_ids"] = [int(item["book_node_id"]) for item in books]
+    return scope
+
+
+def replace_class_curriculum_books(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    class_id: int,
+    version_id: int,
+    book_node_ids: Iterable[int],
+    primary_book_node_id: Optional[int],
+    actor_user_id: int,
+    request_id: str,
+    expected_cas_token: str,
+    note: str = "",
+    legacy_expected_assignment_id: Optional[int] = None,
+    receipt_payload_hash: str = "",
+) -> dict:
+    request_id = str(request_id or "").strip()
+    if not request_id:
+        raise CurriculumValidationError("assignment request_id is required")
+    normalized_book_ids = _normalized_positive_ids(book_node_ids, label="book_node_ids")
+    if not normalized_book_ids:
+        raise CurriculumValidationError("at least one curriculum book is required")
+    try:
+        primary_book_node_id = int(primary_book_node_id or normalized_book_ids[0])
+    except (TypeError, ValueError) as exc:
+        raise CurriculumValidationError("primary_book_node_id must be an integer") from exc
+    if primary_book_node_id not in normalized_book_ids:
+        raise CurriculumValidationError("primary book must be in the assigned book set")
+    assignment_payload = {
+        "organization_id": int(organization_id),
+        "class_id": int(class_id),
+        "version_id": int(version_id),
+        "book_node_ids": normalized_book_ids,
+        "primary_book_node_id": primary_book_node_id,
+        "expected_cas_token": str(expected_cas_token or ""),
+        "legacy_expected_assignment_id": int(legacy_expected_assignment_id or 0),
+        "note": str(note or ""),
+    }
+    payload_hash = str(receipt_payload_hash or "") or content_hash(assignment_payload)
+    _begin_immediate_if_needed(conn)
+    receipt = conn.execute(
+        """
+        SELECT * FROM curriculum_assignment_requests
+        WHERE organization_id=? AND request_id=?
+        """,
+        (int(organization_id), request_id),
+    ).fetchone()
+    if receipt:
+        if str(receipt["payload_hash"] or "") != payload_hash:
+            raise CurriculumConflictError("assignment request replay differs")
+        result = _json_mapping(receipt["result_json"], label="assignment receipt")
+        return result
     class_row = conn.execute(
         "SELECT id, organization_id, subject_key FROM classes WHERE id=?",
         (int(class_id),),
     ).fetchone()
     version = get_curriculum_version(conn, version_id)
-    book = conn.execute(
-        "SELECT * FROM curriculum_nodes WHERE id=? AND version_id=? AND node_type='Book'",
-        (int(book_node_id), int(version_id)),
-    ).fetchone()
     if not class_row or int(class_row["organization_id"] or 0) != int(organization_id):
         raise LookupError("class not found")
-    if not version or version["status"] != "active" or not book:
+    placeholders = ",".join("?" for _ in normalized_book_ids)
+    valid_books = conn.execute(
+        f"""
+        SELECT id FROM curriculum_nodes
+        WHERE version_id=? AND node_type='Book' AND id IN ({placeholders})
+        """,
+        (int(version_id), *normalized_book_ids),
+    ).fetchall()
+    if not version or version["status"] != "active" or len(valid_books) != len(normalized_book_ids):
         raise CurriculumConflictError("only a book from the active version can be assigned")
     if str(class_row["subject_key"] or "") != str(version["subject_key"] or ""):
         raise CurriculumConflictError("class subject and curriculum subject differ")
-    prior = conn.execute(
-        "SELECT * FROM curriculum_class_assignments WHERE class_id=? AND status='active'",
-        (int(class_id),),
-    ).fetchone()
-    if int(prior["id"] if prior else 0) != int(expected_assignment_id or 0):
+    prior_scope = get_effective_class_curriculum_scope(conn, class_id)
+    if str(prior_scope.get("cas_token") or "") != str(expected_cas_token or ""):
         raise CurriculumConflictError("class curriculum assignment changed")
-    if prior and int(prior["version_id"]) == int(version_id) and int(prior["book_node_id"]) == int(book_node_id):
-        result = serialize_class_assignment(conn, int(prior["id"]))
+    prior_ids = sorted(int(item["book_node_id"]) for item in prior_scope.get("books") or [])
+    if (
+        prior_scope.get("assignment_mode") == "manual"
+        and prior_ids == normalized_book_ids
+        and int(prior_scope.get("version_id") or 0) == int(version_id)
+        and int(prior_scope.get("primary_book_node_id") or 0) == primary_book_node_id
+    ):
+        result = prior_scope
         conn.execute(
             """
             INSERT INTO curriculum_assignment_requests (
@@ -1447,7 +1801,8 @@ def assign_curriculum_book(
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                int(organization_id), request_id, payload_hash, int(prior["id"]),
+                int(organization_id), request_id, payload_hash,
+                int((result.get("books") or [{}])[0].get("assignment_id") or 0) or None,
                 canonical_json(result), _utc_now(),
             ),
         )
@@ -1457,21 +1812,25 @@ def assign_curriculum_book(
         "UPDATE curriculum_class_assignments SET status='superseded', ended_at=? WHERE class_id=? AND status='active'",
         (now, int(class_id)),
     )
-    cursor = conn.execute(
-        """
-        INSERT INTO curriculum_class_assignments (
-            organization_id, class_id, version_id, book_node_id, status,
-            assigned_by_user_id, assigned_at, note, request_id, payload_hash,
-            expected_previous_assignment_id
-        ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            int(organization_id), int(class_id), int(version_id), int(book_node_id),
-            int(actor_user_id), now, str(note or ""), request_id, payload_hash,
-            int(expected_assignment_id) if expected_assignment_id else None,
-        ),
-    )
-    result = serialize_class_assignment(conn, int(cursor.lastrowid))
+    assignment_ids = []
+    for book_node_id in normalized_book_ids:
+        cursor = conn.execute(
+            """
+            INSERT INTO curriculum_class_assignments (
+                organization_id, class_id, version_id, book_node_id, status,
+                assigned_by_user_id, assigned_at, note, request_id, payload_hash,
+                expected_previous_assignment_id, is_primary
+            ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, '', ?, ?, ?)
+            """,
+            (
+                int(organization_id), int(class_id), int(version_id), int(book_node_id),
+                int(actor_user_id), now, str(note or ""), payload_hash,
+                int(legacy_expected_assignment_id) if legacy_expected_assignment_id else None,
+                1 if book_node_id == primary_book_node_id else 0,
+            ),
+        )
+        assignment_ids.append(int(cursor.lastrowid))
+    result = get_effective_class_curriculum_scope(conn, class_id)
     conn.execute(
         """
         INSERT INTO curriculum_assignment_requests (
@@ -1480,7 +1839,7 @@ def assign_curriculum_book(
         ) VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
-            int(organization_id), request_id, payload_hash, int(cursor.lastrowid),
+            int(organization_id), request_id, payload_hash, assignment_ids[0],
             canonical_json(result), now,
         ),
     )
@@ -1494,7 +1853,71 @@ def assign_curriculum_book(
         package_id=int(version["package_id"]),
         version_id=version_id,
         class_id=class_id,
-        before=dict(prior) if prior else {},
+        before=prior_scope,
+        after=result,
+        note=note,
+    )
+    return result
+
+
+def reset_class_curriculum_to_auto(
+    conn: sqlite3.Connection,
+    *,
+    organization_id: int,
+    class_id: int,
+    actor_user_id: int,
+    request_id: str,
+    expected_cas_token: str,
+    note: str = "",
+) -> dict:
+    request_id = str(request_id or "").strip()
+    if not request_id:
+        raise CurriculumValidationError("assignment request_id is required")
+    payload = {
+        "organization_id": int(organization_id),
+        "class_id": int(class_id),
+        "assignment_mode": "auto",
+        "expected_cas_token": str(expected_cas_token or ""),
+        "note": str(note or ""),
+    }
+    payload_hash = content_hash(payload)
+    _begin_immediate_if_needed(conn)
+    receipt = conn.execute(
+        "SELECT * FROM curriculum_assignment_requests WHERE organization_id=? AND request_id=?",
+        (int(organization_id), request_id),
+    ).fetchone()
+    if receipt:
+        if str(receipt["payload_hash"] or "") != payload_hash:
+            raise CurriculumConflictError("assignment request replay differs")
+        return _json_mapping(receipt["result_json"], label="assignment receipt")
+    before = get_effective_class_curriculum_scope(conn, class_id)
+    if int(before["organization_id"]) != int(organization_id):
+        raise LookupError("class not found")
+    if str(before.get("cas_token") or "") != str(expected_cas_token or ""):
+        raise CurriculumConflictError("class curriculum assignment changed")
+    now = _utc_now()
+    conn.execute(
+        "UPDATE curriculum_class_assignments SET status='removed', ended_at=? WHERE class_id=? AND status='active'",
+        (now, int(class_id)),
+    )
+    result = get_effective_class_curriculum_scope(conn, class_id)
+    conn.execute(
+        """
+        INSERT INTO curriculum_assignment_requests (
+            organization_id, request_id, payload_hash, assignment_id, result_json, created_at
+        ) VALUES (?, ?, ?, NULL, ?, ?)
+        """,
+        (int(organization_id), request_id, payload_hash, canonical_json(result), now),
+    )
+    _audit(
+        conn,
+        action="reset_auto",
+        target_type="class_curriculum",
+        target_key=str(class_id),
+        actor_user_id=actor_user_id,
+        organization_id=organization_id,
+        class_id=class_id,
+        before=before,
         after=result,
         note=note,
     )
@@ -1525,11 +1948,23 @@ def serialize_class_assignment(conn: sqlite3.Connection, assignment_id: int) -> 
 
 
 def get_class_curriculum_assignment(conn: sqlite3.Connection, class_id: int) -> Optional[dict]:
-    row = conn.execute(
-        "SELECT id FROM curriculum_class_assignments WHERE class_id=? AND status='active'",
-        (int(class_id),),
-    ).fetchone()
-    return serialize_class_assignment(conn, int(row["id"])) if row else None
+    scope = get_effective_class_curriculum_scope(conn, class_id)
+    books = scope.get("books") or []
+    if not books:
+        return None
+    primary_id = int(scope.get("primary_book_node_id") or books[0]["book_node_id"])
+    primary = next(
+        (item for item in books if int(item["book_node_id"]) == primary_id), books[0]
+    )
+    return {
+        **scope,
+        **primary,
+        "id": int(primary.get("assignment_id") or 0),
+        "book_node_ids": [int(item["book_node_id"]) for item in books],
+        "assignment_ids": [
+            int(item["assignment_id"]) for item in books if item.get("assignment_id")
+        ],
+    }
 
 
 def list_curriculum_books(conn: sqlite3.Connection, version_id: int) -> list[dict]:
@@ -1760,7 +2195,7 @@ def get_extraction_registry(
     organization_id: int,
     class_id: int,
     subject_key: str,
-    limit: int = 220,
+    limit: int = 320,
 ) -> dict:
     assignment = get_class_curriculum_assignment(conn, class_id)
     if not assignment:
@@ -1777,26 +2212,30 @@ def get_extraction_registry(
         or str(assignment["version_status"] or "") != "active"
     ):
         raise CurriculumValidationError("class curriculum assignment scope is invalid")
+    book_ids = sorted({int(value) for value in assignment.get("book_node_ids") or []})
+    if not book_ids:
+        book_ids = [int(assignment["book_node_id"])]
+    placeholders = ",".join("?" for _ in book_ids)
     base_registry_count = int(conn.execute(
-        """
-        SELECT COUNT(*) FROM curriculum_book_nodes membership
+        f"""
+        SELECT COUNT(DISTINCT node.id) FROM curriculum_book_nodes membership
         JOIN curriculum_nodes node ON node.id=membership.node_id
-        WHERE membership.version_id=? AND membership.book_node_id=?
+        WHERE membership.version_id=? AND membership.book_node_id IN ({placeholders})
           AND membership.membership_type='appears_in'
           AND node.node_type IN ('Concept','Skill')
         """,
-        (int(assignment["version_id"]), int(assignment["book_node_id"])),
+        (int(assignment["version_id"]), *book_ids),
     ).fetchone()[0])
     custom_registry_count = int(
         conn.execute(
             """
             SELECT COUNT(*) FROM curriculum_organization_knowledge_points
-            WHERE organization_id=? AND version_id=? AND book_node_id=?
+            WHERE organization_id=? AND version_id=? AND book_node_id IN (""" + placeholders + """)
               AND subject_key=? AND status='active'
             """,
             (
                 int(organization_id), int(assignment["version_id"]),
-                int(assignment["book_node_id"]), str(subject_key),
+                *book_ids, str(subject_key),
             ),
         ).fetchone()[0]
     )
@@ -1806,14 +2245,14 @@ def get_extraction_registry(
         raise CurriculumValidationError("assigned book registry exceeds the frozen prompt limit")
     rows = conn.execute(
         """
-        SELECT node.* FROM curriculum_book_nodes membership
+        SELECT DISTINCT node.* FROM curriculum_book_nodes membership
         JOIN curriculum_nodes node ON node.id=membership.node_id
-        WHERE membership.version_id=? AND membership.book_node_id=?
+        WHERE membership.version_id=? AND membership.book_node_id IN (""" + placeholders + """)
           AND membership.membership_type='appears_in'
           AND node.node_type IN ('Concept','Skill')
         ORDER BY node.upstream_id LIMIT ?
         """,
-        (int(assignment["version_id"]), int(assignment["book_node_id"]), effective_limit),
+        (int(assignment["version_id"]), *book_ids, effective_limit),
     ).fetchall()
     registry = []
     for row in rows:
@@ -1838,7 +2277,21 @@ def get_extraction_registry(
             """,
             (int(assignment["version_id"]), int(row["id"])),
         ).fetchall()
-        path = _node_path(conn, dict(row), book_node_id=int(assignment["book_node_id"]))
+        memberships = conn.execute(
+            f"""
+            SELECT membership.book_node_id, book.upstream_id
+            FROM curriculum_book_nodes membership
+            JOIN curriculum_nodes book ON book.id=membership.book_node_id
+            WHERE membership.version_id=? AND membership.node_id=?
+              AND membership.book_node_id IN ({placeholders})
+              AND membership.membership_type='appears_in'
+            ORDER BY membership.book_node_id
+            """,
+            (int(assignment["version_id"]), int(row["id"]), *book_ids),
+        ).fetchall()
+        item_book_ids = [int(item["book_node_id"]) for item in memberships]
+        preferred_book_id = item_book_ids[0]
+        path = _node_path(conn, dict(row), book_node_id=preferred_book_id)
         registry.append(
             {
                 "knowledge_point_key": str(row["node_key"]),
@@ -1854,7 +2307,9 @@ def get_extraction_registry(
                 ),
                 "curriculum_node_id": int(row["id"]),
                 "curriculum_version_id": int(assignment["version_id"]),
-                "book_upstream_id": str(assignment["book_upstream_id"]),
+                "book_upstream_id": str(memberships[0]["upstream_id"]),
+                "book_node_id": preferred_book_id,
+                "curriculum_book_node_ids": item_book_ids,
                 "knowledge_point_kind": str(row["node_type"]),
                 "curriculum_path": path,
                 "node_content_hash": content_hash(
@@ -1872,21 +2327,21 @@ def get_extraction_registry(
     custom_rows = conn.execute(
         """
         SELECT * FROM curriculum_organization_knowledge_points
-        WHERE organization_id=? AND version_id=? AND book_node_id=?
+        WHERE organization_id=? AND version_id=? AND book_node_id IN (""" + placeholders + """)
           AND subject_key=? AND status='active'
         ORDER BY knowledge_point_key
         """,
         (
-            int(organization_id), int(assignment["version_id"]),
-            int(assignment["book_node_id"]), str(subject_key),
+            int(organization_id), int(assignment["version_id"]), *book_ids, str(subject_key),
         ),
     ).fetchall()
-    book = conn.execute(
-        "SELECT * FROM curriculum_nodes WHERE id=? AND node_type='Book'",
-        (int(assignment["book_node_id"]),),
-    ).fetchone()
-    book_path = _node_path(conn, dict(book), book_node_id=int(book["id"])) if book else []
     for row in custom_rows:
+        custom_book_id = int(row["book_node_id"])
+        book = conn.execute(
+            "SELECT * FROM curriculum_nodes WHERE id=? AND node_type='Book'",
+            (custom_book_id,),
+        ).fetchone()
+        book_path = _node_path(conn, dict(book), book_node_id=custom_book_id) if book else []
         aliases = conn.execute(
             """
             SELECT alias FROM curriculum_organization_aliases
@@ -1909,7 +2364,9 @@ def get_extraction_registry(
                 "curriculum_node_id": 0,
                 "organization_knowledge_point_id": int(row["id"]),
                 "curriculum_version_id": int(assignment["version_id"]),
-                "book_upstream_id": str(assignment["book_upstream_id"]),
+                "book_upstream_id": str(book["upstream_id"] if book else ""),
+                "book_node_id": custom_book_id,
+                "curriculum_book_node_ids": [custom_book_id],
                 "knowledge_point_kind": "OrganizationKnowledgePoint",
                 "curriculum_path": book_path,
                 "node_content_hash": content_hash(
@@ -1948,23 +2405,37 @@ def resolve_curriculum_knowledge_point(
         or str(assignment["version_status"] or "") not in {"active", "deprecated"}
     ):
         return None
+    book_ids = sorted({int(value) for value in assignment.get("book_node_ids") or []})
+    if not book_ids:
+        book_ids = [int(assignment["book_node_id"])]
+    placeholders = ",".join("?" for _ in book_ids)
     direct = conn.execute(
-        """
-        SELECT node.* FROM curriculum_book_nodes membership
+        f"""
+        SELECT DISTINCT node.* FROM curriculum_book_nodes membership
         JOIN curriculum_nodes node ON node.id=membership.node_id
-        WHERE membership.version_id=? AND membership.book_node_id=?
+        WHERE membership.version_id=? AND membership.book_node_id IN ({placeholders})
           AND membership.membership_type='appears_in' AND node.subject_key=?
           AND node.node_type IN ('Concept','Skill') AND node.node_key=?
         """,
-        (int(assignment["version_id"]), int(assignment["book_node_id"]), str(subject_key), text),
+        (int(assignment["version_id"]), *book_ids, str(subject_key), text),
     ).fetchone()
     if direct:
         result = dict(direct)
+        memberships = conn.execute(
+            f"""
+            SELECT DISTINCT book_node_id FROM curriculum_book_nodes
+            WHERE version_id=? AND node_id=? AND book_node_id IN ({placeholders})
+              AND membership_type='appears_in' ORDER BY book_node_id
+            """,
+            (int(assignment["version_id"]), int(result["id"]), *book_ids),
+        ).fetchall()
+        result_book_ids = [int(row["book_node_id"]) for row in memberships]
         result["knowledge_point_key"] = result["node_key"]
         result["registry_version"] = int(assignment["stable_registry_version"])
         result["curriculum_node_id"] = int(result["id"])
         result["curriculum_version_id"] = int(assignment["version_id"])
-        result["book_node_id"] = int(assignment["book_node_id"])
+        result["book_node_id"] = result_book_ids[0]
+        result["curriculum_book_node_ids"] = result_book_ids
         result["curriculum_content_hash"] = str(assignment["content_hash"] or "")
         result["node_content_hash"] = content_hash(
             {
@@ -1978,30 +2449,40 @@ def resolve_curriculum_knowledge_point(
         )
         return result
     legacy = conn.execute(
-        """
+        f"""
         SELECT node.* FROM curriculum_legacy_knowledge_point_map legacy
         JOIN curriculum_nodes node ON node.id=legacy.curriculum_node_id
         JOIN curriculum_book_nodes membership ON membership.node_id=node.id
           AND membership.version_id=legacy.version_id
         WHERE legacy.version_id=? AND legacy.legacy_knowledge_point_key=?
-          AND membership.book_node_id=?
+          AND membership.book_node_id IN ({placeholders})
           AND membership.membership_type='appears_in'
           AND node.subject_key=?
         """,
         (
             int(assignment["version_id"]),
             text,
-            int(assignment["book_node_id"]),
+            *book_ids,
             str(subject_key),
         ),
     ).fetchone()
     if legacy:
         result = dict(legacy)
+        legacy_books = conn.execute(
+            f"""
+            SELECT DISTINCT book_node_id FROM curriculum_book_nodes
+            WHERE version_id=? AND node_id=? AND book_node_id IN ({placeholders})
+              AND membership_type='appears_in' ORDER BY book_node_id
+            """,
+            (int(assignment["version_id"]), int(result["id"]), *book_ids),
+        ).fetchall()
+        result_book_ids = [int(row["book_node_id"]) for row in legacy_books]
         result["knowledge_point_key"] = result["node_key"]
         result["registry_version"] = int(assignment["stable_registry_version"])
         result["curriculum_node_id"] = int(result["id"])
         result["curriculum_version_id"] = int(assignment["version_id"])
-        result["book_node_id"] = int(assignment["book_node_id"])
+        result["book_node_id"] = result_book_ids[0]
+        result["curriculum_book_node_ids"] = result_book_ids
         result["curriculum_content_hash"] = str(assignment["content_hash"] or "")
         result["node_content_hash"] = content_hash(
             {
@@ -2016,12 +2497,12 @@ def resolve_curriculum_knowledge_point(
         return result
     normalized = normalize_alias(text)
     rows = conn.execute(
-        """
+        f"""
         SELECT DISTINCT node.* FROM curriculum_node_aliases alias
         JOIN curriculum_nodes node ON node.id=alias.node_id
         JOIN curriculum_book_nodes membership ON membership.node_id=node.id
           AND membership.version_id=alias.version_id
-        WHERE alias.version_id=? AND membership.book_node_id=?
+        WHERE alias.version_id=? AND membership.book_node_id IN ({placeholders})
           AND membership.membership_type='appears_in' AND alias.subject_key=?
           AND alias.normalized_alias=?
         UNION
@@ -2029,24 +2510,34 @@ def resolve_curriculum_knowledge_point(
         JOIN curriculum_nodes node ON node.id=alias.curriculum_node_id
         JOIN curriculum_book_nodes membership ON membership.node_id=node.id
           AND membership.version_id=alias.version_id
-        WHERE alias.organization_id=? AND alias.version_id=? AND alias.book_node_id=?
+        WHERE alias.organization_id=? AND alias.version_id=? AND alias.book_node_id IN ({placeholders})
           AND membership.book_node_id=alias.book_node_id
           AND membership.membership_type='appears_in'
           AND alias.subject_key=? AND alias.normalized_alias=? AND alias.status='active'
         """,
         (
-            int(assignment["version_id"]), int(assignment["book_node_id"]), str(subject_key), normalized,
-            int(organization_id), int(assignment["version_id"]), int(assignment["book_node_id"]), str(subject_key), normalized,
+            int(assignment["version_id"]), *book_ids, str(subject_key), normalized,
+            int(organization_id), int(assignment["version_id"]), *book_ids, str(subject_key), normalized,
         ),
     ).fetchall()
     if len(rows) != 1:
         return None
     result = dict(rows[0])
+    matched_books = conn.execute(
+        f"""
+        SELECT DISTINCT book_node_id FROM curriculum_book_nodes
+        WHERE version_id=? AND node_id=? AND book_node_id IN ({placeholders})
+          AND membership_type='appears_in' ORDER BY book_node_id
+        """,
+        (int(assignment["version_id"]), int(result["id"]), *book_ids),
+    ).fetchall()
+    result_book_ids = [int(row["book_node_id"]) for row in matched_books]
     result["knowledge_point_key"] = result["node_key"]
     result["registry_version"] = int(assignment["stable_registry_version"])
     result["curriculum_node_id"] = int(result["id"])
     result["curriculum_version_id"] = int(assignment["version_id"])
-    result["book_node_id"] = int(assignment["book_node_id"])
+    result["book_node_id"] = result_book_ids[0]
+    result["curriculum_book_node_ids"] = result_book_ids
     result["curriculum_content_hash"] = str(assignment["content_hash"] or "")
     result["node_content_hash"] = content_hash(
         {

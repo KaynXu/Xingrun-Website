@@ -25,7 +25,9 @@ class CurriculumRegistryCoreTest(unittest.TestCase):
                 id INTEGER PRIMARY KEY,
                 organization_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
-                subject_key TEXT NOT NULL
+                subject_key TEXT NOT NULL,
+                grade TEXT DEFAULT '',
+                current_grade TEXT DEFAULT ''
             );
             INSERT INTO organizations(id) VALUES (1);
             INSERT INTO users(id) VALUES (11);
@@ -241,6 +243,367 @@ class CurriculumRegistryCoreTest(unittest.TestCase):
             value="math.quadratic_function_graph",
         )
         self.assertEqual(resolved["node_key"], "k12kg.math_9a_rjb_cpt17")
+
+    def test_auto_scope_matches_both_books_and_supports_manual_multibook_override(self):
+        version_id = self._activate()
+        self.conn.execute(
+            "UPDATE classes SET current_grade='九年级', grade='九年级' WHERE id=21"
+        )
+        automatic = curriculum_registry.get_effective_class_curriculum_scope(
+            self.conn, 21
+        )
+        self.assertEqual(automatic["assignment_mode"], "auto")
+        self.assertEqual(
+            [item["book_upstream_id"] for item in automatic["books"]],
+            ["math_9a_rjb", "math_9b_rjb"],
+        )
+        registry = curriculum_registry.get_extraction_registry(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            subject_key="math",
+        )
+        self.assertEqual(registry["registry_metadata"]["count"], 172)
+        self.assertEqual(len(registry["registry"]), 172)
+
+        manual = curriculum_registry.replace_class_curriculum_books(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            version_id=version_id,
+            book_node_ids=[item["book_node_id"] for item in reversed(automatic["books"])],
+            primary_book_node_id=automatic["books"][0]["book_node_id"],
+            actor_user_id=11,
+            request_id="manual-both-books",
+            expected_cas_token=automatic["cas_token"],
+        )
+        self.assertEqual(manual["assignment_mode"], "manual")
+        self.assertEqual(len(manual["books"]), 2)
+        replay = curriculum_registry.replace_class_curriculum_books(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            version_id=version_id,
+            book_node_ids=[item["book_node_id"] for item in automatic["books"]],
+            primary_book_node_id=automatic["books"][0]["book_node_id"],
+            actor_user_id=11,
+            request_id="manual-both-books",
+            expected_cas_token=automatic["cas_token"],
+        )
+        self.assertEqual(replay["scope_hash"], manual["scope_hash"])
+        active_count = self.conn.execute(
+            "SELECT COUNT(*) FROM curriculum_class_assignments WHERE class_id=21 AND status='active'"
+        ).fetchone()[0]
+        self.assertEqual(active_count, 2)
+
+    def test_legacy_single_book_receipt_replays_after_multibook_upgrade(self):
+        version_id = self._activate()
+        book = self.conn.execute(
+            "SELECT id FROM curriculum_nodes WHERE version_id=? AND upstream_id='math_9a_rjb'",
+            (version_id,),
+        ).fetchone()
+        first = curriculum_registry.assign_curriculum_book(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            version_id=version_id,
+            book_node_id=int(book["id"]),
+            actor_user_id=11,
+            request_id="legacy-single-replay",
+            expected_assignment_id=None,
+        )
+        legacy_result = curriculum_registry.serialize_class_assignment(
+            self.conn, int(first["id"])
+        )
+        self.conn.execute(
+            "UPDATE curriculum_assignment_requests SET result_json=? WHERE organization_id=1 AND request_id=?",
+            (
+                curriculum_registry.canonical_json(legacy_result),
+                "legacy-single-replay",
+            ),
+        )
+        replay = curriculum_registry.assign_curriculum_book(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            version_id=version_id,
+            book_node_id=int(book["id"]),
+            actor_user_id=11,
+            request_id="legacy-single-replay",
+            expected_assignment_id=None,
+        )
+        self.assertEqual(int(replay["id"]), int(first["id"]))
+        self.assertEqual(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM curriculum_class_assignments WHERE class_id=21"
+            ).fetchone()[0],
+            1,
+        )
+
+    def test_assignment_cas_serializes_two_connections_and_rejects_stale_token(self):
+        version_id = self._activate()
+        self.conn.execute(
+            "UPDATE classes SET current_grade='九年级', grade='九年级' WHERE id=21"
+        )
+        initial = curriculum_registry.get_effective_class_curriculum_scope(self.conn, 21)
+        self.conn.commit()
+        first_conn = sqlite3.connect(self.db_path, timeout=2)
+        second_conn = sqlite3.connect(self.db_path, timeout=0.05)
+        first_conn.row_factory = sqlite3.Row
+        second_conn.row_factory = sqlite3.Row
+        try:
+            first = curriculum_registry.replace_class_curriculum_books(
+                first_conn,
+                organization_id=1,
+                class_id=21,
+                version_id=version_id,
+                book_node_ids=[initial["books"][0]["book_node_id"]],
+                primary_book_node_id=initial["books"][0]["book_node_id"],
+                actor_user_id=11,
+                request_id="cas-first",
+                expected_cas_token=initial["cas_token"],
+            )
+            with self.assertRaisesRegex(sqlite3.OperationalError, "database is locked"):
+                curriculum_registry.replace_class_curriculum_books(
+                    second_conn,
+                    organization_id=1,
+                    class_id=21,
+                    version_id=version_id,
+                    book_node_ids=[initial["books"][1]["book_node_id"]],
+                    primary_book_node_id=initial["books"][1]["book_node_id"],
+                    actor_user_id=11,
+                    request_id="cas-second",
+                    expected_cas_token=initial["cas_token"],
+                )
+            second_conn.rollback()
+            first_conn.commit()
+            with self.assertRaisesRegex(
+                curriculum_registry.CurriculumConflictError,
+                "assignment changed",
+            ):
+                curriculum_registry.replace_class_curriculum_books(
+                    second_conn,
+                    organization_id=1,
+                    class_id=21,
+                    version_id=version_id,
+                    book_node_ids=[initial["books"][1]["book_node_id"]],
+                    primary_book_node_id=initial["books"][1]["book_node_id"],
+                    actor_user_id=11,
+                    request_id="cas-second",
+                    expected_cas_token=initial["cas_token"],
+                )
+            second_conn.rollback()
+            current = curriculum_registry.get_effective_class_curriculum_scope(
+                first_conn, 21
+            )
+            self.assertEqual(current["scope_hash"], first["scope_hash"])
+            self.assertEqual(current["book_node_ids"], [initial["books"][0]["book_node_id"]])
+        finally:
+            first_conn.close()
+            second_conn.close()
+
+    def test_assignment_validation_and_deprecated_manual_scope_require_review(self):
+        version_id = self._activate()
+        self.conn.execute(
+            "UPDATE classes SET current_grade='九年级', grade='九年级' WHERE id=21"
+        )
+        automatic = curriculum_registry.get_effective_class_curriculum_scope(self.conn, 21)
+        with self.assertRaisesRegex(
+            curriculum_registry.CurriculumValidationError,
+            "positive integers",
+        ):
+            curriculum_registry.replace_class_curriculum_books(
+                self.conn,
+                organization_id=1,
+                class_id=21,
+                version_id=version_id,
+                book_node_ids=[automatic["books"][0]["book_node_id"], None],
+                primary_book_node_id=automatic["books"][0]["book_node_id"],
+                actor_user_id=11,
+                request_id="malformed-books",
+                expected_cas_token=automatic["cas_token"],
+            )
+        manual = curriculum_registry.replace_class_curriculum_books(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            version_id=version_id,
+            book_node_ids=[automatic["books"][0]["book_node_id"]],
+            primary_book_node_id=automatic["books"][0]["book_node_id"],
+            actor_user_id=11,
+            request_id="manual-before-deprecation",
+            expected_cas_token=automatic["cas_token"],
+        )
+        self.assertEqual(manual["assignment_mode"], "manual")
+        self.conn.execute(
+            "UPDATE curriculum_versions SET status='deprecated' WHERE id=?",
+            (version_id,),
+        )
+        review = curriculum_registry.get_effective_class_curriculum_scope(self.conn, 21)
+        self.assertEqual(review["assignment_mode"], "needs_review")
+        self.assertEqual(review["version_status"], "deprecated")
+        self.assertEqual(len(review["books"]), 1)
+        self.assertIn("已停用", review["needs_review_reason"])
+
+    def test_grade_seven_union_exceeds_legacy_limit_without_truncation(self):
+        self._activate()
+        self.conn.execute(
+            "UPDATE classes SET current_grade='七年级', grade='七年级' WHERE id=21"
+        )
+        registry = curriculum_registry.get_extraction_registry(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            subject_key="math",
+        )
+        self.assertEqual(registry["registry_metadata"]["count"], 235)
+        self.assertEqual(len(registry["registry"]), 235)
+        self.assertFalse(registry["registry_metadata"]["truncated"])
+
+    def test_grades_one_through_nine_infer_both_semester_books(self):
+        self._activate()
+        chinese_grades = "一二三四五六七八九"
+        expected_counts = [173, 135, 141, 148, 124, 106, 235, 202, 172]
+        for grade_number, (grade_name, expected_count) in enumerate(
+            zip(chinese_grades, expected_counts),
+            start=1,
+        ):
+            with self.subTest(grade=grade_number):
+                self.conn.execute(
+                    "UPDATE classes SET current_grade=?, grade=? WHERE id=21",
+                    (f"{grade_name}年级", f"{grade_name}年级"),
+                )
+                scope = curriculum_registry.get_effective_class_curriculum_scope(
+                    self.conn, 21
+                )
+                self.assertEqual(scope["assignment_mode"], "auto")
+                self.assertEqual(
+                    [item["book_upstream_id"] for item in scope["books"]],
+                    [f"math_{grade_number}a_rjb", f"math_{grade_number}b_rjb"],
+                )
+                registry = curriculum_registry.get_extraction_registry(
+                    self.conn,
+                    organization_id=1,
+                    class_id=21,
+                    subject_key="math",
+                )
+                self.assertEqual(registry["registry_metadata"]["count"], expected_count)
+
+    def test_high_school_and_unknown_grade_require_review(self):
+        self._activate()
+        for grade in ("高一", "国际课程"):
+            with self.subTest(grade=grade):
+                self.conn.execute(
+                    "UPDATE classes SET current_grade=?, grade=? WHERE id=21",
+                    (grade, grade),
+                )
+                scope = curriculum_registry.get_effective_class_curriculum_scope(
+                    self.conn, 21
+                )
+                self.assertEqual(scope["assignment_mode"], "needs_review")
+                self.assertEqual(scope["books"], [])
+                self.assertTrue(scope["needs_review_reason"])
+
+    def test_unambiguous_class_name_is_safe_fallback_when_grade_columns_are_empty(self):
+        self._activate()
+        self.conn.execute(
+            "UPDATE classes SET name='数学·九年级·7班', current_grade='', grade='' WHERE id=21"
+        )
+        scope = curriculum_registry.get_effective_class_curriculum_scope(self.conn, 21)
+        self.assertEqual(scope["assignment_mode"], "auto")
+        self.assertEqual(scope["inferred_grade_key"], "grade_9")
+        self.assertEqual(scope["inference_source"], "classes.name")
+        self.assertEqual(
+            [item["book_upstream_id"] for item in scope["books"]],
+            ["math_9a_rjb", "math_9b_rjb"],
+        )
+
+        self.conn.execute(
+            "UPDATE classes SET name='六年级至七年级衔接班' WHERE id=21"
+        )
+        ambiguous = curriculum_registry.get_effective_class_curriculum_scope(self.conn, 21)
+        self.assertEqual(ambiguous["assignment_mode"], "needs_review")
+        self.assertEqual(ambiguous["books"], [])
+
+    def test_cross_book_alias_ambiguity_fails_closed_but_exact_key_resolves(self):
+        self._activate()
+        self.conn.execute(
+            "UPDATE classes SET current_grade='一年级', grade='一年级' WHERE id=21"
+        )
+        registry = curriculum_registry.get_extraction_registry(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            subject_key="math",
+        )["registry"]
+        matches = [
+            item
+            for item in registry
+            if curriculum_registry.normalize_alias(item["canonical_name"])
+            == curriculum_registry.normalize_alias("比较数量")
+        ]
+        self.assertEqual(len(matches), 2)
+        self.assertIsNone(
+            curriculum_registry.resolve_curriculum_knowledge_point(
+                self.conn,
+                organization_id=1,
+                class_id=21,
+                subject_key="math",
+                value="比较数量",
+            )
+        )
+        for match in matches:
+            resolved = curriculum_registry.resolve_curriculum_knowledge_point(
+                self.conn,
+                organization_id=1,
+                class_id=21,
+                subject_key="math",
+                value=match["knowledge_point_key"],
+            )
+            self.assertEqual(resolved["knowledge_point_key"], match["knowledge_point_key"])
+
+    def test_existing_single_assignment_schema_upgrades_without_data_loss(self):
+        version_id = self._activate()
+        book = self.conn.execute(
+            "SELECT id FROM curriculum_nodes WHERE version_id=? AND upstream_id='math_9a_rjb'",
+            (version_id,),
+        ).fetchone()
+        assignment = curriculum_registry.assign_curriculum_book(
+            self.conn,
+            organization_id=1,
+            class_id=21,
+            version_id=version_id,
+            book_node_id=int(book["id"]),
+            actor_user_id=11,
+            request_id="old-single-book",
+            expected_assignment_id=None,
+        )
+        self.conn.execute("DROP INDEX idx_curriculum_class_assignment_active_book")
+        self.conn.execute("ALTER TABLE curriculum_class_assignments DROP COLUMN is_primary")
+        self.conn.execute(
+            "CREATE UNIQUE INDEX idx_curriculum_class_assignment_active "
+            "ON curriculum_class_assignments(class_id) WHERE status='active'"
+        )
+        curriculum_registry.ensure_curriculum_schema(self.conn)
+        indexes = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA index_list(curriculum_class_assignments)")
+        }
+        upgraded = self.conn.execute(
+            "SELECT * FROM curriculum_class_assignments WHERE id=?",
+            (int(assignment["id"]),),
+        ).fetchone()
+        columns = {
+            str(row["name"])
+            for row in self.conn.execute("PRAGMA table_info(curriculum_class_assignments)")
+        }
+        self.assertNotIn("idx_curriculum_class_assignment_active", indexes)
+        self.assertIn("idx_curriculum_class_assignment_active_book", indexes)
+        self.assertIn("is_primary", columns)
+        self.assertEqual(upgraded["status"], "active")
+        self.assertEqual(int(upgraded["book_node_id"]), int(book["id"]))
+        self.assertEqual(self.conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        self.assertEqual(self.conn.execute("PRAGMA foreign_key_check").fetchall(), [])
 
     def test_reviewed_content_and_provenance_are_immutable(self):
         imported = self._import()
