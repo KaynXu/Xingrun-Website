@@ -535,6 +535,42 @@ class CurriculumRegistryApiTest(unittest.TestCase):
         self.assertEqual(reset["book_node_ids"], book_ids)
         self.assertEqual(reset["assignment_ids"], [])
 
+    def test_learning_graph_api_preserves_automatic_grade_nine_book_pair(self):
+        self._activate_registry()
+        lesson_manager.update_class(
+            self.class_id,
+            "数学·九年级·7班",
+            subject="数学",
+            grade="九年级",
+            current_grade="九年级",
+            class_number="7",
+            actor_user_id=self.admin_id,
+        )
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            teacher_user_id=self.member_id,
+            audio_path="",
+            audio_filename="Manual input",
+        )
+
+        response = self.client.get(
+            f"/api/class-commentary/tasks/{task['id']}/students/"
+            f"{self.student['id']}/learning-graph",
+            headers=self.member_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [
+                item["book_upstream_id"]
+                for item in response.get_json()["learning_graph"][
+                    "curriculum_assignment"
+                ]["books"]
+            ],
+            ["math_9a_rjb", "math_9b_rjb"],
+        )
+
     def test_org_admin_cannot_cross_organization_boundaries(self):
         self._activate_registry()
         first_book, _, _, _ = self._book_pair_with_private_targets()

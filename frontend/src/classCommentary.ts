@@ -287,6 +287,19 @@ export type ClassCommentaryStudentGraphCurriculumAssignment = {
   semester_key: string;
   source_dataset_revision: string;
   data_license: string;
+  books: ClassCommentaryStudentGraphCurriculumBook[];
+};
+
+export type ClassCommentaryStudentGraphCurriculumBook = {
+  assignment_id: number | null;
+  book_node_id: number;
+  book_name: string;
+  book_upstream_id: string;
+  stage_key: string;
+  grade_key: string;
+  semester_key: string;
+  version_id: number;
+  knowledge_point_count: number;
 };
 
 export type ClassCommentaryStudentGraphCurrentState = {
@@ -1096,6 +1109,23 @@ function normalizeClassCommentaryStudentGraphCurriculumAssignment(
   if (!numberValue(source.id) || !numberValue(source.book_node_id)) {
     return null;
   }
+  const books = (Array.isArray(source.books) ? source.books : []).flatMap((value) => {
+    const book = recordValue(value);
+    if (!numberValue(book.book_node_id)) {
+      return [];
+    }
+    return [{
+      assignment_id: numberValue(book.assignment_id) || null,
+      book_node_id: numberValue(book.book_node_id),
+      book_name: stringValue(book.book_name),
+      book_upstream_id: stringValue(book.book_upstream_id),
+      stage_key: stringValue(book.stage_key),
+      grade_key: stringValue(book.grade_key),
+      semester_key: stringValue(book.semester_key),
+      version_id: numberValue(book.version_id),
+      knowledge_point_count: numberValue(book.knowledge_point_count),
+    }];
+  });
   return {
     id: numberValue(source.id),
     class_id: numberValue(source.class_id),
@@ -1112,6 +1142,17 @@ function normalizeClassCommentaryStudentGraphCurriculumAssignment(
     semester_key: stringValue(source.semester_key),
     source_dataset_revision: stringValue(source.source_dataset_revision),
     data_license: stringValue(source.data_license),
+    books: books.length ? books : [{
+      assignment_id: numberValue(source.id) || null,
+      book_node_id: numberValue(source.book_node_id),
+      book_name: stringValue(source.book_name),
+      book_upstream_id: stringValue(source.book_upstream_id),
+      stage_key: stringValue(source.stage_key),
+      grade_key: stringValue(source.grade_key),
+      semester_key: stringValue(source.semester_key),
+      version_id: numberValue(source.version_id),
+      knowledge_point_count: 0,
+    }],
   };
 }
 
