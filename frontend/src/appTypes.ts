@@ -29,6 +29,7 @@ export interface ClassItem {
   bridge_target?: string;
   content_track?: string;
   last_promoted_at?: string;
+  lifecycle_status?: 'active' | 'pending_graduation' | 'graduated' | 'archived' | string;
   teacher_name?: string;
   teacher_email?: string;
   teacher_user_id?: number | null;

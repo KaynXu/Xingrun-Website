@@ -8113,6 +8113,77 @@ def list_classes(scope: str = "current"):
         return [_class_row_to_dict(r) for r in rows]
 
 
+def _remove_active_curriculum_assignments_for_class_scope_change(
+    conn: sqlite3.Connection,
+    *,
+    class_id: int,
+    before_subject_key: str,
+    after_subject_key: str,
+    before_grade: str,
+    after_grade: str,
+    actor_user_id: int | None,
+) -> list[int]:
+    subject_changed = str(before_subject_key or "") != str(after_subject_key or "")
+    grade_changed = normalize_class_grade(before_grade) != normalize_class_grade(after_grade)
+    if not subject_changed and not grade_changed:
+        return []
+    assignments = conn.execute(
+        """
+        SELECT assignment.*, version.package_id, version.version_key,
+               book.canonical_name AS book_name, book.grade_key,
+               book.semester_key
+        FROM curriculum_class_assignments assignment
+        JOIN curriculum_versions version ON version.id=assignment.version_id
+        JOIN curriculum_nodes book ON book.id=assignment.book_node_id
+        WHERE assignment.class_id=? AND assignment.status='active'
+        ORDER BY assignment.id
+        """,
+        (int(class_id),),
+    ).fetchall()
+    if not assignments:
+        return []
+    ended_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    assignment_ids = [int(item["id"]) for item in assignments]
+    placeholders = ",".join("?" for _ in assignment_ids)
+    conn.execute(
+        f"""
+        UPDATE curriculum_class_assignments
+        SET status='removed', ended_at=?
+        WHERE id IN ({placeholders}) AND status='active'
+        """,
+        (ended_at, *assignment_ids),
+    )
+    from curriculum_registry import _audit as _audit_curriculum
+
+    version_ids = {int(item["version_id"]) for item in assignments}
+    package_ids = {int(item["package_id"]) for item in assignments}
+    reasons = []
+    if subject_changed:
+        reasons.append("subject changed")
+    if grade_changed:
+        reasons.append("grade changed")
+    _audit_curriculum(
+        conn,
+        action="remove_stale_class_assignments",
+        target_type="class_curriculum",
+        target_key=str(class_id),
+        actor_user_id=actor_user_id,
+        organization_id=int(assignments[0]["organization_id"]),
+        package_id=next(iter(package_ids)) if len(package_ids) == 1 else None,
+        version_id=next(iter(version_ids)) if len(version_ids) == 1 else None,
+        class_id=int(class_id),
+        before={"assignments": [dict(item) for item in assignments]},
+        after={
+            "status": "removed",
+            "assignment_ids": assignment_ids,
+            "subject_key": str(after_subject_key or ""),
+            "grade": normalize_class_grade(after_grade),
+        },
+        note=f"Class {' and '.join(reasons)}; stale manual curriculum overrides were removed.",
+    )
+    return assignment_ids
+
+
 def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                  teacher_name: Optional[str] = None, teacher_email: Optional[str] = None,
                  stage: str = "", current_grade: str = "", class_number: str = "",
@@ -8199,42 +8270,17 @@ def update_class(class_id: int, name: str, subject: str = "", grade: str = "",
                 payload["content_track"], teacher_name, teacher_email, class_id,
             )
             )
-        assignment = conn.execute(
-            """
-            SELECT assignment.*, package.subject_key AS curriculum_subject_key,
-                   version.package_id, version.version_key
-            FROM curriculum_class_assignments assignment
-            JOIN curriculum_versions version ON version.id=assignment.version_id
-            JOIN curriculum_packages package ON package.id=version.package_id
-            WHERE assignment.class_id=? AND assignment.status='active'
-            """,
-            (int(class_id),),
-        ).fetchone()
-        if assignment and str(assignment["curriculum_subject_key"] or "") != str(next_subject_key or ""):
-            ended_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            conn.execute(
-                """
-                UPDATE curriculum_class_assignments
-                SET status='removed', ended_at=? WHERE id=? AND status='active'
-                """,
-                (ended_at, int(assignment["id"])),
-            )
-            from curriculum_registry import _audit as _audit_curriculum
-
-            _audit_curriculum(
-                conn,
-                action="remove_incompatible_assignment",
-                target_type="class_curriculum",
-                target_key=str(class_id),
-                actor_user_id=actor_user_id,
-                organization_id=int(assignment["organization_id"]),
-                package_id=int(assignment["package_id"]),
-                version_id=int(assignment["version_id"]),
-                class_id=int(class_id),
-                before=dict(assignment),
-                after={"status": "removed", "subject_key": next_subject_key},
-                note="Class subject changed; no replacement curriculum was guessed.",
-            )
+        _remove_active_curriculum_assignments_for_class_scope_change(
+            conn,
+            class_id=int(class_id),
+            before_subject_key=str((before or {}).get("subject_key") or ""),
+            after_subject_key=str(next_subject_key or ""),
+            before_grade=str(
+                (before or {}).get("current_grade") or (before or {}).get("grade") or ""
+            ),
+            after_grade=str(payload["current_grade"] or payload["grade"] or ""),
+            actor_user_id=actor_user_id,
+        )
     record_class_history(
         class_id,
         "updated",
@@ -8477,6 +8523,15 @@ def promote_classes_for_academic_year(today: str | None = None) -> dict:
                     today_value,
                     item["id"],
                 ),
+            )
+            _remove_active_curriculum_assignments_for_class_scope_change(
+                conn,
+                class_id=int(item["id"]),
+                before_subject_key=str(item.get("subject_key") or ""),
+                after_subject_key=str(item.get("subject_key") or ""),
+                before_grade=current_grade,
+                after_grade=next_grade,
+                actor_user_id=None,
             )
             promoted_ids.append(item["id"])
             summary_by_org[item["organization_id"]]["promoted"] += 1

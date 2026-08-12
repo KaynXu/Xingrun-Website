@@ -11,6 +11,12 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -25,11 +31,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import type { ClassItem, CurrentUser } from '../../appTypes';
+import { getCurrentClassDisplayName } from '../../classDisplay';
+import {
+  getAcademicGradeRank,
+  getAcademicGradeRankFromText,
+  normalizeAcademicGradeLabel,
+} from '../../domain/classNaming';
 import {
   fetchCurriculumBooks,
   fetchCurriculumCatalog,
@@ -38,6 +52,7 @@ import {
   fetchCurriculumKnowledgePointProposals,
   fetchCurriculumUnmappedCandidates,
   fetchCurriculumVersions,
+  resetCurriculumClassAssignmentToAuto,
   submitCurriculumMappingAction,
   reviewCurriculumKnowledgePointProposal,
   transitionCurriculumVersion,
@@ -93,14 +108,23 @@ const stageLabels: Record<string, string> = {
 
 const gradeLabels: Record<string, string> = {
   '1': '一年级',
+  grade_1: '一年级',
   '2': '二年级',
+  grade_2: '二年级',
   '3': '三年级',
+  grade_3: '三年级',
   '4': '四年级',
+  grade_4: '四年级',
   '5': '五年级',
+  grade_5: '五年级',
   '6': '六年级',
+  grade_6: '六年级',
   '7': '七年级',
+  grade_7: '七年级',
   '8': '八年级',
+  grade_8: '八年级',
   '9': '九年级',
+  grade_9: '九年级',
   '10': '高一',
   '11': '高二',
   '12': '高三',
@@ -129,6 +153,23 @@ function formatTime(value: string): string {
 function createRequestId(prefix: string): string {
   const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${randomId}`;
+}
+
+function normalizeClassSearch(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase('zh-CN').replace(/\s+/g, '');
+}
+
+function resolveClassGrade(item: ClassItem): string {
+  const structured = normalizeAcademicGradeLabel(item.current_grade || item.grade || '');
+  if (getAcademicGradeRank(structured) < 999) return structured;
+  const rank = getAcademicGradeRankFromText(`${item.current_grade || ''} ${item.grade || ''} ${item.name || ''}`);
+  return rank < 999
+    ? ['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '七年级', '八年级', '九年级', '高一', '高二', '高三'][rank]
+    : '未填写年级';
+}
+
+function isCurrentClass(item: ClassItem): boolean {
+  return !item.lifecycle_status || item.lifecycle_status === 'active';
 }
 
 function versionStatusVariant(status: CurriculumVersionStatus): 'outline' | 'secondary' {
@@ -198,7 +239,9 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
 
   const [selectedClassId, setSelectedClassId] = useState(0);
   const [assignment, setAssignment] = useState<CurriculumClassAssignment | null>(null);
-  const [assignmentBookId, setAssignmentBookId] = useState(0);
+  const [assignmentBookIds, setAssignmentBookIds] = useState<number[]>([]);
+  const [classSearch, setClassSearch] = useState('');
+  const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [assignmentState, setAssignmentState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [assignmentError, setAssignmentError] = useState('');
   const [assignmentSaving, setAssignmentSaving] = useState(false);
@@ -216,6 +259,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
   const [mappingCandidate, setMappingCandidate] = useState<CurriculumUnmappedCandidate | null>(null);
   const [mappingAction, setMappingAction] = useState<CurriculumMappingAction>('map');
   const [mappingTargetKey, setMappingTargetKey] = useState('');
+  const [mappingTargetName, setMappingTargetName] = useState('');
   const [mappingProposedName, setMappingProposedName] = useState('');
   const [mappingNote, setMappingNote] = useState('');
   const [mappingSearchInput, setMappingSearchInput] = useState('');
@@ -242,6 +286,45 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
   const mathClasses = useMemo(() => classes.filter((item) => (
     item.subject_key === 'math' || item.subject === 'math' || item.subject === '数学'
   )), [classes]);
+  const groupedMathClasses = useMemo(() => {
+    const query = normalizeClassSearch(classSearch);
+    const filtered = mathClasses.filter((item) => {
+      const searchable = normalizeClassSearch([
+        getCurrentClassDisplayName(item), item.name, item.current_grade, item.grade, item.class_number,
+      ].filter(Boolean).join(' '));
+      return !query || searchable.includes(query);
+    }).sort((left, right) => {
+      const lifecycleDelta = Number(!isCurrentClass(left)) - Number(!isCurrentClass(right));
+      if (lifecycleDelta) return lifecycleDelta;
+      const gradeDelta = getAcademicGradeRank(resolveClassGrade(left))
+        - getAcademicGradeRank(resolveClassGrade(right));
+      if (gradeDelta) return gradeDelta;
+      const classNumberDelta = Number(left.class_number || 0) - Number(right.class_number || 0);
+      if (classNumberDelta) return classNumberDelta;
+      return getCurrentClassDisplayName(left).localeCompare(getCurrentClassDisplayName(right), 'zh-CN');
+    });
+    const groups = new Map<string, ClassItem[]>();
+    filtered.forEach((item) => {
+      const grade = resolveClassGrade(item);
+      groups.set(grade, [...(groups.get(grade) || []), item]);
+    });
+    return [...groups.entries()];
+  }, [classSearch, mathClasses]);
+  const selectedClass = useMemo(
+    () => mathClasses.find((item) => item.id === selectedClassId) || null,
+    [mathClasses, selectedClassId],
+  );
+  const assignmentDirty = useMemo(() => {
+    if (!assignment) return false;
+    const selectedBookIds = [...new Set(assignmentBookIds)].sort((left, right) => left - right);
+    const persistedBookIds = assignment.books
+      .map((book) => book.book_node_id)
+      .sort((left, right) => left - right);
+    return selectedVersionId !== assignment.version_id
+      || selectedBookIds.length !== persistedBookIds.length
+      || selectedBookIds.some((bookId, index) => bookId !== persistedBookIds[index])
+      || Number(assignmentBookIds[0] || 0) !== Number(assignment.primary_book_node_id || 0);
+  }, [assignment, assignmentBookIds, selectedVersionId]);
   const isSuperOwner = currentUser.role === 'super_owner';
   const canManageCurriculum = currentUser.role !== 'member';
   const canReviewProposals = canManageCurriculum;
@@ -256,7 +339,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
     try {
       const [nextVersions, nextClasses] = await Promise.all([
         fetchCurriculumVersions(),
-        apiFetch<ClassItem[]>('/api/classes'),
+        apiFetch<ClassItem[]>('/api/classes?scope=all'),
       ]);
       if (requestToken !== initialRequestRef.current) return;
       setVersions(nextVersions);
@@ -270,7 +353,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
       ));
       setSelectedClassId((current) => {
         if (nextMathClasses.some((item) => item.id === current)) return current;
-        return nextMathClasses[0]?.id || 0;
+        return nextMathClasses.find(isCurrentClass)?.id || nextMathClasses[0]?.id || 0;
       });
       setInitialState(nextVersions.length ? 'ready' : 'empty');
     } catch (error) {
@@ -331,7 +414,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
   useEffect(() => {
     const requestToken = ++assignmentRequestRef.current;
     setAssignment(null);
-    setAssignmentBookId(0);
+    setAssignmentBookIds([]);
     setAssignmentError('');
     setAssignmentSuccess('');
     if (selectedClassId <= 0) {
@@ -343,7 +426,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
       .then((result) => {
         if (requestToken !== assignmentRequestRef.current) return;
         setAssignment(result);
-        setAssignmentBookId(result?.book_node_id || 0);
+        setAssignmentBookIds(result?.books.map((book) => book.book_node_id) || []);
         if (result?.version_id) {
           setSelectedVersionId(result.version_id);
         }
@@ -418,21 +501,43 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
   }
 
   async function saveAssignment() {
-    if (selectedClassId <= 0 || selectedVersionId <= 0 || assignmentBookId <= 0 || assignmentSaving) return;
+    if (selectedClassId <= 0 || selectedVersionId <= 0 || assignmentBookIds.length === 0 || assignmentSaving || !assignmentDirty) return;
     setAssignmentSaving(true);
     setAssignmentError('');
     setAssignmentSuccess('');
     try {
       const result = await updateCurriculumClassAssignment(selectedClassId, {
         version_id: selectedVersionId,
-        book_node_id: assignmentBookId,
+        book_node_ids: [...new Set(assignmentBookIds)].sort((left, right) => left - right),
+        primary_book_node_id: assignmentBookIds[0] || null,
         request_id: createRequestId('curriculum-assignment'),
-        expected_assignment_id: assignment?.id || null,
+        expected_cas_token: assignment?.cas_token || '',
       });
       setAssignment(result);
-      setAssignmentSuccess(`已将 ${result.book_name} 分配给 ${result.class_name || '当前班级'}`);
+      setAssignmentBookIds(result.books.map((book) => book.book_node_id));
+      setAssignmentSuccess(`已为 ${result.class_name || '当前班级'} 启用 ${result.books.length} 册教材`);
     } catch (error) {
       setAssignmentError(error instanceof Error ? error.message : '教材分配失败');
+    } finally {
+      setAssignmentSaving(false);
+    }
+  }
+
+  async function resetAssignmentToAuto() {
+    if (selectedClassId <= 0 || !assignment || assignmentSaving) return;
+    setAssignmentSaving(true);
+    setAssignmentError('');
+    setAssignmentSuccess('');
+    try {
+      const result = await resetCurriculumClassAssignmentToAuto(selectedClassId, {
+        request_id: createRequestId('curriculum-assignment-auto'),
+        expected_cas_token: assignment.cas_token,
+      });
+      setAssignment(result);
+      setAssignmentBookIds(result.books.map((book) => book.book_node_id));
+      setAssignmentSuccess(`已恢复按 ${result.inferred_grade || '班级年级'} 自动匹配教材`);
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : '恢复自动匹配失败');
     } finally {
       setAssignmentSaving(false);
     }
@@ -464,6 +569,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
     setMappingCandidate(candidate);
     setMappingAction(canManageCurriculum ? 'map' : 'propose_new');
     setMappingTargetKey('');
+    setMappingTargetName('');
     setMappingProposedName(candidate.candidate_text);
     setMappingNote('');
     setMappingSearchInput(candidate.candidate_text);
@@ -581,7 +687,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
         {selectedVersion ? (
           <div className="flex max-w-full flex-wrap items-center gap-2">
             <Badge variant={versionStatusVariant(selectedVersion.status)}>{versionStatusLabels[selectedVersion.status]}</Badge>
-            <span className="max-w-full truncate text-xs text-slate-500 dark:text-slate-400">{selectedVersion.version_key}</span>
+            <span className="max-w-full truncate text-xs text-slate-500 dark:text-slate-400">人教版数学 · {versionStatusLabels[selectedVersion.status]}</span>
           </div>
         ) : null}
       </header>
@@ -653,11 +759,11 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
                 <label className="min-w-0 space-y-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
                   <span>课程版本</span>
                   <select className={cn(workspaceFieldClass, 'min-w-0')} value={selectedVersionId || ''} onChange={(event) => { setSelectedVersionId(Number(event.target.value)); setCatalogPage(1); }}>
-                    {versions.map((version) => <option key={version.id} value={version.id}>{version.version_key} · {versionStatusLabels[version.status]}</option>)}
+                    {versions.map((version) => <option key={version.id} value={version.id}>{version.curriculum_name} · {versionStatusLabels[version.status]}</option>)}
                   </select>
                 </label>
                 <div className="rounded-2xl bg-sky-50 px-4 py-3 dark:bg-sky-500/10">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">知识点</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">图谱节点</p>
                   <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{selectedVersion?.node_count || catalog.total}</p>
                 </div>
                 <div className="rounded-2xl bg-sky-50 px-4 py-3 dark:bg-sky-500/10">
@@ -666,10 +772,24 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
                 </div>
                 <div className="min-w-0 rounded-2xl bg-sky-50 px-4 py-3 dark:bg-sky-500/10">
                   <p className="text-xs text-slate-500 dark:text-slate-400">数据来源</p>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white" title={selectedVersion?.source_dataset_revision}>{selectedVersion?.source_dataset_revision || '-'}</p>
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">第三方 K12-KGraph · {selectedVersion?.data_license || '-'}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">第三方 K12-KGraph</p>
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">许可说明: {selectedVersion?.data_license || '-'}</p>
                 </div>
               </div>
+              {selectedVersion ? (
+                <Accordion type="single" collapsible>
+                  <AccordionItem value="technical-details">
+                    <AccordionTrigger className="text-xs">技术详情</AccordionTrigger>
+                    <AccordionContent className="space-y-1 break-all text-xs text-slate-500">
+                      <p>版本标识: {selectedVersion.version_key}</p>
+                      <p>数据修订: {selectedVersion.source_dataset_revision}</p>
+                      <p>来源校验: {selectedVersion.source_sha256}</p>
+                      <p>内容校验: {selectedVersion.content_hash}</p>
+                      <p>Registry: v{selectedVersion.registry_version}</p>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              ) : null}
               {lifecycleSuccess ? <p className="text-sm text-emerald-600" role="status">{lifecycleSuccess}</p> : null}
               {lifecycleError ? <p className="text-sm text-red-600" role="alert">{lifecycleError}</p> : null}
             </CardContent>
@@ -682,28 +802,62 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
             </CardHeader>
             <CardContent className="min-w-0 space-y-4">
               <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto] lg:items-end">
-                <label className="min-w-0 space-y-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  <span>班级</span>
-                  <select className={workspaceFieldClass} value={selectedClassId || ''} onChange={(event) => setSelectedClassId(Number(event.target.value))}>
-                    <option value="">请选择数学班级</option>
-                    {mathClasses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                </label>
-                <label className="min-w-0 space-y-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  <span>教材</span>
-                  <select className={workspaceFieldClass} value={assignmentBookId || ''} onChange={(event) => setAssignmentBookId(Number(event.target.value))} disabled={assignmentState === 'loading' || !canManageCurriculum}>
-                    <option value="">请选择教材</option>
-                    {books.map((book) => <option key={book.id} value={book.id}>{book.canonical_name} · {book.knowledge_point_count} 个知识点</option>)}
-                  </select>
-                </label>
+                <div className="min-w-0 space-y-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  <div className="flex items-center justify-between gap-2"><span>班级</span><span className="font-normal">共 {mathClasses.length} 个数学班</span></div>
+                  <Popover open={classPickerOpen} onOpenChange={setClassPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button type="button" variant="outline" className="h-11 w-full justify-between font-normal" aria-haspopup="listbox" aria-expanded={classPickerOpen} aria-controls="curriculum-class-listbox">
+                        <span className="truncate">{selectedClass ? getCurrentClassDisplayName(selectedClass) : '请选择数学班级'}</span>
+                        <Search className="size-4 shrink-0 text-slate-400" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] p-2">
+                      <Input aria-label="搜索数学班级" autoFocus value={classSearch} onChange={(event) => setClassSearch(event.target.value)} placeholder="搜索年级、班号或班名" />
+                      <ScrollArea className="mt-2 h-72">
+                        <div id="curriculum-class-listbox" role="listbox" aria-label="数学班级" className="space-y-2 pr-2">
+                          {groupedMathClasses.map(([grade, items]) => (
+                            <div key={grade} role="group" aria-labelledby={`curriculum-class-grade-${grade}`}>
+                              <p id={`curriculum-class-grade-${grade}`} className="px-2 py-1 text-[11px] font-semibold text-slate-400">{grade}</p>
+                              {items.map((item) => (
+                                <button key={item.id} type="button" role="option" aria-selected={item.id === selectedClassId} className={cn('flex min-h-10 w-full items-center rounded-lg px-2 text-left text-sm hover:bg-sky-50 dark:hover:bg-white/5', item.id === selectedClassId && 'bg-sky-50 font-semibold dark:bg-white/5')} onClick={() => { setSelectedClassId(item.id); setClassPickerOpen(false); }}>
+                                  <span className="min-w-0 flex-1 truncate">{getCurrentClassDisplayName(item)}</span>
+                                  {!isCurrentClass(item) ? <Badge variant="outline" className="ml-2 shrink-0">历史</Badge> : null}
+                                </button>
+                              ))}
+                            </div>
+                          ))}
+                          {groupedMathClasses.length === 0 ? <p className="px-2 py-6 text-center text-xs text-slate-500">没有匹配的数学班</p> : null}
+                        </div>
+                      </ScrollArea>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <fieldset className="min-w-0 rounded-xl border border-sky-100 p-3 dark:border-white/10" disabled={assignmentState === 'loading' || assignmentSaving || !canManageCurriculum}>
+                  <legend className="px-1 text-xs font-semibold text-slate-600 dark:text-slate-300">教材范围 · 已启用 {assignmentBookIds.length} 册</legend>
+                  <div className="grid max-h-40 gap-2 overflow-y-auto sm:grid-cols-2">
+                    {books.map((book) => (
+                      <label key={book.id} className={cn('flex min-h-11 items-center gap-2 rounded-lg px-2 text-xs', canManageCurriculum ? 'cursor-pointer hover:bg-sky-50 dark:hover:bg-white/5' : 'cursor-default')}>
+                        <Checkbox checked={assignmentBookIds.includes(book.id)} onCheckedChange={(checked) => setAssignmentBookIds((current) => checked ? [...new Set([...current, book.id])] : current.filter((id) => id !== book.id))} />
+                        <span className="min-w-0"><span className="block truncate font-semibold">{book.canonical_name}</span><span className="text-slate-400">{book.knowledge_point_count} 个知识点</span></span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
                 {canManageCurriculum ? (
-                  <button type="button" className={cn(workspacePrimaryButtonClass, 'w-full lg:w-auto')} disabled={assignmentSaving || assignmentBookId <= 0 || selectedClassId <= 0 || selectedVersion?.status !== 'active'} onClick={() => void saveAssignment()}>
-                    {assignmentSaving ? '保存中' : '保存分配'}
+                  <button type="button" className={cn(workspacePrimaryButtonClass, 'w-full lg:w-auto')} disabled={assignmentState !== 'ready' || assignmentSaving || !assignmentDirty || assignmentBookIds.length === 0 || selectedClassId <= 0 || selectedVersion?.status !== 'active'} onClick={() => void saveAssignment()}>
+                    {assignmentSaving ? '保存中' : '保存调整'}
                   </button>
                 ) : null}
               </div>
               {assignmentState === 'loading' ? <Skeleton className="h-5 w-52" /> : null}
-              {assignment ? <p className="break-words text-xs text-slate-500 dark:text-slate-400">当前: {assignment.book_name} · 分配于 {formatTime(assignment.assigned_at)}</p> : null}
+              {assignment?.assignment_mode === 'auto' ? <p className="break-words text-sm text-emerald-700 dark:text-emerald-300">系统已按{assignment.inferred_grade || '班级年级'}自动启用: {assignment.books.map((book) => book.book_name).join('、')}</p> : null}
+              {assignment?.assignment_mode === 'manual' ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="break-words text-sm text-slate-600 dark:text-slate-300">当前手动范围: {assignment.books.map((book) => book.book_name).join('、')}</p>
+                  {canManageCurriculum && assignment.inferred_grade_key ? <Button type="button" size="sm" variant="outline" disabled={assignmentSaving} onClick={() => void resetAssignmentToAuto()}>恢复按年级自动匹配</Button> : null}
+                </div>
+              ) : null}
+              {assignment?.assignment_mode === 'needs_review' ? <p className="break-words text-sm text-amber-600 dark:text-amber-300">需要设置: {assignment.needs_review_reason || '请确认该班级使用的教材'}</p> : null}
               {selectedVersion?.status !== 'active' ? <p className="text-xs text-amber-600 dark:text-amber-300">当前版本仅用于查看历史, 只有使用中的数学课程版本可以分配给班级.</p> : null}
               {assignmentSuccess ? <p className="text-sm text-emerald-600" role="status">{assignmentSuccess}</p> : null}
               {assignmentError ? <p className="text-sm text-red-600" role="alert">{assignmentError}</p> : null}
@@ -815,7 +969,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
                     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <p className="break-words text-sm font-semibold text-slate-900 dark:text-white">{proposal.canonical_name}</p>
-                        <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{proposal.book_name || '已分配教材'}{proposal.version_key ? ` · ${proposal.version_key}` : ''}</p>
+                        <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{proposal.book_name || '已分配教材'}</p>
                         {proposal.description ? <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{proposal.description}</p> : null}
                       </div>
                       <div className="flex w-full shrink-0 gap-2 sm:w-auto">
@@ -857,7 +1011,7 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
                         </div>
                         <p className="mt-2 break-words text-sm font-semibold text-slate-900 dark:text-white">{candidate.candidate_text}</p>
                         <p className="mt-2 break-words text-xs text-slate-500 dark:text-slate-400">来自第 {candidate.revision_no} 次已确认反馈 · {formatTime(candidate.created_at)}</p>
-                        {candidate.book_name ? <p className="mt-1 break-words text-[11px] text-slate-400">教材范围: {candidate.book_name}{candidate.version_key ? ` · ${candidate.version_key}` : ''}</p> : null}
+                        {candidate.book_name ? <p className="mt-1 break-words text-[11px] text-slate-400">教材范围: {candidate.book_name}</p> : null}
                       </div>
                       {candidate.status === 'pending' ? <Button type="button" size="sm" className="w-full shrink-0 sm:w-auto" onClick={() => openMapping(candidate)}>{canManageCurriculum ? '开始匹配' : '提议知识点'}</Button> : null}
                     </div>
@@ -920,10 +1074,16 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
                     </section>
                   </div>
                   {detail.aliases.length ? <section className="space-y-2"><h3 className="text-sm font-semibold text-slate-900 dark:text-white">精确别名</h3><div className="flex flex-wrap gap-2">{detail.aliases.map((alias) => <Badge key={alias} variant="outline">{alias}</Badge>)}</div></section> : null}
-                  <div className="min-w-0 rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:bg-white/5 dark:text-slate-400">
-                    <p className="break-all">课程版本: {detail.version_key}</p>
-                    <p className="break-all">数据修订: {detail.source_dataset_revision}</p>
-                  </div>
+                  <Accordion type="single" collapsible>
+                    <AccordionItem value="node-technical-details">
+                      <AccordionTrigger className="text-xs">技术详情</AccordionTrigger>
+                      <AccordionContent className="break-all text-[11px] leading-5 text-slate-500">
+                        <p>课程版本: {detail.version_key}</p>
+                        <p>数据修订: {detail.source_dataset_revision}</p>
+                        <p>来源校验: {detail.source_sha256}</p>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 </>
               ) : null}
             </div>
@@ -959,12 +1119,12 @@ export function CurriculumKnowledgePage({ currentUser }: { currentUser: CurrentU
                       <Button type="button" variant="outline" className="shrink-0" disabled={mappingSearching || !mappingSearchInput.trim()} onClick={() => void searchMappingTargets()}>{mappingSearching ? '搜索中' : '搜索'}</Button>
                     </div>
                   </label>
-                  {mappingTargetKey ? <p className="break-all rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">已选择: {mappingTargetKey}</p> : null}
+                  {mappingTargetKey ? <p className="break-words rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">已选择: {mappingTargetName || '受控知识点'}</p> : null}
                   <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                     {mappingSearchResults.map((node) => (
-                      <button key={node.id} type="button" className={cn('min-w-0 rounded-xl border px-3 py-2 text-left', mappingTargetKey === node.node_key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'border-slate-200 dark:border-white/10')} onClick={() => setMappingTargetKey(node.node_key)}>
+                      <button key={node.id} type="button" className={cn('min-w-0 rounded-xl border px-3 py-2 text-left', mappingTargetKey === node.node_key ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'border-slate-200 dark:border-white/10')} onClick={() => { setMappingTargetKey(node.node_key); setMappingTargetName(node.canonical_name); }}>
                         <p className="break-words text-sm font-semibold text-slate-900 dark:text-white">{node.canonical_name}</p>
-                        <p className="mt-1 break-all text-[11px] text-slate-500">{node.node_key}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">选择此知识点</p>
                       </button>
                     ))}
                   </div>

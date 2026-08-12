@@ -109,6 +109,7 @@ export type CurriculumCatalogResult = {
 };
 
 export type CurriculumClassAssignment = {
+  schema_version: string;
   id: number;
   organization_id: number;
   class_id: number;
@@ -128,6 +129,27 @@ export type CurriculumClassAssignment = {
   edition_name: string;
   assigned_at: string;
   note: string;
+  assignment_mode: 'auto' | 'manual' | 'needs_review';
+  inferred_grade: string;
+  inferred_grade_key: string;
+  inference_source: string;
+  needs_review_reason: string;
+  books: CurriculumAssignedBook[];
+  primary_book_node_id: number | null;
+  cas_token: string;
+  scope_hash: string;
+};
+
+export type CurriculumAssignedBook = {
+  assignment_id: number | null;
+  book_node_id: number;
+  book_name: string;
+  book_upstream_id: string;
+  stage_key: string;
+  grade_key: string;
+  semester_key: string;
+  version_id: number;
+  knowledge_point_count: number;
 };
 
 export type CurriculumUnmappedCandidate = {
@@ -324,9 +346,35 @@ function normalizePathItem(value: unknown): CurriculumPathItem {
 
 function normalizeAssignment(value: unknown): CurriculumClassAssignment | null {
   const source = recordValue(value);
-  if (!numberValue(source.id)) {
+  if (!numberValue(source.class_id)) {
     return null;
   }
+  const books = (Array.isArray(source.books) ? source.books : []).map((value) => {
+    const book = recordValue(value);
+    return {
+      assignment_id: numberValue(book.assignment_id) || null,
+      book_node_id: numberValue(book.book_node_id),
+      book_name: stringValue(book.book_name),
+      book_upstream_id: stringValue(book.book_upstream_id),
+      stage_key: stringValue(book.stage_key),
+      grade_key: stringValue(book.grade_key),
+      semester_key: stringValue(book.semester_key),
+      version_id: numberValue(book.version_id),
+      knowledge_point_count: numberValue(book.knowledge_point_count),
+    };
+  });
+  const legacyBook = numberValue(source.book_node_id) > 0 && books.length === 0 ? [{
+    assignment_id: numberValue(source.id) || null,
+    book_node_id: numberValue(source.book_node_id),
+    book_name: stringValue(source.book_name),
+    book_upstream_id: stringValue(source.book_upstream_id),
+    stage_key: stringValue(source.stage_key),
+    grade_key: stringValue(source.grade_key),
+    semester_key: stringValue(source.semester_key),
+    version_id: numberValue(source.version_id),
+    knowledge_point_count: 0,
+  }] : [];
+  const normalizedBooks = books.length ? books : legacyBook;
   return {
     id: numberValue(source.id),
     organization_id: numberValue(source.organization_id),
@@ -347,6 +395,18 @@ function normalizeAssignment(value: unknown): CurriculumClassAssignment | null {
     edition_name: stringValue(source.edition_name),
     assigned_at: stringValue(source.assigned_at),
     note: stringValue(source.note),
+    schema_version: stringValue(source.schema_version) || 'class_curriculum_assignment.v1',
+    assignment_mode: (['auto', 'manual', 'needs_review'].includes(stringValue(source.assignment_mode))
+      ? stringValue(source.assignment_mode)
+      : normalizedBooks.length ? 'manual' : 'needs_review') as CurriculumClassAssignment['assignment_mode'],
+    inferred_grade: stringValue(source.inferred_grade),
+    inferred_grade_key: stringValue(source.inferred_grade_key),
+    inference_source: stringValue(source.inference_source),
+    needs_review_reason: stringValue(source.needs_review_reason),
+    books: normalizedBooks,
+    primary_book_node_id: numberValue(source.primary_book_node_id) || null,
+    cas_token: stringValue(source.cas_token),
+    scope_hash: stringValue(source.scope_hash),
   };
 }
 
@@ -461,9 +521,10 @@ export async function updateCurriculumClassAssignment(
   classId: number,
   input: {
     version_id: number;
-    book_node_id: number;
+    book_node_ids: number[];
+    primary_book_node_id?: number | null;
     request_id: string;
-    expected_assignment_id: number | null;
+    expected_cas_token: string;
     note?: string;
   },
 ): Promise<CurriculumClassAssignment> {
@@ -474,6 +535,28 @@ export async function updateCurriculumClassAssignment(
   const assignment = normalizeAssignment(payload.assignment || payload);
   if (!assignment) {
     throw new Error('教材分配响应无效');
+  }
+  return assignment;
+}
+
+export async function resetCurriculumClassAssignmentToAuto(
+  classId: number,
+  input: {
+    expected_cas_token: string;
+    request_id: string;
+    note?: string;
+  },
+): Promise<CurriculumClassAssignment> {
+  const payload = await apiFetch<Record<string, unknown>>(
+    `/api/class-commentary/curriculum/classes/${encodeURIComponent(String(classId))}/assignment`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ ...input, assignment_mode: 'auto' }),
+    },
+  );
+  const assignment = normalizeAssignment(payload.assignment || payload);
+  if (!assignment) {
+    throw new Error('教材自动匹配响应无效');
   }
   return assignment;
 }
