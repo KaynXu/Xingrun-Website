@@ -175,7 +175,11 @@ def process_class_commentary_graph_extraction_job(
             per_student_input = {
                 "feedback_text": str(student_item["feedback_text"]),
                 "subject_key": str(frozen.get("subject_key") or ""),
-                "registry": frozen.get("registry") or [],
+                "registry": (
+                    frozen["model_registry"]
+                    if "model_registry" in frozen
+                    else frozen.get("registry") or []
+                ),
             }
             result = extract(per_student_input, config)
             result_usage = {}
