@@ -33,11 +33,14 @@ from typing import Optional
 from config_runtime import get_runtime_config
 from class_commentary import (
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+    CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
     get_class_commentary_structured_prompt_contract,
+    read_class_commentary_skill_file_content,
     read_class_commentary_skill_package_content,
+    read_class_commentary_skill_package_name,
 )
 from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
@@ -9306,14 +9309,18 @@ def _class_commentary_content_hash(value: object) -> str:
 
 
 def _read_class_commentary_skill_source(source_path: str) -> str:
-    path = Path(str(source_path or "")).expanduser().resolve()
+    raw_source_path = str(source_path or "").strip()
+    if not raw_source_path:
+        raise ValueError("skill source_path not found")
+    path = Path(os.path.abspath(os.path.expanduser(raw_source_path)))
     if path.is_dir():
         content = read_class_commentary_skill_package_content(path)
     elif path.is_file():
         if path.name == "SKILL.md":
             content = read_class_commentary_skill_package_content(path.parent)
         else:
-            content = path.read_text(encoding="utf-8").strip()
+            content, _ = read_class_commentary_skill_file_content(path)
+            content = content.strip()
     else:
         raise ValueError("skill source_path not found")
     if not content:
@@ -9324,19 +9331,14 @@ def _read_class_commentary_skill_source(source_path: str) -> str:
 def _class_commentary_skill_display_name(skill_id: str, source_path: str) -> str:
     path = Path(source_path)
     if path.is_dir():
-        meta_path = path / "meta.json"
+        package_path = path
     elif path.name == "SKILL.md":
-        meta_path = path.parent / "meta.json"
+        package_path = path.parent
     else:
-        meta_path = Path("")
-    if meta_path and meta_path.is_file() and not meta_path.is_symlink():
-        try:
-            metadata = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            metadata = {}
-        if isinstance(metadata, dict) and str(metadata.get("name") or "").strip():
-            return str(metadata["name"]).strip()
-    return skill_id
+        return skill_id
+    return read_class_commentary_skill_package_name(
+        package_path, fallback_name=skill_id
+    )
 
 
 def _serialize_class_commentary_skill_row(row: sqlite3.Row) -> dict:
@@ -9418,9 +9420,15 @@ def import_class_commentary_skill_manifest(
     if not normalized_skill_id or "/" in normalized_skill_id or "\\" in normalized_skill_id:
         raise ValueError("invalid skill_id")
     resolved_source_path = str(Path(str(source_path or "")).expanduser().absolute())
-    source_content = str(content).strip() if content is not None else _read_class_commentary_skill_source(resolved_source_path)
+    source_content = (
+        str(content).strip()
+        if content is not None
+        else _read_class_commentary_skill_source(resolved_source_path)
+    )
     if not source_content:
         raise ValueError("skill content is empty")
+    if len(source_content.encode("utf-8")) > CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES:
+        raise ValueError("skill content total size exceeds limit")
     content_hash = _class_commentary_content_hash(source_content)
     activation_request_id = f"initial-import:{organization_id}:{normalized_skill_id}"
     activation_payload = {

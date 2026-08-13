@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -30,6 +33,9 @@ CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4 = (
     "class-commentary-student-feedback-batch-isolated-v4"
 )
 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3 = "batch_isolated_v3"
+CLASS_COMMENTARY_SKILL_PACKAGE_MAX_MARKDOWN_FILES = 64
+CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES = 256 * 1024
+CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES = 1024 * 1024
 CLASS_COMMENTARY_TEMPERATURE = 0.55
 CLASS_COMMENTARY_SYSTEM_PROMPT = (
     "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
@@ -215,75 +221,384 @@ def _colleague_skill_sort_key(name: str) -> tuple[str, str]:
 
 
 def _read_skill_package_name(path: Path) -> str:
-    meta_path = path / "meta.json"
-    if not meta_path.is_file() or meta_path.is_symlink():
-        return path.name
+    return read_class_commentary_skill_package_name(path, fallback_name=path.name)
+
+
+def _skill_package_updated_at(
+    path: Path | None = None,
+    *,
+    package_fd: int | None = None,
+) -> str:
+    owns_package_fd = package_fd is None
+    if package_fd is None:
+        if path is None:
+            raise ValueError("skill package path is required")
+        package_fd = _open_class_commentary_skill_directory(path)
     try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return path.name
-    name = str(meta.get("name") or "").strip() if isinstance(meta, dict) else ""
-    return name or path.name
-
-
-def _skill_package_updated_at(path: Path) -> str:
-    mtimes = [path.stat().st_mtime]
-    for file_path in _class_commentary_skill_package_markdown_files(path):
-        mtimes.append(file_path.stat().st_mtime)
-    meta_path = path / "meta.json"
-    if meta_path.is_file() and not meta_path.is_symlink():
-        mtimes.append(meta_path.stat().st_mtime)
-    return str(int(max(mtimes)))
-
-
-def _class_commentary_skill_package_markdown_files(path: Path) -> list[Path]:
-    files = [
-        file_path
-        for file_path in (path / "SKILL.md", path / "work.md", path / "persona.md")
-        if file_path.is_file()
-        and not file_path.is_symlink()
-        and not file_path.name.startswith("._")
-    ]
-    knowledge_path = path / "knowledge"
-    if knowledge_path.is_dir():
-        def has_symlinked_package_parent(file_path: Path) -> bool:
-            relative_path = file_path.relative_to(path)
-            current_path = path
-            for part in relative_path.parts[:-1]:
-                current_path = current_path / part
-                if current_path.is_symlink():
-                    return True
-            return False
-
-        files.extend(
-            sorted(
-                (
-                    file_path
-                    for file_path in knowledge_path.rglob("*.md")
-                    if file_path.is_file()
-                    and not file_path.is_symlink()
-                    and not file_path.name.startswith("._")
-                    and not has_symlinked_package_parent(file_path)
-                ),
-                key=lambda file_path: (
-                    file_path.relative_to(path).as_posix().casefold(),
-                    file_path.relative_to(path).as_posix(),
-                ),
+        mtimes = [os.fstat(package_fd).st_mtime]
+        for relative_parts in _class_commentary_skill_package_relative_markdown_paths(
+            package_fd
+        ):
+            mtimes.append(
+                _stat_class_commentary_skill_relative_file(
+                    package_fd, relative_parts
+                ).st_mtime
             )
+        metadata_stat = _stat_class_commentary_skill_file_if_regular(
+            package_fd, "meta.json"
         )
-    return files
+        if metadata_stat is not None:
+            mtimes.append(metadata_stat.st_mtime)
+        return str(int(max(mtimes)))
+    finally:
+        if owns_package_fd:
+            os.close(package_fd)
+
+
+def _class_commentary_skill_open_flags(*, directory: bool = False) -> int:
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise RuntimeError("skill package no-follow file access is unavailable")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    if directory:
+        if not hasattr(os, "O_DIRECTORY"):
+            raise RuntimeError("skill package directory access is unavailable")
+        flags |= os.O_DIRECTORY
+    return flags
+
+
+def _open_class_commentary_skill_directory(
+    path: str | Path,
+    *,
+    dir_fd: int | None = None,
+) -> int:
+    raw_path = os.fspath(path)
+    if dir_fd is not None:
+        if (
+            not raw_path
+            or os.path.isabs(raw_path)
+            or raw_path in {".", ".."}
+            or os.path.sep in raw_path
+        ):
+            raise ValueError("skill package directory name is invalid")
+        try:
+            return os.open(
+                raw_path,
+                _class_commentary_skill_open_flags(directory=True),
+                dir_fd=dir_fd,
+            )
+        except OSError as exc:
+            raise ValueError(
+                "skill package directory is unsafe or unavailable"
+            ) from exc
+
+    absolute_path = os.path.abspath(os.path.expanduser(raw_path))
+    if sys.platform == "darwin":
+        for system_alias in ("/var", "/tmp", "/etc"):
+            if absolute_path == system_alias or absolute_path.startswith(
+                f"{system_alias}/"
+            ):
+                absolute_path = f"/private{absolute_path}"
+                break
+    path_parts = Path(absolute_path).parts
+    if not path_parts or path_parts[0] != os.path.sep:
+        raise ValueError("skill package directory path is invalid")
+    current_fd = -1
+    try:
+        current_fd = os.open(
+            os.path.sep,
+            _class_commentary_skill_open_flags(directory=True),
+        )
+        for part in path_parts[1:]:
+            next_fd = _open_class_commentary_skill_directory(
+                part, dir_fd=current_fd
+            )
+            os.close(current_fd)
+            current_fd = next_fd
+        result_fd = current_fd
+        current_fd = -1
+        return result_fd
+    except (OSError, ValueError) as exc:
+        raise ValueError("skill package directory is unsafe or unavailable") from exc
+    finally:
+        if current_fd >= 0:
+            os.close(current_fd)
+
+
+def _open_class_commentary_skill_regular_file_at(
+    directory_fd: int,
+    filename: str,
+) -> int:
+    if (
+        not filename
+        or filename in {".", ".."}
+        or os.path.isabs(filename)
+        or os.path.sep in filename
+    ):
+        raise ValueError("skill package file name is invalid")
+    try:
+        file_fd = os.open(
+            filename,
+            _class_commentary_skill_open_flags(),
+            dir_fd=directory_fd,
+        )
+    except OSError as exc:
+        raise ValueError("skill package file is unsafe or unavailable") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(file_fd).st_mode):
+            raise ValueError("skill package source must be a regular file")
+        result_fd = file_fd
+        file_fd = -1
+        return result_fd
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+
+
+def _read_class_commentary_regular_file_at(
+    directory_fd: int,
+    filename: str,
+    *,
+    max_bytes: int,
+    size_error: str,
+) -> tuple[str, int]:
+    file_fd = _open_class_commentary_skill_regular_file_at(directory_fd, filename)
+    try:
+        with os.fdopen(file_fd, "rb", closefd=True) as skill_file:
+            file_fd = -1
+            content_bytes = skill_file.read(max_bytes + 1)
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+    if len(content_bytes) > max_bytes:
+        raise ValueError(size_error)
+    return content_bytes.decode("utf-8"), len(content_bytes)
+
+
+def _read_class_commentary_skill_file_at(
+    directory_fd: int,
+    filename: str,
+) -> tuple[str, int]:
+    return _read_class_commentary_regular_file_at(
+        directory_fd,
+        filename,
+        max_bytes=CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES,
+        size_error="skill package markdown file size exceeds limit",
+    )
+
+
+def read_class_commentary_skill_file_content(file_path: Path) -> tuple[str, int]:
+    parent_fd = _open_class_commentary_skill_directory(file_path.parent)
+    try:
+        return _read_class_commentary_skill_file_at(parent_fd, file_path.name)
+    finally:
+        os.close(parent_fd)
+
+
+def _stat_class_commentary_skill_file_if_regular(
+    directory_fd: int,
+    filename: str,
+) -> os.stat_result | None:
+    try:
+        source_stat = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(source_stat.st_mode):
+        return None
+    file_fd = _open_class_commentary_skill_regular_file_at(directory_fd, filename)
+    try:
+        return os.fstat(file_fd)
+    finally:
+        os.close(file_fd)
+
+
+def _read_class_commentary_skill_package_metadata_at(package_fd: int) -> dict:
+    try:
+        if _stat_class_commentary_skill_file_if_regular(
+            package_fd, "meta.json"
+        ) is None:
+            return {}
+        metadata_text, _ = _read_class_commentary_regular_file_at(
+            package_fd,
+            "meta.json",
+            max_bytes=CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES,
+            size_error="skill package metadata file size exceeds limit",
+        )
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    try:
+        metadata = json.loads(metadata_text)
+    except json.JSONDecodeError:
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _read_class_commentary_skill_package_metadata(path: Path) -> dict:
+    try:
+        package_fd = _open_class_commentary_skill_directory(path)
+    except ValueError:
+        return {}
+    try:
+        return _read_class_commentary_skill_package_metadata_at(package_fd)
+    finally:
+        os.close(package_fd)
+
+
+def read_class_commentary_skill_package_name(
+    path: str | Path,
+    *,
+    fallback_name: str = "",
+) -> str:
+    package_path = Path(path)
+    fallback = str(fallback_name or package_path.name).strip()
+    metadata = _read_class_commentary_skill_package_metadata(package_path)
+    name = str(metadata.get("name") or "").strip()
+    return name or fallback
+
+
+def _class_commentary_skill_package_relative_markdown_paths(
+    package_fd: int,
+) -> list[tuple[str, ...]]:
+    relative_paths: list[tuple[str, ...]] = []
+
+    def add_file(parts: tuple[str, ...]) -> None:
+        relative_paths.append(parts)
+        if len(relative_paths) > CLASS_COMMENTARY_SKILL_PACKAGE_MAX_MARKDOWN_FILES:
+            raise ValueError("skill package markdown file count exceeds limit")
+
+    for filename in ("SKILL.md", "work.md", "persona.md"):
+        try:
+            source_stat = os.stat(filename, dir_fd=package_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            if filename == "SKILL.md":
+                raise ValueError("skill package SKILL.md is unavailable")
+            continue
+        if filename == "SKILL.md" and not stat.S_ISREG(source_stat.st_mode):
+            raise ValueError("skill package SKILL.md is unsafe or unavailable")
+        if stat.S_ISREG(source_stat.st_mode):
+            add_file((filename,))
+
+    try:
+        knowledge_stat = os.stat(
+            "knowledge", dir_fd=package_fd, follow_symlinks=False
+        )
+    except FileNotFoundError:
+        return relative_paths
+    if not stat.S_ISDIR(knowledge_stat.st_mode):
+        return relative_paths
+    knowledge_fd = _open_class_commentary_skill_directory(
+        "knowledge", dir_fd=package_fd
+    )
+
+    def scan_directory(directory_fd: int, prefix: tuple[str, ...]) -> None:
+        try:
+            entries = sorted(
+                (entry.name for entry in os.scandir(directory_fd)),
+                key=lambda name: (name.casefold(), name),
+            )
+        except OSError as exc:
+            raise ValueError("skill package directory changed during read") from exc
+        for name in entries:
+            if name.startswith("._"):
+                continue
+            try:
+                source_stat = os.stat(
+                    name, dir_fd=directory_fd, follow_symlinks=False
+                )
+            except FileNotFoundError as exc:
+                raise ValueError("skill package changed during read") from exc
+            if stat.S_ISDIR(source_stat.st_mode):
+                child_fd = _open_class_commentary_skill_directory(
+                    name, dir_fd=directory_fd
+                )
+                try:
+                    scan_directory(child_fd, (*prefix, name))
+                finally:
+                    os.close(child_fd)
+            elif stat.S_ISREG(source_stat.st_mode) and name.endswith(".md"):
+                add_file((*prefix, name))
+
+    try:
+        scan_directory(knowledge_fd, ("knowledge",))
+    finally:
+        os.close(knowledge_fd)
+    top_level_count = sum(len(parts) == 1 for parts in relative_paths)
+    return [
+        *relative_paths[:top_level_count],
+        *sorted(
+            relative_paths[top_level_count:],
+            key=lambda parts: ("/".join(parts).casefold(), "/".join(parts)),
+        ),
+    ]
+
+
+def _read_class_commentary_skill_relative_file(
+    package_fd: int,
+    relative_parts: tuple[str, ...],
+) -> tuple[str, int]:
+    directory_fd = os.dup(package_fd)
+    try:
+        for directory_name in relative_parts[:-1]:
+            child_fd = _open_class_commentary_skill_directory(
+                directory_name, dir_fd=directory_fd
+            )
+            os.close(directory_fd)
+            directory_fd = child_fd
+        return _read_class_commentary_skill_file_at(
+            directory_fd, relative_parts[-1]
+        )
+    finally:
+        os.close(directory_fd)
+
+
+def _stat_class_commentary_skill_relative_file(
+    package_fd: int,
+    relative_parts: tuple[str, ...],
+) -> os.stat_result:
+    directory_fd = os.dup(package_fd)
+    try:
+        for directory_name in relative_parts[:-1]:
+            child_fd = _open_class_commentary_skill_directory(
+                directory_name, dir_fd=directory_fd
+            )
+            os.close(directory_fd)
+            directory_fd = child_fd
+        file_fd = _open_class_commentary_skill_regular_file_at(
+            directory_fd, relative_parts[-1]
+        )
+        try:
+            return os.fstat(file_fd)
+        finally:
+            os.close(file_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def read_class_commentary_skill_package_content(path: Path) -> str:
+    package_fd = _open_class_commentary_skill_directory(path)
     parts = []
     included_contents = []
-    for file_path in _class_commentary_skill_package_markdown_files(path):
-        content = file_path.read_text(encoding="utf-8").strip()
-        if not content or any(content in included for included in included_contents):
-            continue
-        relative_path = file_path.relative_to(path).as_posix()
-        parts.append(f"## {relative_path}\n{content}")
-        included_contents.append(content)
+    total_bytes = 0
+    try:
+        relative_paths = _class_commentary_skill_package_relative_markdown_paths(
+            package_fd
+        )
+        for relative_parts in relative_paths:
+            content, content_size = _read_class_commentary_skill_relative_file(
+                package_fd, relative_parts
+            )
+            total_bytes += content_size
+            if total_bytes > CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES:
+                raise ValueError("skill package markdown total size exceeds limit")
+            content = content.strip()
+            if not content or any(
+                content in included for included in included_contents
+            ):
+                continue
+            relative_path = "/".join(relative_parts)
+            parts.append(f"## {relative_path}\n{content}")
+            included_contents.append(content)
+    finally:
+        os.close(package_fd)
     return "\n\n".join(parts).strip()
 
 
@@ -297,38 +612,94 @@ def _colleague_skill_roots(root: Path) -> list[Path]:
 
 def list_colleague_skills(skill_dir: str) -> list[dict]:
     root = Path(str(skill_dir or "")).expanduser()
-    if not skill_dir or not root.exists() or not root.is_dir():
+    if not skill_dir:
+        return []
+    try:
+        root_fd = _open_class_commentary_skill_directory(root)
+    except ValueError:
         return []
     skills_by_id = {}
-    for scan_root in _colleague_skill_roots(root):
-        for path in sorted(
-            scan_root.iterdir(), key=lambda item: _colleague_skill_sort_key(item.name)
-        ):
-            if (
-                path.is_dir()
-                and not path.is_symlink()
-                and (path / "SKILL.md").is_file()
-                and not (path / "SKILL.md").is_symlink()
-            ):
-                skills_by_id[path.name] = {
-                    "id": path.name,
-                    "name": _read_skill_package_name(path),
-                    "filename": f"{path.name}/SKILL.md",
-                    "updated_at": _skill_package_updated_at(path),
-                }
-            elif (
-                path.is_file()
-                and not path.is_symlink()
-                and path.suffix == ".skill"
-                and path.stem not in skills_by_id
-            ):
-                stat = path.stat()
-                skills_by_id[path.stem] = {
-                    "id": path.stem,
-                    "name": path.stem,
-                    "filename": path.name,
-                    "updated_at": str(int(stat.st_mtime)),
-                }
+    scan_roots = [root_fd]
+    try:
+        try:
+            colleagues_fd = _open_class_commentary_skill_directory(
+                "colleagues", dir_fd=root_fd
+            )
+        except ValueError:
+            colleagues_fd = None
+        if colleagues_fd is not None:
+            scan_roots.append(colleagues_fd)
+
+        for scan_root_fd in scan_roots:
+            try:
+                names = sorted(
+                    (entry.name for entry in os.scandir(scan_root_fd)),
+                    key=_colleague_skill_sort_key,
+                )
+            except OSError:
+                continue
+            for name in names:
+                if name.startswith("._"):
+                    continue
+                try:
+                    source_stat = os.stat(
+                        name, dir_fd=scan_root_fd, follow_symlinks=False
+                    )
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISDIR(source_stat.st_mode):
+                    try:
+                        package_fd = _open_class_commentary_skill_directory(
+                            name, dir_fd=scan_root_fd
+                        )
+                    except ValueError:
+                        continue
+                    try:
+                        if _stat_class_commentary_skill_file_if_regular(
+                            package_fd, "SKILL.md"
+                        ) is None:
+                            continue
+                        metadata = _read_class_commentary_skill_package_metadata_at(
+                            package_fd
+                        )
+                        display_name = str(metadata.get("name") or "").strip() or name
+                        try:
+                            updated_at = _skill_package_updated_at(
+                                package_fd=package_fd
+                            )
+                        except ValueError:
+                            continue
+                        skills_by_id[name] = {
+                            "id": name,
+                            "name": display_name,
+                            "filename": f"{name}/SKILL.md",
+                            "updated_at": updated_at,
+                        }
+                    finally:
+                        os.close(package_fd)
+                elif stat.S_ISREG(source_stat.st_mode) and name.endswith(".skill"):
+                    skill_id = name[:-6]
+                    if skill_id in skills_by_id:
+                        continue
+                    try:
+                        file_fd = _open_class_commentary_skill_regular_file_at(
+                            scan_root_fd, name
+                        )
+                    except ValueError:
+                        continue
+                    try:
+                        file_stat = os.fstat(file_fd)
+                    finally:
+                        os.close(file_fd)
+                    skills_by_id[skill_id] = {
+                        "id": skill_id,
+                        "name": skill_id,
+                        "filename": name,
+                        "updated_at": str(int(file_stat.st_mtime)),
+                    }
+    finally:
+        for scan_root_fd in reversed(scan_roots):
+            os.close(scan_root_fd)
     return [
         skills_by_id[key]
         for key in sorted(skills_by_id, key=_colleague_skill_sort_key)
@@ -357,12 +728,13 @@ def load_colleague_skill(skill_dir: str, skill_id: str) -> dict:
             }
     path = root / _safe_skill_filename(normalized_id)
     if path.is_file() and not path.is_symlink():
+        content, _ = read_class_commentary_skill_file_content(path)
         return {
             "id": path.stem,
             "name": path.stem,
             "filename": path.name,
             "path": str(path),
-            "content": path.read_text(encoding="utf-8"),
+            "content": content,
         }
     raise FileNotFoundError("skill not found")
 
