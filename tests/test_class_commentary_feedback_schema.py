@@ -2,6 +2,8 @@ import hashlib
 import json
 import unittest
 
+import class_commentary
+
 from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
     ClassCommentaryStudentScopeError,
@@ -1253,6 +1255,85 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
             caught.exception.code,
             "student_feedback_cross_student_reference",
         )
+
+    def test_v5_rejects_non_attending_course_roster_name_in_feedback(self):
+        attending_roster = [
+            {"student_id": 1, "student_name": "刘鹏鹏"},
+            {"student_id": 2, "student_name": "张玉坤"},
+        ]
+        generation = self._generation_for_roster(attending_roster)
+        course_roster = [
+            *attending_roster,
+            {"student_id": 3, "student_name": "王小明"},
+        ]
+        course_roster_json = _canonical_json(course_roster)
+        generation.update(
+            {
+                "prompt_version": (
+                    class_commentary.CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+                ),
+                "student_mention_matcher_version": (
+                    "class_commentary.student_evidence_fail_closed.v2"
+                ),
+                "student_history_memory_mode": "batch_isolated_v3",
+                "attending_roster_explicit": 1,
+                "privacy_roster_snapshot_json": course_roster_json,
+                "privacy_roster_hash": _sha256(course_roster_json),
+            }
+        )
+        generation["eligible_student_scope_hash"] = _sha256(
+            _canonical_json(
+                {
+                    "attending_roster_hash": generation[
+                        "attending_roster_hash"
+                    ],
+                    "confirmed_transcript_hash": generation[
+                        "confirmed_transcript_hash"
+                    ],
+                    "eligible_student_ids": [1, 2],
+                    "student_mention_matcher_version": (
+                        "class_commentary.student_evidence_fail_closed.v2"
+                    ),
+                }
+            )
+        )
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback={
+                    "schema_version": SCHEMA_VERSION,
+                    "items": [
+                        {
+                            "student_id": 1,
+                            "feedback_text": "刘鹏鹏, 你今天比王小明写得更完整.",
+                        },
+                        {
+                            "student_id": 2,
+                            "feedback_text": "张玉坤, 你今天能主动验算.",
+                        },
+                    ],
+                },
+                generation=generation,
+            )
+        self.assertEqual(
+            caught.exception.code,
+            "student_feedback_cross_student_reference",
+        )
+
+        tampered = dict(generation)
+        tampered["privacy_roster_snapshot_json"] = _canonical_json(
+            [*attending_roster, {"student_id": 4, "student_name": "篡改姓名"}]
+        )
+        with self.assertRaises(ValueError):
+            validate_class_commentary_structured_generation_contract(tampered)
+
+        missing = dict(generation)
+        missing["privacy_roster_snapshot_json"] = ""
+        missing["privacy_roster_hash"] = ""
+        with self.assertRaises(ValueError):
+            validate_class_commentary_structured_generation_contract(missing)
 
     def test_validation_rejects_aggregate_text_over_30000_code_points(self):
         roster = [

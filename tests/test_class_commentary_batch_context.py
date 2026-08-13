@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 import class_commentary_batch_context as batch_context
 from class_commentary import (
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
 )
 from class_commentary_graph_retrieval import (
@@ -304,6 +305,67 @@ class ClassCommentaryBatchContextTest(unittest.TestCase):
                 {"style_rule": "Keep the teacher's warm style."},
                 {"style_rule": "End with one concrete next action."},
             ],
+        )
+
+    def test_v5_builds_empty_unassigned_evidence_without_exact_name_matching(self):
+        self.generation["prompt_version"] = (
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+        )
+        self.generation["confirmed_transcript_snapshot"] = (
+            "Stoodent Eh reviewed equations. Stoodent Bee checked signs."
+        )
+        self.generation["confirmed_transcript_hash"] = hashlib.sha256(
+            self.generation["confirmed_transcript_snapshot"].encode("utf-8")
+        ).hexdigest()
+        memory_retrieval = Mock(
+            side_effect=lambda **kwargs: self._memory_context(
+                int(kwargs["student_id"])
+            )
+        )
+        graph_retrieval = Mock(
+            side_effect=lambda **kwargs: self._graph_context(
+                int(kwargs["student_id"])
+            )
+        )
+        with patch.object(
+            batch_context,
+            "build_student_evidence_assignment",
+        ) as exact_assignment, patch.object(
+            batch_context,
+            "retrieve_isolated_student_memory_context",
+            memory_retrieval,
+        ), patch.object(
+            batch_context,
+            "retrieve_isolated_student_graph_context",
+            graph_retrieval,
+        ):
+            context = batch_context.build_batch_isolated_memory_context(
+                generation=self.generation,
+                attending_roster=self.roster,
+                record_loader=self._record_loader,
+                memory_service=object(),
+                runtime_config={"class_commentary_graph_enabled": True},
+                graph_adapter=self._graph_adapter(),
+                graph_summary_loader=self._graph_summary_loader,
+            )
+
+        exact_assignment.assert_not_called()
+        for partition in context["student_contexts_by_id"]:
+            evidence = partition["current_evidence_snapshot"]
+            self.assertEqual(
+                evidence["matcher_version"],
+                "class_commentary.student_evidence_fail_closed.v2",
+            )
+            self.assertEqual(
+                evidence["attribution"],
+                "fail_closed_no_structured_ownership",
+            )
+            self.assertEqual(evidence["fragments"], [])
+        self.assertTrue(
+            all(
+                call.kwargs["evidence_snapshot"]["fragments"] == []
+                for call in memory_retrieval.call_args_list
+            )
         )
 
     def test_build_fails_closed_for_cross_student_memory_or_graph_scope(self) -> None:

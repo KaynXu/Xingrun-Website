@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationErro
 
 from class_commentary import (
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
     CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
@@ -528,6 +529,46 @@ def _parse_frozen_scope(generation: Mapping[str, object]) -> tuple[list[int], di
     return parsed_eligible_ids, names_by_id
 
 
+def _parse_frozen_privacy_roster_names(
+    generation: Mapping[str, object],
+    *,
+    attending_names_by_id: Mapping[int, str],
+) -> dict[int, str]:
+    raw_roster = generation.get("privacy_roster_snapshot_json")
+    stored_hash = str(generation.get("privacy_roster_hash") or "")
+    if raw_roster is None or raw_roster == "" or not stored_hash:
+        raise ValueError("structured feedback privacy roster is invalid")
+    roster = _parse_json(raw_roster)
+    if not isinstance(roster, list) or not roster:
+        raise ValueError("structured feedback privacy roster is invalid")
+    names_by_id: dict[int, str] = {}
+    normalized_names: set[str] = set()
+    for item in roster:
+        if not isinstance(item, Mapping):
+            raise ValueError("structured feedback privacy roster is invalid")
+        student_id = item.get("student_id")
+        student_name = str(item.get("student_name") or "").strip()
+        normalized_name = _normalize_match_text(student_name)
+        if (
+            type(student_id) is not int
+            or student_id <= 0
+            or not normalized_name
+            or student_id in names_by_id
+            or normalized_name in normalized_names
+        ):
+            raise ValueError("structured feedback privacy roster is invalid")
+        names_by_id[student_id] = student_name
+        normalized_names.add(normalized_name)
+    if any(
+        names_by_id.get(student_id) != student_name
+        for student_id, student_name in attending_names_by_id.items()
+    ):
+        raise ValueError("structured feedback privacy roster scope is invalid")
+    if _content_hash(_canonical_json(roster)) != stored_hash:
+        raise ValueError("structured feedback privacy roster hash is invalid")
+    return names_by_id
+
+
 def validate_class_commentary_structured_generation_contract(
     generation: Mapping[str, object],
 ) -> None:
@@ -581,15 +622,26 @@ def validate_class_commentary_structured_generation_contract(
             raise ValueError("isolated feedback attending roster scope is invalid")
         if not bool(generation.get("attending_roster_explicit")):
             raise ValueError("isolated feedback attending roster scope must be explicit")
-    elif contract_pair == (
-        CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
-        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
-    ):
+    elif contract_pair in {
+        (
+            CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+        ),
+        (
+            CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+        ),
+    }:
         if eligible_ids != list(names_by_id):
             raise ValueError("batch isolated feedback attending roster scope is invalid")
         if not bool(generation.get("attending_roster_explicit")):
             raise ValueError(
                 "batch isolated feedback attending roster scope must be explicit"
+            )
+        if prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5:
+            _parse_frozen_privacy_roster_names(
+                generation,
+                attending_names_by_id=names_by_id,
             )
     else:
         raise ValueError("structured feedback prompt and scope contract is invalid")
@@ -600,7 +652,11 @@ def validate_class_commentary_structured_generation_contract(
         CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
         if prompt_version == CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2
         else CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
-        if prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+        if prompt_version
+        in {
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+        }
         else CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
     )
     if str(generation.get("student_history_memory_mode") or "") != expected_memory_mode:
@@ -866,7 +922,7 @@ def _has_concrete_next_action(value: object) -> bool:
     return False
 
 
-def _v4_evidence_by_student(
+def _batch_evidence_by_student(
     generation: Mapping[str, object],
     eligible_ids: list[int],
     names_by_id: Mapping[int, str],
@@ -963,7 +1019,7 @@ def _v4_evidence_by_student(
     return evidence_by_student
 
 
-def _validate_v4_initial_feedback_quality(
+def _validate_batch_initial_feedback_quality(
     *,
     generation: Mapping[str, object],
     eligible_ids: list[int],
@@ -978,7 +1034,7 @@ def _validate_v4_initial_feedback_quality(
         allowed_bracket_tokens=allowed_bracket_tokens,
         allowed_unicode_tokens=allowed_unicode_tokens,
     )
-    evidence_by_student = _v4_evidence_by_student(
+    evidence_by_student = _batch_evidence_by_student(
         generation,
         eligible_ids,
         names_by_id,
@@ -1139,9 +1195,26 @@ def canonicalize_class_commentary_structured_feedback(
 
     eligible_ids, names_by_id = _parse_frozen_scope(generation)
     eligible_id_set = set(eligible_ids)
+    try:
+        privacy_names_by_id = (
+            _parse_frozen_privacy_roster_names(
+                generation,
+                attending_names_by_id=names_by_id,
+            )
+            if str(generation.get("prompt_version") or "")
+            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+            else names_by_id
+        )
+    except (TypeError, ValueError, json.JSONDecodeError, RecursionError) as exc:
+        raise ClassCommentaryStructuredFeedbackValidationError(
+            "structured_feedback_invalid",
+            reason="frozen privacy roster is invalid",
+        ) from exc
     normalized_roster = [
         (position, student_id, _normalize_match_text(student_name))
-        for position, (student_id, student_name) in enumerate(names_by_id.items())
+        for position, (student_id, student_name) in enumerate(
+            privacy_names_by_id.items()
+        )
     ]
     items_by_id: dict[int, str] = {}
     for item in envelope.items:
@@ -1233,7 +1306,7 @@ def canonicalize_class_commentary_structured_feedback(
             "student_feedback_coverage_mismatch"
         )
     if batch_isolated and require_batch_graph_refs:
-        _validate_v4_initial_feedback_quality(
+        _validate_batch_initial_feedback_quality(
             generation=generation,
             eligible_ids=eligible_ids,
             names_by_id=names_by_id,

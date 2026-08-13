@@ -322,7 +322,7 @@ from lesson_manager import (
 )
 from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import (
-    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
     CLASS_COMMENTARY_PROMPT_VERSION,
     CLASS_COMMENTARY_TEMPERATURE,
     list_colleague_skills,
@@ -361,8 +361,6 @@ from class_commentary_batch_context import (
     parse_frozen_batch_generation_inputs,
 )
 from class_commentary_student_memory_v2 import (
-    ClassCommentaryStudentEvidenceAttributionError,
-    build_student_evidence_assignment,
     content_hash as class_commentary_student_content_hash,
 )
 from class_commentary_batch_generation_jobs import (
@@ -11268,7 +11266,7 @@ def api_class_commentary_task_generate(task_id: int):
     chat_provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
     chat_model = _class_commentary_chat_model_name(chat_provider, fallback_model=_default_chat_model_name())
     prompt_version = (
-        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
         if structured_feedback_enabled
         else CLASS_COMMENTARY_PROMPT_VERSION
     )
@@ -11279,21 +11277,6 @@ def api_class_commentary_task_generate(task_id: int):
         }
         for student in class_students
     ]
-    try:
-        evidence_assignment = build_student_evidence_assignment(
-            transcript=confirmed_transcript_text,
-            transcript_hash=confirmed_transcript_hash,
-            roster=[
-                {
-                    "student_id": int(student["id"]),
-                    "student_name": str(student.get("name") or ""),
-                }
-                for student in current_class_students
-            ],
-            attending_student_ids=[item["student_id"] for item in attending_roster],
-        )
-    except ClassCommentaryStudentEvidenceAttributionError:
-        return jsonify({"error": "student_evidence_attribution_failed"}), 422
     try:
         generation = reserve_class_commentary_generation(
             task_id=int(task["id"]),

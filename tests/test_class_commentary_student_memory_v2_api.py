@@ -214,7 +214,7 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         self.assertEqual(payload["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
             payload["prompt_version"],
-            "class-commentary-student-feedback-batch-isolated-v4",
+            "class-commentary-student-feedback-batch-isolated-v5",
         )
         self.assertEqual(payload["student_run_progress"]["total"], 0)
         self.assertEqual(
@@ -371,22 +371,57 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
             }
         self.assertEqual(after, before)
 
-    def test_ambiguous_evidence_returns_safe_atomic_422(self):
+    def test_asr_name_variants_reach_v5_provider_with_complete_rosters(self):
         lesson_manager.mark_class_commentary_transcription_succeeded(
-            self.task["id"], "学生甲和学生乙一起讨论最后一题。"
+            self.task["id"], "刘峰峰今天移项步骤更清楚.张玉空验算更主动."
+        )
+        absent_student = lesson_manager.create_student_for_class(
+            self.class_id,
+            "王小明",
         )
         with lesson_manager.get_conn() as conn:
-            before = {
-                "generations": conn.execute(
-                    "SELECT COUNT(*) FROM class_commentary_generations"
-                ).fetchone()[0],
-                "runs": conn.execute(
-                    "SELECT COUNT(*) FROM class_commentary_student_generation_runs"
-                ).fetchone()[0],
-                "holds": conn.execute(
-                    "SELECT COUNT(*) FROM class_commentary_student_generation_credit_holds"
-                ).fetchone()[0],
-            }
+            conn.execute(
+                "UPDATE students SET name=? WHERE id=?",
+                ("刘鹏鹏", self.students[0]["id"]),
+            )
+            conn.execute(
+                "UPDATE students SET name=? WHERE id=?",
+                ("张玉坤", self.students[1]["id"]),
+            )
+        model_output = json.dumps(
+            {
+                "schema_version": "class_commentary.student_feedback.v1",
+                "items": [
+                    {
+                        "student_id": self.students[0]["id"],
+                        "feedback_text": "刘鹏鹏, 你今天移项步骤更清楚了.课后把符号再检查一遍.",
+                    },
+                    {
+                        "student_id": self.students[1]["id"],
+                        "feedback_text": "张玉坤, 你今天能主动验算.下次继续写全验算过程.",
+                    },
+                ],
+                "used_graph_evidence_refs_by_student": [
+                    {"student_id": student["id"], "evidence_refs": []}
+                    for student in self.students
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        def fake_memory_retrieval(**_kwargs):
+            return empty_class_commentary_memory_context(
+                student_history_memory_mode="batch_isolated_v3"
+            )
+
+        def fake_graph_retrieval(**kwargs):
+            return empty_isolated_student_graph_context(
+                organization_id=int(kwargs["generation"]["organization_id"]),
+                student_id=int(kwargs["student_id"]),
+                subject_key=str(kwargs["class_context"]["subject_key"]),
+                retrieval_status="empty",
+            )
+
         with patch.object(
             self.app_module,
             "_class_commentary_capabilities",
@@ -394,35 +429,67 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         ), patch.object(
             self.app_module, "has_class_commentary_api_key", return_value=True
         ), patch.object(
-            self.app_module, "reserve_class_commentary_generation"
-        ) as reserve, patch.object(
-            self.app_module, "generate_class_commentary_feedback"
+            class_commentary_batch_context,
+            "retrieve_isolated_student_memory_context",
+            side_effect=fake_memory_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_graph_context",
+            side_effect=fake_graph_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_memory_context_snapshot",
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_graph_context_snapshot",
+        ), patch.object(
+            self.app_module,
+            "generate_class_commentary_feedback",
+            return_value=(
+                model_output,
+                {
+                    "provider": "openai",
+                    "model": "fake",
+                    "input_tokens": 5,
+                    "output_tokens": 20,
+                },
+            ),
         ) as generate:
             response = self.client.post(
                 f"/api/class-commentary/tasks/{self.task['id']}/generate",
                 headers=self.headers,
-                json=self._request_payload("ambiguous-evidence"),
+                json=self._request_payload("asr-name-variants-v5"),
             )
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "succeeded")
+        generate.assert_called_once()
+        chat_request = generate.call_args.kwargs["chat_request"]
         self.assertEqual(
-            response.get_json(), {"error": "student_evidence_attribution_failed"}
+            chat_request["prompt_version"],
+            "class-commentary-student-feedback-batch-isolated-v5",
         )
-        self.assertNotIn("uniquely attributable", response.get_data(as_text=True))
-        reserve.assert_not_called()
-        generate.assert_not_called()
-        with lesson_manager.get_conn() as conn:
-            after = {
-                "generations": conn.execute(
-                    "SELECT COUNT(*) FROM class_commentary_generations"
-                ).fetchone()[0],
-                "runs": conn.execute(
-                    "SELECT COUNT(*) FROM class_commentary_student_generation_runs"
-                ).fetchone()[0],
-                "holds": conn.execute(
-                    "SELECT COUNT(*) FROM class_commentary_student_generation_credit_holds"
-                ).fetchone()[0],
-            }
-        self.assertEqual(after, before)
+        user_prompt = chat_request["messages"][1]["content"]
+        current_facts = json.loads(
+            user_prompt.split("[CURRENT_TASK_FACTS]\n", 1)[1].split(
+                "\n\n[ACTIVE_SKILL]\n",
+                1,
+            )[0]
+        )
+        self.assertIn("刘峰峰今天移项步骤更清楚", user_prompt)
+        self.assertIn('"name": "刘鹏鹏"', user_prompt)
+        self.assertIn('"name": "张玉坤"', user_prompt)
+        self.assertEqual(
+            current_facts["official_course_roster"],
+            [
+                {"id": self.students[0]["id"], "name": "刘鹏鹏"},
+                {"id": self.students[1]["id"], "name": "张玉坤"},
+                {"id": absent_student["id"], "name": "王小明"},
+            ],
+        )
+        self.assertIn('"official_course_roster"', user_prompt)
+        self.assertIn('"eligible_student_ids"', user_prompt)
+        self.assertIn('"verified_fragments": []', user_prompt)
+        self.assertNotIn('"verified_fragments": [\n', user_prompt)
 
     def test_graph_failure_after_capability_gate_fails_generation_without_provider(self):
         with patch.object(

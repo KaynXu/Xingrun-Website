@@ -5,10 +5,13 @@ from collections.abc import Callable, Mapping
 from typing import Optional
 
 from class_commentary import (
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
     build_class_commentary_chat_request,
 )
 from class_commentary_feedback_schema import (
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     validate_class_commentary_structured_generation_contract,
 )
 from class_commentary_graph_retrieval import (
@@ -383,12 +386,20 @@ def build_batch_generation_execution_snapshot(
     graph_summary_loader: Optional[Callable[..., dict]] = None,
 ) -> dict:
     frozen = parse_frozen_batch_generation_inputs(generation)
+    prompt_version = frozen["prompt_version"]
     try:
-        evidence_assignment = build_student_evidence_assignment(
-            transcript=frozen["transcript_text"],
-            transcript_hash=str(generation.get("confirmed_transcript_hash") or ""),
-            roster=frozen["privacy_roster"],
-            attending_student_ids=frozen["eligible_student_ids"],
+        evidence_assignment = (
+            build_student_evidence_assignment(
+                transcript=frozen["transcript_text"],
+                transcript_hash=str(
+                    generation.get("confirmed_transcript_hash") or ""
+                ),
+                roster=frozen["privacy_roster"],
+                attending_student_ids=frozen["eligible_student_ids"],
+            )
+            if prompt_version
+            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+            else None
         )
         memory_context = build_batch_isolated_memory_context(
             generation=generation,
@@ -429,6 +440,15 @@ def build_batch_generation_execution_snapshot(
         student_contexts_by_id=build_batch_isolated_prompt_student_contexts(
             memory_context
         ),
+        official_course_roster=(
+            [
+                {"id": item["student_id"], "name": item["student_name"]}
+                for item in frozen["privacy_roster"]
+            ]
+            if prompt_version
+            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+            else None
+        ),
     )
     chat_request["temperature"] = float(frozen["model_parameters"]["temperature"])
     return {
@@ -459,16 +479,27 @@ def build_batch_isolated_memory_context(
         class_record={"id": int(generation.get("class_id") or 0)},
         subject_key=str(generation.get("subject_key") or ""),
     )
-    assignment = (
-        dict(evidence_assignment)
-        if isinstance(evidence_assignment, Mapping)
-        else build_student_evidence_assignment(
-            transcript=transcript,
-            transcript_hash=transcript_hash,
-            roster=attribution_roster,
-            attending_student_ids=[item["student_id"] for item in roster],
-        )
+    prompt_version = str(generation.get("prompt_version") or "")
+    if prompt_version and prompt_version not in {
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+    }:
+        raise ClassCommentaryBatchContextError("batch_context_snapshot_invalid")
+    use_model_attribution = (
+        prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
     )
+    assignment = None
+    if not use_model_attribution:
+        assignment = (
+            dict(evidence_assignment)
+            if isinstance(evidence_assignment, Mapping)
+            else build_student_evidence_assignment(
+                transcript=transcript,
+                transcript_hash=transcript_hash,
+                roster=attribution_roster,
+                attending_student_ids=[item["student_id"] for item in roster],
+            )
+        )
     partitions = []
     try:
         for student in roster:
@@ -478,7 +509,11 @@ def build_batch_isolated_memory_context(
                 transcript_hash=transcript_hash,
                 roster=attribution_roster,
                 target_student_id=student_id,
-                matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3,
+                matcher_version=(
+                    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
+                    if use_model_attribution
+                    else CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3
+                ),
                 assignment=assignment,
             )
             memory_snapshot = retrieve_isolated_student_memory_context(
@@ -557,24 +592,43 @@ def _validate_current_evidence_snapshot(
     snapshot_without_hash = {
         key: value for key, value in evidence_snapshot.items() if key != "snapshot_hash"
     }
+    prompt_version = str(generation.get("prompt_version") or "")
+    expected_matcher_version = (
+        CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
+        if prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+        else CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3
+    )
+    expected_attribution = (
+        "fail_closed_no_structured_ownership"
+        if expected_matcher_version == CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
+        else "unique_clause_owner_v3"
+    )
+    fragments = evidence_snapshot.get("fragments")
     if (
         str(evidence_snapshot.get("schema_version") or "")
         != "class_commentary.student_current_evidence.v1"
         or str(evidence_snapshot.get("matcher_version") or "")
-        != CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3
+        != expected_matcher_version
         or str(evidence_snapshot.get("transcript_hash") or "")
         != str(generation.get("confirmed_transcript_hash") or "")
         or str(evidence_snapshot.get("attribution") or "")
-        != "unique_clause_owner_v3"
-        or not isinstance(evidence_snapshot.get("fragments"), list)
-        or not evidence_snapshot.get("fragments")
+        != expected_attribution
+        or not isinstance(fragments, list)
+        or (
+            expected_matcher_version == CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
+            and fragments
+        )
+        or (
+            expected_matcher_version == CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3
+            and not fragments
+        )
         or str(evidence_snapshot.get("snapshot_hash") or "")
         != canonical_hash(snapshot_without_hash)
     ):
         raise ClassCommentaryBatchContextError("batch_evidence_snapshot_invalid")
     transcript = str(generation.get("confirmed_transcript_snapshot") or "")
     previous_end = -1
-    for fragment in evidence_snapshot["fragments"]:
+    for fragment in fragments:
         if not isinstance(fragment, Mapping) or set(fragment) != {
             "start", "end", "text", "text_hash"
         }:

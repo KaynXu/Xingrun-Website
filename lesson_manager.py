@@ -33,6 +33,7 @@ from typing import Optional
 from config_runtime import get_runtime_config
 from class_commentary import (
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
     CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
@@ -45,6 +46,7 @@ from class_commentary import (
 from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
@@ -12645,6 +12647,9 @@ def _validate_class_commentary_generation_execution_contract(
         frozen_roster = json.loads(
             str(generation_record["attending_roster_snapshot_json"] or "[]")
         )
+        privacy_roster = json.loads(
+            str(generation_record["privacy_roster_snapshot_json"] or "[]")
+        )
         eligible_student_ids = json.loads(
             str(generation_record["eligible_student_ids_json"] or "[]")
         )
@@ -12706,10 +12711,28 @@ def _validate_class_commentary_generation_execution_contract(
         for student_id in eligible_student_ids
         if type(student_id) is int
     ]
+    expected_course_roster = [
+        {
+            "id": int(item.get("student_id") or 0),
+            "name": str(item.get("student_name") or ""),
+        }
+        for item in privacy_roster
+        if isinstance(item, dict) and type(item.get("student_id")) is int
+    ]
     memory_mode = str(generation_record["student_history_memory_mode"] or "")
+    prompt_version = str(generation_record["prompt_version"] or "")
     expected_task_fact_keys = (
         {"class", "students", "eligible_student_ids"}
         if memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+        and prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+        else {
+            "class",
+            "students",
+            "transcript",
+            "eligible_student_ids",
+            "official_course_roster",
+        }
+        if prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
         else {"class", "students", "transcript", "eligible_student_ids"}
     )
     expected_output_rules = "\n".join(
@@ -12726,7 +12749,12 @@ def _validate_class_commentary_generation_execution_contract(
         != str(generation_record["class_name_snapshot"] or "")
         or current_task_facts.get("students") != expected_students
         or (
-            memory_mode != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            "official_course_roster" in expected_task_fact_keys
+            and current_task_facts.get("official_course_roster")
+            != expected_course_roster
+        )
+        or (
+            "transcript" in expected_task_fact_keys
             and current_task_facts.get("transcript")
             != str(generation_record["confirmed_transcript_snapshot"] or "")
         )
@@ -12966,11 +12994,13 @@ def reserve_class_commentary_generation(
             return item
 
         if structured_feedback_enabled and (
-            requested_memory_mode,
-            normalized_prompt_version,
-        ) != (
-            CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+            requested_memory_mode
+            != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            or normalized_prompt_version
+            not in {
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            }
         ):
             raise ValueError(
                 "structured generation mode and prompt version are invalid"
@@ -13077,28 +13107,36 @@ def reserve_class_commentary_generation(
             if frozen_memory_mode == (
                 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
             ):
-                if normalized_prompt_version != (
-                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
-                ):
+                if normalized_prompt_version not in {
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                }:
                     raise ValueError("batch isolated memory prompt version is invalid")
                 if not attending_roster_explicit:
                     raise ValueError(
                         "batch isolated attending roster scope must be explicit"
                     )
                 student_mention_matcher_version = (
-                    CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
+                    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
+                    if normalized_prompt_version
+                    == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+                    else CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
                 )
                 eligible_student_ids = (
                     resolve_class_commentary_attending_roster_student_ids(
                         roster=roster_snapshot,
                     )
                 )
-                build_student_evidence_assignment(
-                    transcript=transcript_snapshot,
-                    transcript_hash=transcript_hash,
-                    roster=privacy_roster,
-                    attending_student_ids=eligible_student_ids,
-                )
+                if (
+                    normalized_prompt_version
+                    == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+                ):
+                    build_student_evidence_assignment(
+                        transcript=transcript_snapshot,
+                        transcript_hash=transcript_hash,
+                        roster=privacy_roster,
+                        attending_student_ids=eligible_student_ids,
+                    )
                 if int(credit_hold_amount) <= 0:
                     raise ValueError(
                         "class commentary generation credit hold amount must be positive"
