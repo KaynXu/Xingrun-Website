@@ -31,6 +31,8 @@ export type ClassCommentaryCapabilities = {
   skill_evolution_enabled: boolean;
   structured_feedback_enabled: boolean;
   student_history_memory_v2_enabled: boolean;
+  batch_isolated_v3_enabled: boolean;
+  class_commentary_generation_call_count: number;
   student_history_memory_v2_max_credits_per_student: number;
   graph_enabled: boolean;
   graph_healthy: boolean;
@@ -42,11 +44,37 @@ export type ClassCommentaryCapabilitiesLoadResult = {
   value: ClassCommentaryCapabilities;
 };
 
+export function getClassCommentaryBatchGenerationUnavailableReason(
+  capabilities: ClassCommentaryCapabilities,
+): string {
+  if (!capabilities.structured_feedback_enabled) {
+    return '整班结构化反馈能力未启用, 当前不能发起生成.';
+  }
+  if (!capabilities.memory_learning_enabled) {
+    return 'Mem0 学生历史记忆暂不可用, 为避免丢失学生历史, 当前不能发起生成.';
+  }
+  if (!capabilities.graph_enabled) {
+    return '知识图谱未启用, 为避免缺少课程知识上下文, 当前不能发起生成.';
+  }
+  if (!capabilities.graph_healthy) {
+    return '知识图谱暂不可用, 为避免缺少课程知识上下文, 当前不能发起生成.';
+  }
+  if (!capabilities.batch_isolated_v3_enabled) {
+    return '整班隔离上下文暂不可用, 当前不能发起生成.';
+  }
+  if (capabilities.class_commentary_generation_call_count !== 1) {
+    return '整班生成调用配置异常, 预期每班 1 次, 当前不能发起生成.';
+  }
+  return '';
+}
+
 const unavailableClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   memory_learning_enabled: false,
   skill_evolution_enabled: false,
   structured_feedback_enabled: false,
   student_history_memory_v2_enabled: false,
+  batch_isolated_v3_enabled: false,
+  class_commentary_generation_call_count: 0,
   student_history_memory_v2_max_credits_per_student: 0,
   graph_enabled: false,
   graph_healthy: false,
@@ -1468,6 +1496,10 @@ export async function fetchClassCommentaryCapabilities(): Promise<ClassCommentar
     skill_evolution_enabled: payload.skill_evolution_enabled === true,
     structured_feedback_enabled: payload.structured_feedback_enabled === true,
     student_history_memory_v2_enabled: payload.student_history_memory_v2_enabled === true,
+    batch_isolated_v3_enabled: payload.batch_isolated_v3_enabled === true,
+    class_commentary_generation_call_count: nonNegativeIntegerValue(
+      payload.class_commentary_generation_call_count,
+    ),
     student_history_memory_v2_max_credits_per_student: nonNegativeIntegerValue(
       payload.student_history_memory_v2_max_credits_per_student,
     ),

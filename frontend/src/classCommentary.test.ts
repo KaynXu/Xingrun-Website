@@ -25,6 +25,7 @@ import {
   deriveClassCommentaryStructuredFeedbackText,
   formatClassCommentaryStudentFeedback,
   generateClassCommentaryFeedback,
+  getClassCommentaryBatchGenerationUnavailableReason,
   isClassCommentaryFeedbackRecordInScope,
   isClassCommentaryMutationOutcomeAmbiguous,
   isClassCommentaryTaskLatestSchemaCompatible,
@@ -229,6 +230,8 @@ test('class commentary capabilities keep structured feedback disabled by default
     skill_evolution_enabled: true,
     structured_feedback_enabled: false,
     student_history_memory_v2_enabled: false,
+    batch_isolated_v3_enabled: false,
+    class_commentary_generation_call_count: 0,
     student_history_memory_v2_max_credits_per_student: 0,
     graph_enabled: false,
     graph_healthy: false,
@@ -279,15 +282,17 @@ test('normalizes isolated student generation progress without trusting unknown s
   assert.equal(progress.runs[1].attempt_count, 0);
 });
 
-test('capabilities expose isolated generation call and credit impact', async () => {
+test('capabilities expose one batch-isolated class generation call and credit impact', async () => {
   mockJsonFetch({
     memory_learning_enabled: true,
     skill_evolution_enabled: true,
     structured_feedback_enabled: true,
     student_history_memory_v2_enabled: true,
+    batch_isolated_v3_enabled: true,
+    class_commentary_generation_call_count: 1,
     student_history_memory_v2_max_credits_per_student: 10,
-    graph_enabled: false,
-    graph_healthy: false,
+    graph_enabled: true,
+    graph_healthy: true,
     graph_degraded: false,
   });
 
@@ -296,9 +301,11 @@ test('capabilities expose isolated generation call and credit impact', async () 
     skill_evolution_enabled: true,
     structured_feedback_enabled: true,
     student_history_memory_v2_enabled: true,
+    batch_isolated_v3_enabled: true,
+    class_commentary_generation_call_count: 1,
     student_history_memory_v2_max_credits_per_student: 10,
-    graph_enabled: false,
-    graph_healthy: false,
+    graph_enabled: true,
+    graph_healthy: true,
     graph_degraded: false,
   });
 });
@@ -313,12 +320,67 @@ test('capability transport failures return unavailable instead of a zero-cost mo
       skill_evolution_enabled: false,
       structured_feedback_enabled: false,
       student_history_memory_v2_enabled: false,
+      batch_isolated_v3_enabled: false,
+      class_commentary_generation_call_count: 0,
       student_history_memory_v2_max_credits_per_student: 0,
       graph_enabled: false,
       graph_healthy: false,
       graph_degraded: false,
     },
   });
+});
+
+test('batch generation readiness fails closed with explicit Mem0 and graph reasons', () => {
+  const readyCapabilities = {
+    memory_learning_enabled: true,
+    skill_evolution_enabled: true,
+    structured_feedback_enabled: true,
+    student_history_memory_v2_enabled: true,
+    batch_isolated_v3_enabled: true,
+    class_commentary_generation_call_count: 1,
+    student_history_memory_v2_max_credits_per_student: 10,
+    graph_enabled: true,
+    graph_healthy: true,
+    graph_degraded: false,
+  };
+
+  assert.equal(getClassCommentaryBatchGenerationUnavailableReason(readyCapabilities), '');
+  assert.match(
+    getClassCommentaryBatchGenerationUnavailableReason({
+      ...readyCapabilities,
+      memory_learning_enabled: false,
+    }),
+    /Mem0 学生历史记忆暂不可用/,
+  );
+  assert.match(
+    getClassCommentaryBatchGenerationUnavailableReason({
+      ...readyCapabilities,
+      graph_enabled: false,
+      graph_healthy: false,
+    }),
+    /知识图谱未启用/,
+  );
+  assert.match(
+    getClassCommentaryBatchGenerationUnavailableReason({
+      ...readyCapabilities,
+      graph_healthy: false,
+    }),
+    /知识图谱暂不可用/,
+  );
+  assert.match(
+    getClassCommentaryBatchGenerationUnavailableReason({
+      ...readyCapabilities,
+      batch_isolated_v3_enabled: false,
+    }),
+    /整班隔离上下文暂不可用/,
+  );
+  assert.match(
+    getClassCommentaryBatchGenerationUnavailableReason({
+      ...readyCapabilities,
+      class_commentary_generation_call_count: 2,
+    }),
+    /预期每班 1 次/,
+  );
 });
 
 test('capabilities expose graph health without enabling it by default', async () => {

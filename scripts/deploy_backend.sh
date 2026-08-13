@@ -434,6 +434,60 @@ else
   echo "==> Graph feature is disabled; skipping Semantica checks"
 fi
 
+echo "==> Checking class commentary generation mode"
+.venv/bin/python - <<'PY'
+import json
+import os
+
+import config_runtime
+
+
+config = config_runtime.get_runtime_config()
+require_batch_v3 = str(os.environ.get("XR_REQUIRE_BATCH_ISOLATED_V3") or "").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+if not require_batch_v3:
+    print(json.dumps({"batch_isolated_v3_check": "not_required"}, sort_keys=True))
+    raise SystemExit(0)
+required_flags = {
+    "class_commentary_memory_enabled": True,
+    "class_commentary_structured_feedback_enabled": True,
+    "class_commentary_student_memory_v2_enabled": True,
+    "class_commentary_graph_enabled": True,
+}
+disabled = [key for key, expected in required_flags.items() if bool(config.get(key)) is not expected]
+if disabled:
+    raise SystemExit(
+        "batch_isolated_v3 unavailable; required runtime flags are disabled: "
+        + ", ".join(disabled)
+    )
+timeout = int(config.get("class_commentary_batch_generation_timeout") or 0)
+if timeout <= 0:
+    raise SystemExit("batch generation timeout must be positive")
+from app import _class_commentary_capabilities
+
+capabilities = _class_commentary_capabilities(force=True)
+if not capabilities.get("batch_isolated_v3_enabled"):
+    raise SystemExit("batch_isolated_v3 capability healthcheck failed")
+if int(capabilities.get("class_commentary_generation_call_count") or 0) != 1:
+    raise SystemExit("class commentary generation call count must be exactly one")
+print(
+    json.dumps(
+        {
+            "batch_isolated_v3_enabled": bool(
+                capabilities["batch_isolated_v3_enabled"]
+            ),
+            "class_commentary_generation_call_count": int(
+                capabilities["class_commentary_generation_call_count"]
+            ),
+            "batch_generation_timeout": timeout,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+)
+PY
+
 pm2 save
 if (( WORKER_ENABLED )); then
   echo "Deploy complete. Web and class commentary worker are healthy."

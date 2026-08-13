@@ -32,7 +32,7 @@ from typing import Optional
 
 from config_runtime import get_runtime_config
 from class_commentary import (
-    CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
@@ -43,8 +43,8 @@ from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1,
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
+    CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
-    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
     CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1,
     CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT,
     ClassCommentaryStudentScopeError,
@@ -57,11 +57,14 @@ from class_commentary_feedback_schema import (
     resolve_class_commentary_attending_roster_student_ids,
     validate_class_commentary_structured_generation_contract,
 )
+from class_commentary_batch_context import (
+    BATCH_ISOLATED_CONTEXT_SCHEMA_V1,
+    build_batch_isolated_prompt_student_contexts,
+    build_batch_isolated_teacher_style_memories,
+)
 from class_commentary_memory_privacy import validate_class_commentary_memory_privacy
 from class_commentary_student_memory_v2 import (
-    CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1,
-    build_safe_class_context,
-    build_student_current_evidence,
+    build_student_evidence_assignment,
     canonical_hash as class_commentary_student_canonical_hash,
     canonical_json as class_commentary_student_canonical_json,
 )
@@ -2434,6 +2437,10 @@ def _ensure_class_commentary_skill_activation_reason_schema(
 def _ensure_class_commentary_structured_feedback_schema(conn: sqlite3.Connection) -> None:
     columns = {
         "class_commentary_generations": {
+            "class_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+            "skill_name_snapshot": "TEXT NOT NULL DEFAULT ''",
+            "privacy_roster_snapshot_json": "TEXT NOT NULL DEFAULT '[]'",
+            "privacy_roster_hash": "TEXT NOT NULL DEFAULT ''",
             "feedback_schema_version": "TEXT NOT NULL DEFAULT ''",
             "structured_feedback_json": "TEXT NOT NULL DEFAULT ''",
             "structured_feedback_hash": "TEXT NOT NULL DEFAULT ''",
@@ -2442,6 +2449,22 @@ def _ensure_class_commentary_structured_feedback_schema(conn: sqlite3.Connection
             "student_mention_matcher_version": "TEXT NOT NULL DEFAULT ''",
             "response_format_json": "TEXT NOT NULL DEFAULT '{}'",
             "student_history_memory_mode": "TEXT NOT NULL DEFAULT ''",
+            "used_graph_evidence_refs_by_student_json": "TEXT NOT NULL DEFAULT '{}'",
+            "used_graph_evidence_refs_by_student_hash": "TEXT NOT NULL DEFAULT ''",
+            "batch_response_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+            "batch_response_hash": "TEXT NOT NULL DEFAULT ''",
+            "batch_provider_dispatch_status": (
+                "TEXT NOT NULL DEFAULT 'legacy_unknown'"
+            ),
+            "batch_provider_dispatch_started_at": "TEXT",
+            "batch_validation_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+            "batch_validation_hash": "TEXT NOT NULL DEFAULT ''",
+            "batch_charge_status": "TEXT NOT NULL DEFAULT 'pending'",
+            "batch_charge_usage_id": "INTEGER REFERENCES ai_usage_ledger(id) ON DELETE SET NULL",
+            "batch_claim_token": "TEXT",
+            "batch_claim_owner": "TEXT",
+            "batch_claim_expires_at": "TEXT",
+            "batch_attempt_count": "INTEGER NOT NULL DEFAULT 0",
         },
         "class_commentary_feedback_drafts": {
             "feedback_schema_version": "TEXT NOT NULL DEFAULT ''",
@@ -2667,15 +2690,19 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             generation_request_payload_hash TEXT,
             teacher_user_id INTEGER NOT NULL REFERENCES users(id),
             class_id INTEGER NOT NULL REFERENCES classes(id),
+            class_name_snapshot TEXT NOT NULL DEFAULT '',
             subject_key TEXT,
             confirmed_transcript_version INTEGER NOT NULL DEFAULT 0,
             confirmed_transcript_snapshot TEXT NOT NULL DEFAULT '',
             confirmed_transcript_hash TEXT NOT NULL DEFAULT '',
             attending_roster_snapshot_json TEXT NOT NULL DEFAULT '[]',
             attending_roster_hash TEXT NOT NULL DEFAULT '',
+            privacy_roster_snapshot_json TEXT NOT NULL DEFAULT '[]',
+            privacy_roster_hash TEXT NOT NULL DEFAULT '',
             attending_roster_explicit INTEGER NOT NULL DEFAULT 0,
             skill_registry_id INTEGER REFERENCES class_commentary_skills(id),
             skill_id TEXT,
+            skill_name_snapshot TEXT NOT NULL DEFAULT '',
             skill_version_id INTEGER REFERENCES class_commentary_skill_versions(id),
             skill_content_snapshot TEXT NOT NULL DEFAULT '',
             skill_content_hash TEXT NOT NULL DEFAULT '',
@@ -2697,6 +2724,18 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             student_mention_matcher_version TEXT NOT NULL DEFAULT '',
             response_format_json TEXT NOT NULL DEFAULT '{}',
             student_history_memory_mode TEXT NOT NULL DEFAULT '',
+            batch_response_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            batch_response_hash TEXT NOT NULL DEFAULT '',
+            batch_provider_dispatch_status TEXT NOT NULL DEFAULT 'legacy_unknown',
+            batch_provider_dispatch_started_at TEXT,
+            batch_validation_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            batch_validation_hash TEXT NOT NULL DEFAULT '',
+            batch_charge_status TEXT NOT NULL DEFAULT 'pending',
+            batch_charge_usage_id INTEGER REFERENCES ai_usage_ledger(id) ON DELETE SET NULL,
+            batch_claim_token TEXT,
+            batch_claim_owner TEXT,
+            batch_claim_expires_at TEXT,
+            batch_attempt_count INTEGER NOT NULL DEFAULT 0,
             generated_feedback_text TEXT NOT NULL DEFAULT '',
             origin TEXT NOT NULL,
             snapshot_completeness TEXT NOT NULL,
@@ -2711,6 +2750,7 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             CHECK(snapshot_completeness IN ('complete','partial')),
             CHECK(attending_roster_explicit IN (0,1)),
             CHECK(execution_snapshot_status IN ('pending','ready')),
+            CHECK(batch_provider_dispatch_status IN ('legacy_unknown','pending','started')),
             CHECK(status IN ('generating','succeeded','failed')),
             CHECK(
                 (
@@ -2860,6 +2900,27 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_class_commentary_student_credit_holds_org_status
         ON class_commentary_student_generation_credit_holds (organization_id, status);
+
+        CREATE TABLE IF NOT EXISTS class_commentary_generation_credit_holds (
+            generation_id INTEGER PRIMARY KEY REFERENCES class_commentary_generations(id) ON DELETE CASCADE,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            amount INTEGER NOT NULL,
+            request_id TEXT NOT NULL,
+            request_payload_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            usage_id INTEGER REFERENCES ai_usage_ledger(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            settled_at TEXT,
+            released_at TEXT,
+            UNIQUE(organization_id, request_id),
+            CHECK(amount > 0),
+            CHECK(request_id<>''),
+            CHECK(request_payload_hash<>''),
+            CHECK(status IN ('active','settled','released'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_class_commentary_generation_credit_holds_org_status
+        ON class_commentary_generation_credit_holds (organization_id, status);
 
         CREATE TABLE IF NOT EXISTS class_commentary_feedback_drafts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4872,11 +4933,19 @@ def _active_credit_hold_total_conn(
 ) -> int:
     row = conn.execute(
         """
-        SELECT COALESCE(SUM(amount), 0) AS total
-        FROM class_commentary_student_generation_credit_holds
-        WHERE organization_id=? AND status='active'
+        SELECT
+            COALESCE((
+                SELECT SUM(amount)
+                FROM class_commentary_student_generation_credit_holds
+                WHERE organization_id=? AND status='active'
+            ), 0)
+            + COALESCE((
+                SELECT SUM(amount)
+                FROM class_commentary_generation_credit_holds
+                WHERE organization_id=? AND status='active'
+            ), 0) AS total
         """,
-        (int(organization_id),),
+        (int(organization_id), int(organization_id)),
     ).fetchone()
     return int(row["total"] or 0)
 
@@ -5102,6 +5171,7 @@ def insert_ai_usage_and_debit(
     request_payload_hash: str = "",
     token_cost_raw: float = 0.0,
     credit_hold_student_run_id: Optional[int] = None,
+    credit_hold_generation_id: Optional[int] = None,
 ) -> dict:
     normalized_request_id = (request_id or "").strip()
     normalized_payload_hash = str(request_payload_hash or "").strip()
@@ -5109,7 +5179,13 @@ def insert_ai_usage_and_debit(
         conn.execute("BEGIN IMMEDIATE")
         _ensure_credit_account_row(conn, organization_id)
         _ensure_user_in_organization(conn, user_id, organization_id, "usage")
+        if (
+            credit_hold_student_run_id is not None
+            and credit_hold_generation_id is not None
+        ):
+            raise ValueError("only one credit hold scope may be settled")
         credit_hold = None
+        credit_hold_kind = ""
         if credit_hold_student_run_id is not None:
             credit_hold = conn.execute(
                 """
@@ -5132,6 +5208,28 @@ def insert_ai_usage_and_debit(
                 or str(source_record_id) != str(int(credit_hold_student_run_id))
             ):
                 raise ValueError("student generation credit hold scope mismatch")
+            credit_hold_kind = "student"
+        elif credit_hold_generation_id is not None:
+            credit_hold = conn.execute(
+                """
+                SELECT hold.*, generation.generation_request_payload_hash
+                FROM class_commentary_generation_credit_holds AS hold
+                JOIN class_commentary_generations AS generation
+                  ON generation.id=hold.generation_id
+                WHERE hold.generation_id=?
+                """,
+                (int(credit_hold_generation_id),),
+            ).fetchone()
+            if (
+                not credit_hold
+                or int(credit_hold["organization_id"] or 0) != int(organization_id)
+                or str(credit_hold["request_id"] or "") != normalized_request_id
+                or str(source_record_type or "")
+                != "class_commentary_generation"
+                or str(source_record_id) != str(int(credit_hold_generation_id))
+            ):
+                raise ValueError("class commentary generation credit hold scope mismatch")
+            credit_hold_kind = "generation"
 
         if normalized_request_id:
             existing = conn.execute(
@@ -5157,14 +5255,14 @@ def insert_ai_usage_and_debit(
                     str(credit_hold["status"] or "") != "settled"
                     or int(credit_hold["usage_id"] or 0) != int(existing["id"])
                 ):
-                    raise ValueError("student generation credit hold settlement mismatch")
+                    raise ValueError("class commentary credit hold settlement mismatch")
                 return dict(existing)
 
         if credit_hold is not None:
             if str(credit_hold["status"] or "") != "active":
-                raise ValueError("student generation credit hold is not active")
+                raise ValueError("class commentary credit hold is not active")
             if int(credit_hold["amount"] or 0) < int(credit_cost_final):
-                raise ValueError("student generation credit hold is insufficient")
+                raise ValueError("class commentary credit hold is insufficient")
 
         try:
             usage_row = _insert_ai_usage_row_with_conn(
@@ -5210,22 +5308,34 @@ def insert_ai_usage_and_debit(
                 str(credit_hold["status"] or "") != "settled"
                 or int(credit_hold["usage_id"] or 0) != int(existing["id"])
             ):
-                raise ValueError("student generation credit hold settlement mismatch")
+                raise ValueError("class commentary credit hold settlement mismatch")
             return dict(existing)
 
         if credit_hold is not None:
-            settled = conn.execute(
-                """
-                UPDATE class_commentary_student_generation_credit_holds
-                SET status='settled', usage_id=?,
-                    settled_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
-                    released_at=NULL
-                WHERE student_run_id=? AND status='active' AND usage_id IS NULL
-                """,
-                (int(usage_row["id"]), int(credit_hold_student_run_id)),
-            )
+            if credit_hold_kind == "student":
+                settled = conn.execute(
+                    """
+                    UPDATE class_commentary_student_generation_credit_holds
+                    SET status='settled', usage_id=?,
+                        settled_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                        released_at=NULL
+                    WHERE student_run_id=? AND status='active' AND usage_id IS NULL
+                    """,
+                    (int(usage_row["id"]), int(credit_hold_student_run_id)),
+                )
+            else:
+                settled = conn.execute(
+                    """
+                    UPDATE class_commentary_generation_credit_holds
+                    SET status='settled', usage_id=?,
+                        settled_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                        released_at=NULL
+                    WHERE generation_id=? AND status='active' AND usage_id IS NULL
+                    """,
+                    (int(usage_row["id"]), int(credit_hold_generation_id)),
+                )
             if settled.rowcount != 1:
-                raise ValueError("student generation credit hold settlement conflict")
+                raise ValueError("class commentary credit hold settlement conflict")
 
         _insert_credit_ledger_entry_with_conn(
             conn,
@@ -9102,6 +9212,12 @@ class ClassCommentaryGenerationRequestConflict(ValueError):
     pass
 
 
+class ClassCommentaryTranscriptSnapshotConflict(ValueError):
+    def __init__(self):
+        super().__init__("confirmed_transcript_changed")
+        self.code = "confirmed_transcript_changed"
+
+
 class ClassCommentaryStudentGenerationRetryRequestConflict(ValueError):
     pass
 
@@ -9213,7 +9329,7 @@ def _class_commentary_skill_display_name(skill_id: str, source_path: str) -> str
         meta_path = path.parent / "meta.json"
     else:
         meta_path = Path("")
-    if meta_path and meta_path.is_file():
+    if meta_path and meta_path.is_file() and not meta_path.is_symlink():
         try:
             metadata = json.loads(meta_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -12459,13 +12575,21 @@ def list_class_commentary_generations(task_id: int) -> list[dict]:
 
 
 def _parse_class_commentary_structured_prompt_sections(user_content: object) -> tuple:
-    prefixes = (
+    standard_prefixes = (
         "[CURRENT_TASK_FACTS]\n",
         "[ACTIVE_SKILL]\n",
         "[TEACHER_STYLE_MEMORIES]\n",
         "[OUTPUT_RULES]\n",
     )
+    batch_prefixes = (
+        "[CURRENT_TASK_FACTS]\n",
+        "[ACTIVE_SKILL]\n",
+        "[TEACHER_STYLE_MEMORIES]\n",
+        "[STUDENT_CONTEXTS_BY_ID]\n",
+        "[OUTPUT_RULES]\n",
+    )
     parts = str(user_content or "").split("\n\n")
+    prefixes = batch_prefixes if len(parts) == len(batch_prefixes) else standard_prefixes
     if len(parts) != len(prefixes) or any(
         not part.startswith(prefix)
         for part, prefix in zip(parts, prefixes)
@@ -12475,13 +12599,19 @@ def _parse_class_commentary_structured_prompt_sections(user_content: object) -> 
         current_task_facts = json.loads(parts[0][len(prefixes[0]):])
         active_skill = json.loads(parts[1][len(prefixes[1]):])
         teacher_style_memories = json.loads(parts[2][len(prefixes[2]):])
+        student_contexts_by_id = (
+            json.loads(parts[3][len(prefixes[3]):])
+            if prefixes == batch_prefixes
+            else None
+        )
     except (TypeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError("structured generation prompt sections are invalid") from exc
     return (
         current_task_facts,
         active_skill,
         teacher_style_memories,
-        parts[3][len(prefixes[3]):],
+        student_contexts_by_id,
+        parts[-1][len(prefixes[-1]):],
     )
 
 
@@ -12542,6 +12672,7 @@ def _validate_class_commentary_generation_execution_contract(
         current_task_facts,
         active_skill,
         teacher_style_memories,
+        student_contexts_by_id,
         output_rules,
     ) = _parse_class_commentary_structured_prompt_sections(
         messages[1].get("content")
@@ -12567,31 +12698,108 @@ def _validate_class_commentary_generation_execution_contract(
         for student_id in eligible_student_ids
         if type(student_id) is int
     ]
+    memory_mode = str(generation_record["student_history_memory_mode"] or "")
+    expected_task_fact_keys = (
+        {"class", "students", "eligible_student_ids"}
+        if memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+        else {"class", "students", "transcript", "eligible_student_ids"}
+    )
     expected_output_rules = "\n".join(
         f"- {rule}" for rule in structured_output_rules
     )
     if (
         not isinstance(current_task_facts, dict)
-        or set(current_task_facts)
-        != {"class", "students", "transcript", "eligible_student_ids"}
+        or set(current_task_facts) != expected_task_fact_keys
         or not isinstance(current_task_facts.get("class"), dict)
         or set(current_task_facts["class"]) != {"id", "name"}
         or current_task_facts["class"].get("id")
         != int(generation_record["class_id"])
-        or not isinstance(current_task_facts["class"].get("name"), str)
+        or current_task_facts["class"].get("name")
+        != str(generation_record["class_name_snapshot"] or "")
         or current_task_facts.get("students") != expected_students
-        or current_task_facts.get("transcript")
-        != str(generation_record["confirmed_transcript_snapshot"] or "")
+        or (
+            memory_mode != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            and current_task_facts.get("transcript")
+            != str(generation_record["confirmed_transcript_snapshot"] or "")
+        )
         or current_task_facts.get("eligible_student_ids") != eligible_student_ids
         or not isinstance(active_skill, dict)
         or set(active_skill) != {"id", "name", "content"}
         or active_skill.get("id") != str(generation_record["skill_id"] or "")
-        or not isinstance(active_skill.get("name"), str)
+        or active_skill.get("name")
+        != str(generation_record["skill_name_snapshot"] or "")
         or active_skill.get("content")
         != str(generation_record["skill_content_snapshot"] or "")
-        or teacher_style_memories
-        != memory_context.get("teacher_style_memories")
         or output_rules != expected_output_rules
+    ):
+        raise ValueError("structured generation prompt does not match reservation")
+    if memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3:
+        batch_students = memory_context.get("student_contexts_by_id")
+        expected_batch_student_ids = [
+            int(item.get("student_id") or 0)
+            for item in batch_students
+            if isinstance(item, dict)
+        ] if isinstance(batch_students, list) else []
+        if (
+            set(memory_context)
+            != {
+                "schema_version",
+                "student_history_memory_mode",
+                "teacher_style_memories",
+                "student_contexts_by_id",
+            }
+            or memory_context.get("schema_version")
+            != BATCH_ISOLATED_CONTEXT_SCHEMA_V1
+            or expected_batch_student_ids != eligible_student_ids
+            or len(expected_batch_student_ids) != len(set(expected_batch_student_ids))
+            or not isinstance(memory_context.get("teacher_style_memories"), list)
+            or teacher_style_memories
+            != build_batch_isolated_teacher_style_memories(memory_context)
+            or student_contexts_by_id
+            != build_batch_isolated_prompt_student_contexts(memory_context)
+        ):
+            raise ValueError("batch isolated generation context is invalid")
+        for student_entry in batch_students:
+            student_id = int(student_entry.get("student_id") or 0)
+            if set(student_entry) != {
+                "student_id",
+                "class_context",
+                "current_evidence_snapshot",
+                "memory_context",
+                "learning_graph",
+            }:
+                raise ValueError("batch isolated student context is invalid")
+            student_memory = student_entry.get("memory_context")
+            graph_context = student_entry.get("learning_graph")
+            if (
+                not isinstance(student_memory, dict)
+                or str(student_memory.get("student_history_memory_mode") or "")
+                != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+                or not isinstance(student_memory.get("records"), list)
+                or not isinstance(student_memory.get("student_history_memories"), list)
+                or any(
+                    isinstance(item, dict)
+                    and str(item.get("memory_type") or "") == "student_fact"
+                    and int(item.get("student_id") or 0) != student_id
+                    for item in student_memory.get("records") or []
+                )
+                or any(
+                    not isinstance(item, dict)
+                    or int(item.get("student_id") or 0) != student_id
+                    for item in student_memory.get("student_history_memories") or []
+                )
+                or not isinstance(graph_context, dict)
+                or int(graph_context.get("organization_id") or 0)
+                != int(generation_record["organization_id"])
+                or int(graph_context.get("student_id") or 0) != student_id
+                or str(graph_context.get("subject_key") or "")
+                != str(generation_record["subject_key"] or "")
+            ):
+                raise ValueError("batch isolated student context scope is invalid")
+    elif (
+        student_contexts_by_id is not None
+        or teacher_style_memories != memory_context.get("teacher_style_memories")
+        or memory_context.get("student_history_memories") != []
     ):
         raise ValueError("structured generation prompt does not match reservation")
     if (
@@ -12601,168 +12809,16 @@ def _validate_class_commentary_generation_execution_contract(
         or str(prompt_payload.get("student_history_memory_mode") or "")
         != str(generation_record["student_history_memory_mode"] or "")
         or str(memory_context.get("student_history_memory_mode") or "")
-        != str(generation_record["student_history_memory_mode"] or "")
-        or memory_context.get("student_history_memories") != []
+        != memory_mode
     ):
         raise ValueError("structured generation execution snapshot does not match reservation")
-    records = memory_context.get("records")
-    if not isinstance(records, list) or any(
-        isinstance(record, dict) and record.get("memory_type") == "student_fact"
-        for record in records
-    ):
-        raise ValueError("structured generation student history memory is not disabled")
-
-
-def _reserve_class_commentary_student_runs_conn(
-    conn: sqlite3.Connection,
-    *,
-    generation_id: int,
-    generation_request_id: str,
-    organization_id: int,
-    teacher_user_id: int,
-    class_id: int,
-    subject_key: str,
-    attending_roster: list[dict],
-    eligible_student_ids: list[int],
-    eligible_student_scope_hash: str,
-    student_mention_matcher_version: str,
-    confirmed_transcript_snapshot: str,
-    confirmed_transcript_hash: str,
-    prompt_version: str,
-    memory_mode: str,
-    provider: str,
-    model: str,
-    model_parameters_json: str,
-    credit_hold_amount_per_student: int,
-) -> list[dict]:
-    normalized_hold_amount = int(credit_hold_amount_per_student)
-    if normalized_hold_amount <= 0:
-        raise ValueError("student generation credit hold amount must be positive")
-    account = _ensure_credit_account_row(conn, organization_id)
-    active_holds = _active_credit_hold_total_conn(conn, organization_id)
-    required_credits = normalized_hold_amount * len(attending_roster)
-    if int(account["credit_balance"] or 0) - active_holds < required_credits:
-        raise ClassCommentaryCreditReservationError(
-            "机构积分不足，请先充值后再使用 AI 功能"
-        )
-    class_roster_rows = conn.execute(
-        """
-        SELECT student.id AS student_id, student.name AS student_name
-        FROM class_students AS membership
-        JOIN students AS student ON student.id=membership.student_id
-        WHERE membership.class_id=?
-          AND student.organization_id=?
-          AND student.status='active'
-        ORDER BY membership.id
-        """,
-        (class_id, organization_id),
-    ).fetchall()
-    privacy_roster = [dict(row) for row in class_roster_rows]
-    class_context = build_safe_class_context(
-        class_record={"id": int(class_id)},
-        subject_key=subject_key,
-    )
-    class_context_json = class_commentary_student_canonical_json(class_context)
-    class_context_hash = _class_commentary_content_hash(class_context_json)
-    run_rows = []
-    for roster_item in attending_roster:
-        student_id = int(roster_item["student_id"])
-        student_name = str(roster_item["student_name"])
-        evidence_snapshot = build_student_current_evidence(
-            transcript=confirmed_transcript_snapshot,
-            transcript_hash=confirmed_transcript_hash,
-            roster=privacy_roster,
-            target_student_id=student_id,
-            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
-        )
-        evidence_hash = str(evidence_snapshot.pop("snapshot_hash"))
-        request_payload = {
-            "generation_id": int(generation_id),
-            "student_id": student_id,
-            "student_name": student_name,
-            "student_run_schema_version": CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1,
-            "current_evidence_hash": evidence_hash,
-            "class_context_hash": class_context_hash,
-            "eligible_student_ids": list(eligible_student_ids),
-            "eligible_student_scope_hash": eligible_student_scope_hash,
-            "student_mention_matcher_version": student_mention_matcher_version,
-            "prompt_version": prompt_version,
-            "memory_mode": memory_mode,
-            "provider": provider,
-            "model": model,
-            "model_parameters": json.loads(model_parameters_json),
-        }
-        request_payload_hash = class_commentary_student_canonical_hash(request_payload)
-        request_id = f"{generation_request_id}:student:{student_id}"
-        charge_request_key = _class_commentary_content_hash(
-            f"{teacher_user_id}:{request_id}:{request_payload_hash}:class_commentary_generate"
-        )
-        empty_json = class_commentary_student_canonical_json({})
-        empty_hash = _class_commentary_content_hash(empty_json)
-        cursor = conn.execute(
-            """
-            INSERT INTO class_commentary_student_generation_runs (
-                organization_id, generation_id, student_id,
-                student_name_snapshot, request_id, request_payload_hash,
-                student_run_schema_version, prompt_version, memory_mode,
-                eligible_student_ids_json, eligible_student_scope_hash,
-                student_mention_matcher_version,
-                class_context_snapshot_json, class_context_hash,
-                current_evidence_snapshot_json, current_evidence_hash,
-                memory_context_snapshot_json, memory_context_hash,
-                provider, model, model_parameters_json,
-                prompt_payload_snapshot_json, prompt_payload_hash,
-                charge_request_key
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                organization_id,
-                generation_id,
-                student_id,
-                student_name,
-                request_id,
-                request_payload_hash,
-                CLASS_COMMENTARY_STUDENT_RUN_SCHEMA_V1,
-                prompt_version,
-                memory_mode,
-                class_commentary_student_canonical_json(eligible_student_ids),
-                eligible_student_scope_hash,
-                student_mention_matcher_version,
-                class_context_json,
-                class_context_hash,
-                class_commentary_student_canonical_json(evidence_snapshot),
-                evidence_hash,
-                empty_json,
-                empty_hash,
-                provider,
-                model,
-                model_parameters_json,
-                empty_json,
-                empty_hash,
-                charge_request_key,
-            ),
-        )
-        row = conn.execute(
-            "SELECT * FROM class_commentary_student_generation_runs WHERE id=?",
-            (cursor.lastrowid,),
-        ).fetchone()
-        conn.execute(
-            """
-            INSERT INTO class_commentary_student_generation_credit_holds (
-                student_run_id, organization_id, amount,
-                request_id, request_payload_hash
-            ) VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                int(cursor.lastrowid),
-                organization_id,
-                normalized_hold_amount,
-                charge_request_key,
-                request_payload_hash,
-            ),
-        )
-        run_rows.append(dict(row))
-    return run_rows
+    if memory_mode != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3:
+        records = memory_context.get("records")
+        if not isinstance(records, list) or any(
+            isinstance(record, dict) and record.get("memory_type") == "student_fact"
+            for record in records
+        ):
+            raise ValueError("structured generation student history memory is not disabled")
 
 
 def reserve_class_commentary_generation(
@@ -12781,6 +12837,9 @@ def reserve_class_commentary_generation(
     structured_feedback_enabled: bool = False,
     student_history_memory_mode: str = "",
     credit_hold_amount_per_student: int = 0,
+    credit_hold_amount: int = 0,
+    expected_confirmed_transcript_version: Optional[int] = None,
+    expected_confirmed_transcript_hash: Optional[str] = None,
 ) -> dict:
     normalized_request_id = str(generation_request_id or "").strip()
     normalized_provider = str(model_provider or "").strip()
@@ -12864,6 +12923,21 @@ def reserve_class_commentary_generation(
                 isolated_hold_changed = hold_amounts != {
                     int(credit_hold_amount_per_student)
                 }
+            batch_hold_changed = False
+            if frozen_memory_mode == (
+                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            ):
+                batch_hold = conn.execute(
+                    """
+                    SELECT amount FROM class_commentary_generation_credit_holds
+                    WHERE generation_id=?
+                    """,
+                    (int(existing["id"]),),
+                ).fetchone()
+                batch_hold_changed = (
+                    not batch_hold
+                    or int(batch_hold["amount"] or 0) != int(credit_hold_amount)
+                )
             if (
                 int(existing["skill_registry_id"] or 0) != int(skill_registry_id)
                 or (
@@ -12874,6 +12948,7 @@ def reserve_class_commentary_generation(
                 != attending_roster_explicit
                 or isolated_model_changed
                 or isolated_hold_changed
+                or batch_hold_changed
             ):
                 raise ClassCommentaryGenerationRequestConflict(
                     "generation request_id was already used with a different payload"
@@ -12882,10 +12957,21 @@ def reserve_class_commentary_generation(
             item["is_idempotent"] = True
             return item
 
+        if structured_feedback_enabled and (
+            requested_memory_mode,
+            normalized_prompt_version,
+        ) != (
+            CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+        ):
+            raise ValueError(
+                "structured generation mode and prompt version are invalid"
+            )
+
         task = conn.execute(
             """
             SELECT task.*, class.organization_id AS class_organization_id,
-                   class.subject_key
+                   class.name AS class_name, class.subject_key
             FROM class_commentary_tasks AS task
             JOIN classes AS class ON class.id = task.class_id
             WHERE task.id=?
@@ -12899,11 +12985,22 @@ def reserve_class_commentary_generation(
         class_id = int(task["class_id"])
         if int(task["class_organization_id"]) != organization_id:
             raise ValueError("task organization does not match class")
+        subject_key = str(task["subject_key"] or "").strip()
+        if structured_feedback_enabled and not subject_key:
+            raise ValueError("class_commentary_subject_unavailable")
         transcript_snapshot = str(task["confirmed_transcript_text"] or "").strip()
         transcript_version = int(task["confirmed_transcript_version"] or 0)
         if not transcript_snapshot or transcript_version <= 0:
             raise ValueError("confirmed transcript is required")
         transcript_hash = _class_commentary_content_hash(transcript_snapshot)
+        if (
+            expected_confirmed_transcript_version is not None
+            and transcript_version != int(expected_confirmed_transcript_version)
+        ) or (
+            expected_confirmed_transcript_hash is not None
+            and transcript_hash != str(expected_confirmed_transcript_hash)
+        ):
+            raise ClassCommentaryTranscriptSnapshotConflict()
 
         registry = conn.execute(
             "SELECT skill_id FROM class_commentary_skills WHERE id=?",
@@ -12918,6 +13015,11 @@ def reserve_class_commentary_generation(
             raise ValueError("skill registry is not active in the task organization")
         skill_content = str(skill["content"])
         skill_content_hash = _class_commentary_content_hash(skill_content)
+        class_name_snapshot = str(task["class_name"] or "").strip()
+        skill_name_snapshot = _class_commentary_skill_display_name(
+            str(skill["skill_id"]),
+            str(skill["source_path"] or ""),
+        )
         if skill_content_hash != str(skill["content_hash"]):
             raise ValueError("skill content hash mismatch")
 
@@ -12934,6 +13036,26 @@ def reserve_class_commentary_generation(
         )
         roster_snapshot_json = _class_commentary_canonical_json(roster_snapshot)
         roster_hash = _class_commentary_content_hash(roster_snapshot_json)
+        privacy_roster = [
+            {
+                "student_id": int(row["student_id"]),
+                "student_name": str(row["student_name"]),
+            }
+            for row in conn.execute(
+                """
+                SELECT student.id AS student_id, student.name AS student_name
+                FROM class_students AS membership
+                JOIN students AS student ON student.id=membership.student_id
+                WHERE membership.class_id=?
+                  AND student.organization_id=?
+                  AND student.status='active'
+                ORDER BY membership.id
+                """,
+                (class_id, organization_id),
+            ).fetchall()
+        ]
+        privacy_roster_json = _class_commentary_canonical_json(privacy_roster)
+        privacy_roster_hash = _class_commentary_content_hash(privacy_roster_json)
         feedback_schema_version = ""
         eligible_student_ids: list[int] = []
         eligible_student_scope_hash = ""
@@ -12943,40 +13065,17 @@ def reserve_class_commentary_generation(
         if structured_feedback_enabled:
             feedback_schema_version = CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1
             response_format = dict(CLASS_COMMENTARY_STRUCTURED_RESPONSE_FORMAT)
-            frozen_memory_mode = (
-                requested_memory_mode
-                or CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
-            )
-            if frozen_memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2:
-                if normalized_prompt_version != CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2:
-                    raise ValueError("isolated memory prompt version is invalid")
+            frozen_memory_mode = requested_memory_mode
+            if frozen_memory_mode == (
+                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            ):
+                if normalized_prompt_version != (
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+                ):
+                    raise ValueError("batch isolated memory prompt version is invalid")
                 if not attending_roster_explicit:
                     raise ValueError(
-                        "isolated memory attending roster scope must be explicit"
-                    )
-                student_mention_matcher_version = (
-                    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
-                )
-                eligible_student_ids = resolve_class_commentary_attending_roster_student_ids(
-                    roster=roster_snapshot,
-                )
-            elif frozen_memory_mode != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1:
-                raise ValueError("structured feedback memory mode is invalid")
-            elif normalized_prompt_version == CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION:
-                student_mention_matcher_version = (
-                    CLASS_COMMENTARY_STUDENT_NAME_MATCHER_V1
-                )
-                eligible_student_ids = match_class_commentary_eligible_student_ids(
-                    transcript_text=transcript_snapshot,
-                    roster=roster_snapshot,
-                )
-            elif normalized_prompt_version in {
-                CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
-                CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
-            }:
-                if not attending_roster_explicit:
-                    raise ValueError(
-                        "structured feedback attending roster scope must be explicit"
+                        "batch isolated attending roster scope must be explicit"
                     )
                 student_mention_matcher_version = (
                     CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
@@ -12986,8 +13085,18 @@ def reserve_class_commentary_generation(
                         roster=roster_snapshot,
                     )
                 )
+                build_student_evidence_assignment(
+                    transcript=transcript_snapshot,
+                    transcript_hash=transcript_hash,
+                    roster=privacy_roster,
+                    attending_student_ids=eligible_student_ids,
+                )
+                if int(credit_hold_amount) <= 0:
+                    raise ValueError(
+                        "class commentary generation credit hold amount must be positive"
+                    )
             else:
-                raise ValueError("structured feedback prompt version is invalid")
+                raise ValueError("structured feedback memory mode is invalid")
             eligible_student_scope_hash = build_class_commentary_eligible_scope_hash(
                 transcript_hash=transcript_hash,
                 roster_hash=roster_hash,
@@ -12998,9 +13107,12 @@ def reserve_class_commentary_generation(
                 _validate_class_commentary_generation_execution_contract(
                     {
                         "class_id": class_id,
+                        "class_name_snapshot": class_name_snapshot,
                         "attending_roster_hash": roster_hash,
                         "attending_roster_explicit": attending_roster_explicit,
                         "attending_roster_snapshot_json": roster_snapshot_json,
+                        "privacy_roster_snapshot_json": privacy_roster_json,
+                        "privacy_roster_hash": privacy_roster_hash,
                         "confirmed_transcript_hash": transcript_hash,
                         "confirmed_transcript_snapshot": transcript_snapshot,
                         "eligible_student_ids_json": _class_commentary_canonical_json(
@@ -13020,6 +13132,7 @@ def reserve_class_commentary_generation(
                         "skill_content_hash": skill_content_hash,
                         "skill_content_snapshot": skill_content,
                         "skill_id": str(skill["skill_id"]),
+                        "skill_name_snapshot": skill_name_snapshot,
                     },
                     prompt_payload=prompt_payload,
                     memory_context=memory_context,
@@ -13027,6 +13140,7 @@ def reserve_class_commentary_generation(
         request_payload = {
             "attending_student_ids": [item["student_id"] for item in roster_snapshot],
             "attending_roster_explicit": attending_roster_explicit,
+            "class_name_snapshot": class_name_snapshot,
             "confirmed_transcript_hash": transcript_hash,
             "confirmed_transcript_version": transcript_version,
             "eligible_student_ids": eligible_student_ids,
@@ -13036,17 +13150,20 @@ def reserve_class_commentary_generation(
             "model_parameters": model_parameters,
             "model_provider": normalized_provider,
             "prompt_version": normalized_prompt_version,
+            "privacy_roster_hash": privacy_roster_hash,
             "response_format": response_format,
             "skill_registry_id": int(skill["registry_id"]),
+            "skill_name_snapshot": skill_name_snapshot,
             "skill_version_id": int(skill["version_id"]),
             "student_history_memory_mode": frozen_memory_mode,
             "student_mention_matcher_version": student_mention_matcher_version,
-            "subject_key": task["subject_key"],
+            "subject_key": subject_key,
             "task_id": int(task_id),
-            "credit_hold_amount_per_student": (
-                int(credit_hold_amount_per_student)
+            "credit_hold_amount_per_student": 0,
+            "credit_hold_amount": (
+                int(credit_hold_amount)
                 if frozen_memory_mode
-                == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+                == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
                 else 0
             ),
         }
@@ -13058,11 +13175,13 @@ def reserve_class_commentary_generation(
             """
             INSERT INTO class_commentary_generations (
                 organization_id, task_id, generation_no, generation_request_id,
-                generation_request_payload_hash, teacher_user_id, class_id, subject_key,
+                generation_request_payload_hash, teacher_user_id, class_id,
+                class_name_snapshot, subject_key,
                 confirmed_transcript_version, confirmed_transcript_snapshot,
                 confirmed_transcript_hash, attending_roster_snapshot_json,
-                attending_roster_hash, attending_roster_explicit,
-                skill_registry_id, skill_id, skill_version_id,
+                attending_roster_hash, privacy_roster_snapshot_json,
+                privacy_roster_hash, attending_roster_explicit,
+                skill_registry_id, skill_id, skill_name_snapshot, skill_version_id,
                 skill_content_snapshot, skill_content_hash, model_provider, model_name,
                 model_parameters_json, prompt_version, feedback_schema_version,
                 eligible_student_ids_json, eligible_student_scope_hash,
@@ -13070,11 +13189,13 @@ def reserve_class_commentary_generation(
                 student_history_memory_mode, prompt_payload_snapshot_json,
                 prompt_payload_hash, memory_context_snapshot_json, memory_context_hash,
                 execution_snapshot_status, execution_snapshot_finalized_at,
+                batch_provider_dispatch_status,
                 generated_feedback_text, origin, snapshot_completeness,
                 missing_snapshot_fields_json, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?,
                     '', 'runtime', 'complete', '[]', 'generating')
             """,
             (
@@ -13085,15 +13206,19 @@ def reserve_class_commentary_generation(
                 request_payload_hash,
                 teacher_user_id,
                 class_id,
-                task["subject_key"],
+                class_name_snapshot,
+                subject_key,
                 transcript_version,
                 transcript_snapshot,
                 transcript_hash,
                 roster_snapshot_json,
                 roster_hash,
+                privacy_roster_json,
+                privacy_roster_hash,
                 1 if attending_roster_explicit else 0,
                 int(skill["registry_id"]),
                 str(skill["skill_id"]),
+                skill_name_snapshot,
                 int(skill["version_id"]),
                 skill_content,
                 skill_content_hash,
@@ -13119,61 +13244,49 @@ def reserve_class_commentary_generation(
                     if execution_snapshot_status == "ready"
                     else None
                 ),
+                (
+                    "pending"
+                    if frozen_memory_mode
+                    == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+                    else "legacy_unknown"
+                ),
             ),
         )
         generation_id = int(cursor.lastrowid)
-        if frozen_memory_mode == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2:
-            student_runs = _reserve_class_commentary_student_runs_conn(
-                conn,
-                generation_id=generation_id,
-                generation_request_id=normalized_request_id,
-                organization_id=organization_id,
-                teacher_user_id=teacher_user_id,
-                class_id=class_id,
-                subject_key=str(task["subject_key"] or ""),
-                attending_roster=roster_snapshot,
-                eligible_student_ids=eligible_student_ids,
-                eligible_student_scope_hash=eligible_student_scope_hash,
-                student_mention_matcher_version=student_mention_matcher_version,
-                confirmed_transcript_snapshot=transcript_snapshot,
-                confirmed_transcript_hash=transcript_hash,
-                prompt_version=normalized_prompt_version,
-                memory_mode=frozen_memory_mode,
-                provider=normalized_provider,
-                model=normalized_model,
-                model_parameters_json=model_parameters_json,
-                credit_hold_amount_per_student=credit_hold_amount_per_student,
+        if frozen_memory_mode == (
+            CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+        ):
+            account = _ensure_credit_account_row(conn, organization_id)
+            available_credits = int(account["credit_balance"] or 0) - (
+                _active_credit_hold_total_conn(conn, organization_id)
             )
-            orchestration_snapshot = {
-                "kind": "class_commentary.student_generation_orchestration.v1",
-                "prompt_version": normalized_prompt_version,
-                "student_run_ids": [int(run["id"]) for run in student_runs],
-            }
-            parent_memory_snapshot = {
-                "student_history_memory_mode": frozen_memory_mode,
-                "student_run_count": len(student_runs),
-            }
-            prompt_snapshot_json = _class_commentary_canonical_json(
-                orchestration_snapshot
-            )
-            memory_snapshot_json = _class_commentary_canonical_json(
-                parent_memory_snapshot
+            if available_credits < int(credit_hold_amount):
+                raise ClassCommentaryCreditReservationError(
+                    "机构积分不足，请先充值后再使用 AI 功能"
+                )
+            hold_request_id = f"class-commentary-generation-{generation_id}"
+            hold_payload_hash = _class_commentary_content_hash(
+                _class_commentary_canonical_json(
+                    {
+                        "generation_id": generation_id,
+                        "generation_request_payload_hash": request_payload_hash,
+                        "request_id": hold_request_id,
+                    }
+                )
             )
             conn.execute(
                 """
-                UPDATE class_commentary_generations
-                SET prompt_payload_snapshot_json=?, prompt_payload_hash=?,
-                    memory_context_snapshot_json=?, memory_context_hash=?,
-                    execution_snapshot_status='ready',
-                    execution_snapshot_finalized_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-                WHERE id=? AND execution_snapshot_status='pending'
+                INSERT INTO class_commentary_generation_credit_holds (
+                    generation_id, organization_id, amount, request_id,
+                    request_payload_hash
+                ) VALUES (?, ?, ?, ?, ?)
                 """,
                 (
-                    prompt_snapshot_json,
-                    _class_commentary_content_hash(prompt_snapshot_json),
-                    memory_snapshot_json,
-                    _class_commentary_content_hash(memory_snapshot_json),
                     generation_id,
+                    organization_id,
+                    int(credit_hold_amount),
+                    hold_request_id,
+                    hold_payload_hash,
                 ),
             )
         updated = conn.execute(
@@ -13277,6 +13390,602 @@ def finalize_class_commentary_generation_execution_snapshot(
         return _serialize_class_commentary_generation_row(row)
 
 
+def persist_class_commentary_batch_generation_response(
+    generation_id: int,
+    *,
+    response_text: str,
+    usage: object,
+    claim_token: str,
+) -> dict:
+    response_snapshot = {
+        "response_text": str(response_text or ""),
+        "usage": usage if isinstance(usage, dict) else {},
+    }
+    response_json = _class_commentary_canonical_json(response_snapshot)
+    response_hash = _class_commentary_content_hash(response_json)
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if str(generation["student_history_memory_mode"] or "") != (
+            CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+        ):
+            raise ValueError("generation is not batch isolated")
+        if str(generation["status"] or "") != "generating":
+            raise ClassCommentaryGenerationRequestConflict(
+                "generation is no longer generating"
+            )
+        if str(generation["batch_claim_token"] or "") != str(claim_token or ""):
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation claim changed"
+            )
+        if str(generation["batch_provider_dispatch_status"] or "") != "started":
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch provider dispatch is not started"
+            )
+        existing_hash = str(generation["batch_response_hash"] or "")
+        if existing_hash:
+            if (
+                existing_hash != response_hash
+                or str(generation["batch_response_snapshot_json"] or "")
+                != response_json
+            ):
+                raise ClassCommentaryGenerationRequestConflict(
+                    "batch generation response is already persisted"
+                )
+            return _serialize_class_commentary_generation_row(generation)
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET batch_response_snapshot_json=?, batch_response_hash=?
+            WHERE id=? AND status='generating' AND batch_response_hash=''
+              AND batch_claim_token=? AND batch_provider_dispatch_status='started'
+            """,
+            (response_json, response_hash, int(generation_id), str(claim_token)),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation response claim changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(saved)
+
+
+def mark_class_commentary_batch_provider_dispatch_started(
+    generation_id: int,
+    *,
+    claim_token: str,
+) -> dict:
+    normalized_claim_token = str(claim_token or "")
+    if not normalized_claim_token:
+        raise ValueError("claim_token is required")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if (
+            str(generation["student_history_memory_mode"] or "")
+            != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            or str(generation["status"] or "") != "generating"
+            or str(generation["execution_snapshot_status"] or "") != "ready"
+            or str(generation["batch_claim_token"] or "")
+            != normalized_claim_token
+            or str(generation["batch_provider_dispatch_status"] or "")
+            != "pending"
+            or str(generation["batch_response_hash"] or "")
+        ):
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch provider dispatch cannot be started"
+            )
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET batch_provider_dispatch_status='started',
+                batch_provider_dispatch_started_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND status='generating'
+              AND execution_snapshot_status='ready'
+              AND batch_claim_token=?
+              AND batch_provider_dispatch_status='pending'
+              AND batch_response_hash=''
+            """,
+            (int(generation_id), normalized_claim_token),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch provider dispatch changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(saved)
+
+
+def get_class_commentary_batch_generation_response(generation_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+    if not generation or not str(generation["batch_response_hash"] or ""):
+        return None
+    response_json = str(generation["batch_response_snapshot_json"] or "")
+    if _class_commentary_content_hash(response_json) != str(
+        generation["batch_response_hash"] or ""
+    ):
+        raise ValueError("batch generation response snapshot hash is invalid")
+    try:
+        response_snapshot = json.loads(response_json)
+    except (TypeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError("batch generation response snapshot is invalid") from exc
+    if (
+        not isinstance(response_snapshot, dict)
+        or set(response_snapshot) != {"response_text", "usage"}
+        or not isinstance(response_snapshot.get("response_text"), str)
+        or not isinstance(response_snapshot.get("usage"), dict)
+    ):
+        raise ValueError("batch generation response snapshot is invalid")
+    return response_snapshot
+
+
+def get_class_commentary_generation_credit_hold(generation_id: int) -> Optional[dict]:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM class_commentary_generation_credit_holds
+            WHERE generation_id=?
+            """,
+            (int(generation_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def claim_class_commentary_batch_generation(
+    generation_id: int,
+    *,
+    claim_owner: str,
+    lease_seconds: int = 300,
+) -> Optional[dict]:
+    normalized_owner = str(claim_owner or "").strip()
+    if not normalized_owner:
+        raise ValueError("claim_owner is required")
+    claim_token = secrets.token_urlsafe(24)
+    lease_modifier = f"+{max(30, int(lease_seconds))} seconds"
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            """
+            SELECT generation.*, hold.status AS hold_status
+            FROM class_commentary_generations AS generation
+            JOIN class_commentary_generation_credit_holds AS hold
+              ON hold.generation_id=generation.id
+            WHERE generation.id=?
+            """,
+            (int(generation_id),),
+        ).fetchone()
+        if (
+            not generation
+            or str(generation["student_history_memory_mode"] or "")
+            != CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            or str(generation["status"] or "") != "generating"
+            or str(generation["hold_status"] or "") not in {"active", "settled"}
+        ):
+            return None
+        if generation["batch_claim_token"] is not None:
+            if (
+                generation["batch_claim_expires_at"] is None
+                or str(generation["batch_claim_expires_at"])
+                > _class_commentary_utc_timestamp()
+            ):
+                return None
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET batch_claim_token=?, batch_claim_owner=?,
+                batch_claim_expires_at=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?),
+                batch_attempt_count=batch_attempt_count+1
+            WHERE id=? AND status='generating'
+              AND (batch_claim_token IS NULL OR batch_claim_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            """,
+            (
+                claim_token,
+                normalized_owner,
+                lease_modifier,
+                int(generation_id),
+            ),
+        )
+        if updated.rowcount != 1:
+            return None
+        claimed = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(claimed)
+
+
+def release_class_commentary_batch_generation_claim(
+    generation_id: int,
+    *,
+    claim_token: str,
+) -> dict:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET batch_claim_token=NULL, batch_claim_owner=NULL,
+                batch_claim_expires_at=NULL
+            WHERE id=? AND batch_claim_token=?
+            """,
+            (int(generation_id), str(claim_token)),
+        )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not row:
+            raise ValueError("generation not found")
+        return _serialize_class_commentary_generation_row(row)
+
+
+def list_resumable_class_commentary_batch_generations(
+    *,
+    limit: int = 100,
+    now: Optional[str | datetime] = None,
+) -> list[dict]:
+    current = (
+        _class_commentary_utc_timestamp(now)
+        if isinstance(now, datetime)
+        else str(now or _class_commentary_utc_timestamp())
+    )
+    normalized_limit = max(1, min(int(limit), 500))
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT generation.*
+            FROM class_commentary_generations AS generation
+            JOIN class_commentary_generation_credit_holds AS hold
+              ON hold.generation_id=generation.id
+            WHERE generation.status='generating'
+              AND generation.student_history_memory_mode=?
+              AND generation.execution_snapshot_status IN ('pending','ready')
+              AND hold.status IN ('active','settled')
+              AND (
+                    generation.batch_claim_token IS NULL
+                    OR generation.batch_claim_expires_at IS NULL
+                    OR generation.batch_claim_expires_at<=?
+              )
+            ORDER BY generation.id
+            LIMIT ?
+            """,
+            (
+                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
+                current,
+                normalized_limit,
+            ),
+        ).fetchall()
+    return [_serialize_class_commentary_generation_row(row) for row in rows]
+
+
+def validate_class_commentary_batch_generation_response(
+    generation_id: int,
+    *,
+    claim_token: str,
+) -> dict:
+    response_snapshot = get_class_commentary_batch_generation_response(generation_id)
+    if response_snapshot is None:
+        raise ValueError("batch generation response snapshot is missing")
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if str(generation["status"] or "") != "generating":
+            raise ClassCommentaryGenerationRequestConflict(
+                "generation is no longer generating"
+            )
+        if str(generation["batch_claim_token"] or "") != str(claim_token or ""):
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation claim changed"
+            )
+        existing_hash = str(generation["batch_validation_hash"] or "")
+        if existing_hash:
+            validation_json = str(
+                generation["batch_validation_snapshot_json"] or ""
+            )
+            if _class_commentary_content_hash(validation_json) != existing_hash:
+                raise ValueError("batch generation validation snapshot hash is invalid")
+            return _serialize_class_commentary_generation_row(generation)
+        try:
+            batch_memory_context = json.loads(
+                str(generation["memory_context_snapshot_json"] or "{}")
+            )
+        except (TypeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ValueError("batch isolated memory snapshot is invalid") from exc
+        if not isinstance(batch_memory_context, dict):
+            raise ValueError("batch isolated memory snapshot is invalid")
+        allowed_graph_refs_by_student = {
+            int(item.get("student_id") or 0): [
+                str(value)
+                for value in (
+                    item.get("learning_graph", {}).get("allowed_evidence_refs")
+                    if isinstance(item.get("learning_graph"), dict)
+                    else []
+                )
+                or []
+            ]
+            for item in batch_memory_context.get("student_contexts_by_id") or []
+            if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
+        }
+        canonical = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=str(response_snapshot["response_text"]),
+            generation=dict(generation),
+            allowed_graph_evidence_refs_by_student=allowed_graph_refs_by_student,
+            require_batch_graph_refs=True,
+        )
+        used_graph_refs = {
+            str(student_id): refs
+            for student_id, refs in canonical.get(
+                "used_graph_evidence_refs_by_student", {}
+            ).items()
+        }
+        validation_snapshot = {
+            "derived_feedback_text": str(canonical["derived_feedback_text"]),
+            "structured_feedback_hash": str(canonical["structured_feedback_hash"]),
+            "structured_feedback_json": str(canonical["structured_feedback_json"]),
+            "used_graph_evidence_refs_by_student": used_graph_refs,
+        }
+        validation_json = _class_commentary_canonical_json(validation_snapshot)
+        validation_hash = _class_commentary_content_hash(validation_json)
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET batch_validation_snapshot_json=?, batch_validation_hash=?
+            WHERE id=? AND status='generating' AND batch_validation_hash=''
+              AND batch_claim_token=?
+            """,
+            (
+                validation_json,
+                validation_hash,
+                int(generation_id),
+                str(claim_token),
+            ),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation validation claim changed"
+            )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(saved)
+
+
+def fail_class_commentary_batch_generation_validation(
+    generation_id: int,
+    *,
+    claim_token: str,
+    error_code: str = "structured_feedback_invalid",
+) -> dict:
+    normalized_error = str(error_code or "structured_feedback_invalid").strip()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if str(generation["status"] or "") != "generating":
+            return _serialize_class_commentary_generation_row(generation)
+        if str(generation["batch_claim_token"] or "") != str(claim_token or ""):
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation claim changed"
+            )
+        hold = conn.execute(
+            """
+            SELECT * FROM class_commentary_generation_credit_holds
+            WHERE generation_id=?
+            """,
+            (int(generation_id),),
+        ).fetchone()
+        if not hold or str(hold["status"] or "") != "active":
+            raise ValueError("batch generation credit hold is not releasable")
+        conn.execute(
+            """
+            UPDATE class_commentary_generation_credit_holds
+            SET status='released', released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE generation_id=? AND status='active'
+            """,
+            (int(generation_id),),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET status='failed', error_code=?, completed_at=datetime('now','localtime'),
+                batch_claim_token=NULL, batch_claim_owner=NULL,
+                batch_claim_expires_at=NULL
+            WHERE id=? AND status='generating' AND batch_claim_token=?
+            """,
+            (normalized_error, int(generation_id), str(claim_token)),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='failed', failure_stage='generation', generation_error=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND latest_generation_id=? AND confirmed_transcript_version=?
+            """,
+            (
+                normalized_error,
+                int(generation["task_id"]),
+                int(generation_id),
+                int(generation["confirmed_transcript_version"]),
+            ),
+        )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(saved)
+
+
+def complete_class_commentary_batch_generation(
+    generation_id: int,
+    *,
+    charge_usage_id: int,
+    claim_token: str,
+) -> dict:
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if str(generation["status"] or "") == "succeeded":
+            if (
+                str(generation["batch_charge_status"] or "") == "charged"
+                and int(generation["batch_charge_usage_id"] or 0)
+                == int(charge_usage_id)
+            ):
+                return _serialize_class_commentary_generation_row(generation)
+            raise ValueError("batch generation completion mismatch")
+        if str(generation["status"] or "") != "generating":
+            raise ValueError("batch generation is not publishable")
+        if str(generation["batch_claim_token"] or "") != str(claim_token or ""):
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation claim changed"
+            )
+        validation_json = str(
+            generation["batch_validation_snapshot_json"] or ""
+        )
+        validation_hash = str(generation["batch_validation_hash"] or "")
+        if (
+            not validation_hash
+            or _class_commentary_content_hash(validation_json) != validation_hash
+        ):
+            raise ValueError("batch generation validation snapshot is invalid")
+        try:
+            validation = json.loads(validation_json)
+        except (TypeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ValueError("batch generation validation snapshot is invalid") from exc
+        if not isinstance(validation, dict) or set(validation) != {
+            "derived_feedback_text",
+            "structured_feedback_hash",
+            "structured_feedback_json",
+            "used_graph_evidence_refs_by_student",
+        }:
+            raise ValueError("batch generation validation snapshot is invalid")
+        used_graph_refs_json = _class_commentary_canonical_json(
+            validation["used_graph_evidence_refs_by_student"]
+        )
+        used_graph_refs_hash = _class_commentary_content_hash(
+            used_graph_refs_json
+        )
+        if (
+            _class_commentary_content_hash(
+                str(validation["structured_feedback_json"])
+            )
+            != str(validation["structured_feedback_hash"])
+        ):
+            raise ValueError("batch generation validation snapshot is invalid")
+        usage = conn.execute(
+            """
+            SELECT * FROM ai_usage_ledger
+            WHERE id=? AND organization_id=?
+              AND source_record_type='class_commentary_generation'
+              AND source_record_id=?
+            """,
+            (
+                int(charge_usage_id),
+                int(generation["organization_id"]),
+                str(int(generation_id)),
+            ),
+        ).fetchone()
+        if not usage:
+            raise ValueError("batch generation charge usage scope mismatch")
+        hold = conn.execute(
+            """
+            SELECT * FROM class_commentary_generation_credit_holds
+            WHERE generation_id=?
+            """,
+            (int(generation_id),),
+        ).fetchone()
+        if (
+            not hold
+            or str(hold["status"] or "") != "settled"
+            or int(hold["usage_id"] or 0) != int(charge_usage_id)
+        ):
+            raise ValueError("batch generation credit hold settlement mismatch")
+        updated = conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET status='succeeded', structured_feedback_json=?,
+                structured_feedback_hash=?, generated_feedback_text=?,
+                used_graph_evidence_refs_by_student_json=?,
+                used_graph_evidence_refs_by_student_hash=?,
+                batch_charge_status='charged', batch_charge_usage_id=?,
+                batch_claim_token=NULL, batch_claim_owner=NULL,
+                batch_claim_expires_at=NULL,
+                error_code=NULL, completed_at=datetime('now','localtime')
+            WHERE id=? AND status='generating'
+              AND batch_claim_token=?
+              AND batch_charge_status='pending' AND batch_response_hash<>''
+              AND batch_validation_hash<>''
+            """,
+            (
+                str(validation["structured_feedback_json"]),
+                str(validation["structured_feedback_hash"]),
+                str(validation["derived_feedback_text"]),
+                used_graph_refs_json,
+                used_graph_refs_hash,
+                int(charge_usage_id),
+                int(generation_id),
+                str(claim_token),
+            ),
+        )
+        if updated.rowcount != 1:
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation completion changed"
+            )
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='ready', failure_stage='', feedback_text=?,
+                generation_error='', transcription_error='',
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND latest_generation_id=? AND confirmed_transcript_version=?
+            """,
+            (
+                str(validation["derived_feedback_text"]),
+                int(generation["task_id"]),
+                int(generation_id),
+                int(generation["confirmed_transcript_version"]),
+            ),
+        )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(saved)
+
+
 def complete_class_commentary_generation(generation_id: int, feedback_text: str) -> dict:
     raw_feedback = str(feedback_text or "")
     with get_conn() as conn:
@@ -13292,9 +14001,59 @@ def complete_class_commentary_generation(generation_id: int, feedback_text: str)
         if str(generation["execution_snapshot_status"] or "ready") != "ready":
             raise ValueError("generation execution snapshot is not finalized")
         if str(generation["feedback_schema_version"] or ""):
+            allowed_graph_refs_by_student = None
+            batch_isolated = str(
+                generation["student_history_memory_mode"] or ""
+            ) == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            if batch_isolated:
+                try:
+                    batch_memory_context = json.loads(
+                        str(generation["memory_context_snapshot_json"] or "{}")
+                    )
+                except (TypeError, json.JSONDecodeError, RecursionError) as exc:
+                    raise ValueError(
+                        "batch isolated memory snapshot is invalid"
+                    ) from exc
+                if not isinstance(batch_memory_context, dict):
+                    raise ValueError("batch isolated memory snapshot is invalid")
+                allowed_graph_refs_by_student = {
+                    int(item.get("student_id") or 0): [
+                        str(value)
+                        for value in (
+                            item.get("learning_graph", {}).get(
+                                "allowed_evidence_refs"
+                            )
+                            if isinstance(item.get("learning_graph"), dict)
+                            else []
+                        )
+                        or []
+                    ]
+                    for item in batch_memory_context.get(
+                        "student_contexts_by_id"
+                    )
+                    or []
+                    if isinstance(item, dict)
+                    and int(item.get("student_id") or 0) > 0
+                }
             canonical = canonicalize_class_commentary_structured_feedback(
                 structured_feedback=raw_feedback,
                 generation=dict(generation),
+                allowed_graph_evidence_refs_by_student=(
+                    allowed_graph_refs_by_student
+                ),
+                require_batch_graph_refs=batch_isolated,
+            )
+            used_graph_refs_json = _class_commentary_canonical_json(
+                {
+                    str(student_id): refs
+                    for student_id, refs in canonical.get(
+                        "used_graph_evidence_refs_by_student",
+                        {},
+                    ).items()
+                }
+            )
+            used_graph_refs_hash = _class_commentary_content_hash(
+                used_graph_refs_json
             )
             normalized_feedback = str(canonical["derived_feedback_text"])
             conn.execute(
@@ -13302,6 +14061,8 @@ def complete_class_commentary_generation(generation_id: int, feedback_text: str)
                 UPDATE class_commentary_generations
                 SET status='succeeded', structured_feedback_json=?,
                     structured_feedback_hash=?, generated_feedback_text=?,
+                    used_graph_evidence_refs_by_student_json=?,
+                    used_graph_evidence_refs_by_student_hash=?,
                     error_code=NULL, completed_at=datetime('now','localtime')
                 WHERE id=? AND status='generating'
                 """,
@@ -13309,6 +14070,8 @@ def complete_class_commentary_generation(generation_id: int, feedback_text: str)
                     canonical["structured_feedback_json"],
                     canonical["structured_feedback_hash"],
                     normalized_feedback,
+                    used_graph_refs_json,
+                    used_graph_refs_hash,
                     generation_id,
                 ),
             )
@@ -13357,6 +14120,30 @@ def fail_class_commentary_generation(generation_id: int, error_code: str) -> dic
             raise ValueError("generation not found")
         if generation["status"] != "generating":
             return _serialize_class_commentary_generation_row(generation)
+        batch_response_persisted = bool(str(generation["batch_response_hash"] or ""))
+        batch_has_durable_owner_or_snapshot = bool(
+            str(generation["student_history_memory_mode"] or "")
+            == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+            and (
+                str(generation["execution_snapshot_status"] or "") == "ready"
+                or str(generation["batch_claim_token"] or "")
+            )
+        )
+        batch_usage_settled = conn.execute(
+            """
+            SELECT 1 FROM class_commentary_generation_credit_holds
+            WHERE generation_id=? AND status='settled'
+            """,
+            (int(generation_id),),
+        ).fetchone()
+        if (
+            batch_has_durable_owner_or_snapshot
+            or batch_response_persisted
+            or batch_usage_settled
+        ):
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation has durable progress and must be resumed"
+            )
         conn.execute(
             """
             UPDATE class_commentary_generations
@@ -13364,6 +14151,14 @@ def fail_class_commentary_generation(generation_id: int, error_code: str) -> dic
             WHERE id=? AND status='generating'
             """,
             (normalized_error, generation_id),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_generation_credit_holds
+            SET status='released', released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE generation_id=? AND status='active'
+            """,
+            (int(generation_id),),
         )
         conn.execute(
             """
@@ -13384,6 +14179,86 @@ def fail_class_commentary_generation(generation_id: int, error_code: str) -> dic
             (generation_id,),
         ).fetchone()
         return _serialize_class_commentary_generation_row(row)
+
+
+def fail_class_commentary_batch_generation_terminal(
+    generation_id: int,
+    *,
+    claim_token: str,
+    error_code: str,
+) -> dict:
+    normalized_error = str(error_code or "batch_generation_failed").strip()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        if not generation:
+            raise ValueError("generation not found")
+        if str(generation["status"] or "") != "generating":
+            return _serialize_class_commentary_generation_row(generation)
+        if str(generation["batch_claim_token"] or "") != str(claim_token or ""):
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation claim changed"
+            )
+        hold = conn.execute(
+            """
+            SELECT * FROM class_commentary_generation_credit_holds
+            WHERE generation_id=?
+            """,
+            (int(generation_id),),
+        ).fetchone()
+        if hold and str(hold["status"] or "") == "settled":
+            raise ClassCommentaryGenerationRequestConflict(
+                "settled batch generation must be published"
+            )
+        conn.execute(
+            """
+            UPDATE class_commentary_generation_credit_holds
+            SET status='released', released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE generation_id=? AND status='active'
+              AND EXISTS (
+                    SELECT 1 FROM class_commentary_generations AS generation
+                    WHERE generation.id=? AND generation.batch_claim_token=?
+              )
+            """,
+            (int(generation_id), int(generation_id), str(claim_token)),
+        )
+        conn.execute(
+            """
+            UPDATE class_commentary_generations
+            SET status='failed', error_code=?, completed_at=datetime('now','localtime'),
+                batch_claim_token=NULL, batch_claim_owner=NULL,
+                batch_claim_expires_at=NULL
+            WHERE id=? AND status='generating'
+              AND batch_claim_token=?
+            """,
+            (normalized_error, int(generation_id), str(claim_token)),
+        )
+        if conn.total_changes < 2:
+            raise ClassCommentaryGenerationRequestConflict(
+                "batch generation terminal claim changed"
+            )
+        conn.execute(
+            """
+            UPDATE class_commentary_tasks
+            SET status='failed', failure_stage='generation', generation_error=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=? AND latest_generation_id=? AND confirmed_transcript_version=?
+            """,
+            (
+                normalized_error,
+                int(generation["task_id"]),
+                int(generation_id),
+                int(generation["confirmed_transcript_version"]),
+            ),
+        )
+        saved = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+        return _serialize_class_commentary_generation_row(saved)
 
 
 def _serialize_class_commentary_feedback_draft_row(row: sqlite3.Row) -> dict:

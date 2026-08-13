@@ -76,6 +76,7 @@ import {
   fetchClassCommentarySkills,
   fetchClassCommentaryTasks,
   fetchClassCommentaryTask,
+  getClassCommentaryBatchGenerationUnavailableReason,
   generateClassCommentaryFeedback,
   formatClassCommentaryStudentFeedback,
   isClassCommentaryFeedbackRecordInScope,
@@ -178,6 +179,8 @@ const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   skill_evolution_enabled: false,
   structured_feedback_enabled: false,
   student_history_memory_v2_enabled: false,
+  batch_isolated_v3_enabled: false,
+  class_commentary_generation_call_count: 0,
   student_history_memory_v2_max_credits_per_student: 0,
   graph_enabled: false,
   graph_healthy: false,
@@ -954,7 +957,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const attendanceReadyForGeneration = capabilities.structured_feedback_enabled
     ? attendingStudentIds.length > 0
     : !classStudents.length || attendingStudentIds.length > 0;
-  const canGenerate = capabilitiesState === 'ready' && uncertainStudentRetryGenerationId === null && !generations.some((generation) => generation.status === 'generating' && generation.student_history_memory_mode === 'isolated_v2') && !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && attendanceReadyForGeneration;
+  const batchGenerationUnavailableReason = getClassCommentaryBatchGenerationUnavailableReason(capabilities);
+  const generationContextReady = batchGenerationUnavailableReason === '';
+  const canGenerate = capabilitiesState === 'ready' && generationContextReady && uncertainStudentRetryGenerationId === null && !generations.some((generation) => generation.status === 'generating') && !isTaskReadOnly && !busy && !generationLoading && !loadingClassStudents && hasTranscriptText && Boolean(selectedClassId && selectedSkillId) && (canUseTranscript || canCreateManualTextTask) && attendanceReadyForGeneration;
   const hasSucceededGeneration = selectedGeneration?.status === 'succeeded';
   const feedbackContentValid = structuredFeedbackMode
     ? Boolean(
@@ -1003,10 +1008,10 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       .filter((run) => run.status === 'failed')
       .map((run) => run.student_id)
     : [];
-  const isolatedGenerationCallCount = capabilities.student_history_memory_v2_enabled
-    ? attendingStudentIds.length
-    : attendingStudentIds.length > 0 ? 1 : 0;
-  const isolatedGenerationMaxCredits = isolatedGenerationCallCount
+  const classGenerationCallCount = attendingStudentIds.length > 0
+    ? capabilities.class_commentary_generation_call_count
+    : 0;
+  const classGenerationMaxCredits = classGenerationCallCount
     * capabilities.student_history_memory_v2_max_credits_per_student;
   const activeSkillVersion = skillEvolution?.versions.find((version) => version.is_active)
     || skillEvolution?.versions.find((version) => version.id === skillEvolution.skill.active_version_id)
@@ -3029,9 +3034,8 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                             ? '额度与调用次数暂不可用, 当前不能发起生成.'
                             : capabilitiesState === 'loading'
                               ? '正在读取额度与调用次数...'
-                              : capabilities.student_history_memory_v2_enabled
-                            ? `本次将发起 ${isolatedGenerationCallCount} 次独立学生生成, 最多使用 ${isolatedGenerationMaxCredits} 点额度.`
-                            : `当前按 ${isolatedGenerationCallCount} 次班级生成进行额度预检.`}
+                              : batchGenerationUnavailableReason
+                                || `本次将发起 1 次整班生成, 一次返回全部到课学生点评, 最多使用 ${classGenerationMaxCredits} 点额度.`}
                         </p>
                       ) : null}
                     </div>

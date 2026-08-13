@@ -23,6 +23,36 @@ def _response(payload: dict):
 
 
 class ClassCommentaryMemoryAiTest(unittest.TestCase):
+    def test_learning_graph_extractor_explicitly_requests_lowercase_json(self):
+        captured = {}
+        client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=lambda **kwargs: captured.update(kwargs) or _response(
+                        {
+                            "schema_version": "student_learning_event.v1",
+                            "items": [],
+                        }
+                    )
+                )
+            )
+        )
+
+        with patch.object(
+            ai_processor,
+            "_get_class_commentary_client",
+            return_value=client,
+        ):
+            payload = ai_processor.extract_class_commentary_learning_events(
+                extraction_input={"feedback_text": "小王今天计算稳定."},
+                provider="openai",
+                model="memory-model",
+            )
+
+        self.assertEqual(payload["items"], [])
+        self.assertIn("valid json object", captured["messages"][0]["content"])
+        self.assertEqual(captured["response_format"], {"type": "json_object"})
+
     def test_extractor_uses_frozen_input_and_returns_validated_signals(self):
         captured = {}
         client = types.SimpleNamespace(

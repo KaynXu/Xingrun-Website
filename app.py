@@ -84,6 +84,7 @@ from lesson_manager import (
     ClassCommentaryFeedbackSchemaMismatch,
     ClassCommentaryFeedbackSchemaUnsupported,
     ClassCommentaryGenerationRequestConflict,
+    ClassCommentaryTranscriptSnapshotConflict,
     ClassCommentaryCreditReservationError,
     ClassCommentaryStudentGenerationRetryRequestConflict,
     ClassCommentaryMemoryEvidenceNotRevocable,
@@ -117,7 +118,6 @@ from lesson_manager import (
     create_class_commentary_skill_candidate_build,
     complete_class_commentary_generation,
     confirm_class_commentary_feedback,
-    finalize_class_commentary_generation_execution_snapshot,
     create_review_plan_version,
     create_pending_lesson,
     create_pending_wrong_question_practice_sheet,
@@ -159,7 +159,6 @@ from lesson_manager import (
     get_class_commentary_generation,
     get_class_commentary_generation_by_request,
     get_class_commentary_memory_evidence,
-    get_class_commentary_memory_records_by_ids,
     get_class_commentary_revision,
     get_class_commentary_skill_candidate_build,
     get_class_commentary_skill_candidate_eligibility,
@@ -207,6 +206,7 @@ from lesson_manager import (
     list_class_commentary_skill_versions,
     list_class_commentary_skills_for_organization,
     import_class_commentary_skill_manifest,
+    refresh_class_commentary_skill_manifest,
     list_class_teacher_bindings,
     list_classes,
     list_classes_for_actor,
@@ -242,7 +242,6 @@ from lesson_manager import (
     list_wechat_wrong_question_submissions,
     list_weekly_wrong_question_activity_summary,
     list_weekly_wrong_question_followup_students,
-    mark_class_commentary_memory_records_reconcile_needed,
     list_registration_requests_for_actor,
     list_unbound_classes_for_user_claim,
     list_users_for_actor,
@@ -323,11 +322,9 @@ from lesson_manager import (
 )
 from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import (
-    CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
     CLASS_COMMENTARY_PROMPT_VERSION,
-    CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3,
     CLASS_COMMENTARY_TEMPERATURE,
-    build_class_commentary_chat_request,
     list_colleague_skills,
     load_colleague_skill,
     payload_to_json,
@@ -335,12 +332,11 @@ from class_commentary import (
 )
 from class_commentary_feedback_schema import (
     CLASS_COMMENTARY_STUDENT_FEEDBACK_SCHEMA_V1,
-    CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1,
+    CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
     ClassCommentaryStudentScopeError,
     ClassCommentaryStructuredFeedbackValidationError,
     build_class_commentary_feedback_read_envelope,
-    validate_class_commentary_structured_generation_contract,
 )
 from class_commentary_memory import ClassCommentaryMemoryService
 from class_commentary_memory_queue import (
@@ -349,6 +345,7 @@ from class_commentary_memory_queue import (
 )
 from class_commentary_graph_queue import dispatch_class_commentary_graph_work
 from class_commentary_learning_graph import (
+    LearningGraphSnapshotIntegrityError,
     LearningGraphValidationError,
     LearningGraphRetryConflict,
     get_student_learning_graph_summary,
@@ -359,9 +356,17 @@ from class_commentary_learning_graph import (
 )
 from class_commentary_semantica import SemanticaGraphAdapter
 import curriculum_registry
-from class_commentary_memory_retrieval import (
-    empty_class_commentary_memory_context,
-    retrieve_class_commentary_memory_context,
+from class_commentary_batch_context import (
+    ClassCommentaryBatchContextError,
+    parse_frozen_batch_generation_inputs,
+)
+from class_commentary_student_memory_v2 import (
+    ClassCommentaryStudentEvidenceAttributionError,
+    build_student_evidence_assignment,
+    content_hash as class_commentary_student_content_hash,
+)
+from class_commentary_batch_generation_jobs import (
+    process_class_commentary_batch_generation,
 )
 import smart_wrong_questions
 import master_data
@@ -512,10 +517,12 @@ def _class_commentary_capabilities(*, force: bool = False) -> dict:
     memory_capabilities = _class_commentary_memory_capabilities(force=force)
     graph_capabilities = _class_commentary_graph_capabilities()
     runtime = get_config()
-    isolated_v2_enabled = bool(
+    batch_isolated_v3_enabled = bool(
         runtime.get("class_commentary_student_memory_v2_enabled")
         and runtime.get("class_commentary_structured_feedback_enabled")
         and memory_capabilities.get("memory_learning_enabled")
+        and graph_capabilities.get("graph_enabled")
+        and graph_capabilities.get("graph_healthy")
     )
     return {
         **memory_capabilities,
@@ -523,7 +530,9 @@ def _class_commentary_capabilities(*, force: bool = False) -> dict:
         "structured_feedback_enabled": bool(
             runtime.get("class_commentary_structured_feedback_enabled")
         ),
-        "student_history_memory_v2_enabled": isolated_v2_enabled,
+        "student_history_memory_v2_enabled": batch_isolated_v3_enabled,
+        "batch_isolated_v3_enabled": batch_isolated_v3_enabled,
+        "class_commentary_generation_call_count": 1,
         "student_history_memory_v2_max_credits_per_student": (
             max_configured_charge_for_feature("class_commentary_generate")
         ),
@@ -1132,6 +1141,52 @@ def _run_ai_feature_with_charge(
         if claim_request_identity:
             _release_ai_request_identity(request_id)
 
+
+def _resume_class_commentary_batch_generation(
+    *,
+    generation: dict,
+    user: dict,
+) -> dict:
+    frozen = parse_frozen_batch_generation_inputs(generation)
+    def generator(**kwargs):
+        return _call_ai_helper_with_usage(
+            generate_class_commentary_feedback,
+            class_record=frozen["class_record"],
+            students=frozen["students"],
+            transcript_text=frozen["transcript_text"],
+            skill=frozen["skill"],
+            provider=str(kwargs["provider"]),
+            model=str(kwargs["model"]),
+            chat_request=kwargs["chat_request"],
+            openai_api_key=_class_commentary_openai_api_key(),
+            openai_base_url=_class_commentary_openai_base_url(),
+            openai_headers=_class_commentary_openai_headers(),
+            request_id=str(kwargs["request_id"]),
+            request_timeout=float(
+                kwargs["runtime_config"].get(
+                    "class_commentary_batch_generation_timeout"
+                )
+                or 300
+            ),
+            max_retries=0,
+        )
+    result = process_class_commentary_batch_generation(
+        int(generation["id"]),
+        runtime_config=get_config(),
+        generator=generator,
+        charge_finalizer=finalize_ai_charge,
+        claim_owner=f"class-commentary-http:{int(user['id'])}",
+        memory_service=_get_class_commentary_memory_service(),
+    )
+    refreshed = get_class_commentary_generation(int(generation["id"]))
+    if refreshed is None:
+        raise ValueError("generation not found")
+    error_code = str(result.get("error_code") or "")
+    if error_code == "structured_feedback_invalid" or error_code.startswith(
+        "student_feedback_"
+    ):
+        raise ClassCommentaryStructuredFeedbackValidationError(error_code)
+    return refreshed
 
 def _get_or_create_compat_review_plan_version_for_job(
     *,
@@ -3377,26 +3432,6 @@ def _class_commentary_structured_feedback_error_payload(
     return payload
 
 
-def _class_commentary_frozen_chat_request(generation: dict) -> dict:
-    raw_payload = str(generation.get("prompt_payload_snapshot_json") or "")
-    try:
-        payload = json.loads(raw_payload)
-    except json.JSONDecodeError as exc:
-        raise ValueError("generation prompt snapshot is invalid") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("generation prompt snapshot is invalid")
-    canonical_payload = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    expected_hash = hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
-    if expected_hash != str(generation.get("prompt_payload_hash") or ""):
-        raise ValueError("generation prompt snapshot hash mismatch")
-    return payload
-
-
 def _class_commentary_feedback_read_envelope(
     record: dict,
     *,
@@ -5008,25 +5043,48 @@ def _sync_configured_class_commentary_skills(user: dict) -> list[dict]:
     skill_dir = str(get_runtime_config().get("colleague_skill_dir") or "").strip()
     if not skill_dir:
         return list_class_commentary_skills_for_organization(organization_id)
-    registered_ids = {
-        str(item["skill_id"])
+    registered_by_id = {
+        str(item["skill_id"]): item
         for item in list_class_commentary_skills_for_organization(organization_id)
     }
-    with get_conn() as conn:
-        registered_ids.update(
-            str(row["skill_id"])
-            for row in conn.execute(
-                "SELECT skill_id FROM class_commentary_skills WHERE organization_id=?",
-                (organization_id,),
-            ).fetchall()
-        )
     for item in list_colleague_skills(skill_dir):
         skill_id = str(item.get("id") or "").strip()
-        if not skill_id or skill_id in registered_ids:
+        if not skill_id:
             continue
         package = load_colleague_skill(skill_dir, skill_id)
+        registered = registered_by_id.get(skill_id)
+        if registered:
+            if (
+                str(registered.get("source_type") or "")
+                != "external_skill_package"
+                or str(registered.get("version_kind") or "") != "imported"
+                or str(registered.get("content_hash") or "")
+                == hashlib.sha256(
+                    str(package.get("content") or "").encode("utf-8")
+                ).hexdigest()
+            ):
+                continue
+            try:
+                refreshed = refresh_class_commentary_skill_manifest(
+                    organization_id=organization_id,
+                    skill_id=skill_id,
+                    actor_user_id=actor_user_id,
+                    activation_request_id=(
+                        f"manifest-refresh:{organization_id}:{skill_id}:"
+                        f"{hashlib.sha256(str(package.get('content') or '').encode('utf-8')).hexdigest()}"
+                    ),
+                    expected_active_version_id=int(registered["active_version_id"]),
+                )
+            except (
+                ClassCommentarySkillActivationRequestConflict,
+                ClassCommentarySkillImportConflict,
+                ClassCommentarySkillVersionConflict,
+            ):
+                continue
+            registered_by_id[skill_id] = dict(refreshed["skill"])
+            continue
         try:
-            import_class_commentary_skill_manifest(
+            imported = import_class_commentary_skill_manifest(
                 organization_id=organization_id,
                 skill_id=skill_id,
                 actor_user_id=actor_user_id,
@@ -5034,7 +5092,8 @@ def _sync_configured_class_commentary_skills(user: dict) -> list[dict]:
             )
         except ClassCommentarySkillImportConflict:
             pass
-        registered_ids.add(skill_id)
+        else:
+            registered_by_id[skill_id] = imported
     return list_class_commentary_skills_for_organization(organization_id)
 
 
@@ -10599,6 +10658,8 @@ def api_class_commentary_feedback_draft_get(task_id: int, generation_id: int):
             generation_id,
             int(task["teacher_user_id"]),
         )
+    except LearningGraphSnapshotIntegrityError:
+        return jsonify({"error": "generation_graph_snapshot_invalid"}), 409
     except ValueError:
         return jsonify({"error": "not found"}), 404
     return jsonify(_serialize_class_commentary_draft_for_response(draft))
@@ -11122,6 +11183,31 @@ def api_class_commentary_task_generate(task_id: int):
             or (selected_ids is not None and selected_ids != saved_student_ids)
         ):
             return jsonify({"error": "generation_request_conflict"}), 409
+        resume_existing_batch = bool(
+            existing_generation["status"] == "generating"
+            and str(existing_generation.get("student_history_memory_mode") or "")
+            == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+        )
+        if resume_existing_batch:
+            try:
+                existing_generation = _resume_class_commentary_batch_generation(
+                    generation=existing_generation,
+                    user=user,
+                )
+            except CreditBalanceError as exc:
+                current_task = get_class_commentary_task(int(task["id"]))
+                return jsonify({
+                    "error": str(exc),
+                    "task": _serialize_class_commentary_task_for_response(
+                        current_task,
+                        include_private=True,
+                    ),
+                    "generation": _serialize_class_commentary_generation_for_response(
+                        existing_generation
+                    ),
+                    "generation_id": int(existing_generation["id"]),
+                    "generation_status": str(existing_generation["status"]),
+                }), 402
         current_task = get_class_commentary_task(int(task["id"]))
         status_code = 202 if existing_generation["status"] == "generating" else 200
         return jsonify(
@@ -11138,27 +11224,21 @@ def api_class_commentary_task_generate(task_id: int):
     confirmed_transcript_text = str(task.get("confirmed_transcript_text") or "").strip()
     if not confirmed_transcript_text:
         return jsonify({"error": "confirmed transcript is required before generation"}), 400
+    confirmed_transcript_version = int(task.get("confirmed_transcript_version") or 0)
+    confirmed_transcript_hash = class_commentary_student_content_hash(
+        confirmed_transcript_text
+    )
     cls = get_class(int(task["class_id"]))
     if not cls:
         return jsonify({"error": "not found"}), 404
     current_class_students = list_students_for_class(int(task["class_id"]))
-    live_student_ids = [
-        int(student["id"])
-        for student in current_class_students
-        if int(student.get("id") or 0) > 0
-    ]
     structured_feedback_enabled = bool(
         get_config().get("class_commentary_structured_feedback_enabled")
     )
-    isolated_v2_enabled = bool(
-        structured_feedback_enabled
-        and _class_commentary_capabilities().get(
-            "student_history_memory_v2_enabled"
-        )
-    )
+    if not structured_feedback_enabled:
+        return jsonify({"error": "class_commentary_batch_memory_unavailable"}), 503
     if (
-        structured_feedback_enabled
-        and "attending_student_ids" not in (data or {})
+        "attending_student_ids" not in (data or {})
     ):
         return jsonify({"error": "attending_student_ids is required"}), 400
     class_students, attendance_error = _filter_class_commentary_students_by_attendance(
@@ -11167,6 +11247,17 @@ def api_class_commentary_task_generate(task_id: int):
     )
     if attendance_error:
         return attendance_error
+    try:
+        ensure_feature_credits_available_for_count(
+            organization_id=int(user["organization_id"]),
+            feature_key="class_commentary_generate",
+            call_count=1,
+        )
+    except CreditBalanceError as exc:
+        return jsonify({"error": str(exc)}), 402
+    generation_capabilities = _class_commentary_capabilities(force=True)
+    if not generation_capabilities.get("batch_isolated_v3_enabled"):
+        return jsonify({"error": "class_commentary_batch_memory_unavailable"}), 503
     _sync_configured_class_commentary_skills(user)
     skill = get_class_commentary_skill_for_organization(
         int(user["organization_id"]),
@@ -11177,9 +11268,7 @@ def api_class_commentary_task_generate(task_id: int):
     chat_provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
     chat_model = _class_commentary_chat_model_name(chat_provider, fallback_model=_default_chat_model_name())
     prompt_version = (
-        CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2
-        if isolated_v2_enabled
-        else CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
         if structured_feedback_enabled
         else CLASS_COMMENTARY_PROMPT_VERSION
     )
@@ -11190,15 +11279,21 @@ def api_class_commentary_task_generate(task_id: int):
         }
         for student in class_students
     ]
-    if isolated_v2_enabled:
-        try:
-            ensure_feature_credits_available_for_count(
-                organization_id=int(user["organization_id"]),
-                feature_key="class_commentary_generate",
-                call_count=len(attending_roster),
-            )
-        except CreditBalanceError as exc:
-            return jsonify({"error": str(exc)}), 402
+    try:
+        evidence_assignment = build_student_evidence_assignment(
+            transcript=confirmed_transcript_text,
+            transcript_hash=confirmed_transcript_hash,
+            roster=[
+                {
+                    "student_id": int(student["id"]),
+                    "student_name": str(student.get("name") or ""),
+                }
+                for student in current_class_students
+            ],
+            attending_student_ids=[item["student_id"] for item in attending_roster],
+        )
+    except ClassCommentaryStudentEvidenceAttributionError:
+        return jsonify({"error": "student_evidence_attribution_failed"}), 422
     try:
         generation = reserve_class_commentary_generation(
             task_id=int(task["id"]),
@@ -11212,17 +11307,16 @@ def api_class_commentary_task_generate(task_id: int):
             attending_roster_explicit="attending_student_ids" in (data or {}),
             structured_feedback_enabled=structured_feedback_enabled,
             student_history_memory_mode=(
-                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
-                if isolated_v2_enabled
-                else CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
+                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
                 if structured_feedback_enabled
                 else ""
             ),
-            credit_hold_amount_per_student=(
-                max_configured_charge_for_feature("class_commentary_generate")
-                if isolated_v2_enabled
-                else 0
+            credit_hold_amount_per_student=0,
+            credit_hold_amount=max_configured_charge_for_feature(
+                "class_commentary_generate"
             ),
+            expected_confirmed_transcript_version=confirmed_transcript_version,
+            expected_confirmed_transcript_hash=confirmed_transcript_hash,
         )
     except ClassCommentaryCreditReservationError as exc:
         return jsonify({"error": str(exc)}), 402
@@ -11230,7 +11324,22 @@ def api_class_commentary_task_generate(task_id: int):
         return jsonify({"error": exc.code}), 400
     except ClassCommentaryGenerationRequestConflict:
         return jsonify({"error": "generation_request_conflict"}), 409
+    except ClassCommentaryTranscriptSnapshotConflict as exc:
+        return jsonify({"error": exc.code}), 409
+    except ValueError as exc:
+        if str(exc) == "class_commentary_subject_unavailable":
+            return jsonify({"error": str(exc)}), 400
+        raise
     if generation.get("is_idempotent"):
+        if (
+            generation["status"] == "generating"
+            and str(generation.get("student_history_memory_mode") or "")
+            == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+        ):
+            generation = _resume_class_commentary_batch_generation(
+                generation=generation,
+                user=user,
+            )
         current_task = get_class_commentary_task(int(task["id"]))
         status_code = 202 if generation["status"] == "generating" else 200
         return jsonify(
@@ -11247,138 +11356,64 @@ def api_class_commentary_task_generate(task_id: int):
                 generation,
             )
         ), 202
-    charge_request_key = f"class-commentary-generation-{int(generation['id'])}"
     try:
-        frozen_class = get_class(int(generation["class_id"]))
-        if not frozen_class:
-            raise ValueError("generation class not found")
-        frozen_roster = _class_commentary_json_value(
-            generation.get("attending_roster_snapshot_json"),
-            [],
-        )
-        frozen_schema_version = str(
-            generation.get("feedback_schema_version") or ""
-        )
-        if frozen_schema_version:
-            validate_class_commentary_structured_generation_contract(generation)
-        frozen_eligible_ids = _class_commentary_json_value(
-            generation.get("eligible_student_ids_json"),
-            [],
-        )
-        frozen_eligible_id_set = {
-            int(student_id)
-            for student_id in frozen_eligible_ids
-            if type(student_id) is int and student_id > 0
-        }
-        frozen_students = [
-            {
-                "id": int(item.get("student_id") or 0),
-                "name": str(item.get("student_name") or ""),
-            }
-            for item in frozen_roster
-            if (
-                isinstance(item, dict)
-                and int(item.get("student_id") or 0) > 0
-                and (
-                    not frozen_schema_version
-                    or int(item.get("student_id") or 0) in frozen_eligible_id_set
-                )
-            )
-        ]
-        frozen_skill = {
-            "id": str(generation.get("skill_id") or ""),
-            "name": str(skill.get("name") or generation.get("skill_id") or ""),
-            "content": str(generation.get("skill_content_snapshot") or ""),
-        }
-        frozen_transcript = str(generation.get("confirmed_transcript_snapshot") or "")
-        try:
-            memory_context = retrieve_class_commentary_memory_context(
-                generation=generation,
-                live_student_ids=live_student_ids,
-                memory_service=_get_class_commentary_memory_service(),
-                record_loader=lambda record_ids: get_class_commentary_memory_records_by_ids(
-                    record_ids,
-                    organization_id=int(generation["organization_id"]),
-                ),
-                reconciliation_marker=lambda organization_id, record_ids, reason: (
-                    mark_class_commentary_memory_records_reconcile_needed(
-                        record_ids,
-                        reason,
-                        organization_id=organization_id,
-                    )
-                ),
-            )
-        except Exception as exc:
-            memory_context = empty_class_commentary_memory_context(
-                f"retrieval_{type(exc).__name__}",
-                student_history_memory_mode=str(
-                    generation.get("student_history_memory_mode") or ""
-                ),
-            )
-        chat_request = build_class_commentary_chat_request(
-            class_record=frozen_class,
-            students=frozen_students,
-            transcript_text=frozen_transcript,
-            skill=frozen_skill,
-            teacher_style_memories=memory_context["teacher_style_memories"],
-            student_history_memories=memory_context["student_history_memories"],
-            feedback_schema_version=frozen_schema_version,
-            eligible_student_ids=frozen_eligible_ids,
-            prompt_version=str(generation.get("prompt_version") or ""),
-            response_format=_class_commentary_json_value(
-                generation.get("response_format_json"),
-                {},
-            ),
-            student_history_memory_mode=str(
-                generation.get("student_history_memory_mode") or ""
-            ),
-        )
-        generation = finalize_class_commentary_generation_execution_snapshot(
-            int(generation["id"]),
-            prompt_payload=chat_request,
-            memory_context=memory_context,
-        )
-        persisted_chat_request = _class_commentary_frozen_chat_request(generation)
-        feedback_text = _run_ai_feature_with_charge(
-            user={"id": int(user["id"]), "organization_id": int(user["organization_id"])},
-            feature_key="class_commentary_generate",
-            source_record_type="class_commentary_generation",
-            source_record_id=int(generation["id"]),
-            provider=str(generation["model_provider"]),
-            model=str(generation["model_name"]),
-            request_key=charge_request_key,
-            producer=lambda: _call_ai_helper_with_usage(
-                generate_class_commentary_feedback,
-                class_record=frozen_class,
-                students=frozen_students,
-                transcript_text=frozen_transcript,
-                skill=frozen_skill,
-                provider=str(generation["model_provider"]),
-                model=str(generation["model_name"]),
-                chat_request=persisted_chat_request,
-                openai_api_key=_class_commentary_openai_api_key(),
-                openai_base_url=_class_commentary_openai_base_url(),
-                openai_headers=_class_commentary_openai_headers(),
-            ),
-        )
-        completed_generation = complete_class_commentary_generation(
-            int(generation["id"]),
-            str(feedback_text or ""),
+        completed_generation = _resume_class_commentary_batch_generation(
+            generation=generation,
+            user=user,
         )
         ready_task = get_class_commentary_task(int(task["id"]))
+        status_code = 202 if completed_generation["status"] == "generating" else 200
         return jsonify(
             _serialize_class_commentary_generation_result(ready_task, completed_generation)
+        ), status_code
+    except ClassCommentaryBatchContextError:
+        logger.warning(
+            "class commentary batch context unavailable generation_id=%s",
+            int(generation["id"]),
         )
+        failed_generation = fail_class_commentary_generation(
+            int(generation["id"]),
+            "class_commentary_batch_context_unavailable",
+        )
+        failed_task = get_class_commentary_task(int(task["id"]))
+        return jsonify({
+            "error": "class_commentary_batch_memory_unavailable",
+            "task": _serialize_class_commentary_task_for_response(
+                failed_task,
+                include_private=True,
+            ),
+            "generation": _serialize_class_commentary_generation_for_response(
+                failed_generation
+            ),
+            "generation_id": int(failed_generation["id"]),
+            "generation_status": str(failed_generation["status"]),
+        }), 503
+    except CreditBalanceError as exc:
+        logger.warning(
+            "class commentary batch charge pending generation_id=%s",
+            int(generation["id"]),
+        )
+        pending_generation = get_class_commentary_generation(int(generation["id"]))
+        pending_task = get_class_commentary_task(int(task["id"]))
+        return jsonify({
+            "error": str(exc),
+            "task": _serialize_class_commentary_task_for_response(
+                pending_task,
+                include_private=True,
+            ),
+            "generation": _serialize_class_commentary_generation_for_response(
+                pending_generation
+            ),
+            "generation_id": int(pending_generation["id"]),
+            "generation_status": str(pending_generation["status"]),
+        }), 402
     except ClassCommentaryStructuredFeedbackValidationError as exc:
         logger.warning(
             "class commentary structured feedback validation failed generation_id=%s reason=%s",
             int(generation["id"]),
             exc.reason,
         )
-        failed_generation = fail_class_commentary_generation(
-            int(generation["id"]),
-            "structured_feedback_invalid",
-        )
+        failed_generation = get_class_commentary_generation(int(generation["id"]))
         failed_task = get_class_commentary_task(int(task["id"]))
         return jsonify({
             "error": "structured_feedback_invalid",
@@ -11393,9 +11428,24 @@ def api_class_commentary_task_generate(task_id: int):
             "generation_status": str(failed_generation["status"]),
         }), 500
     except Exception as exc:
-        failed_generation = fail_class_commentary_generation(
-            int(generation["id"]),
-            str(exc),
+        latest_generation = get_class_commentary_generation(int(generation["id"]))
+        durable_progress = bool(
+            latest_generation
+            and (
+                str(latest_generation.get("execution_snapshot_status") or "")
+                == "ready"
+                or str(latest_generation.get("batch_response_hash") or "")
+                or str(latest_generation.get("batch_charge_status") or "")
+                == "charged"
+            )
+        )
+        failed_generation = (
+            latest_generation
+            if durable_progress
+            else fail_class_commentary_generation(
+                int(generation["id"]),
+                str(exc),
+            )
         )
         failed_task = get_class_commentary_task(int(task["id"]))
         return jsonify({

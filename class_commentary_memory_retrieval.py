@@ -277,6 +277,7 @@ def retrieve_isolated_student_memory_context(
     record_loader: Callable[[list[int]], list[dict]],
     memory_service: Optional[ClassCommentaryMemoryService] = None,
     reconciliation_marker: Optional[Callable[[int, list[int], str], object]] = None,
+    student_history_memory_mode: str = "isolated_v2",
 ) -> dict:
     organization_id = _positive_int(generation.get("organization_id"))
     skill_registry_id = _positive_int(generation.get("skill_registry_id"))
@@ -287,12 +288,9 @@ def retrieve_isolated_student_memory_context(
             "isolated_generation_scope_unavailable"
         )
     if not subject_key:
-        context = empty_class_commentary_memory_context(
-            student_history_memory_mode="isolated_v2"
+        raise ClassCommentaryStudentMemoryRetrievalError(
+            "subject_unavailable"
         )
-        context["retrieval_status"] = "degraded"
-        context["degraded_reason"] = "subject_unavailable"
-        return context
     service = memory_service or ClassCommentaryMemoryService()
     if not service.enabled:
         raise ClassCommentaryStudentMemoryRetrievalError("memory_disabled")
@@ -439,7 +437,7 @@ def retrieve_isolated_student_memory_context(
         "teacher_style_memories": accepted_style,
         "retrieval_status": "ready" if records_snapshot else "empty",
         "degraded_reason": "",
-        "student_history_memory_mode": "isolated_v2",
+        "student_history_memory_mode": str(student_history_memory_mode),
     }
 
 
@@ -449,13 +447,18 @@ def validate_isolated_student_memory_context_snapshot(
     student_id: int,
     memory_context: Mapping[str, object],
     record_loader: Callable[[list[int]], list[dict]],
+    expected_memory_mode: str = "isolated_v2",
 ) -> None:
     organization_id = _positive_int(generation.get("organization_id"))
     skill_registry_id = _positive_int(generation.get("skill_registry_id"))
     target_student_id = _positive_int(student_id)
     subject_key = str(generation.get("subject_key") or "").strip()
     snapshot_records = memory_context.get("records")
-    if not isinstance(snapshot_records, list):
+    if (
+        not isinstance(snapshot_records, list)
+        or str(memory_context.get("student_history_memory_mode") or "")
+        != str(expected_memory_mode)
+    ):
         raise ClassCommentaryStudentMemoryRetrievalError("memory_snapshot_invalid")
     record_ids = sorted(
         {

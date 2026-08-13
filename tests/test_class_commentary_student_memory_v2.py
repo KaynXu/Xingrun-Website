@@ -24,9 +24,12 @@ from class_commentary_student_generation_jobs import (
     process_class_commentary_student_generation_run,
 )
 from class_commentary_student_memory_v2 import (
+    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3,
+    ClassCommentaryStudentEvidenceAttributionError,
     build_isolated_student_chat_request,
     build_safe_class_context,
     build_student_current_evidence,
+    build_student_evidence_assignment,
     canonical_hash,
     canonical_json,
     content_hash,
@@ -140,7 +143,250 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
             "credit_hold_amount_per_student": 10,
         }
         params.update(overrides)
-        return lesson_manager.reserve_class_commentary_generation(**params)
+        existing = lesson_manager.get_class_commentary_generation_by_request(
+            self.task["id"],
+            str(request_id),
+        )
+        if existing:
+            return lesson_manager.reserve_class_commentary_generation(**params)
+        if overrides:
+            raise AssertionError(
+                "legacy V2 fixture overrides are only valid for idempotent replay"
+            )
+        return self._insert_legacy_isolated_v2_generation(
+            request_id=str(request_id),
+            roster_students=roster_students,
+            hold_amount=int(params["credit_hold_amount_per_student"]),
+        )
+
+    def _insert_legacy_isolated_v2_generation(
+        self,
+        *,
+        request_id,
+        roster_students,
+        hold_amount,
+    ):
+        roster = [
+            {"student_id": item["id"], "student_name": item["name"]}
+            for item in roster_students
+        ]
+        roster_json = canonical_json(roster)
+        roster_hash = content_hash(roster_json)
+        transcript_hash = content_hash(self.transcript)
+        eligible_ids = [item["student_id"] for item in roster]
+        eligible_scope_hash = lesson_manager.build_class_commentary_eligible_scope_hash(
+            transcript_hash=transcript_hash,
+            roster_hash=roster_hash,
+            eligible_student_ids=eligible_ids,
+            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+        )
+        model_parameters = {"temperature": 0.55}
+        model_parameters_json = canonical_json(model_parameters)
+        skill_content = "先肯定本节课证据, 再给一条具体建议."
+        skill_content_hash = content_hash(skill_content)
+        empty_json = canonical_json({})
+        empty_hash = content_hash(empty_json)
+        class_context = build_safe_class_context(
+            class_record={"id": self.class_id},
+            subject_key="math",
+        )
+        class_context_json = canonical_json(class_context)
+        class_context_hash = content_hash(class_context_json)
+        request_payload = {
+            "attending_student_ids": eligible_ids,
+            "attending_roster_explicit": True,
+            "confirmed_transcript_hash": transcript_hash,
+            "confirmed_transcript_version": 1,
+            "eligible_student_ids": eligible_ids,
+            "eligible_student_scope_hash": eligible_scope_hash,
+            "feedback_schema_version": "class_commentary.student_feedback.v1",
+            "model_name": "deterministic-fake",
+            "model_parameters": model_parameters,
+            "model_provider": "openai",
+            "prompt_version": CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+            "response_format": {"type": "json_object"},
+            "skill_registry_id": self.skill["registry_id"],
+            "skill_version_id": self.skill["active_version_id"],
+            "student_history_memory_mode": (
+                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+            ),
+            "student_mention_matcher_version": (
+                CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
+            ),
+            "subject_key": "math",
+            "task_id": self.task["id"],
+            "credit_hold_amount_per_student": hold_amount,
+        }
+        request_payload_hash = content_hash(canonical_json(request_payload))
+        with lesson_manager.get_conn() as conn:
+            task = conn.execute(
+                "SELECT * FROM class_commentary_tasks WHERE id=?",
+                (self.task["id"],),
+            ).fetchone()
+            generation_no = int(task["generation_seq"] or 0) + 1
+            cursor = conn.execute(
+                """
+                INSERT INTO class_commentary_generations (
+                    organization_id, task_id, generation_no,
+                    generation_request_id, generation_request_payload_hash,
+                    teacher_user_id, class_id, subject_key,
+                    confirmed_transcript_version, confirmed_transcript_snapshot,
+                    confirmed_transcript_hash, attending_roster_snapshot_json,
+                    attending_roster_hash, attending_roster_explicit,
+                    skill_registry_id, skill_id, skill_version_id,
+                    skill_content_snapshot, skill_content_hash,
+                    model_provider, model_name, model_parameters_json,
+                    prompt_version, prompt_payload_snapshot_json,
+                    prompt_payload_hash, memory_context_snapshot_json,
+                    memory_context_hash, execution_snapshot_status,
+                    execution_snapshot_finalized_at, feedback_schema_version,
+                    eligible_student_ids_json, eligible_student_scope_hash,
+                    student_mention_matcher_version, response_format_json,
+                    student_history_memory_mode, generated_feedback_text,
+                    origin, snapshot_completeness, missing_snapshot_fields_json,
+                    status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?,
+                          'openai', 'deterministic-fake', ?, ?, ?, ?, ?, ?, 'ready',
+                          strftime('%Y-%m-%dT%H:%M:%fZ','now'), ?, ?, ?, ?, ?, ?, '',
+                          'runtime', 'complete', '[]', 'generating')
+                """,
+                (
+                    self.teacher["organization_id"],
+                    self.task["id"],
+                    generation_no,
+                    request_id,
+                    request_payload_hash,
+                    self.teacher["id"],
+                    self.class_id,
+                    "math",
+                    int(task["confirmed_transcript_version"]),
+                    self.transcript,
+                    transcript_hash,
+                    roster_json,
+                    roster_hash,
+                    self.skill["registry_id"],
+                    "student-memory-v2-test",
+                    self.skill["active_version_id"],
+                    skill_content,
+                    skill_content_hash,
+                    model_parameters_json,
+                    CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+                    empty_json,
+                    empty_hash,
+                    empty_json,
+                    empty_hash,
+                    "class_commentary.student_feedback.v1",
+                    canonical_json(eligible_ids),
+                    eligible_scope_hash,
+                    CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+                    canonical_json({"type": "json_object"}),
+                    CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
+                ),
+            )
+            generation_id = int(cursor.lastrowid)
+            conn.execute(
+                """
+                UPDATE class_commentary_tasks
+                SET generation_seq=?, latest_generation_id=?, status='generating',
+                    generation_request_key=?, chat_provider='openai',
+                    chat_model='deterministic-fake'
+                WHERE id=?
+                """,
+                (generation_no, generation_id, request_id, self.task["id"]),
+            )
+            for roster_item in roster:
+                student_id = int(roster_item["student_id"])
+                evidence = build_student_current_evidence(
+                    transcript=self.transcript,
+                    transcript_hash=transcript_hash,
+                    roster=roster,
+                    target_student_id=student_id,
+                    matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+                )
+                evidence_hash = str(evidence.pop("snapshot_hash"))
+                run_payload = {
+                    "generation_id": generation_id,
+                    "student_id": student_id,
+                    "student_name": roster_item["student_name"],
+                    "student_run_schema_version": (
+                        "class_commentary.student_generation_run.v1"
+                    ),
+                    "current_evidence_hash": evidence_hash,
+                    "class_context_hash": class_context_hash,
+                    "eligible_student_ids": eligible_ids,
+                    "eligible_student_scope_hash": eligible_scope_hash,
+                    "student_mention_matcher_version": (
+                        CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
+                    ),
+                    "prompt_version": CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+                    "memory_mode": (
+                        CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2
+                    ),
+                    "provider": "openai",
+                    "model": "deterministic-fake",
+                    "model_parameters": model_parameters,
+                }
+                run_payload_hash = canonical_hash(run_payload)
+                run_request_id = f"{request_id}:student:{student_id}"
+                charge_request_key = content_hash(
+                    f"{self.teacher['id']}:{run_request_id}:{run_payload_hash}:class_commentary_generate"
+                )
+                run_cursor = conn.execute(
+                    """
+                    INSERT INTO class_commentary_student_generation_runs (
+                        organization_id, generation_id, student_id,
+                        student_name_snapshot, request_id, request_payload_hash,
+                        prompt_version, memory_mode, eligible_student_ids_json,
+                        eligible_student_scope_hash, student_mention_matcher_version,
+                        class_context_snapshot_json, class_context_hash,
+                        current_evidence_snapshot_json, current_evidence_hash,
+                        memory_context_snapshot_json, memory_context_hash,
+                        provider, model, model_parameters_json,
+                        prompt_payload_snapshot_json, prompt_payload_hash,
+                        charge_request_key
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              'openai', 'deterministic-fake', ?, ?, ?, ?)
+                    """,
+                    (
+                        self.teacher["organization_id"],
+                        generation_id,
+                        student_id,
+                        roster_item["student_name"],
+                        run_request_id,
+                        run_payload_hash,
+                        CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
+                        CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_ISOLATED_V2,
+                        canonical_json(eligible_ids),
+                        eligible_scope_hash,
+                        CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+                        class_context_json,
+                        class_context_hash,
+                        canonical_json(evidence),
+                        evidence_hash,
+                        empty_json,
+                        empty_hash,
+                        model_parameters_json,
+                        empty_json,
+                        empty_hash,
+                        charge_request_key,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO class_commentary_student_generation_credit_holds (
+                        student_run_id, organization_id, amount,
+                        request_id, request_payload_hash
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(run_cursor.lastrowid),
+                        self.teacher["organization_id"],
+                        hold_amount,
+                        charge_request_key,
+                        run_payload_hash,
+                    ),
+                )
+        return lesson_manager.get_class_commentary_generation(generation_id)
 
     @staticmethod
     def _success_response(student_id):
@@ -790,6 +1036,83 @@ class ClassCommentaryStudentGenerationV2Test(unittest.TestCase):
         )
         self.assertEqual(snapshot["fragments"], [])
 
+    def test_v3_rejects_cross_student_id_or_joint_owner_clause(self):
+        roster = [
+            {"student_id": 21, "student_name": "学生甲"},
+            {"student_id": 22, "student_name": "学生乙"},
+        ]
+        for transcript, attending_ids in (
+            ("学生甲步骤清楚。学生ID: 22的私有诊断是焦虑。", [21]),
+            ("学生甲和学生乙一起讨论最后一题。", [21, 22]),
+        ):
+            with self.subTest(transcript=transcript), self.assertRaises(
+                ClassCommentaryStudentEvidenceAttributionError
+            ):
+                build_student_evidence_assignment(
+                    transcript=transcript,
+                    transcript_hash=content_hash(transcript),
+                    roster=roster,
+                    attending_student_ids=attending_ids,
+                )
+
+    def test_v3_single_attendee_gets_only_uniquely_owned_clauses(self):
+        transcript = "课堂共同说明。学生甲步骤清楚。课后共同提醒。"
+        roster = [
+            {"student_id": 21, "student_name": "学生甲"},
+            {"student_id": 22, "student_name": "学生乙"},
+        ]
+        assignment = build_student_evidence_assignment(
+            transcript=transcript,
+            transcript_hash=content_hash(transcript),
+            roster=roster,
+            attending_student_ids=[21],
+        )
+        snapshot = build_student_current_evidence(
+            transcript=transcript,
+            transcript_hash=content_hash(transcript),
+            roster=roster,
+            target_student_id=21,
+            matcher_version=CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3,
+            assignment=assignment,
+        )
+        self.assertEqual(
+            [item["text"] for item in snapshot["fragments"]],
+            ["学生甲步骤清楚。"],
+        )
+
+    def test_isolated_prompt_keeps_exact_evidence_provenance(self):
+        evidence_text = "学生甲步骤清楚。"
+        prompt = build_isolated_student_chat_request(
+            student_id=21,
+            student_name="学生甲",
+            class_context={"subject_key": "math"},
+            evidence_snapshot={
+                "fragments": [{
+                    "start": 5,
+                    "end": 14,
+                    "text": evidence_text,
+                    "text_hash": content_hash(evidence_text),
+                }]
+            },
+            student_history_memories=[],
+            teacher_style_memories=[],
+            skill_content="",
+            model_parameters={"temperature": 0.55},
+        )
+        user_prompt = prompt["messages"][1]["content"]
+        evidence_json = user_prompt.split(
+            "[CURRENT_STUDENT_EVIDENCE]\n", 1
+        )[1].split("\n\n[STUDENT_HISTORY_MEMORIES]\n", 1)[0]
+        self.assertEqual(
+            json.loads(evidence_json)["verified_fragments"],
+            [{
+                "start": 5,
+                "end": 14,
+                "text": evidence_text,
+                "text_hash": content_hash(evidence_text),
+            }],
+        )
+
 
 class FakeScopedMemoryService:
     enabled = True
@@ -1121,19 +1444,20 @@ class ClassCommentaryIsolatedMemoryRetrievalV2Test(unittest.TestCase):
             ["乙的历史事实."],
         )
 
-    def test_subject_missing_degrades_without_guessing_or_searching(self):
+    def test_subject_missing_fails_closed_without_guessing_or_searching(self):
         service = FakeScopedMemoryService()
-        context = retrieve_isolated_student_memory_context(
-            generation={**self.generation, "subject_key": ""},
-            student_id=21,
-            evidence_snapshot=self.evidence,
-            class_context={"subject_key": ""},
-            memory_service=service,
-            record_loader=lambda ids: [],
-        )
-        self.assertEqual(context["retrieval_status"], "degraded")
-        self.assertEqual(context["degraded_reason"], "subject_unavailable")
-        self.assertEqual(context["student_history_memories"], [])
+        with self.assertRaisesRegex(
+            ClassCommentaryStudentMemoryRetrievalError,
+            "^subject_unavailable$",
+        ):
+            retrieve_isolated_student_memory_context(
+                generation={**self.generation, "subject_key": ""},
+                student_id=21,
+                evidence_snapshot=self.evidence,
+                class_context={"subject_key": ""},
+                memory_service=service,
+                record_loader=lambda ids: [],
+            )
         self.assertEqual(service.calls, [])
 
     def test_snapshot_revalidation_rejects_revoked_or_changed_evidence(self):
