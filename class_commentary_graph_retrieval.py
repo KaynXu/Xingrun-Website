@@ -256,6 +256,7 @@ def retrieve_isolated_student_graph_context(
     runtime_config: Optional[Mapping[str, object]] = None,
     graph_adapter=None,
     summary_loader: Optional[Callable[..., dict]] = None,
+    require_available: bool = False,
 ) -> dict:
     config = dict(
         runtime_config if runtime_config is not None else config_runtime.get_runtime_config()
@@ -266,6 +267,8 @@ def retrieve_isolated_student_graph_context(
         subject_key=str(class_context.get("subject_key") or ""),
     )
     if not config_runtime.normalize_bool_flag(config.get("class_commentary_graph_enabled")):
+        if require_available:
+            raise ClassCommentaryStudentGraphRetrievalError("graph_disabled")
         return empty_isolated_student_graph_context(
             **scope, retrieval_status="disabled"
         )
@@ -273,6 +276,10 @@ def retrieve_isolated_student_graph_context(
         semantica_snapshot = (graph_adapter or _adapter(config)).scoped_snapshot(**scope)
         if any(semantica_snapshot.get(key) != value for key, value in scope.items()):
             raise ClassCommentaryStudentGraphRetrievalError("graph_scope_mismatch")
+        if require_available and not str(semantica_snapshot.get("hash") or ""):
+            raise ClassCommentaryStudentGraphRetrievalError(
+                "graph_snapshot_invalid"
+            )
         summary = (summary_loader or _summary_loader)(
             organization_id=scope["organization_id"],
             task_id=int(generation.get("task_id") or 0),
@@ -285,7 +292,11 @@ def retrieve_isolated_student_graph_context(
         raise
     except SemanticaGraphScopeError as exc:
         raise ClassCommentaryStudentGraphRetrievalError("graph_scope_mismatch") from exc
-    except (OSError, SemanticaGraphUnavailableError):
+    except (OSError, SemanticaGraphUnavailableError) as exc:
+        if require_available:
+            raise ClassCommentaryStudentGraphRetrievalError(
+                "graph_unavailable"
+            ) from exc
         return empty_isolated_student_graph_context(
             **scope, retrieval_status="degraded"
         )
@@ -312,6 +323,10 @@ def validate_isolated_student_graph_context_snapshot(
     graph_context: Mapping[str, object],
     class_context: Mapping[str, object],
     summary_loader: Optional[Callable[..., dict]] = None,
+    runtime_config: Optional[Mapping[str, object]] = None,
+    graph_adapter=None,
+    revalidate_semantica: bool = False,
+    require_available: bool = False,
 ) -> None:
     scope = build_student_graph_query(
         organization_id=int(generation.get("organization_id") or 0),
@@ -322,6 +337,26 @@ def validate_isolated_student_graph_context_snapshot(
         raise ClassCommentaryStudentGraphRetrievalError("graph_snapshot_invalid")
     if any(graph_context.get(key) != value for key, value in scope.items()):
         raise ClassCommentaryStudentGraphRetrievalError("graph_scope_mismatch")
+    retrieval_status = str(graph_context.get("retrieval_status") or "")
+    semantica_snapshot_hash = str(
+        graph_context.get("semantica_snapshot_hash") or ""
+    )
+    if require_available:
+        config = dict(
+            runtime_config
+            if runtime_config is not None
+            else config_runtime.get_runtime_config()
+        )
+        if (
+            not config_runtime.normalize_bool_flag(
+                config.get("class_commentary_graph_enabled")
+            )
+            or retrieval_status not in {"ready", "empty"}
+            or not semantica_snapshot_hash
+        ):
+            raise ClassCommentaryStudentGraphRetrievalError(
+                "graph_snapshot_unavailable"
+            )
     snapshot_without_hash = {
         key: value for key, value in graph_context.items() if key != "snapshot_hash"
     }
@@ -334,6 +369,36 @@ def validate_isolated_student_graph_context_snapshot(
         not isinstance(value, str) or not value for value in allowed_refs
     ):
         raise ClassCommentaryStudentGraphRetrievalError("graph_snapshot_invalid")
+    if revalidate_semantica and semantica_snapshot_hash:
+        config = dict(
+            runtime_config
+            if runtime_config is not None
+            else config_runtime.get_runtime_config()
+        )
+        try:
+            current_semantica = (graph_adapter or _adapter(config)).scoped_snapshot(
+                **scope
+            )
+        except SemanticaGraphScopeError as exc:
+            raise ClassCommentaryStudentGraphRetrievalError(
+                "graph_scope_mismatch"
+            ) from exc
+        except (OSError, SemanticaGraphUnavailableError) as exc:
+            raise ClassCommentaryStudentGraphRetrievalError(
+                "graph_snapshot_unavailable"
+            ) from exc
+        except SemanticaGraphError as exc:
+            raise ClassCommentaryStudentGraphRetrievalError(
+                "graph_integrity_failed"
+            ) from exc
+        if (
+            any(current_semantica.get(key) != value for key, value in scope.items())
+            or str(current_semantica.get("hash") or "")
+            != semantica_snapshot_hash
+        ):
+            raise ClassCommentaryStudentGraphRetrievalError(
+                "graph_snapshot_stale"
+            )
     if not allowed_refs:
         return
     summary = (summary_loader or _summary_loader)(

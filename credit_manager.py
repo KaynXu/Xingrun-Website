@@ -83,6 +83,7 @@ def record_ai_charge(
     request_id: str,
     request_payload_hash: str = "",
     credit_hold_student_run_id: int | None = None,
+    credit_hold_generation_id: int | None = None,
 ) -> dict:
     _pricing_for_feature(feature_key)
     if int(credit_cost_final) <= 0:
@@ -101,6 +102,7 @@ def record_ai_charge(
         request_id=request_id,
         request_payload_hash=request_payload_hash,
         credit_hold_student_run_id=credit_hold_student_run_id,
+        credit_hold_generation_id=credit_hold_generation_id,
     )
 
 
@@ -135,6 +137,7 @@ def finalize_ai_charge(
     request_id: str,
     request_payload_hash: str = "",
     credit_hold_student_run_id: int | None = None,
+    credit_hold_generation_id: int | None = None,
 ) -> dict:
     pricing = _pricing_for_feature(feature_key)
     normalized_usage = usage if isinstance(usage, dict) else {}
@@ -160,6 +163,7 @@ def finalize_ai_charge(
             request_id=request_id,
             request_payload_hash=request_payload_hash,
             credit_hold_student_run_id=credit_hold_student_run_id,
+            credit_hold_generation_id=credit_hold_generation_id,
         )
     except ValueError as exc:
         if str(exc) == "insufficient credit balance":

@@ -45,6 +45,10 @@ class LearningGraphRetryConflict(ValueError):
     pass
 
 
+class LearningGraphSnapshotIntegrityError(ValueError):
+    pass
+
+
 def canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -583,6 +587,11 @@ def ensure_class_commentary_graph_schema(conn: sqlite3.Connection) -> None:
     }
     for column, ddl in student_run_columns.items():
         _ensure_column(conn, "class_commentary_student_generation_runs", column, ddl)
+    for column, ddl in {
+        "used_graph_evidence_refs_by_student_json": "TEXT NOT NULL DEFAULT '{}'",
+        "used_graph_evidence_refs_by_student_hash": "TEXT NOT NULL DEFAULT ''",
+    }.items():
+        _ensure_column(conn, "class_commentary_generations", column, ddl)
     _ensure_column(conn, "class_commentary_graph_extraction_jobs", "started_at", "TEXT")
     _ensure_column(conn, "class_commentary_graph_cleanup_requests", "actor_user_id", "INTEGER")
     _ensure_column(conn, "class_commentary_graph_sync_outbox", "payload_json", "TEXT NOT NULL DEFAULT '{}'")
@@ -3300,6 +3309,39 @@ def get_student_learning_graph_summary(
             ).fetchone()
             if run:
                 used_refs = [str(value) for value in _json_list(run["used_graph_evidence_refs_json"])]
+            if not run:
+                generation_refs = conn.execute(
+                    """
+                    SELECT used_graph_evidence_refs_by_student_json,
+                           used_graph_evidence_refs_by_student_hash
+                    FROM class_commentary_generations
+                    WHERE id=? AND organization_id=?
+                    """,
+                    (int(generation_id), int(organization_id)),
+                ).fetchone()
+                refs_by_student = {}
+                if generation_refs:
+                    refs_json = str(
+                        generation_refs[
+                            "used_graph_evidence_refs_by_student_json"
+                        ]
+                        or "{}"
+                    )
+                    refs_hash = str(
+                        generation_refs[
+                            "used_graph_evidence_refs_by_student_hash"
+                        ]
+                        or ""
+                    )
+                    if refs_hash and content_hash(refs_json) != refs_hash:
+                        raise LearningGraphSnapshotIntegrityError(
+                            "generation_graph_evidence_refs_hash_mismatch"
+                        )
+                    refs_by_student = _json_object(refs_json)
+                used_refs = [
+                    str(value)
+                    for value in _json_list(refs_by_student.get(str(int(student_id))))
+                ]
         used_evidence_by_ref = {}
         if used_refs:
             placeholders = ",".join("?" for _ in used_refs)

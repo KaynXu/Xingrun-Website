@@ -1098,6 +1098,38 @@ def run_class_commentary_memory_reconciliation(
         if callable(student_run_recoverer)
         else []
     )
+    batch_lister = getattr(
+        target_store,
+        "list_resumable_class_commentary_batch_generations",
+        None,
+    )
+    resumable_batches = batch_lister(limit=100, now=now) if callable(batch_lister) else []
+    recovered_batch_generations = []
+    for generation in resumable_batches:
+        try:
+            from class_commentary_batch_generation_jobs import (
+                process_class_commentary_batch_generation,
+            )
+
+            resumed = process_class_commentary_batch_generation(
+                int(generation["id"]),
+                store=target_store,
+                runtime_config=config,
+            )
+            recovered_batch_generations.append(
+                {
+                    "generation_id": int(generation["id"]),
+                    "status": str(resumed.get("status") or ""),
+                }
+            )
+        except Exception as exc:
+            recovered_batch_generations.append(
+                {
+                    "generation_id": int(generation["id"]),
+                    "status": "retry_pending",
+                    "error_type": exc.__class__.__name__,
+                }
+            )
     try:
         dispatched = dispatch_class_commentary_memory_work(
             store=target_store,
@@ -1113,5 +1145,6 @@ def run_class_commentary_memory_reconciliation(
         "reconciled": reconciled,
         "recovered_candidates": recovered_candidates,
         "recovered_student_runs": recovered_student_runs,
+        "recovered_batch_generations": recovered_batch_generations,
         "dispatched": dispatched,
     }

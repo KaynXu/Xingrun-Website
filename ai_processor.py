@@ -64,6 +64,7 @@ def _get_client(
     openai_api_key: str = "",
     openai_base_url: str = "",
     openai_headers: dict | None = None,
+    max_retries: int | None = None,
 ):
     """返回当前配置的 AI 服务商客户端（兼容 OpenAI SDK）。"""
     from openai import OpenAI
@@ -74,7 +75,10 @@ def _get_client(
         key = cfg.get("deepseek_api_key", "") or os.environ.get("DEEPSEEK_API_KEY", "")
         if not key:
             raise RuntimeError("未找到 DeepSeek API Key，请在设置页面配置。")
-        return OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
+        kwargs = {"api_key": key, "base_url": "https://api.deepseek.com/v1"}
+        if max_retries is not None:
+            kwargs["max_retries"] = max(0, int(max_retries))
+        return OpenAI(**kwargs)
 
     key = openai_api_key or cfg.get("openai_api_key", "") or os.environ.get("OPENAI_API_KEY", "")
     if not key:
@@ -85,6 +89,8 @@ def _get_client(
         )
     base_url = str(openai_base_url or cfg.get("openai_base_url") or "").strip()
     kwargs = {"api_key": key}
+    if max_retries is not None:
+        kwargs["max_retries"] = max(0, int(max_retries))
     if openai_headers:
         kwargs["default_headers"] = openai_headers
     if base_url:
@@ -137,12 +143,20 @@ def _class_commentary_openai_headers(raw_headers: str = "") -> dict:
     return {str(key): str(value) for key, value in parsed.items()}
 
 
-def _get_class_commentary_client(provider: str, openai_api_key: str = "", openai_base_url: str = "", openai_headers: str = ""):
+def _get_class_commentary_client(
+    provider: str,
+    openai_api_key: str = "",
+    openai_base_url: str = "",
+    openai_headers: str = "",
+    *,
+    max_retries: int | None = None,
+):
     return _get_client(
         provider,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_headers=_class_commentary_openai_headers(openai_headers),
+        max_retries=max_retries,
     )
 
 
@@ -2395,11 +2409,19 @@ def generate_class_commentary_feedback(
     openai_headers: str = "",
     chat_request: dict | None = None,
     request_id: str = "",
+    request_timeout: float | None = None,
+    max_retries: int | None = None,
     include_usage: bool = False,
 ):
     provider = normalize_chat_provider(provider or _provider_name())
     model = _get_chat_model(provider, model)
-    client = _get_class_commentary_client(provider, openai_api_key, openai_base_url, openai_headers)
+    client = _get_class_commentary_client(
+        provider,
+        openai_api_key,
+        openai_base_url,
+        openai_headers,
+        max_retries=max_retries,
+    )
     request_payload = chat_request or build_class_commentary_chat_request(
         class_record=class_record,
         students=students,
@@ -2417,6 +2439,8 @@ def generate_class_commentary_feedback(
         completion_kwargs["extra_headers"] = {
             "Idempotency-Key": str(request_id).strip(),
         }
+    if request_timeout is not None:
+        completion_kwargs["timeout"] = max(1.0, float(request_timeout))
     response = client.chat.completions.create(**completion_kwargs)
     response_text = response.choices[0].message.content or ""
     text = (
@@ -2506,7 +2530,7 @@ def extract_class_commentary_learning_events(
     )
     system_prompt = (
         "You extract candidate learning observations from one teacher-confirmed feedback item. "
-        "Return exactly one JSON object with schema_version student_learning_event.v1 and an items array. "
+        "Return exactly one valid json object with schema_version student_learning_event.v1 and an items array. "
         "Use only a supplied knowledge_point_key from registry, or set knowledge_point_key to null and "
         "return a short unmapped_candidate. Never create a knowledge point or any student, organization, "
         "lesson, task, generation, revision, or teacher identity. observed_state must be one of unknown, weak, "

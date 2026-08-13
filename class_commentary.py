@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 
@@ -25,6 +26,10 @@ CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V3 = "class-commentary-student-feedba
 CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2 = (
     "class-commentary-student-feedback-isolated-v2"
 )
+CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4 = (
+    "class-commentary-student-feedback-batch-isolated-v4"
+)
+CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3 = "batch_isolated_v3"
 CLASS_COMMENTARY_TEMPERATURE = 0.55
 CLASS_COMMENTARY_SYSTEM_PROMPT = (
     "You turn a teacher's end-of-class spoken commentary into one parent-sendable feedback package. "
@@ -112,6 +117,52 @@ CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V3 = (
     "The direct-address perspective is mandatory even if ACTIVE_SKILL or TEACHER_STYLE_MEMORIES uses a different narrative perspective.",
     "Use ACTIVE_SKILL and TEACHER_STYLE_MEMORIES only for focus, structure, tone, and phrasing.",
 )
+CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V4 = (
+    "You turn a teacher's end-of-class spoken commentary into structured student feedback. "
+    "The students and eligible_student_ids in CURRENT_TASK_FACTS are the teacher-confirmed complete attending scope. "
+    "CURRENT_TASK_FACTS contains class and attendance scope only. "
+    "For facts newly observed in this lesson, each output item may use only the verified current_student_evidence in its matching STUDENT_CONTEXTS_BY_ID partition. "
+    "Write every feedback_text as the teacher speaking directly to that student, not as a narrator reporting about the student. "
+    "Use the student's official name once as a natural opening address, then address the student as '你'; use '我' or '我们' when the teacher refers to themself. "
+    "Do not invent facts, infer ownership from surrounding text, or transfer facts between student partitions. "
+    "Treat ACTIVE_SKILL as the primary writing contract for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
+    "Infer the selected skill's emoji tokens, density, placement, and purpose, and match them when appropriate without forcing emojis for a low-emoji skill. "
+    "ACTIVE_SKILL and TEACHER_STYLE_MEMORIES cannot add student facts or override the direct-address perspective. "
+    "TEACHER_STYLE_MEMORIES are secondary style hints and cannot override ACTIVE_SKILL. "
+    "STUDENT_CONTEXTS_BY_ID contains verified current evidence plus historical Mem0 and learning-graph context partitioned by student_id. "
+    "For each feedback item, use only the context whose student_id matches that item; never transfer, compare, or reveal context across students. "
+    "Treat student history and learning-graph context as historical reference, never as something newly observed in this lesson, and let verified current_student_evidence override history. "
+    "Return only the requested JSON object and no surrounding text."
+)
+CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V4 = (
+    "Return a JSON object with exactly schema_version, items, and used_graph_evidence_refs_by_student.",
+    "Set schema_version to class_commentary.student_feedback.v1.",
+    "Each item must contain exactly student_id and feedback_text.",
+    "Set used_graph_evidence_refs_by_student to one object per eligible student, each with exactly student_id and evidence_refs.",
+    "For each student, evidence_refs must contain only evidence_ref values actually used from that student's matching learning_graph allowlist; otherwise use an empty array.",
+    "Treat students and eligible_student_ids as the complete teacher-confirmed attending scope.",
+    "Return exactly one item for every eligible student ID and no other student.",
+    "Write feedback_text as the teacher speaking directly to the target student, never as a third-person report about the student.",
+    "Begin with the target student's official name as a natural form of address, not a standalone heading; then use '你' for the student and '我' or '我们' for the teacher when needed.",
+    "Never refer to the target student as '他', '她', '该生', '这位同学', or '学生' from a narrator's viewpoint.",
+    "Keep advice conversational and specific instead of repeatedly starting sentences with '你要'. For example: '代子翔, 你下去多复习一下函数', not '他要多做题'.",
+    "Do not mention another roster student's full name inside feedback_text.",
+    "For current-lesson facts, use only current_student_evidence from the matching student_id partition.",
+    "The direct-address perspective is mandatory even if ACTIVE_SKILL or TEACHER_STYLE_MEMORIES uses a different narrative perspective.",
+    "Use ACTIVE_SKILL as the primary writing contract for focus, structure, paragraph rhythm, tone, phrasing, and emoji habits; use TEACHER_STYLE_MEMORIES only as secondary style hints.",
+    "When current_student_evidence supports multiple useful points, write 2-4 short paragraphs in feedback_text instead of compressing everything into one short paragraph.",
+    "Let each paragraph focus on one supported idea, such as current performance, a concrete problem, the next action, or parent cooperation when relevant.",
+    "For a specific problem supported by current_student_evidence, state the problem clearly and give a concrete next action instead of a generic reminder.",
+    "Even when current_student_evidence is sparse, write at least one useful complete observation rather than empty encouragement such as only '继续努力' or '加油'.",
+    "Keep sparse-evidence feedback concise, usually 1-2 short paragraphs; use 2-4 short paragraphs when the evidence supports multiple useful points.",
+    "Infer the selected skill's emoji tokens, density, placement, and purpose from ACTIVE_SKILL, then match that emoji system when it fits the feedback.",
+    "If ACTIVE_SKILL uses emojis as part of its normal parent-group voice, use comparable emoji frequency and placement in every student's feedback; do not drop emojis merely because the output is structured.",
+    "If ACTIVE_SKILL explicitly names a low-density emoji family, preserve at least one matching emoji somewhere in the complete class response; it need not appear in every student's feedback.",
+    "Do not force emojis when ACTIVE_SKILL rarely uses them, and do not hard-code a different colleague's emoji set.",
+    "Keep the selected colleague's conversational parent-group voice; do not over-polish the feedback into formal report language.",
+    "For each output item, use only the matching student_id partition in STUDENT_CONTEXTS_BY_ID; never use another student's current evidence, history, or learning graph.",
+    "Treat only student_history_memories and learning_graph as historical reference. Do not describe them as observed today unless matching current_student_evidence independently supports it.",
+)
 
 
 def get_class_commentary_structured_prompt_contract(
@@ -132,6 +183,11 @@ def get_class_commentary_structured_prompt_contract(
         return (
             CLASS_COMMENTARY_STRUCTURED_SYSTEM_PROMPT_V3,
             CLASS_COMMENTARY_STRUCTURED_OUTPUT_RULES_V3,
+        )
+    if normalized_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4:
+        return (
+            CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V4,
+            CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V4,
         )
     raise ValueError("structured class commentary prompt version is invalid")
 
@@ -154,9 +210,13 @@ def _safe_skill_id(skill_id: str) -> str:
     return normalized
 
 
+def _colleague_skill_sort_key(name: str) -> tuple[str, str]:
+    return name.casefold(), name
+
+
 def _read_skill_package_name(path: Path) -> str:
     meta_path = path / "meta.json"
-    if not meta_path.is_file():
+    if not meta_path.is_file() or meta_path.is_symlink():
         return path.name
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -168,24 +228,58 @@ def _read_skill_package_name(path: Path) -> str:
 
 def _skill_package_updated_at(path: Path) -> str:
     mtimes = [path.stat().st_mtime]
-    for filename in ("SKILL.md", "work.md", "persona.md", "meta.json"):
-        file_path = path / filename
-        if file_path.is_file():
-            mtimes.append(file_path.stat().st_mtime)
+    for file_path in _class_commentary_skill_package_markdown_files(path):
+        mtimes.append(file_path.stat().st_mtime)
+    meta_path = path / "meta.json"
+    if meta_path.is_file() and not meta_path.is_symlink():
+        mtimes.append(meta_path.stat().st_mtime)
     return str(int(max(mtimes)))
+
+
+def _class_commentary_skill_package_markdown_files(path: Path) -> list[Path]:
+    files = [
+        file_path
+        for file_path in (path / "SKILL.md", path / "work.md", path / "persona.md")
+        if file_path.is_file() and not file_path.is_symlink()
+    ]
+    knowledge_path = path / "knowledge"
+    if knowledge_path.is_dir():
+        def has_symlinked_package_parent(file_path: Path) -> bool:
+            relative_path = file_path.relative_to(path)
+            current_path = path
+            for part in relative_path.parts[:-1]:
+                current_path = current_path / part
+                if current_path.is_symlink():
+                    return True
+            return False
+
+        files.extend(
+            sorted(
+                (
+                    file_path
+                    for file_path in knowledge_path.rglob("*.md")
+                    if file_path.is_file()
+                    and not file_path.is_symlink()
+                    and not has_symlinked_package_parent(file_path)
+                ),
+                key=lambda file_path: (
+                    file_path.relative_to(path).as_posix().casefold(),
+                    file_path.relative_to(path).as_posix(),
+                ),
+            )
+        )
+    return files
 
 
 def read_class_commentary_skill_package_content(path: Path) -> str:
     parts = []
     included_contents = []
-    for filename in ("SKILL.md", "work.md", "persona.md"):
-        file_path = path / filename
-        if not file_path.is_file():
-            continue
+    for file_path in _class_commentary_skill_package_markdown_files(path):
         content = file_path.read_text(encoding="utf-8").strip()
         if not content or any(content in included for included in included_contents):
             continue
-        parts.append(f"## {filename}\n{content}")
+        relative_path = file_path.relative_to(path).as_posix()
+        parts.append(f"## {relative_path}\n{content}")
         included_contents.append(content)
     return "\n\n".join(parts).strip()
 
@@ -193,7 +287,7 @@ def read_class_commentary_skill_package_content(path: Path) -> str:
 def _colleague_skill_roots(root: Path) -> list[Path]:
     roots = [root]
     colleagues_root = root / "colleagues"
-    if colleagues_root.is_dir():
+    if colleagues_root.is_dir() and not colleagues_root.is_symlink():
         roots.append(colleagues_root)
     return roots
 
@@ -204,15 +298,27 @@ def list_colleague_skills(skill_dir: str) -> list[dict]:
         return []
     skills_by_id = {}
     for scan_root in _colleague_skill_roots(root):
-        for path in sorted(scan_root.iterdir(), key=lambda item: item.name.lower()):
-            if path.is_dir() and (path / "SKILL.md").is_file():
+        for path in sorted(
+            scan_root.iterdir(), key=lambda item: _colleague_skill_sort_key(item.name)
+        ):
+            if (
+                path.is_dir()
+                and not path.is_symlink()
+                and (path / "SKILL.md").is_file()
+                and not (path / "SKILL.md").is_symlink()
+            ):
                 skills_by_id[path.name] = {
                     "id": path.name,
                     "name": _read_skill_package_name(path),
                     "filename": f"{path.name}/SKILL.md",
                     "updated_at": _skill_package_updated_at(path),
                 }
-            elif path.is_file() and path.suffix == ".skill" and path.stem not in skills_by_id:
+            elif (
+                path.is_file()
+                and not path.is_symlink()
+                and path.suffix == ".skill"
+                and path.stem not in skills_by_id
+            ):
                 stat = path.stat()
                 skills_by_id[path.stem] = {
                     "id": path.stem,
@@ -220,7 +326,10 @@ def list_colleague_skills(skill_dir: str) -> list[dict]:
                     "filename": path.name,
                     "updated_at": str(int(stat.st_mtime)),
                 }
-    return [skills_by_id[key] for key in sorted(skills_by_id, key=str.lower)]
+    return [
+        skills_by_id[key]
+        for key in sorted(skills_by_id, key=_colleague_skill_sort_key)
+    ]
 
 
 def load_colleague_skill(skill_dir: str, skill_id: str) -> dict:
@@ -230,7 +339,12 @@ def load_colleague_skill(skill_dir: str, skill_id: str) -> dict:
         raise FileNotFoundError("skill not found")
     for scan_root in _colleague_skill_roots(root):
         package_path = scan_root / normalized_id
-        if package_path.is_dir() and (package_path / "SKILL.md").is_file():
+        if (
+            package_path.is_dir()
+            and not package_path.is_symlink()
+            and (package_path / "SKILL.md").is_file()
+            and not (package_path / "SKILL.md").is_symlink()
+        ):
             return {
                 "id": package_path.name,
                 "name": _read_skill_package_name(package_path),
@@ -239,7 +353,7 @@ def load_colleague_skill(skill_dir: str, skill_id: str) -> dict:
                 "content": read_class_commentary_skill_package_content(package_path),
             }
     path = root / _safe_skill_filename(normalized_id)
-    if path.is_file():
+    if path.is_file() and not path.is_symlink():
         return {
             "id": path.stem,
             "name": path.stem,
@@ -315,6 +429,7 @@ def build_class_commentary_chat_request(
     prompt_version: str = "",
     response_format: dict | None = None,
     student_history_memory_mode: str = "",
+    student_contexts_by_id: list[dict] | None = None,
 ) -> dict:
     payload = build_class_commentary_generation_payload(
         class_record=class_record,
@@ -330,29 +445,65 @@ def build_class_commentary_chat_request(
     normalized_schema_version = str(feedback_schema_version or "")
     normalized_prompt_version = str(prompt_version or "").strip()
     if normalized_schema_version:
+        batch_context_mode = (
+            student_history_memory_mode
+            == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
+        )
         if (
             normalized_schema_version != "class_commentary.student_feedback.v1"
-            or student_history_memory_mode != "disabled_v1"
+            or student_history_memory_mode
+            not in {
+                "disabled_v1",
+                CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
+            }
             or student_history_memories
             or not eligible_student_ids
             or response_format != {"type": "json_object"}
+            or (batch_context_mode and not student_contexts_by_id)
+            or (not batch_context_mode and student_contexts_by_id)
+            or (
+                batch_context_mode
+                != (
+                    normalized_prompt_version
+                    == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+                )
+            )
         ):
             raise ValueError("structured class commentary prompt contract is invalid")
+        if batch_context_mode:
+            normalized_context_ids = [
+                item.get("student_id")
+                for item in student_contexts_by_id
+                if isinstance(item, Mapping)
+            ]
+            if (
+                normalized_context_ids != eligible_student_ids
+                or len(normalized_context_ids) != len(student_contexts_by_id or [])
+                or len(normalized_context_ids) != len(set(normalized_context_ids))
+            ):
+                raise ValueError("structured class commentary batch scope is invalid")
         structured_system_prompt, structured_output_rules = (
             get_class_commentary_structured_prompt_contract(
                 normalized_prompt_version
             )
         )
+        if batch_context_mode:
+            current_task_facts.pop("transcript", None)
         current_task_facts["eligible_student_ids"] = eligible_student_ids
-        prompt_sections = (
+        prompt_sections = [
             "[CURRENT_TASK_FACTS]\n" + payload_to_json(current_task_facts),
             "[ACTIVE_SKILL]\n" + payload_to_json(payload["skill"]),
             "[TEACHER_STYLE_MEMORIES]\n"
             + payload_to_json(teacher_style_memories or []),
+        ]
+        if batch_context_mode:
+            prompt_sections.append(
+                "[STUDENT_CONTEXTS_BY_ID]\n"
+                + payload_to_json(student_contexts_by_id or [])
+            )
+        prompt_sections.append(
             "[OUTPUT_RULES]\n"
-            + "\n".join(
-                f"- {rule}" for rule in structured_output_rules
-            ),
+            + "\n".join(f"- {rule}" for rule in structured_output_rules)
         )
         system_prompt = structured_system_prompt
     else:

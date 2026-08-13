@@ -160,6 +160,51 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         self.assertNotIn("## work.md", imported["content"])
         self.assertNotIn("## persona.md", imported["content"])
 
+    def test_package_import_freezes_nested_knowledge_examples_and_hash(self):
+        package = Path(self.tmp.name) / "teacher-knowledge"
+        messages = package / "knowledge" / "messages"
+        messages.mkdir(parents=True)
+        (package / "SKILL.md").write_text(
+            "# Teacher Knowledge\nPreserve the colleague voice.", encoding="utf-8"
+        )
+        sample_content = (
+            "学生这节课计算进步很明显[强].\n\n"
+            "符号还要再检查, 课后把错题重做一遍[玫瑰]."
+        )
+        (messages / "feedback-samples.md").write_text(
+            sample_content, encoding="utf-8"
+        )
+
+        imported = lesson_manager.import_class_commentary_skill_manifest(
+            organization_id=self.org_one_id,
+            skill_id="teacher-knowledge",
+            actor_user_id=self.teacher_one_id,
+            source_path=str(package / "SKILL.md"),
+        )
+
+        expected_hash = hashlib.sha256(
+            imported["content"].encode("utf-8")
+        ).hexdigest()
+        self.assertIn("## knowledge/messages/feedback-samples.md", imported["content"])
+        self.assertIn(sample_content, imported["content"])
+        self.assertEqual(imported["content_hash"], expected_hash)
+        self.assertEqual(imported["source_content_hash"], expected_hash)
+
+    def test_skill_display_name_ignores_symlinked_meta_json(self):
+        package = Path(self.tmp.name) / "teacher-safe-meta"
+        package.mkdir()
+        skill_path = package / "SKILL.md"
+        skill_path.write_text("Safe skill content", encoding="utf-8")
+        outside_meta = Path(self.tmp.name) / "outside-meta.json"
+        outside_meta.write_text('{"name": "Outside name"}', encoding="utf-8")
+        (package / "meta.json").symlink_to(outside_meta)
+
+        display_name = lesson_manager._class_commentary_skill_display_name(
+            "teacher-safe-meta", str(skill_path)
+        )
+
+        self.assertEqual(display_name, "teacher-safe-meta")
+
     def test_manifest_refresh_creates_audited_imported_version_and_is_idempotent(self):
         package = Path(self.tmp.name) / "teacher-refresh"
         package.mkdir()
