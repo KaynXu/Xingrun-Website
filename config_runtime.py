@@ -31,6 +31,7 @@ ENV_VAR_MAP = {
     "class_commentary_student_memory_v2_enabled": "XR_CLASS_COMMENTARY_STUDENT_MEMORY_V2_ENABLED",
     "class_commentary_student_generation_timeout": "XR_CLASS_COMMENTARY_STUDENT_GENERATION_TIMEOUT",
     "class_commentary_student_generation_max_attempts": "XR_CLASS_COMMENTARY_STUDENT_GENERATION_MAX_ATTEMPTS",
+    "class_commentary_batch_generation_timeout": "XR_CLASS_COMMENTARY_BATCH_GENERATION_TIMEOUT",
     "class_commentary_graph_enabled": "XR_CLASS_COMMENTARY_GRAPH_ENABLED",
     "class_commentary_graph_store_path": "XR_CLASS_COMMENTARY_GRAPH_STORE_PATH",
     "class_commentary_graph_timeout": "XR_CLASS_COMMENTARY_GRAPH_TIMEOUT",
@@ -112,6 +113,7 @@ DEFAULTS = {
     "class_commentary_student_memory_v2_enabled": False,
     "class_commentary_student_generation_timeout": 300,
     "class_commentary_student_generation_max_attempts": 3,
+    "class_commentary_batch_generation_timeout": 300,
     "class_commentary_graph_enabled": False,
     "class_commentary_graph_store_path": str(
         BASE_DIR / "data" / "class_commentary_semantica_graph.json"
@@ -293,6 +295,9 @@ def get_runtime_config() -> dict:
     )
     cfg["class_commentary_student_generation_max_attempts"] = normalize_positive_int(
         cfg.get("class_commentary_student_generation_max_attempts"), 3
+    )
+    cfg["class_commentary_batch_generation_timeout"] = normalize_positive_int(
+        cfg.get("class_commentary_batch_generation_timeout"), 300
     )
     cfg["class_commentary_graph_enabled"] = normalize_bool_flag(
         cfg.get("class_commentary_graph_enabled")

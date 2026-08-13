@@ -8,6 +8,10 @@ from unittest.mock import patch
 
 import config_runtime
 import lesson_manager
+import class_commentary_batch_context
+from class_commentary_batch_context import ClassCommentaryBatchContextError
+from class_commentary_graph_retrieval import empty_isolated_student_graph_context
+from class_commentary_memory_retrieval import empty_class_commentary_memory_context
 
 
 class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
@@ -106,10 +110,63 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
             "skill_evolution_enabled": True,
             "structured_feedback_enabled": True,
             "student_history_memory_v2_enabled": True,
+            "batch_isolated_v3_enabled": True,
+            "class_commentary_generation_call_count": 1,
             "student_history_memory_v2_max_credits_per_student": 10,
         }
 
-    def test_kill_switch_on_reserves_async_runs_and_returns_safe_progress(self):
+    def test_batch_isolated_v3_retrieves_each_student_and_calls_provider_once(self):
+        model_output = json.dumps(
+            {
+                "schema_version": "class_commentary.student_feedback.v1",
+                "items": [
+                    {
+                        "student_id": student["id"],
+                        "feedback_text": (
+                            f"{student['name']}, 你今天的步骤更清楚了🌱。\n\n"
+                            "需要继续检查符号问题🔍。\n\n"
+                            "下次先写完整过程, 再独立验算一次✨。"
+                        ),
+                    }
+                    for student in self.students
+                ],
+                "used_graph_evidence_refs_by_student": [
+                    {"student_id": student["id"], "evidence_refs": []}
+                    for student in self.students
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        def fake_charge(**kwargs):
+            result = kwargs["producer"]()
+            return result[0] if isinstance(result, tuple) else result
+
+        memory_student_ids = []
+        graph_student_ids = []
+
+        def fake_memory_retrieval(**kwargs):
+            student_id = int(kwargs["student_id"])
+            memory_student_ids.append(student_id)
+            context = empty_class_commentary_memory_context(
+                student_history_memory_mode="batch_isolated_v3"
+            )
+            context["retrieval_status"] = "ready"
+            context["teacher_style_memories"] = []
+            context["student_history_memories"] = []
+            context["records"] = []
+            return context
+
+        def fake_graph_retrieval(**kwargs):
+            student_id = int(kwargs["student_id"])
+            graph_student_ids.append(student_id)
+            return empty_isolated_student_graph_context(
+                organization_id=int(kwargs["generation"]["organization_id"]),
+                student_id=student_id,
+                subject_key=str(kwargs["class_context"]["subject_key"]),
+                retrieval_status="empty",
+            )
+
         with patch.object(
             self.app_module,
             "_class_commentary_capabilities",
@@ -117,80 +174,76 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         ), patch.object(
             self.app_module, "has_class_commentary_api_key", return_value=True
         ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_memory_context",
+            side_effect=fake_memory_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_graph_context",
+            side_effect=fake_graph_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_memory_context_snapshot",
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_graph_context_snapshot",
+        ), patch.object(
+            self.app_module, "_run_ai_feature_with_charge", side_effect=fake_charge
+        ), patch.object(
             self.app_module,
-            "_dispatch_class_commentary_memory_best_effort",
-            return_value={"enabled": True},
-        ) as dispatch, patch.object(
-            self.app_module, "generate_class_commentary_feedback"
-        ) as synchronous_generator:
+            "generate_class_commentary_feedback",
+            return_value=(
+                model_output,
+                {
+                    "provider": "openai",
+                    "model": "fake",
+                    "input_tokens": 5,
+                    "output_tokens": 20,
+                },
+            ),
+        ) as generate:
             response = self.client.post(
                 f"/api/class-commentary/tasks/{self.task['id']}/generate",
                 headers=self.headers,
                 json=self._request_payload(),
             )
 
-        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload["status"], "generating")
-        self.assertEqual(payload["student_history_memory_mode"], "isolated_v2")
+        self.assertEqual(payload["status"], "succeeded")
+        self.assertEqual(payload["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
-            payload["prompt_version"], "class-commentary-student-feedback-isolated-v2"
+            payload["prompt_version"],
+            "class-commentary-student-feedback-batch-isolated-v4",
         )
+        self.assertEqual(payload["student_run_progress"]["total"], 0)
         self.assertEqual(
-            payload["student_run_progress"],
-            {
-                "total": 2,
-                "queued": 2,
-                "generating": 0,
-                "succeeded": 0,
-                "failed": 0,
-                "runs": [
-                    {
-                        "id": payload["student_run_progress"]["runs"][0]["id"],
-                        "student_id": self.students[0]["id"],
-                        "student_name": self.students[0]["name"],
-                        "status": "queued",
-                        "attempt_count": 0,
-                        "memory_retrieval_status": "pending",
-                        "charge_status": "pending",
-                        "error_code": "",
-                        "created_at": payload["student_run_progress"]["runs"][0]["created_at"],
-                        "started_at": "",
-                        "completed_at": "",
-                    },
-                    {
-                        "id": payload["student_run_progress"]["runs"][1]["id"],
-                        "student_id": self.students[1]["id"],
-                        "student_name": self.students[1]["name"],
-                        "status": "queued",
-                        "attempt_count": 0,
-                        "memory_retrieval_status": "pending",
-                        "charge_status": "pending",
-                        "error_code": "",
-                        "created_at": payload["student_run_progress"]["runs"][1]["created_at"],
-                        "started_at": "",
-                        "completed_at": "",
-                    },
-                ],
-            },
+            [item["student_id"] for item in payload["student_feedback_items"]],
+            [student["id"] for student in self.students],
         )
-        self.assertEqual(payload["student_feedback_items"], [])
-        self.assertEqual(payload["generated_feedback_text"], "")
+        self.assertTrue(
+            all("🌱" in item["feedback_text"] for item in payload["student_feedback_items"])
+        )
         self.assertNotIn("prompt_payload_snapshot_json", json.dumps(payload))
         self.assertNotIn("memory_context_snapshot_json", json.dumps(payload))
-        dispatch.assert_called_once_with()
-        synchronous_generator.assert_not_called()
+        generate.assert_called_once()
+        self.assertEqual(memory_student_ids, [student["id"] for student in self.students])
+        self.assertEqual(graph_student_ids, [student["id"] for student in self.students])
+        chat_request = generate.call_args.kwargs["chat_request"]
+        self.assertEqual(chat_request["student_history_memory_mode"], "batch_isolated_v3")
+        self.assertNotIn(
+            "[STUDENT_HISTORY_MEMORIES]",
+            chat_request["messages"][1]["content"],
+        )
+        self.assertIn("2-4 short paragraphs", chat_request["messages"][1]["content"])
+        self.assertIn("emoji", chat_request["messages"][0]["content"])
+        self.assertIn("[STUDENT_CONTEXTS_BY_ID]", chat_request["messages"][1]["content"])
 
         detail = self.client.get(
             f"/api/class-commentary/tasks/{self.task['id']}/generations/{payload['generation_id']}",
             headers=self.headers,
         )
         self.assertEqual(detail.status_code, 200)
-        detail_payload = detail.get_json()
-        for run in detail_payload["student_run_progress"]["runs"]:
-            self.assertNotIn("prompt", run)
-            self.assertNotIn("memory_context", run)
-            self.assertNotIn("response_snapshot", run)
 
     def test_capabilities_expose_call_cost_impact_without_private_context(self):
         with patch.object(
@@ -210,49 +263,291 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
             response.get_json()["student_history_memory_v2_enabled"]
         )
 
-    def test_maximum_multi_student_credit_preflight_blocks_before_reservation(self):
-        lesson_manager.insert_credit_ledger_entry(
-            organization_id=self.user["organization_id"],
-            direction="debit",
-            amount=90,
-            source_type="manual_adjustment",
-            source_id="reduce-test-balance",
-            note="leave ten credits",
-            operator_user_id=self.user["id"],
-        )
+    def test_unavailable_batch_memory_fails_before_reservation_and_provider(self):
+        unavailable_capabilities = {
+            **self._enabled_capabilities(),
+            "student_history_memory_v2_enabled": False,
+            "batch_isolated_v3_enabled": False,
+        }
         with patch.object(
             self.app_module,
             "_class_commentary_capabilities",
-            return_value=self._enabled_capabilities(),
+            return_value=unavailable_capabilities,
         ), patch.object(
             self.app_module, "has_class_commentary_api_key", return_value=True
-        ), patch.object(
-            self.app_module, "_dispatch_class_commentary_memory_best_effort"
-        ) as dispatch:
+        ), patch.object(self.app_module, "reserve_class_commentary_generation") as reserve, \
+             patch.object(self.app_module, "generate_class_commentary_feedback") as generate:
             response = self.client.post(
                 f"/api/class-commentary/tasks/{self.task['id']}/generate",
                 headers=self.headers,
-                json=self._request_payload("insufficient-multi-student-credit"),
+                json=self._request_payload("batch-memory-unavailable"),
             )
-        self.assertEqual(response.status_code, 402)
-        with lesson_manager.get_conn() as conn:
-            generation_count = conn.execute(
-                "SELECT COUNT(*) FROM class_commentary_generations WHERE task_id=?",
-                (self.task["id"],),
-            ).fetchone()[0]
-        self.assertEqual(generation_count, 0)
-        dispatch.assert_not_called()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.get_json()["error"],
+            "class_commentary_batch_memory_unavailable",
+        )
+        reserve.assert_not_called()
+        generate.assert_not_called()
 
-    def test_credit_holds_block_a_second_full_balance_generation_atomically(self):
+    def test_insufficient_credits_fail_before_batch_context_and_reservation(self):
         lesson_manager.insert_credit_ledger_entry(
             organization_id=self.user["organization_id"],
             direction="debit",
-            amount=80,
+            amount=91,
             source_type="manual_adjustment",
-            source_id="reduce-to-one-generation",
-            note="leave twenty credits",
+            source_id="batch-v4-preflight",
+            note="leave fewer than the maximum credits for one class generation",
             operator_user_id=self.user["id"],
         )
+        with lesson_manager.get_conn() as conn:
+            before = {
+                "generations": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_generations"
+                ).fetchone()[0],
+                "runs": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_runs"
+                ).fetchone()[0],
+                "holds": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_credit_holds"
+                ).fetchone()[0],
+            }
+
+        real_preflight = self.app_module.ensure_feature_credits_available_for_count
+        with patch.object(
+            self.app_module,
+            "ensure_feature_credits_available_for_count",
+            wraps=real_preflight,
+        ) as preflight, patch.object(
+            self.app_module, "has_class_commentary_api_key", return_value=True
+        ), patch.object(
+            self.app_module, "_class_commentary_capabilities"
+        ) as capabilities, patch.object(
+            self.app_module, "reserve_class_commentary_generation"
+        ) as reserve, patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_memory_context",
+        ) as retrieve_memory, patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_graph_context",
+        ) as retrieve_graph, patch.object(
+            self.app_module, "_run_ai_feature_with_charge"
+        ) as charge, patch.object(
+            self.app_module, "generate_class_commentary_feedback"
+        ) as generate:
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{self.task['id']}/generate",
+                headers=self.headers,
+                json=self._request_payload("batch-v4-insufficient-credits"),
+            )
+
+        self.assertEqual(response.status_code, 402)
+        self.assertEqual(
+            response.get_json(),
+            {"error": "机构积分不足，请先充值后再使用 AI 功能"},
+        )
+        preflight.assert_called_once_with(
+            organization_id=self.user["organization_id"],
+            feature_key="class_commentary_generate",
+            call_count=1,
+        )
+        capabilities.assert_not_called()
+        reserve.assert_not_called()
+        retrieve_memory.assert_not_called()
+        retrieve_graph.assert_not_called()
+        charge.assert_not_called()
+        generate.assert_not_called()
+        with lesson_manager.get_conn() as conn:
+            after = {
+                "generations": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_generations"
+                ).fetchone()[0],
+                "runs": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_runs"
+                ).fetchone()[0],
+                "holds": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_credit_holds"
+                ).fetchone()[0],
+            }
+        self.assertEqual(after, before)
+
+    def test_ambiguous_evidence_returns_safe_atomic_422(self):
+        lesson_manager.mark_class_commentary_transcription_succeeded(
+            self.task["id"], "学生甲和学生乙一起讨论最后一题。"
+        )
+        with lesson_manager.get_conn() as conn:
+            before = {
+                "generations": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_generations"
+                ).fetchone()[0],
+                "runs": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_runs"
+                ).fetchone()[0],
+                "holds": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_credit_holds"
+                ).fetchone()[0],
+            }
+        with patch.object(
+            self.app_module,
+            "_class_commentary_capabilities",
+            return_value=self._enabled_capabilities(),
+        ), patch.object(
+            self.app_module, "has_class_commentary_api_key", return_value=True
+        ), patch.object(
+            self.app_module, "reserve_class_commentary_generation"
+        ) as reserve, patch.object(
+            self.app_module, "generate_class_commentary_feedback"
+        ) as generate:
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{self.task['id']}/generate",
+                headers=self.headers,
+                json=self._request_payload("ambiguous-evidence"),
+            )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.get_json(), {"error": "student_evidence_attribution_failed"}
+        )
+        self.assertNotIn("uniquely attributable", response.get_data(as_text=True))
+        reserve.assert_not_called()
+        generate.assert_not_called()
+        with lesson_manager.get_conn() as conn:
+            after = {
+                "generations": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_generations"
+                ).fetchone()[0],
+                "runs": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_runs"
+                ).fetchone()[0],
+                "holds": conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_generation_credit_holds"
+                ).fetchone()[0],
+            }
+        self.assertEqual(after, before)
+
+    def test_graph_failure_after_capability_gate_fails_generation_without_provider(self):
+        with patch.object(
+            self.app_module,
+            "_class_commentary_capabilities",
+            return_value=self._enabled_capabilities(),
+        ), patch.object(
+            self.app_module, "has_class_commentary_api_key", return_value=True
+        ), patch.object(
+            class_commentary_batch_context,
+            "build_batch_generation_execution_snapshot",
+            side_effect=ClassCommentaryBatchContextError(
+                "batch_context_retrieval_failed"
+            ),
+        ), patch.object(
+            self.app_module, "_run_ai_feature_with_charge"
+        ) as charge, patch.object(
+            self.app_module, "generate_class_commentary_feedback"
+        ) as generate:
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{self.task['id']}/generate",
+                headers=self.headers,
+                json=self._request_payload("batch-graph-runtime-failure"),
+            )
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.get_json()
+        self.assertEqual(
+            payload["error"], "class_commentary_batch_memory_unavailable"
+        )
+        self.assertEqual(payload["generation_status"], "failed")
+        self.assertEqual(
+            payload["generation"]["error_code"],
+            "class_commentary_batch_context_unavailable",
+        )
+        self.assertNotIn("batch_context_retrieval_failed", response.get_data(as_text=True))
+        charge.assert_not_called()
+        generate.assert_not_called()
+
+    def test_http_provider_timeout_fails_closed_without_provider_replay(self):
+        def fake_memory_retrieval(**_kwargs):
+            context = empty_class_commentary_memory_context(
+                student_history_memory_mode="batch_isolated_v3"
+            )
+            context["retrieval_status"] = "ready"
+            return context
+
+        def fake_graph_retrieval(**kwargs):
+            return empty_isolated_student_graph_context(
+                organization_id=int(kwargs["generation"]["organization_id"]),
+                student_id=int(kwargs["student_id"]),
+                subject_key=str(kwargs["class_context"]["subject_key"]),
+                retrieval_status="empty",
+            )
+
+        with patch.object(
+            self.app_module,
+            "_class_commentary_capabilities",
+            return_value=self._enabled_capabilities(),
+        ), patch.object(
+            self.app_module, "has_class_commentary_api_key", return_value=True
+        ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_memory_context",
+            side_effect=fake_memory_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_graph_context",
+            side_effect=fake_graph_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_memory_context_snapshot",
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_graph_context_snapshot",
+        ), patch.object(
+            self.app_module,
+            "generate_class_commentary_feedback",
+            side_effect=TimeoutError("provider timed out"),
+        ) as generate:
+            response = self.client.post(
+                f"/api/class-commentary/tasks/{self.task['id']}/generate",
+                headers=self.headers,
+                json=self._request_payload("batch-http-provider-timeout"),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["generation_status"], "failed")
+        generation = lesson_manager.get_class_commentary_generation(
+            payload["generation_id"]
+        )
+        hold = lesson_manager.get_class_commentary_generation_credit_hold(
+            payload["generation_id"]
+        )
+        self.assertEqual(generation["status"], "failed")
+        self.assertEqual(generation["error_code"], "provider_result_unknown")
+        self.assertEqual(generation["batch_attempt_count"], 1)
+        self.assertIsNone(generation["batch_claim_token"])
+        self.assertEqual(hold["status"], "released")
+        self.assertNotIn(
+            payload["generation_id"],
+            [
+                item["id"]
+                for item in lesson_manager.list_resumable_class_commentary_batch_generations()
+            ],
+        )
+        generate.assert_called_once()
+
+    def test_error_after_execution_snapshot_is_ready_keeps_generation_resumable(self):
+        def fail_after_snapshot_ready(*, generation, user):
+            self.assertEqual(int(user["id"]), int(self.user["id"]))
+            with lesson_manager.get_conn() as conn:
+                conn.execute(
+                    """
+                    UPDATE class_commentary_generations
+                    SET execution_snapshot_status='ready',
+                        execution_snapshot_finalized_at='2026-08-13T00:00:00.000Z'
+                    WHERE id=?
+                    """,
+                    (int(generation["id"]),),
+                )
+            raise RuntimeError("post-snapshot processing failed")
+
+        real_fail_generation = self.app_module.fail_class_commentary_generation
         with patch.object(
             self.app_module,
             "_class_commentary_capabilities",
@@ -261,105 +556,141 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
             self.app_module, "has_class_commentary_api_key", return_value=True
         ), patch.object(
             self.app_module,
-            "_dispatch_class_commentary_memory_best_effort",
-            return_value={"enabled": True},
-        ):
-            first = self.client.post(
+            "_resume_class_commentary_batch_generation",
+            side_effect=fail_after_snapshot_ready,
+        ), patch.object(
+            self.app_module,
+            "fail_class_commentary_generation",
+            wraps=real_fail_generation,
+        ) as fail_generation:
+            response = self.client.post(
                 f"/api/class-commentary/tasks/{self.task['id']}/generate",
                 headers=self.headers,
-                json=self._request_payload("credit-hold-first"),
-            )
-            second = self.client.post(
-                f"/api/class-commentary/tasks/{self.task['id']}/generate",
-                headers=self.headers,
-                json=self._request_payload("credit-hold-second"),
+                json=self._request_payload("batch-ready-snapshot-error"),
             )
 
-        self.assertEqual(first.status_code, 202)
-        self.assertEqual(second.status_code, 402)
-        with lesson_manager.get_conn() as conn:
-            generation_count = conn.execute(
-                "SELECT COUNT(*) FROM class_commentary_generations WHERE task_id=?",
-                (self.task["id"],),
-            ).fetchone()[0]
-            holds = conn.execute(
-                """
-                SELECT status, amount
-                FROM class_commentary_student_generation_credit_holds
-                ORDER BY student_run_id
-                """
-            ).fetchall()
-        self.assertEqual(generation_count, 1)
+        self.assertEqual(response.status_code, 500)
+        payload = response.get_json()
+        self.assertEqual(payload["error"], "post-snapshot processing failed")
+        self.assertEqual(payload["generation_status"], "generating")
         self.assertEqual(
-            [(row["status"], row["amount"]) for row in holds],
-            [("active", 10), ("active", 10)],
+            payload["generation"]["execution_snapshot_status"], "ready"
+        )
+        generation = lesson_manager.get_class_commentary_generation(
+            payload["generation_id"]
+        )
+        hold = lesson_manager.get_class_commentary_generation_credit_hold(
+            payload["generation_id"]
+        )
+        self.assertEqual(generation["status"], "generating")
+        self.assertEqual(generation["execution_snapshot_status"], "ready")
+        self.assertEqual(hold["status"], "active")
+        fail_generation.assert_not_called()
+
+    def test_pending_batch_recovery_uses_frozen_generation_snapshots_only(self):
+        frozen_transcript = str(
+            lesson_manager.get_class_commentary_task(self.task["id"])[
+                "confirmed_transcript_text"
+            ]
+        )
+        frozen_roster = [
+            {"student_id": item["id"], "student_name": item["name"]}
+            for item in self.students
+        ]
+        frozen_skill_content = "先描述证据, 再给行动建议."
+        request_id = "pending-batch-frozen-recovery"
+        generation = lesson_manager.reserve_class_commentary_generation(
+            task_id=self.task["id"],
+            generation_request_id=request_id,
+            skill_registry_id=self.skill["registry_id"],
+            attending_roster=frozen_roster,
+            model_provider="openai",
+            model_name="frozen-model",
+            model_parameters={"temperature": 0.2},
+            prompt_version="class-commentary-student-feedback-batch-isolated-v4",
+            attending_roster_explicit=True,
+            structured_feedback_enabled=True,
+            student_history_memory_mode="batch_isolated_v3",
+            credit_hold_amount=self.app_module.max_configured_charge_for_feature(
+                "class_commentary_generate"
+            ),
+        )
+        self.assertEqual(generation["execution_snapshot_status"], "pending")
+        frozen_class_name = generation["class_name_snapshot"]
+        frozen_skill_name = generation["skill_name_snapshot"]
+
+        live_transcript = "LIVE TRANSCRIPT: 这不是冻结时确认的课堂内容."
+        lesson_manager.save_class_commentary_transcript(
+            self.task["id"], live_transcript
+        )
+        removed_student = self.students[-1]
+        lesson_manager.remove_student_from_class(
+            self.class_id, removed_student["id"]
+        )
+        live_student = lesson_manager.create_student_for_class(
+            self.class_id, "LIVE STUDENT"
+        )
+        lesson_manager.update_class(
+            class_id=self.class_id,
+            name="LIVE CLASS: 不得用于已冻结 generation.",
+            subject="数学",
+            grade="七年级",
+            class_type="group",
+            actor_user_id=self.user["id"],
+        )
+        source_path = Path(self.skill["source_path"])
+        source_path.write_text(
+            "LIVE SKILL: 不得用于已冻结 generation.", encoding="utf-8"
+        )
+        refreshed_skill = lesson_manager.refresh_class_commentary_skill_manifest(
+            organization_id=self.user["organization_id"],
+            skill_id=self.skill["skill_id"],
+            actor_user_id=self.user["id"],
+            activation_request_id="pending-recovery-live-skill-refresh",
+            expected_active_version_id=self.skill["active_version_id"],
+        )
+        self.assertNotEqual(
+            refreshed_skill["skill"]["active_version_id"],
+            generation["skill_version_id"],
         )
 
-    def test_kill_switch_off_keeps_disabled_v1_synchronous_contract(self):
-        disabled_capabilities = {
-            **self._enabled_capabilities(),
-            "student_history_memory_v2_enabled": False,
-        }
         model_output = json.dumps(
             {
                 "schema_version": "class_commentary.student_feedback.v1",
                 "items": [
                     {
-                        "student_id": student["id"],
-                        "feedback_text": "本节课有进步, 请继续练习.",
+                        "student_id": item["id"],
+                        "feedback_text": (
+                            f"{item['name']}, 你今天的步骤很清楚🌱。\n\n"
+                            "继续检查符号和计算细节🔍。\n\n"
+                            "下次先写完整过程, 再独立验算一次✨。"
+                        ),
                     }
-                    for student in self.students
+                    for item in self.students
+                ],
+                "used_graph_evidence_refs_by_student": [
+                    {"student_id": item["id"], "evidence_refs": []}
+                    for item in self.students
                 ],
             },
             ensure_ascii=False,
         )
 
-        def fake_charge(**kwargs):
-            result = kwargs["producer"]()
-            return result[0] if isinstance(result, tuple) else result
+        def fake_memory_retrieval(**_kwargs):
+            context = empty_class_commentary_memory_context(
+                student_history_memory_mode="batch_isolated_v3"
+            )
+            context["retrieval_status"] = "ready"
+            return context
 
-        with patch.object(
-            self.app_module,
-            "_class_commentary_capabilities",
-            return_value=disabled_capabilities,
-        ), patch.object(
-            self.app_module, "has_class_commentary_api_key", return_value=True
-        ), patch.object(
-            self.app_module,
-            "retrieve_class_commentary_memory_context",
-            return_value={
-                "records": [],
-                "rendered_text": "",
-                "student_history_memories": [],
-                "teacher_style_memories": [],
-                "student_history_memory_mode": "disabled_v1",
-                "retrieval_status": "empty",
-                "degraded_reason": "",
-            },
-        ), patch.object(
-            self.app_module, "_run_ai_feature_with_charge", side_effect=fake_charge
-        ), patch.object(
-            self.app_module,
-            "generate_class_commentary_feedback",
-            return_value=(
-                model_output,
-                {"provider": "openai", "model": "fake", "input_tokens": 5, "output_tokens": 5},
-            ),
-        ) as generate:
-            response = self.client.post(
-                f"/api/class-commentary/tasks/{self.task['id']}/generate",
-                headers=self.headers,
-                json=self._request_payload("kill-switch-off"),
+        def fake_graph_retrieval(**kwargs):
+            return empty_isolated_student_graph_context(
+                organization_id=int(kwargs["generation"]["organization_id"]),
+                student_id=int(kwargs["student_id"]),
+                subject_key=str(kwargs["class_context"]["subject_key"]),
+                retrieval_status="empty",
             )
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        self.assertEqual(payload["status"], "succeeded")
-        self.assertEqual(payload["student_history_memory_mode"], "disabled_v1")
-        self.assertEqual(payload["student_run_progress"]["total"], 0)
-        generate.assert_called_once()
-
-    def test_failed_student_run_retry_api_is_idempotent_and_keeps_successes_untouched(self):
         with patch.object(
             self.app_module,
             "_class_commentary_capabilities",
@@ -367,89 +698,88 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         ), patch.object(
             self.app_module, "has_class_commentary_api_key", return_value=True
         ), patch.object(
+            self.app_module, "_sync_configured_class_commentary_skills"
+        ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_memory_context",
+            side_effect=fake_memory_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_graph_context",
+            side_effect=fake_graph_retrieval,
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_memory_context_snapshot",
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_graph_context_snapshot",
+        ), patch.object(
             self.app_module,
-            "_dispatch_class_commentary_memory_best_effort",
-            return_value={"enabled": True},
-        ):
-            created = self.client.post(
+            "generate_class_commentary_feedback",
+            return_value=(
+                model_output,
+                {
+                    "provider": "openai",
+                    "model": "frozen-model",
+                    "input_tokens": 20,
+                    "output_tokens": 40,
+                },
+            ),
+        ) as generate:
+            response = self.client.post(
                 f"/api/class-commentary/tasks/{self.task['id']}/generate",
                 headers=self.headers,
-                json=self._request_payload("retry-api-generation"),
-            ).get_json()
-        generation_id = created["generation_id"]
-        runs = lesson_manager.list_class_commentary_student_generation_runs(
-            generation_id
-        )
-        with lesson_manager.get_conn() as conn:
-            conn.execute(
-                """
-                UPDATE class_commentary_student_generation_runs
-                SET status='failed', error_code='provider_request_rejected',
-                    completed_at='2026-01-01T00:00:00Z'
-                WHERE id=?
-                """,
-                (runs[0]["id"],),
-            )
-            conn.execute(
-                """
-                UPDATE class_commentary_generations
-                SET status='failed', error_code='student_run_failed'
-                WHERE id=?
-                """,
-                (generation_id,),
-            )
-            conn.execute(
-                "UPDATE class_commentary_tasks SET status='failed' WHERE id=?",
-                (self.task["id"],),
-            )
-            conn.execute(
-                """
-                UPDATE class_commentary_student_generation_credit_holds
-                SET status='released', released_at='2026-01-01T00:00:00Z'
-                WHERE student_run_id=?
-                """,
-                (runs[0]["id"],),
+                json={
+                    "request_id": request_id,
+                    "skill_id": self.skill["skill_id"],
+                    "attending_student_ids": [
+                        item["id"] for item in self.students
+                    ],
+                },
             )
 
-        retry_payload = {
-            "request_id": "retry-api-request",
-            "student_ids": [runs[0]["student_id"]],
-        }
-        with patch.object(
-            self.app_module,
-            "_dispatch_class_commentary_memory_best_effort",
-            return_value={"enabled": True},
-        ) as dispatch:
-            first = self.client.post(
-                f"/api/class-commentary/tasks/{self.task['id']}/generations/{generation_id}/student-runs/retry",
-                headers=self.headers,
-                json=retry_payload,
-            )
-            second = self.client.post(
-                f"/api/class-commentary/tasks/{self.task['id']}/generations/{generation_id}/student-runs/retry",
-                headers=self.headers,
-                json=retry_payload,
-            )
-        self.assertEqual(first.status_code, 202)
-        self.assertEqual(second.status_code, 202)
-        self.assertEqual(first.get_json()["student_run_progress"]["queued"], 2)
-        after = lesson_manager.list_class_commentary_student_generation_runs(
-            generation_id
+        self.assertEqual(
+            response.status_code,
+            200,
+            response.get_data(as_text=True),
         )
-        self.assertEqual(after[0]["status"], "retry_wait")
-        self.assertEqual(after[1]["status"], "queued")
-        self.assertEqual(after[1]["attempt_count"], 0)
-        with lesson_manager.get_conn() as conn:
-            hold_status = conn.execute(
-                """
-                SELECT status
-                FROM class_commentary_student_generation_credit_holds
-                WHERE student_run_id=?
-                """,
-                (runs[0]["id"],),
-            ).fetchone()["status"]
-        self.assertEqual(hold_status, "active")
-        self.assertEqual(dispatch.call_count, 2)
+        payload = response.get_json()
+        self.assertEqual(payload["generation_id"], generation["id"])
+        self.assertEqual(payload["generation_status"], "succeeded")
+        generate.assert_called_once()
+        provider_kwargs = generate.call_args.kwargs
+        self.assertEqual(provider_kwargs["transcript_text"], frozen_transcript)
+        self.assertEqual(
+            provider_kwargs["students"],
+            [
+                {"id": item["id"], "name": item["name"]}
+                for item in self.students
+            ],
+        )
+        self.assertEqual(
+            provider_kwargs["skill"]["content"], frozen_skill_content
+        )
+        self.assertEqual(provider_kwargs["class_record"]["name"], frozen_class_name)
+        self.assertEqual(provider_kwargs["skill"]["name"], frozen_skill_name)
+        self.assertEqual(provider_kwargs["request_timeout"], 300.0)
+        self.assertEqual(provider_kwargs["max_retries"], 0)
+        frozen_prompt_text = json.dumps(
+            provider_kwargs["chat_request"], ensure_ascii=False
+        )
+        self.assertNotIn(live_transcript, frozen_prompt_text)
+        self.assertNotIn("LIVE SKILL", frozen_prompt_text)
+        self.assertNotIn(live_student["name"], frozen_prompt_text)
+        self.assertNotIn("LIVE CLASS", frozen_prompt_text)
+        saved = lesson_manager.get_class_commentary_generation(generation["id"])
+        self.assertEqual(saved["confirmed_transcript_snapshot"], frozen_transcript)
+        self.assertEqual(saved["skill_content_snapshot"], frozen_skill_content)
+        self.assertEqual(
+            [
+                item["student_id"]
+                for item in json.loads(saved["attending_roster_snapshot_json"])
+            ],
+            [item["id"] for item in self.students],
+        )
 
 
 if __name__ == "__main__":

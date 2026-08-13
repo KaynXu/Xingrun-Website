@@ -271,7 +271,7 @@ class ClassCommentaryMemoryDeployContractTests(unittest.TestCase):
             deploy,
             flags=re.DOTALL,
         )
-        self.assertEqual(len(inline_python), 2)
+        self.assertEqual(len(inline_python), 3)
         for source in inline_python:
             ast.parse(source)
 

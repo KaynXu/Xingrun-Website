@@ -32,8 +32,8 @@ Environment:
                       Set to 1 to keep the remote temp snapshot file.
 
 Examples:
-  SSH_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' ./scripts/sync_remote_db.sh
-  SSH_PASSWORD='***REMOVED-ROTATED-SSH-PASSWORD***' LOCAL_DB_PATH=/tmp/xingrun.db ./scripts/sync_remote_db.sh
+  SSH_PASSWORD='your-password' ./scripts/sync_remote_db.sh
+  SSH_PASSWORD='your-password' LOCAL_DB_PATH=/tmp/xingrun.db ./scripts/sync_remote_db.sh
 EOF
 }
 

@@ -1,12 +1,29 @@
+import hashlib
 import importlib
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import class_commentary_batch_context
 import config_runtime
 import lesson_manager
+
+
+BATCH_READY_CAPABILITIES = {
+    "memory_learning_enabled": True,
+    "skill_evolution_enabled": True,
+    "structured_feedback_enabled": True,
+    "student_history_memory_v2_enabled": True,
+    "batch_isolated_v3_enabled": True,
+    "class_commentary_generation_call_count": 1,
+    "student_history_memory_v2_max_credits_per_student": 10,
+    "graph_enabled": True,
+    "graph_healthy": True,
+    "graph_degraded": False,
+}
 
 
 class ClassCommentaryMemoryApiTest(unittest.TestCase):
@@ -22,6 +39,7 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
         config_runtime.write_file_config(
             {
                 "class_commentary_memory_enabled": True,
+                "class_commentary_structured_feedback_enabled": True,
                 "colleague_skill_dir": str(self.skill_dir),
             }
         )
@@ -39,6 +57,15 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
         payload = login.get_json()
         self.owner = payload["user"]
         self.headers = {"X-Auth-Token": payload["token"]}
+        lesson_manager.insert_credit_ledger_entry(
+            organization_id=self.owner["organization_id"],
+            direction="credit",
+            amount=100,
+            source_type="manual_adjustment",
+            source_id="class-commentary-memory-api-tests",
+            note="test credits",
+            operator_user_id=self.owner["id"],
+        )
 
     def tearDown(self):
         lesson_manager.DB_PATH = self.old_db_path
@@ -105,6 +132,85 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
                 "request_id": request_id,
             },
         )
+
+    @contextmanager
+    def _batch_runtime(self, *, student_id: int, context: dict):
+        teacher_style = context["teacher_style_memories"][0]
+        student_history = {
+            "memory_record_id": 10,
+            "mem0_memory_id": "student-memory-10",
+            "record_version": 1,
+            "created_from_revision_id": 7,
+            "created_at": "2026-08-12T10:00:00Z",
+            "memory_type": "student_fact",
+            "memory_text": "历史上分类讨论容易遗漏边界条件.",
+            "student_id": int(student_id),
+            "subject_key": "数学",
+        }
+        memory_snapshot = {
+            "records": [teacher_style, student_history],
+            "rendered_text": "",
+            "student_history_memories": [student_history],
+            "teacher_style_memories": [teacher_style],
+            "student_history_memory_mode": "batch_isolated_v3",
+            "retrieval_status": "ready",
+            "degraded_reason": "",
+        }
+
+        def graph_context(**kwargs):
+            graph_snapshot = {
+                "schema_version": "class_commentary.student_graph_context.v1",
+                "organization_id": int(kwargs["generation"]["organization_id"]),
+                "student_id": int(student_id),
+                "subject_key": str(kwargs["class_context"]["subject_key"]),
+                "retrieval_status": "ready",
+                "current_states": [
+                    {
+                        "knowledge_point_key": "absolute-value-boundary",
+                        "knowledge_point_name": "绝对值边界条件",
+                        "state": "improving",
+                        "observed_at": "2026-08-12T10:00:00Z",
+                    }
+                ],
+                "recent_changes": [],
+                "allowed_evidence_refs": ["graph-ref-memory-api"],
+                "semantica_snapshot_hash": "semantica-memory-api",
+            }
+            canonical = json.dumps(
+                graph_snapshot,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            return {
+                **graph_snapshot,
+                "snapshot_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            }
+
+        with patch.object(
+            self.app_module,
+            "has_class_commentary_api_key",
+            return_value=True,
+        ), patch.object(
+            self.app_module,
+            "_class_commentary_capabilities",
+            return_value=BATCH_READY_CAPABILITIES,
+        ), patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_memory_context",
+            return_value=memory_snapshot,
+        ) as retrieve_memory, patch.object(
+            class_commentary_batch_context,
+            "retrieve_isolated_student_graph_context",
+            side_effect=graph_context,
+        ) as retrieve_graph, patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_memory_context_snapshot",
+        ), patch.object(
+            class_commentary_batch_context,
+            "validate_isolated_student_graph_context_snapshot",
+        ):
+            yield retrieve_memory, retrieve_graph
 
     def test_capability_requires_mem0_and_queue_health(self):
         memory_service = Mock()
@@ -278,7 +384,10 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
             "records": [
                 {
                     "memory_record_id": 9,
+                    "mem0_memory_id": "style-memory-9",
                     "record_version": 2,
+                    "created_from_revision_id": 6,
+                    "created_at": "2026-08-12T10:00:00Z",
                     "memory_type": "teacher_style",
                     "memory_text": "先说结论.",
                 }
@@ -286,7 +395,15 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
             "rendered_text": "Teacher style: 先说结论.",
             "student_history_memories": [],
             "teacher_style_memories": [
-                {"memory_record_id": 9, "memory_text": "先说结论.", "confidence": 0.9}
+                {
+                    "memory_record_id": 9,
+                    "mem0_memory_id": "style-memory-9",
+                    "record_version": 2,
+                    "created_from_revision_id": 6,
+                    "created_at": "2026-08-12T10:00:00Z",
+                    "memory_type": "teacher_style",
+                    "memory_text": "先说结论.",
+                }
             ],
             "retrieval_status": "ready",
             "degraded_reason": "",
@@ -296,22 +413,36 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
             result = kwargs["producer"]()
             return result[0] if isinstance(result, tuple) else result
 
-        with patch.object(
-            self.app_module,
-            "has_class_commentary_api_key",
-            return_value=True,
-        ), patch.object(
-            self.app_module,
-            "retrieve_class_commentary_memory_context",
-            return_value=context,
-        ) as retrieve, patch.object(
+        model_output = json.dumps(
+            {
+                "schema_version": "class_commentary.student_feedback.v1",
+                "items": [
+                    {
+                        "student_id": int(student["id"]),
+                        "feedback_text": "先补全分类边界, 再逐段核对🌱.",
+                    }
+                ],
+                "used_graph_evidence_refs_by_student": [
+                    {
+                        "student_id": int(student["id"]),
+                        "evidence_refs": ["graph-ref-memory-api"],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+        with self._batch_runtime(
+            student_id=int(student["id"]),
+            context=context,
+        ) as (retrieve_memory, retrieve_graph), patch.object(
             self.app_module,
             "_run_ai_feature_with_charge",
             side_effect=fake_charge,
         ), patch.object(
             self.app_module,
             "generate_class_commentary_feedback",
-            return_value=("新反馈", {"input_tokens": 1, "output_tokens": 1}),
+            return_value=(model_output, {"input_tokens": 1, "output_tokens": 1}),
         ) as generate:
             response = self.client.post(
                 f"/api/class-commentary/tasks/{task['id']}/generate",
@@ -324,16 +455,29 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        retrieve.assert_called_once()
-        self.assertEqual(retrieve.call_args.kwargs["live_student_ids"], [student["id"]])
+        retrieve_memory.assert_called_once()
+        retrieve_graph.assert_called_once()
+        self.assertEqual(retrieve_memory.call_args.kwargs["student_id"], student["id"])
+        self.assertEqual(retrieve_graph.call_args.kwargs["student_id"], student["id"])
+        generate.assert_called_once()
         chat_request = generate.call_args.kwargs["chat_request"]
         self.assertIn("先说结论.", json.dumps(chat_request, ensure_ascii=False))
+        self.assertIn(
+            "历史上分类讨论容易遗漏边界条件.",
+            json.dumps(chat_request, ensure_ascii=False),
+        )
+        self.assertIn("绝对值边界条件", json.dumps(chat_request, ensure_ascii=False))
         saved = lesson_manager.get_class_commentary_generation(
             response.get_json()["generation_id"]
         )
+        saved_context = json.loads(saved["memory_context_snapshot_json"])
+        self.assertEqual(saved["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
-            json.loads(saved["memory_context_snapshot_json"])["records"],
-            context["records"],
+            saved_context["student_contexts_by_id"][0]["memory_context"]["records"],
+            [
+                context["teacher_style_memories"][0],
+                retrieve_memory.return_value["student_history_memories"][0],
+            ],
         )
 
 

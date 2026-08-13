@@ -193,7 +193,12 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
                     )
 
     def test_canonicalization_reorders_items_and_derives_frozen_names(self):
-        generation = self._generation()
+        generation = self._generation_for_roster(
+            [
+                {"student_id": 11, "student_name": "张三"},
+                {"student_id": 22, "student_name": "李四"},
+            ]
+        )
         structured_feedback = {
             "schema_version": SCHEMA_VERSION,
             "items": [
@@ -236,6 +241,827 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
                 ],
             },
         )
+
+    def test_batch_v4_requires_complete_scoped_graph_reference_map(self):
+        generation = self._batch_generation_for_roster(
+            [
+                {"student_id": 11, "student_name": "张三"},
+                {"student_id": 22, "student_name": "李四"},
+            ],
+            evidence_by_student={
+                11: ["张三今天计算过程稳定."],
+                22: ["李四今天验算步骤完整."],
+            },
+        )
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "items": [
+                {
+                    "student_id": 11,
+                    "feedback_text": "张三, 今天计算过程更稳定, 整体计算状态不错🌱.",
+                },
+                {
+                    "student_id": 22,
+                    "feedback_text": "李四, 今天验算步骤更完整, 整体验算状态不错✨.",
+                },
+            ],
+            "used_graph_evidence_refs_by_student": [
+                {"student_id": 11, "evidence_refs": ["graph-11"]},
+                {"student_id": 22, "evidence_refs": []},
+            ],
+        }
+        result = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=payload,
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={
+                11: ["graph-11"],
+                22: ["graph-22"],
+            },
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(
+            result["used_graph_evidence_refs_by_student"],
+            {11: ["graph-11"], 22: []},
+        )
+        self.assertNotIn(
+            "used_graph_evidence_refs_by_student",
+            result["structured_feedback_json"],
+        )
+
+        invalid_payloads = (
+            {**payload, "used_graph_evidence_refs_by_student": payload["used_graph_evidence_refs_by_student"][:1]},
+            {
+                **payload,
+                "used_graph_evidence_refs_by_student": [
+                    {"student_id": 11, "evidence_refs": ["graph-22"]},
+                    {"student_id": 22, "evidence_refs": []},
+                ],
+            },
+        )
+        for invalid in invalid_payloads:
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(
+                    ClassCommentaryStructuredFeedbackValidationError
+                ):
+                    canonicalize_class_commentary_structured_feedback(
+                        structured_feedback=invalid,
+                        generation=generation,
+                        allowed_graph_evidence_refs_by_student={
+                            11: ["graph-11"],
+                            22: ["graph-22"],
+                        },
+                        require_batch_graph_refs=True,
+                    )
+
+    def test_batch_v4_initial_output_preserves_normal_skill_emoji_style(self):
+        roster = [
+            {"student_id": 11, "student_name": "张三"},
+            {"student_id": 22, "student_name": "李四"},
+        ]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: ["张三今天计算过程稳定."],
+                22: ["李四今天验算步骤完整."],
+            },
+            skill_content="先肯定孩子的进步🌱, 再用✨自然收尾.",
+        )
+        payload = self._batch_payload(
+            {
+                11: "张三, 今天计算过程很稳定, 整体计算状态不错🌱.",
+                22: "李四, 今天验算步骤很完整, 整体验算状态不错.",
+            }
+        )
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=payload,
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: [], 22: []},
+                require_batch_graph_refs=True,
+            )
+
+        self.assertEqual(caught.exception.code, "student_feedback_missing_skill_emoji")
+        self.assertEqual(caught.exception.student_id, 22)
+
+        payload["items"][1]["feedback_text"] += "✨"
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=payload,
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: [], 22: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 2)
+
+    def test_batch_v4_preserves_wechat_text_emoji_style(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天计算过程稳定."]},
+            skill_content="先用[呲牙]自然肯定, 再用[破涕为笑]温和收尾.",
+        )
+        without_emoji = self._batch_payload(
+            {11: "张三, 今天计算过程很稳定, 整体计算状态不错."}
+        )
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=without_emoji,
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+
+        self.assertEqual(
+            caught.exception.code,
+            "student_feedback_missing_skill_emoji",
+        )
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {
+                    11: (
+                        "张三, 今天计算过程很稳定, "
+                        "整体计算状态不错[呲牙]."
+                    )
+                }
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_supports_real_wechat_style_tokens_but_not_media_markers(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        for token in ("握手", "爱心", "合十"):
+            with self.subTest(token=token):
+                generation = self._batch_generation_for_roster(
+                    roster,
+                    evidence_by_student={11: ["张三今天计算过程稳定."]},
+                    skill_content=f"常用[{token}]肯定, 再用[{token}]收尾.",
+                )
+                accepted = canonicalize_class_commentary_structured_feedback(
+                    structured_feedback=self._batch_payload(
+                        {
+                            11: (
+                                "张三, 今天计算过程很稳定, "
+                                f"整体计算状态不错[{token}]."
+                            )
+                        }
+                    ),
+                    generation=generation,
+                    allowed_graph_evidence_refs_by_student={11: []},
+                    require_batch_graph_refs=True,
+                )
+                self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天计算过程稳定."]},
+            skill_content="示例含[Photo]和[压缩内容], 但不要求表情.",
+        )
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {11: "张三, 今天计算过程很稳定, 整体计算状态不错."}
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_recognizes_cao_skill_wechat_tokens(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        for token in ("月亮", "哇", "转圈", "社会社会", "好的"):
+            with self.subTest(token=token):
+                generation = self._batch_generation_for_roster(
+                    roster,
+                    evidence_by_student={11: ["张三今天计算过程稳定."]},
+                    skill_content=f"常用[{token}]提示重点, 再用[{token}]缓和语气.",
+                )
+                with self.assertRaises(
+                    ClassCommentaryStructuredFeedbackValidationError
+                ) as caught:
+                    canonicalize_class_commentary_structured_feedback(
+                        structured_feedback=self._batch_payload(
+                            {
+                                11: (
+                                    "张三, 今天计算过程比较稳定, "
+                                    "思路也表达得很清楚."
+                                )
+                            }
+                        ),
+                        generation=generation,
+                        allowed_graph_evidence_refs_by_student={11: []},
+                        require_batch_graph_refs=True,
+                    )
+                self.assertEqual(
+                    caught.exception.code,
+                    "student_feedback_missing_skill_emoji",
+                )
+
+                accepted = canonicalize_class_commentary_structured_feedback(
+                    structured_feedback=self._batch_payload(
+                        {
+                            11: (
+                                "张三, 今天计算过程比较稳定, "
+                                f"思路也表达得很清楚[{token}]."
+                            )
+                        }
+                    ),
+                    generation=generation,
+                    allowed_graph_evidence_refs_by_student={11: []},
+                    require_batch_graph_refs=True,
+                )
+                self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_explicit_occasional_emoji_style_preserves_one_classwide(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天课堂参与积极."]},
+            skill_content=(
+                "表情只偶尔使用, 轻量即可, 不要过用. "
+                "示例可用[呲牙], 也可用[玫瑰]."
+            ),
+        )
+
+        feedback = "张三, 今天课堂参与很积极, 整体状态值得肯定."
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload({11: feedback}),
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+        self.assertEqual(caught.exception.code, "batch_feedback_missing_skill_emoji")
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload({11: feedback + "[玫瑰]"}),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_conditional_he_skill_emoji_does_not_force_every_student(self):
+        roster = [
+            {"student_id": 11, "student_name": "张三"},
+            {"student_id": 12, "student_name": "李四"},
+        ]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: ["张三今天课堂参与积极."],
+                12: ["李四今天遇到的题目难度较高."],
+            },
+            skill_content=(
+                "表情占位符:\n"
+                "- `[偷笑]` 可放在难题说明后, 缓和难度感."
+            ),
+        )
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {
+                    11: "张三, 今天课堂参与很积极, 整体状态值得肯定.",
+                    12: "李四, 今天遇到的题目难度较高, 但你一直在认真尝试[偷笑].",
+                }
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: [], 12: []},
+            require_batch_graph_refs=True,
+        )
+
+        self.assertEqual(len(accepted["student_feedback_items"]), 2)
+
+    def test_batch_v4_normal_emoji_style_requires_selected_skill_token_family(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天课堂参与积极."]},
+            skill_content="表情占位符常用[呲牙]肯定, 再用[玫瑰]鼓励.",
+        )
+        invalid_feedback = (
+            "张三, 今天课堂参与很积极, 整体状态值得肯定{emoji}."
+        )
+        for label, emoji in (
+            ("wrong_colleague_token", "[强]"),
+            ("unlisted_unicode_emoji", "✨"),
+        ):
+            with self.subTest(label=label):
+                with self.assertRaises(
+                    ClassCommentaryStructuredFeedbackValidationError
+                ) as caught:
+                    canonicalize_class_commentary_structured_feedback(
+                        structured_feedback=self._batch_payload(
+                            {11: invalid_feedback.format(emoji=emoji)}
+                        ),
+                        generation=generation,
+                        allowed_graph_evidence_refs_by_student={11: []},
+                        require_batch_graph_refs=True,
+                    )
+                self.assertEqual(
+                    caught.exception.code,
+                    "student_feedback_missing_skill_emoji",
+                )
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {
+                    11: (
+                        "张三, 今天课堂参与很积极, "
+                        "整体状态值得肯定[呲牙]."
+                    )
+                }
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_frequent_emoji_style_scales_with_evidence_richness(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        skill_content = (
+            "emoji 使用频繁. 常用[呲牙]肯定表现, 用[玫瑰]鼓励行动."
+        )
+        sparse_generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天课堂参与积极."]},
+            skill_content=skill_content,
+        )
+        sparse_without_emoji = (
+            "张三, 今天课堂参与很积极, 整体状态值得肯定."
+        )
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload(
+                    {11: sparse_without_emoji}
+                ),
+                generation=sparse_generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+        self.assertEqual(
+            caught.exception.code,
+            "student_feedback_missing_skill_emoji",
+        )
+
+        sparse_accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {11: sparse_without_emoji + "[呲牙]"}
+            ),
+            generation=sparse_generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(sparse_accepted["student_feedback_items"]), 1)
+
+        rich_generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: [
+                    "张三今天能准确列出方程.",
+                    "张三移项时漏写了负号.",
+                ]
+            },
+            skill_content=skill_content,
+        )
+        rich_feedback_with_one_emoji = (
+            "张三, 今天列方程时思路清楚, "
+            "能够准确抓住题目里的数量关系[呲牙].\n\n"
+            "移项环节漏写了负号, 课后请把这道错题重做一遍, "
+            "并在每次移项后圈出负号检查."
+        )
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload(
+                    {11: rich_feedback_with_one_emoji}
+                ),
+                generation=rich_generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+        self.assertEqual(
+            caught.exception.code,
+            "student_feedback_missing_skill_emoji",
+        )
+
+        rich_accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {11: rich_feedback_with_one_emoji + "[玫瑰]"}
+            ),
+            generation=rich_generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(rich_accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_duplicated_package_example_does_not_promote_emoji_density(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        duplicated_example = "示例: 今天课堂参与不错[呲牙]."
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天课堂参与积极."]},
+            skill_content=(
+                f"## SKILL.md\n{duplicated_example}\n\n"
+                f"## work.md\n{duplicated_example}"
+            ),
+        )
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {11: "张三, 今天课堂参与很积极, 整体状态值得肯定."}
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_occasional_emoji_style_requires_one_classwide_skill_token(self):
+        roster = [
+            {"student_id": 11, "student_name": "张三"},
+            {"student_id": 12, "student_name": "李四"},
+        ]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: ["张三今天课堂参与积极."],
+                12: ["李四今天计算步骤完整."],
+            },
+            skill_content=(
+                "表情是轻量缓冲工具, 整班至少保留一个同体系表情. "
+                "可用[月亮]提醒重点, "
+                "不要堆满, 也不要每句都放."
+            ),
+        )
+        feedback_by_student = {
+            11: "张三, 今天课堂参与很积极, 整体状态值得肯定.",
+            12: "李四, 今天计算步骤写得完整, 做题状态很稳.",
+        }
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload(feedback_by_student),
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: [], 12: []},
+                require_batch_graph_refs=True,
+            )
+        self.assertEqual(
+            caught.exception.code,
+            "batch_feedback_missing_skill_emoji",
+        )
+
+        feedback_by_student[12] += "[月亮]"
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(feedback_by_student),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: [], 12: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 2)
+
+    def test_batch_v4_occasional_emoji_style_without_concrete_token_stays_optional(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天课堂参与积极."]},
+            skill_content="偶尔使用笑脸缓和语气, 但没有可确认的具体表情 token.",
+        )
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {11: "张三, 今天课堂参与很积极, 整体状态值得肯定."}
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_sparse_initial_feedback_rejects_generic_empty_calories(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天课堂参与积极."]},
+        )
+
+        with self.assertRaises(ClassCommentaryStructuredFeedbackValidationError):
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload(
+                    {11: "张三, 继续努力, 相信你会越来越好."}
+                ),
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+
+    def test_batch_v4_sparse_initial_feedback_requires_twelve_lexical_characters(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={11: ["张三今天课堂参与积极."]},
+        )
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload(
+                    {11: "张三, 今天课堂表现积极."}
+                ),
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+        self.assertEqual(caught.exception.code, "student_feedback_too_short")
+        self.assertEqual(caught.exception.limit, 12)
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {11: "张三, 今天课堂参与积极, 整体状态值得肯定."}
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_single_long_evidence_requires_substantive_paragraphs(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: [
+                    "张三今天能够准确列出方程并解释数量关系但在移项和验算时仍需检查负号与等号两侧是否同步变化"
+                ]
+            },
+        )
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload(
+                    {
+                        11: (
+                            "张三, 今天列方程时思路比较清楚, 也能解释数量关系, "
+                            "但移项和验算仍需检查负号与等号两侧变化, "
+                            "课后请重做错题并逐步核对."
+                        )
+                    }
+                ),
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+        self.assertEqual(
+            caught.exception.code,
+            "student_feedback_paragraph_count_invalid",
+        )
+
+    def test_batch_v4_single_explicit_emoji_is_classwide_while_symbols_are_ignored(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        for label, skill_content in (
+            ("single_emoji", "只在结尾偶尔用一次🌱."),
+            ("markdown_symbols", "# 标题\n* 先肯定\n- 再建议\n© 课程组"),
+        ):
+            with self.subTest(label=label):
+                generation = self._batch_generation_for_roster(
+                    roster,
+                    evidence_by_student={11: ["张三今天计算过程稳定."]},
+                    skill_content=skill_content,
+                )
+                feedback = "张三, 今天计算过程很稳定, 整体计算状态不错."
+                if label == "single_emoji":
+                    with self.assertRaises(
+                        ClassCommentaryStructuredFeedbackValidationError
+                    ) as caught:
+                        canonicalize_class_commentary_structured_feedback(
+                            structured_feedback=self._batch_payload({11: feedback}),
+                            generation=generation,
+                            allowed_graph_evidence_refs_by_student={11: []},
+                            require_batch_graph_refs=True,
+                        )
+                    self.assertEqual(
+                        caught.exception.code,
+                        "batch_feedback_missing_skill_emoji",
+                    )
+                    feedback += "🌱"
+                accepted = canonicalize_class_commentary_structured_feedback(
+                    structured_feedback=self._batch_payload({11: feedback}),
+                    generation=generation,
+                    allowed_graph_evidence_refs_by_student={11: []},
+                    require_batch_graph_refs=True,
+                )
+                self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_rich_evidence_requires_substantive_paragraphs_and_action(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: [
+                    "张三今天能准确列出方程.",
+                    "张三移项时漏写了负号.",
+                ]
+            },
+        )
+        invalid_cases = (
+            (
+                "one_paragraph",
+                "student_feedback_paragraph_count_invalid",
+                "张三, 今天列方程很准确, 移项时需要注意负号. 课后请重做这道错题并圈出负号.",
+            ),
+            (
+                "too_short",
+                "student_feedback_too_short",
+                "张三, 列式不错.\n\n课后重做错题.",
+            ),
+            (
+                "generic_advice",
+                "student_feedback_missing_next_action",
+                "张三, 今天列方程时思路清楚, 能够准确抓住题目中的数量关系.\n\n移项环节漏写负号, 这个细节还需要继续注意, 相信你会越来越稳.",
+            ),
+        )
+        for label, expected_code, feedback_text in invalid_cases:
+            with self.subTest(label=label):
+                with self.assertRaises(
+                    ClassCommentaryStructuredFeedbackValidationError
+                ) as caught:
+                    canonicalize_class_commentary_structured_feedback(
+                        structured_feedback=self._batch_payload({11: feedback_text}),
+                        generation=generation,
+                        allowed_graph_evidence_refs_by_student={11: []},
+                        require_batch_graph_refs=True,
+                    )
+                self.assertEqual(caught.exception.code, expected_code)
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=self._batch_payload(
+                {
+                    11: (
+                        "张三, 今天列方程时思路清楚, 能够准确抓住题目里的数量关系.\n\n"
+                        "移项环节漏写了负号, 课后请把这道错题重做一遍, 并在每次移项后圈出负号检查."
+                    )
+                }
+            ),
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_accepts_concrete_chinese_actions_from_real_skill_styles(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: [
+                    "张三今天能准确列出方程.",
+                    "张三移项时漏写了负号.",
+                ]
+            },
+        )
+        actions = (
+            "明天我会重点看",
+            "后面我会专门拿出来讲",
+            "回家把这道题再做一遍",
+            "需要把概念重新看几遍记一记",
+            "下次把过程补完整",
+        )
+
+        for action in actions:
+            with self.subTest(action=action):
+                accepted = canonicalize_class_commentary_structured_feedback(
+                    structured_feedback=self._batch_payload(
+                        {
+                            11: (
+                                "张三, 今天列方程时能够准确抓住数量关系, "
+                                "整体思路比较清楚.\n\n"
+                                f"移项时漏写了负号, {action}."
+                            )
+                        }
+                    ),
+                    generation=generation,
+                    allowed_graph_evidence_refs_by_student={11: []},
+                    require_batch_graph_refs=True,
+                )
+                self.assertEqual(len(accepted["student_feedback_items"]), 1)
+
+    def test_batch_v4_future_sounding_encouragement_is_not_a_concrete_action(self):
+        roster = [{"student_id": 11, "student_name": "张三"}]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: [
+                    "张三今天能准确列出方程.",
+                    "张三移项时漏写了负号.",
+                ]
+            },
+        )
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=self._batch_payload(
+                    {
+                        11: (
+                            "张三, 今天列方程时能够准确抓住数量关系, "
+                            "整体思路比较清楚.\n\n"
+                            "移项时漏写了负号, 后面继续努力, 相信你会越来越稳."
+                        )
+                    }
+                ),
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: []},
+                require_batch_graph_refs=True,
+            )
+
+        self.assertEqual(caught.exception.code, "student_feedback_missing_next_action")
+
+    def test_batch_v4_problem_needs_action_but_low_information_praise_stays_short(self):
+        roster = [
+            {"student_id": 11, "student_name": "张三"},
+            {"student_id": 22, "student_name": "李四"},
+        ]
+        generation = self._batch_generation_for_roster(
+            roster,
+            evidence_by_student={
+                11: ["张三今天计算时需要检查符号."],
+                22: ["李四今天课堂参与积极."],
+            },
+        )
+        payload = self._batch_payload(
+            {
+                11: (
+                    "张三, 今天计算时符号还需要检查, "
+                    "这个问题仍然需要注意."
+                ),
+                22: (
+                    "李四, 今天课堂参与很积极, "
+                    "整体参与状态值得肯定."
+                ),
+            }
+        )
+
+        with self.assertRaises(
+            ClassCommentaryStructuredFeedbackValidationError
+        ) as caught:
+            canonicalize_class_commentary_structured_feedback(
+                structured_feedback=payload,
+                generation=generation,
+                allowed_graph_evidence_refs_by_student={11: [], 22: []},
+                require_batch_graph_refs=True,
+            )
+        self.assertEqual(caught.exception.code, "student_feedback_missing_next_action")
+        self.assertEqual(caught.exception.student_id, 11)
+
+        payload["items"][0]["feedback_text"] += " 下次计算后请逐项检查每个符号."
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=payload,
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: [], 22: []},
+            require_batch_graph_refs=True,
+        )
+        self.assertEqual(len(accepted["student_feedback_items"]), 2)
+
+    def test_batch_v4_quality_gate_applies_only_to_initial_model_completion(self):
+        generation = self._batch_generation_for_roster(
+            [{"student_id": 11, "student_name": "张三"}],
+            evidence_by_student={
+                11: [
+                    "张三今天能准确列出方程.",
+                    "张三移项时漏写了负号.",
+                ]
+            },
+            skill_content="常用🌱鼓励, 再用✨收尾.",
+        )
+        payload = self._batch_payload({11: "张三, 继续努力."})
+
+        accepted = canonicalize_class_commentary_structured_feedback(
+            structured_feedback=payload,
+            generation=generation,
+            allowed_graph_evidence_refs_by_student={11: []},
+            require_batch_graph_refs=False,
+        )
+
+        self.assertEqual(accepted["student_feedback_items"][0]["feedback_text"], "张三, 继续努力.")
 
     def test_read_envelope_treats_only_absent_inflight_payload_as_supported_read_only(self):
         for status in ("generating", "failed"):
@@ -472,6 +1298,82 @@ class ClassCommentaryFeedbackSchemaTest(unittest.TestCase):
             )
 
         self.assertEqual(caught.exception.code, "structured_feedback_invalid")
+
+    @staticmethod
+    def _batch_payload(feedback_by_student):
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "items": [
+                {"student_id": student_id, "feedback_text": feedback_text}
+                for student_id, feedback_text in feedback_by_student.items()
+            ],
+            "used_graph_evidence_refs_by_student": [
+                {"student_id": student_id, "evidence_refs": []}
+                for student_id in feedback_by_student
+            ],
+        }
+
+    @staticmethod
+    def _batch_generation_for_roster(
+        roster,
+        *,
+        evidence_by_student,
+        skill_content="按课堂事实直接沟通, 给出具体建议.",
+    ):
+        generation = ClassCommentaryFeedbackSchemaTest._generation_for_roster(roster)
+        generation.update(
+            {
+                "prompt_version": "class-commentary-student-feedback-batch-isolated-v4",
+                "student_mention_matcher_version": (
+                    CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
+                ),
+                "student_history_memory_mode": "batch_isolated_v3",
+                "attending_roster_explicit": 1,
+                "skill_content_snapshot": skill_content,
+                "skill_content_hash": _sha256(skill_content),
+            }
+        )
+        student_ids = [item["student_id"] for item in roster]
+        generation["eligible_student_scope_hash"] = _sha256(
+            _canonical_json(
+                {
+                    "attending_roster_hash": generation["attending_roster_hash"],
+                    "confirmed_transcript_hash": generation[
+                        "confirmed_transcript_hash"
+                    ],
+                    "eligible_student_ids": student_ids,
+                    "student_mention_matcher_version": (
+                        CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
+                    ),
+                }
+            )
+        )
+        partitions = []
+        for item in roster:
+            student_id = item["student_id"]
+            fragments = [
+                {
+                    "text": text,
+                    "text_hash": _sha256(text),
+                }
+                for text in evidence_by_student[student_id]
+            ]
+            partitions.append(
+                {
+                    "student_id": student_id,
+                    "current_evidence_snapshot": {"fragments": fragments},
+                }
+            )
+        memory_context = {
+            "schema_version": "class_commentary.batch_isolated_context.v1",
+            "student_history_memory_mode": "batch_isolated_v3",
+            "student_contexts_by_id": partitions,
+        }
+        generation["memory_context_snapshot_json"] = _canonical_json(memory_context)
+        generation["memory_context_hash"] = _sha256(
+            generation["memory_context_snapshot_json"]
+        )
+        return generation
 
     @staticmethod
     def _generation():

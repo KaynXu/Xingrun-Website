@@ -47,7 +47,7 @@ git fetch origin
 git checkout master
 git pull --ff-only origin master
 npm --prefix frontend run build
-XR_SKIP_GIT_SYNC=1 XR_PYTHON_BIN=python3.12 ./scripts/deploy_backend.sh master
+XR_SKIP_GIT_SYNC=1 XR_PYTHON_BIN=python3.12 XR_REQUIRE_BATCH_ISOLATED_V3=1 ./scripts/deploy_backend.sh master
 ```
 
 若发布包含新的固定课程包, Web/worker 健康后再执行显式课程导入. 不得在启动脚本中联网拉取或自动激活. 先确认 `.env.runtime` 解析出的 `XR_DB_PATH` 实际绝对路径和 active super owner id, 对该 SQLite 做在线备份和完整性检查, 然后按 `README.md` 的 `apply -> review -> activate -> verify` 顺序执行. 最后运行:
@@ -68,6 +68,7 @@ XR_SKIP_GIT_SYNC=1 XR_PYTHON_BIN=python3.12 ./scripts/deploy_backend.sh master
 - 安装后端依赖并初始化数据库.
 - 创建或重启 PM2 Web 进程.
 - 当 `XR_CLASS_COMMENTARY_MEMORY_ENABLED` 或 `XR_CLASS_COMMENTARY_GRAPH_ENABLED` 任一开启时启动共享 worker; 两者都关闭时停止它.
+- 课堂反馈 V3 生产发布必须设置 `XR_REQUIRE_BATCH_ISOLATED_V3=1`; 部署脚本会强制校验 Memory, Structured Feedback, Student Memory V2 和 Graph 四个开关同时开启, 并输出 `batch_isolated_v3_enabled=true` 与 `class_commentary_generation_call_count=1`. 任一条件不满足时部署失败. 未设置此发布门时, 仍保留 migration-first 的关闭模式.
 - 检查 Web `online` 和根路由 HTTP `302`.
 - Memory 开启时检查 worker, Redis/RQ, Mem0/Qdrant 和 reconciliation job.
 - Graph 开启时确认 Explorer 关闭, graph store 为持久绝对路径, 从 SQLite rebuild 后的节点/关系/hash 完整一致, Redis/RQ 健康且 graph reconciliation 已排期.

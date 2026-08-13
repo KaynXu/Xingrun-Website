@@ -126,16 +126,18 @@ test('completed tasks show completed progress and demote regeneration', () => {
   assertSourceMatches(uploadCard, /variant=\{hasSucceededGeneration \? 'outline' : 'default'\}[\s\S]*\{hasSucceededGeneration \? '重新生成' : '生成反馈包'\}/, 'regeneration must become secondary after a successful result');
 });
 
-test('isolated generation shows call cost impact and aggregate progress without private context', () => {
+test('batch-isolated generation shows one class call and blocks unavailable context', () => {
   const uploadCard = cardSource('上传与任务');
 
-  assertSourceMatches(source, /student_history_memory_v2_enabled: false/, 'isolated generation capability must fail closed by default');
-  assertSourceMatches(source, /const isolatedGenerationCallCount = capabilities\.student_history_memory_v2_enabled[\s\S]*\? attendingStudentIds\.length[\s\S]*: attendingStudentIds\.length > 0 \? 1 : 0;/, 'call impact must follow the server capability and selected attendance');
-  assertSourceMatches(source, /isolatedGenerationMaxCredits[\s\S]*student_history_memory_v2_max_credits_per_student/, 'maximum credit impact must use the server capability');
-  assertSourceMatches(uploadCard, /data-testid="generation-cost-impact"[\s\S]*次独立学生生成[\s\S]*点额度/, 'generation cost impact must be visible before the action');
+  assertSourceMatches(source, /batch_isolated_v3_enabled: false/, 'batch-isolated generation capability must fail closed by default');
+  assertSourceMatches(source, /const classGenerationCallCount = attendingStudentIds\.length > 0[\s\S]*\? capabilities\.class_commentary_generation_call_count[\s\S]*: 0;/, 'one class generation must use the server capability');
+  assertSourceMatches(source, /classGenerationMaxCredits[\s\S]*student_history_memory_v2_max_credits_per_student/, 'maximum credit impact must use the server capability');
+  assertSourceMatches(uploadCard, /data-testid="generation-cost-impact"[\s\S]*1 次整班生成[\s\S]*一次返回全部到课学生点评[\s\S]*点额度/, 'generation cost impact must explain the single class call before the action');
   assertSourceMatches(uploadCard, /capabilitiesState === 'unavailable'[\s\S]*额度与调用次数暂不可用, 当前不能发起生成/, 'unavailable capabilities must show unknown cost instead of a fabricated one-call estimate');
+  assertSourceMatches(source, /getClassCommentaryBatchGenerationUnavailableReason\(capabilities\)/, 'generation readiness must use the shared batch capability contract');
+  assertSourceMatches(uploadCard, /batchGenerationUnavailableReason[\s\S]*本次将发起/, 'the disabled reason must replace the normal one-call impact message');
   assertSourceMatches(source, /const \[capabilitiesState, setCapabilitiesState\] = useState<ClassCommentaryCapabilitiesState>\('loading'\)/, 'capability loading state must be explicit');
-  assertSourceMatches(source, /const canGenerate = capabilitiesState === 'ready'/, 'generation must stay disabled until capability and cost data are ready');
+  assertSourceMatches(source, /const canGenerate = capabilitiesState === 'ready' && generationContextReady/, 'generation must stay disabled until capability and isolated context are ready');
   assertSourceMatches(uploadCard, /data-testid="student-generation-progress"[\s\S]*总计[\s\S]*等待[\s\S]*生成中[\s\S]*已完成[\s\S]*失败/, 'aggregate student run progress must remain class-level');
   assertSourceExcludes(uploadCard, /memory_context|prompt_payload|historical/i, 'the progress surface must not expose private prompt or memory context');
 });

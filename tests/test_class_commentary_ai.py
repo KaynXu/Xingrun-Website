@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,21 @@ import class_commentary
 
 
 class ClassCommentaryAiTest(unittest.TestCase):
+    def test_class_commentary_client_can_disable_sdk_retries(self):
+        with patch("openai.OpenAI") as openai_client:
+            ai_processor._get_class_commentary_client(
+                "openai",
+                openai_api_key="test-key",
+                openai_base_url="https://example.invalid",
+                max_retries=0,
+            )
+
+        openai_client.assert_called_once_with(
+            api_key="test-key",
+            base_url="https://example.invalid",
+            max_retries=0,
+        )
+
     def test_skill_scanner_lists_legacy_skill_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -61,6 +77,188 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in skills], ["teacher-c"])
         self.assertEqual(skills[0]["filename"], "teacher-c/SKILL.md")
         self.assertIn("Use parent-friendly emojis.", loaded["content"])
+
+    def test_skill_loader_includes_nested_knowledge_markdown_in_stable_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-knowledge"
+            messages = package / "knowledge" / "messages"
+            docs = package / "knowledge" / "docs"
+            messages.mkdir(parents=True)
+            docs.mkdir(parents=True)
+            (package / "SKILL.md").write_text(
+                "Use the frozen colleague voice.", encoding="utf-8"
+            )
+            (messages / "z-sample.md").write_text(
+                "Long feedback example with [玫瑰] at the close.", encoding="utf-8"
+            )
+            (messages / "a-sample.md").write_text(
+                "Warm opening example with [呲牙].", encoding="utf-8"
+            )
+            (docs / "workflow.md").write_text(
+                "Write the diagnosis and concrete next action.", encoding="utf-8"
+            )
+            (package / "knowledge" / "ignore.txt").write_text(
+                "not prompt context", encoding="utf-8"
+            )
+
+            loaded = class_commentary.load_colleague_skill(
+                str(root), "teacher-knowledge"
+            )
+
+        content = loaded["content"]
+        self.assertIn("## knowledge/docs/workflow.md", content)
+        self.assertIn("## knowledge/messages/a-sample.md", content)
+        self.assertIn("## knowledge/messages/z-sample.md", content)
+        self.assertLess(
+            content.index("## knowledge/docs/workflow.md"),
+            content.index("## knowledge/messages/a-sample.md"),
+        )
+        self.assertLess(
+            content.index("## knowledge/messages/a-sample.md"),
+            content.index("## knowledge/messages/z-sample.md"),
+        )
+        self.assertIn("[呲牙]", content)
+        self.assertIn("[玫瑰]", content)
+        self.assertNotIn("not prompt context", content)
+
+    def test_skill_package_updated_at_tracks_nested_knowledge_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-updated"
+            messages = package / "knowledge" / "messages"
+            messages.mkdir(parents=True)
+            (package / "SKILL.md").write_text("Skill", encoding="utf-8")
+            sample = messages / "sample.md"
+            sample.write_text("Example", encoding="utf-8")
+            sample.touch()
+            expected_updated_at = int(sample.stat().st_mtime)
+
+            skills = class_commentary.list_colleague_skills(str(root))
+
+        self.assertEqual(int(skills[0]["updated_at"]), expected_updated_at)
+
+    def test_skill_loader_ignores_symlinked_knowledge_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-safe"
+            knowledge = package / "knowledge"
+            knowledge.mkdir(parents=True)
+            (package / "SKILL.md").write_text("Safe skill", encoding="utf-8")
+            outside = root / "outside.md"
+            outside.write_text("secret outside content", encoding="utf-8")
+            (knowledge / "outside.md").symlink_to(outside)
+
+            loaded = class_commentary.load_colleague_skill(
+                str(root), "teacher-safe"
+            )
+
+        self.assertIn("Safe skill", loaded["content"])
+        self.assertNotIn("secret outside content", loaded["content"])
+
+    def test_skill_scanner_and_loader_ignore_symlinked_packages(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside_tmp:
+            root = Path(tmp)
+            outside = Path(outside_tmp) / "outside-package"
+            outside.mkdir()
+            (outside / "SKILL.md").write_text("outside content", encoding="utf-8")
+            (root / "linked-package").symlink_to(outside, target_is_directory=True)
+
+            skills = class_commentary.list_colleague_skills(str(root))
+
+            with self.assertRaises(FileNotFoundError):
+                class_commentary.load_colleague_skill(str(root), "linked-package")
+
+        self.assertEqual(skills, [])
+
+    def test_skill_scanner_and_loader_ignore_symlinked_legacy_skill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outside = root / "outside.txt"
+            outside.write_text("outside content", encoding="utf-8")
+            (root / "linked.skill").symlink_to(outside)
+
+            skills = class_commentary.list_colleague_skills(str(root))
+
+            with self.assertRaises(FileNotFoundError):
+                class_commentary.load_colleague_skill(str(root), "linked")
+
+        self.assertEqual(skills, [])
+
+    def test_skill_scanner_ignores_symlinked_meta_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-safe-meta"
+            package.mkdir()
+            (package / "SKILL.md").write_text("safe content", encoding="utf-8")
+            outside_meta = root / "outside-meta.json"
+            outside_meta.write_text('{"name": "Outside name"}', encoding="utf-8")
+            (package / "meta.json").symlink_to(outside_meta)
+
+            skills = class_commentary.list_colleague_skills(str(root))
+            loaded = class_commentary.load_colleague_skill(
+                str(root), "teacher-safe-meta"
+            )
+
+        self.assertEqual(skills[0]["name"], "teacher-safe-meta")
+        self.assertEqual(loaded["name"], "teacher-safe-meta")
+
+    def test_skill_scanner_ignores_symlinked_colleagues_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outside = root / "outside-colleagues"
+            package = outside / "teacher-outside"
+            package.mkdir(parents=True)
+            (package / "SKILL.md").write_text("outside content", encoding="utf-8")
+            visible = root / "skills"
+            visible.mkdir()
+            (visible / "colleagues").symlink_to(outside, target_is_directory=True)
+
+            skills = class_commentary.list_colleague_skills(str(visible))
+
+            with self.assertRaises(FileNotFoundError):
+                class_commentary.load_colleague_skill(
+                    str(visible), "teacher-outside"
+                )
+
+        self.assertEqual(skills, [])
+
+    def test_skill_scanner_uses_deterministic_case_tie_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            class FakeSkillPath:
+                def __init__(self, skill_id):
+                    self.name = f"{skill_id}.skill"
+                    self.stem = skill_id
+                    self.suffix = ".skill"
+
+                def is_dir(self):
+                    return False
+
+                def is_file(self):
+                    return True
+
+                def is_symlink(self):
+                    return False
+
+                def stat(self):
+                    return type("Stat", (), {"st_mtime": 1})()
+
+            class FakeScanRoot:
+                @staticmethod
+                def iterdir():
+                    return [FakeSkillPath("teacher-a"), FakeSkillPath("Teacher-A")]
+
+            with patch.object(
+                class_commentary,
+                "_colleague_skill_roots",
+                return_value=[FakeScanRoot()],
+            ):
+                skills = class_commentary.list_colleague_skills(str(root))
+
+        self.assertEqual(
+            [item["id"] for item in skills], ["Teacher-A", "teacher-a"]
+        )
 
     def test_skill_loader_skips_package_files_already_embedded_in_skill_md(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -295,6 +493,108 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("instead of repeatedly starting sentences with '你要'", user_prompt)
         self.assertIn("'代子翔, 你下去多复习一下函数'", user_prompt)
         self.assertIn("mandatory even if ACTIVE_SKILL", user_prompt)
+
+    def test_batch_v4_prompt_uses_complete_skill_and_partitioned_context(self):
+        skill_content = (
+            "## SKILL.md\n先肯定具体表现🌱, 再指出问题🔍。\n\n"
+            "## work.md\n每位学生写 2-4 个短段落, 给出下一步行动✨。\n\n"
+            "## persona.md\n保持家长群里自然、温暖的口吻。"
+        )
+        request_payload = class_commentary.build_class_commentary_chat_request(
+            class_record={"id": 7, "name": "数学七年级四班"},
+            students=[
+                {"id": 1, "name": "代子翔"},
+                {"id": 2, "name": "陈致丹"},
+            ],
+            transcript_text=(
+                "代子翔今天函数图像判断更稳, 但定义域还会漏写。"
+                "陈致丹移项步骤清楚, 下一步要完整验算。"
+            ),
+            skill={
+                "id": "teacher-a",
+                "name": "Teacher A",
+                "content": skill_content,
+            },
+            teacher_style_memories=[
+                {"memory_id": 11, "content": "句子自然, 不写正式报告。"},
+            ],
+            student_history_memories=[],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            eligible_student_ids=[1, 2],
+            prompt_version=(
+                class_commentary.CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+            ),
+            response_format={"type": "json_object"},
+            student_history_memory_mode="batch_isolated_v3",
+            student_contexts_by_id=[
+                {
+                    "student_id": 1,
+                    "memory_retrieval_status": "ready",
+                    "student_history_memories": [
+                        {
+                            "historical_context": "此前定义域书写不完整",
+                            "source_time": "2026-08-01",
+                        }
+                    ],
+                    "learning_graph": {
+                        "retrieval_status": "ready",
+                        "current_states": [],
+                        "recent_changes": [],
+                        "allowed_evidence_refs": ["evidence-1"],
+                    },
+                },
+                {
+                    "student_id": 2,
+                    "memory_retrieval_status": "ready",
+                    "student_history_memories": [
+                        {
+                            "historical_context": "此前验算步骤容易省略",
+                            "source_time": "2026-08-02",
+                        }
+                    ],
+                    "learning_graph": {
+                        "retrieval_status": "empty",
+                        "current_states": [],
+                        "recent_changes": [],
+                        "allowed_evidence_refs": [],
+                    },
+                },
+            ],
+        )
+
+        system_prompt = request_payload["messages"][0]["content"]
+        user_prompt = request_payload["messages"][1]["content"]
+        active_skill_json = user_prompt.split("[ACTIVE_SKILL]\n", 1)[1].split(
+            "\n\n[TEACHER_STYLE_MEMORIES]\n", 1
+        )[0]
+        active_skill = json.loads(active_skill_json)
+        output_rules = user_prompt.split("[OUTPUT_RULES]\n", 1)[1]
+
+        self.assertEqual(active_skill["content"], skill_content)
+        self.assertEqual(
+            request_payload["prompt_version"],
+            class_commentary.CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+        )
+        self.assertEqual(
+            request_payload["student_history_memory_mode"],
+            "batch_isolated_v3",
+        )
+        self.assertEqual(user_prompt.count("[ACTIVE_SKILL]"), 1)
+        self.assertIn("primary writing contract", system_prompt)
+        self.assertIn("emoji tokens, density, placement, and purpose", system_prompt)
+        self.assertIn("2-4 short paragraphs", output_rules)
+        self.assertIn("specific problem", output_rules)
+        self.assertIn("concrete next action", output_rules)
+        self.assertIn("every student's feedback", output_rules)
+        self.assertIn("at least one matching emoji", output_rules)
+        self.assertIn("structured", output_rules)
+        self.assertIn("conversational parent-group voice", output_rules)
+        self.assertIn("used_graph_evidence_refs_by_student", output_rules)
+        self.assertIn("[STUDENT_CONTEXTS_BY_ID]", user_prompt)
+        self.assertIn("此前定义域书写不完整", user_prompt)
+        self.assertIn("此前验算步骤容易省略", user_prompt)
+        self.assertIn("evidence-1", user_prompt)
+        self.assertNotIn("[STUDENT_HISTORY_MEMORIES]", user_prompt)
 
     def test_structured_prompt_rejects_unknown_prompt_version(self):
         with self.assertRaisesRegex(ValueError, "prompt version is invalid"):
@@ -577,6 +877,7 @@ class ClassCommentaryAiTest(unittest.TestCase):
             openai_api_key="sk-class-test",
             openai_base_url="https://api.iiiiitoken.com",
             openai_headers={"X-Trace": "aimami"},
+            max_retries=None,
         )
 
     def test_polish_class_commentary_transcript_uses_roster_prompt_contract(self):

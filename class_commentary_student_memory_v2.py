@@ -20,6 +20,15 @@ from class_commentary_feedback_schema import (
 )
 
 
+CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3 = (
+    "class_commentary.student_evidence_segment.v3"
+)
+
+
+class ClassCommentaryStudentEvidenceAttributionError(ValueError):
+    code = "student_evidence_attribution_failed"
+
+
 ISOLATED_STUDENT_SYSTEM_PROMPT = (
     "Generate feedback for exactly one CURRENT_STUDENT. "
     "CURRENT_STUDENT_EVIDENCE contains verified excerpts from this lesson. "
@@ -84,6 +93,137 @@ def _roster_entries(roster: Iterable[Mapping[str, object]]) -> list[dict]:
     return entries
 
 
+_CLAUSE_PATTERN = re.compile(r"[^\n\r。！？!?；;.,，]+[\n\r。！？!?；;.,，]*")
+_STUDENT_ID_PATTERN = re.compile(
+    r"(?:student[_\s-]*id|学生\s*(?:id|ID|编号)|学员\s*(?:id|ID|编号))"
+    r"\s*[:：=#-]?\s*([0-9]+)",
+    flags=re.IGNORECASE,
+)
+
+
+def _evidence_fragment(transcript: str, start: int, end: int) -> dict | None:
+    raw = transcript[start:end]
+    left = len(raw) - len(raw.lstrip())
+    right = len(raw.rstrip())
+    fragment_start = start + left
+    fragment_end = start + right
+    text = transcript[fragment_start:fragment_end]
+    if not text:
+        return None
+    return {
+        "start": fragment_start,
+        "end": fragment_end,
+        "text": text,
+        "text_hash": content_hash(text),
+    }
+
+
+def _unmatched_roster_aliases(clause: str, roster: list[dict]) -> set[int]:
+    aliases = set()
+    for item in roster:
+        official_name = str(item["name"])
+        if official_name in clause:
+            continue
+        core_name = re.sub(r"^(?:学生|学员)|(?:同学)$", "", official_name).strip()
+        if not core_name:
+            continue
+        guarded_aliases = {f"{core_name}同学", f"小{core_name}"}
+        if any(alias in clause for alias in guarded_aliases):
+            aliases.add(int(item["student_id"]))
+    return aliases
+
+
+def build_student_evidence_assignment(
+    *,
+    transcript: str,
+    transcript_hash: str,
+    roster: Iterable[Mapping[str, object]],
+    attending_student_ids: Iterable[int],
+    matcher_version: str = CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3,
+) -> dict:
+    frozen_transcript = str(transcript or "")
+    if content_hash(frozen_transcript) != str(transcript_hash or ""):
+        raise ValueError("confirmed transcript hash mismatch")
+    if matcher_version != CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3:
+        raise ValueError("student evidence matcher version is unsupported")
+    normalized_roster = _roster_entries(roster)
+    roster_ids = {item["student_id"] for item in normalized_roster}
+    attending_ids = [int(value) for value in attending_student_ids]
+    if (
+        not attending_ids
+        or len(set(attending_ids)) != len(attending_ids)
+        or any(student_id not in roster_ids for student_id in attending_ids)
+    ):
+        raise ValueError("attending students are outside the frozen roster")
+
+    assignments: dict[int, list[dict]] = {student_id: [] for student_id in attending_ids}
+    carried_owner_id: int | None = None
+    for clause_match in _CLAUSE_PATTERN.finditer(frozen_transcript):
+        clause = clause_match.group(0)
+        normalized_clause = _normalized_name(clause)
+        named_ids = {
+            item["student_id"]
+            for item in normalized_roster
+            if item["name"] in normalized_clause
+        }
+        referenced_ids = {
+            int(match.group(1)) for match in _STUDENT_ID_PATTERN.finditer(normalized_clause)
+        }
+        unmatched_alias_ids = _unmatched_roster_aliases(
+            normalized_clause, normalized_roster
+        )
+        if unmatched_alias_ids:
+            raise ClassCommentaryStudentEvidenceAttributionError(
+                "student evidence clause contains an unverified alias"
+            )
+        owner_ids = named_ids | referenced_ids
+        if not owner_ids:
+            if carried_owner_id is not None:
+                fragment = _evidence_fragment(
+                    frozen_transcript, clause_match.start(), clause_match.end()
+                )
+                if fragment is not None:
+                    assignments[carried_owner_id].append(fragment)
+            carried_owner_id = (
+                carried_owner_id
+                if normalized_clause.rstrip().endswith((",", "，"))
+                else None
+            )
+            continue
+        if (
+            len(owner_ids) != 1
+            or not owner_ids.issubset(roster_ids)
+            or not owner_ids.issubset(set(attending_ids))
+        ):
+            raise ClassCommentaryStudentEvidenceAttributionError(
+                "student evidence clause is not uniquely attributable"
+            )
+        owner_id = next(iter(owner_ids))
+        carried_owner_id = (
+            owner_id if normalized_clause.rstrip().endswith((",", "，")) else None
+        )
+        fragment = _evidence_fragment(
+            frozen_transcript, clause_match.start(), clause_match.end()
+        )
+        if fragment is not None:
+            assignments[owner_id].append(fragment)
+    if any(not assignments[student_id] for student_id in attending_ids):
+        raise ClassCommentaryStudentEvidenceAttributionError(
+            "student evidence attribution is incomplete"
+        )
+    assignment = {
+        "schema_version": "class_commentary.student_evidence_assignment.v1",
+        "matcher_version": matcher_version,
+        "transcript_hash": str(transcript_hash),
+        "roster_student_ids": [item["student_id"] for item in normalized_roster],
+        "attending_student_ids": attending_ids,
+        "fragments_by_student_id": {
+            str(student_id): assignments[student_id] for student_id in attending_ids
+        },
+    }
+    return {**assignment, "assignment_hash": canonical_hash(assignment)}
+
+
 def build_student_current_evidence(
     *,
     transcript: str,
@@ -91,22 +231,80 @@ def build_student_current_evidence(
     roster: Iterable[Mapping[str, object]],
     target_student_id: int,
     matcher_version: str = CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+    assignment: Mapping[str, object] | None = None,
 ) -> dict:
     frozen_transcript = str(transcript or "")
     if content_hash(frozen_transcript) != str(transcript_hash or ""):
         raise ValueError("confirmed transcript hash mismatch")
-    if matcher_version != CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2:
+    if matcher_version not in {
+        CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+        CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3,
+    }:
         raise ValueError("student evidence matcher version is unsupported")
     normalized_roster = _roster_entries(roster)
     target_ids = {item["student_id"] for item in normalized_roster}
     if int(target_student_id) not in target_ids:
         raise ValueError("target student is outside the frozen roster")
+    if matcher_version == CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2:
+        if assignment is not None:
+            raise ValueError("legacy student evidence does not accept an assignment")
+        attribution = "fail_closed_no_structured_ownership"
+        fragments = []
+    else:
+        if not isinstance(assignment, Mapping):
+            raise ValueError("student evidence assignment is required")
+        assignment_payload = {
+            key: value for key, value in assignment.items() if key != "assignment_hash"
+        }
+        fragments_by_student = assignment.get("fragments_by_student_id")
+        assignment_roster_ids = assignment.get("roster_student_ids")
+        assignment_attending_ids = assignment.get("attending_student_ids")
+        if (
+            canonical_hash(assignment_payload)
+            != str(assignment.get("assignment_hash") or "")
+            or assignment.get("schema_version")
+            != "class_commentary.student_evidence_assignment.v1"
+            or assignment.get("matcher_version") != matcher_version
+            or assignment.get("transcript_hash") != str(transcript_hash)
+            or assignment_roster_ids
+            != [item["student_id"] for item in normalized_roster]
+            or not isinstance(assignment_attending_ids, list)
+            or int(target_student_id) not in assignment_attending_ids
+            or set(assignment_attending_ids) - target_ids
+            or not isinstance(fragments_by_student, Mapping)
+            or set(fragments_by_student)
+            != {str(student_id) for student_id in assignment_attending_ids}
+        ):
+            raise ValueError("student evidence assignment is invalid")
+        fragments = fragments_by_student.get(str(int(target_student_id)))
+        if not isinstance(fragments, list) or not fragments:
+            raise ClassCommentaryStudentEvidenceAttributionError(
+                "student evidence is missing"
+            )
+        for fragment in fragments:
+            if not isinstance(fragment, Mapping) or set(fragment) != {
+                "start", "end", "text", "text_hash"
+            }:
+                raise ValueError("student evidence fragment is invalid")
+            start = fragment.get("start")
+            end = fragment.get("end")
+            text = str(fragment.get("text") or "")
+            if (
+                type(start) is not int
+                or type(end) is not int
+                or start < 0
+                or end <= start
+                or frozen_transcript[start:end] != text
+                or content_hash(text) != str(fragment.get("text_hash") or "")
+            ):
+                raise ValueError("student evidence fragment provenance mismatch")
+        attribution = "unique_clause_owner_v3"
     snapshot = {
         "schema_version": "class_commentary.student_current_evidence.v1",
         "matcher_version": matcher_version,
         "transcript_hash": str(transcript_hash),
-        "attribution": "fail_closed_no_structured_ownership",
-        "fragments": [],
+        "attribution": attribution,
+        "fragments": [dict(fragment) for fragment in fragments],
     }
     return {**snapshot, "snapshot_hash": canonical_hash(snapshot)}
 
@@ -170,7 +368,12 @@ def build_isolated_student_chat_request(
 ) -> dict:
     evidence_for_prompt = {
         "verified_fragments": [
-            {"text": str(item.get("text") or "")}
+            {
+                "start": item.get("start"),
+                "end": item.get("end"),
+                "text": str(item.get("text") or ""),
+                "text_hash": str(item.get("text_hash") or ""),
+            }
             for item in evidence_snapshot.get("fragments") or []
             if isinstance(item, Mapping) and str(item.get("text") or "").strip()
         ],
