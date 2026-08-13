@@ -918,6 +918,74 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("evidence-1", user_prompt)
         self.assertNotIn("[STUDENT_HISTORY_MEMORIES]", user_prompt)
 
+    def test_batch_v5_prompt_includes_complete_transcript_and_official_rosters(self):
+        transcript = "刘峰峰今天移项步骤更清楚.张玉空验算更主动."
+        request_payload = class_commentary.build_class_commentary_chat_request(
+            class_record={"id": 7, "name": "数学七年级四班"},
+            students=[
+                {"id": 1, "name": "刘鹏鹏"},
+                {"id": 2, "name": "张玉坤"},
+            ],
+            official_course_roster=[
+                {"id": 1, "name": "刘鹏鹏"},
+                {"id": 2, "name": "张玉坤"},
+                {"id": 3, "name": "王小明"},
+            ],
+            transcript_text=transcript,
+            skill={"id": "teacher-a", "name": "Teacher A", "content": "自然沟通."},
+            teacher_style_memories=[],
+            student_history_memories=[],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            eligible_student_ids=[1, 2],
+            prompt_version=(
+                class_commentary.CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+            ),
+            response_format={"type": "json_object"},
+            student_history_memory_mode="batch_isolated_v3",
+            student_contexts_by_id=[
+                {
+                    "student_id": student_id,
+                    "current_student_evidence": {"verified_fragments": []},
+                    "memory_retrieval_status": "empty",
+                    "student_history_memories": [],
+                    "learning_graph": {
+                        "retrieval_status": "empty",
+                        "current_states": [],
+                        "recent_changes": [],
+                        "allowed_evidence_refs": [],
+                    },
+                }
+                for student_id in (1, 2)
+            ],
+        )
+
+        system_prompt = request_payload["messages"][0]["content"]
+        user_prompt = request_payload["messages"][1]["content"]
+        current_facts_json = user_prompt.split(
+            "[CURRENT_TASK_FACTS]\n", 1
+        )[1].split("\n\n[ACTIVE_SKILL]\n", 1)[0]
+        current_facts = json.loads(current_facts_json)
+
+        self.assertEqual(current_facts["transcript"], transcript)
+        self.assertEqual(
+            current_facts["students"],
+            [{"id": 1, "name": "刘鹏鹏"}, {"id": 2, "name": "张玉坤"}],
+        )
+        self.assertEqual(
+            current_facts["official_course_roster"],
+            [
+                {"id": 1, "name": "刘鹏鹏"},
+                {"id": 2, "name": "张玉坤"},
+                {"id": 3, "name": "王小明"},
+            ],
+        )
+        self.assertEqual(current_facts["eligible_student_ids"], [1, 2])
+        self.assertIn("homophones, near-sounding syllables", system_prompt)
+        self.assertIn("If a spoken name cannot be mapped uniquely", system_prompt)
+        self.assertIn("never generate an item", system_prompt)
+        self.assertIn("[STUDENT_CONTEXTS_BY_ID]", user_prompt)
+        self.assertIn('"verified_fragments": []', user_prompt)
+
     def test_structured_prompt_rejects_unknown_prompt_version(self):
         with self.assertRaisesRegex(ValueError, "prompt version is invalid"):
             class_commentary.build_class_commentary_chat_request(

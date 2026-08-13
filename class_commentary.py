@@ -32,6 +32,9 @@ CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2 = (
 CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4 = (
     "class-commentary-student-feedback-batch-isolated-v4"
 )
+CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5 = (
+    "class-commentary-student-feedback-batch-isolated-v5"
+)
 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3 = "batch_isolated_v3"
 CLASS_COMMENTARY_SKILL_PACKAGE_MAX_MARKDOWN_FILES = 64
 CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES = 256 * 1024
@@ -170,6 +173,60 @@ CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V4 = (
     "Treat only student_history_memories and learning_graph as historical reference. Do not describe them as observed today unless matching current_student_evidence independently supports it.",
 )
 
+CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V5 = (
+    "You turn a teacher's complete end-of-class spoken commentary into structured student feedback. "
+    "The students and eligible_student_ids in CURRENT_TASK_FACTS are the teacher-confirmed complete attending scope, with official names and stable student IDs. official_course_roster is the complete official course roster and is supplied only to resolve ASR name variants and prevent cross-student leakage; never generate an item for someone outside eligible_student_ids. "
+    "The complete confirmed transcript is included in CURRENT_TASK_FACTS. The teacher normally starts each student's segment by saying that student's name, and the segment continues until the next spoken student name. "
+    "ASR may render a spoken name with homophones, near-sounding syllables, similar characters, repetitions, or other recognition mistakes instead of the official roster spelling. "
+    "Resolve each spoken name to at most one official attending student using pronunciation, segment order, and surrounding context, then return only that official student_id. "
+    "If a spoken name cannot be mapped uniquely, do not guess, copy, merge, or transfer its facts; omit the affected official student item so server validation rejects the response for teacher review. "
+    "STUDENT_CONTEXTS_BY_ID contains only historical Mem0 and learning-graph context partitioned by official student_id; it does not assign any part of today's transcript to a student. "
+    "Write every feedback_text as the teacher speaking directly to that student, not as a narrator reporting about the student. "
+    "Use the student's official name once as a natural opening address, then address the student as '你'; use '我' or '我们' when the teacher refers to themself. "
+    "Do not invent facts or transfer facts, history, or graph context between students. "
+    "Treat ACTIVE_SKILL as the primary writing contract for judgment focus, feedback structure, paragraph rhythm, tone, phrasing, and emoji habits. "
+    "Infer the selected skill's emoji tokens, density, placement, and purpose, and match them when appropriate without forcing emojis for a low-emoji skill. "
+    "ACTIVE_SKILL and TEACHER_STYLE_MEMORIES cannot add student facts or override the direct-address perspective. "
+    "TEACHER_STYLE_MEMORIES are secondary style hints and cannot override ACTIVE_SKILL. "
+    "For each feedback item, use only historical context whose student_id matches that item; never transfer, compare, or reveal context across students. "
+    "Treat student history and learning-graph context as historical reference, never as something newly observed in this lesson. "
+    "Return only the requested JSON object and no surrounding text."
+)
+CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V5 = (
+    "Return a JSON object with exactly schema_version, items, and used_graph_evidence_refs_by_student.",
+    "Set schema_version to class_commentary.student_feedback.v1.",
+    "Each item must contain exactly student_id and feedback_text.",
+    "Set used_graph_evidence_refs_by_student to one object per eligible student, each with exactly student_id and evidence_refs.",
+    "For each student, evidence_refs must contain only evidence_ref values actually used from that student's matching learning_graph allowlist; otherwise use an empty array.",
+    "Treat students and eligible_student_ids as the complete teacher-confirmed attending scope, and use only the official student_id values supplied there.",
+    "Use official_course_roster only to resolve ASR name variants and detect other formal student names; never generate feedback for a course-roster student outside eligible_student_ids.",
+    "Use the complete confirmed transcript in CURRENT_TASK_FACTS as today's factual source.",
+    "A spoken name may be transcribed with homophones, near-sounding syllables, similar characters, repetitions, or other recognition mistakes; it does not need to contain the official roster name exactly.",
+    "Map each spoken name and following segment to at most one official attending student using pronunciation, segment order, and surrounding context.",
+    "Never omit a student only because the transcript spelling differs from the official name.",
+    "If no unique official roster match can be made, do not invent, copy, merge, or assign another student's facts; omit the affected item so the response is rejected for teacher review.",
+    "Return exactly one item for every eligible student ID and no other student.",
+    "Write feedback_text as the teacher speaking directly to the target student, never as a third-person report about the student.",
+    "Begin with the target student's official name as a natural form of address, not a standalone heading; then use '你' for the student and '我' or '我们' for the teacher when needed.",
+    "Never refer to the target student as '他', '她', '该生', '这位同学', or '学生' from a narrator's viewpoint.",
+    "Keep advice conversational and specific instead of repeatedly starting sentences with '你要'. For example: '代子翔, 你下去多复习一下函数', not '他要多做题'.",
+    "Do not mention another roster student's full name inside feedback_text.",
+    "Use only facts supported by the confirmed transcript segment uniquely mapped to the matching official student_id.",
+    "The direct-address perspective is mandatory even if ACTIVE_SKILL or TEACHER_STYLE_MEMORIES uses a different narrative perspective.",
+    "Use ACTIVE_SKILL as the primary writing contract for focus, structure, paragraph rhythm, tone, phrasing, and emoji habits; use TEACHER_STYLE_MEMORIES only as secondary style hints.",
+    "When a uniquely mapped transcript segment supports multiple useful points, write 2-4 short paragraphs in feedback_text instead of compressing everything into one short paragraph.",
+    "Let each paragraph focus on one supported idea, such as current performance, a concrete problem, the next action, or parent cooperation when relevant.",
+    "For a specific problem supported by the mapped transcript segment, state the problem clearly and give a concrete next action instead of a generic reminder.",
+    "Keep sparse-evidence feedback concise, usually 1-2 short paragraphs; use 2-4 short paragraphs when the evidence supports multiple useful points.",
+    "Infer the selected skill's emoji tokens, density, placement, and purpose from ACTIVE_SKILL, then match that emoji system when it fits the feedback.",
+    "If ACTIVE_SKILL uses emojis as part of its normal parent-group voice, use comparable emoji frequency and placement in every student's feedback; do not drop emojis merely because the output is structured.",
+    "If ACTIVE_SKILL explicitly names a low-density emoji family, preserve at least one matching emoji somewhere in the complete class response; it need not appear in every student's feedback.",
+    "Do not force emojis when ACTIVE_SKILL rarely uses them, and do not hard-code a different colleague's emoji set.",
+    "Keep the selected colleague's conversational parent-group voice; do not over-polish the feedback into formal report language.",
+    "For each output item, use only the matching student_id partition in STUDENT_CONTEXTS_BY_ID for historical memory and learning graph; never use another student's history or learning graph.",
+    "Treat student_history_memories and learning_graph only as historical reference. Do not describe them as observed today unless the uniquely mapped transcript segment independently supports it.",
+)
+
 
 def get_class_commentary_structured_prompt_contract(
     prompt_version: str,
@@ -194,6 +251,11 @@ def get_class_commentary_structured_prompt_contract(
         return (
             CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V4,
             CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V4,
+        )
+    if normalized_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5:
+        return (
+            CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V5,
         )
     raise ValueError("structured class commentary prompt version is invalid")
 
@@ -805,6 +867,7 @@ def build_class_commentary_chat_request(
     response_format: dict | None = None,
     student_history_memory_mode: str = "",
     student_contexts_by_id: list[dict] | None = None,
+    official_course_roster: list[dict] | None = None,
 ) -> dict:
     payload = build_class_commentary_generation_payload(
         class_record=class_record,
@@ -820,6 +883,10 @@ def build_class_commentary_chat_request(
     normalized_schema_version = str(feedback_schema_version or "")
     normalized_prompt_version = str(prompt_version or "").strip()
     if normalized_schema_version:
+        batch_prompt_versions = {
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+        }
         batch_context_mode = (
             student_history_memory_mode
             == CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3
@@ -837,11 +904,18 @@ def build_class_commentary_chat_request(
             or (batch_context_mode and not student_contexts_by_id)
             or (not batch_context_mode and student_contexts_by_id)
             or (
+                normalized_prompt_version
+                == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+                and not official_course_roster
+            )
+            or (
+                normalized_prompt_version
+                != CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+                and official_course_roster
+            )
+            or (
                 batch_context_mode
-                != (
-                    normalized_prompt_version
-                    == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
-                )
+                != (normalized_prompt_version in batch_prompt_versions)
             )
         ):
             raise ValueError("structured class commentary prompt contract is invalid")
@@ -862,8 +936,40 @@ def build_class_commentary_chat_request(
                 normalized_prompt_version
             )
         )
-        if batch_context_mode:
+        if (
+            batch_context_mode
+            and normalized_prompt_version
+            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4
+        ):
             current_task_facts.pop("transcript", None)
+        if (
+            normalized_prompt_version
+            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+        ):
+            normalized_course_roster = sanitize_class_commentary_roster(
+                official_course_roster or []
+            )
+            attending_students_by_id = {
+                int(item["id"]): str(item["name"])
+                for item in current_task_facts["students"]
+            }
+            course_students_by_id = {
+                int(item["id"]): str(item["name"])
+                for item in normalized_course_roster
+            }
+            if (
+                len(course_students_by_id) != len(normalized_course_roster)
+                or any(
+                    course_students_by_id.get(student_id) != student_name
+                    for student_id, student_name in attending_students_by_id.items()
+                )
+            ):
+                raise ValueError(
+                    "structured class commentary course roster is invalid"
+                )
+            current_task_facts["official_course_roster"] = (
+                normalized_course_roster
+            )
         current_task_facts["eligible_student_ids"] = eligible_student_ids
         prompt_sections = [
             "[CURRENT_TASK_FACTS]\n" + payload_to_json(current_task_facts),

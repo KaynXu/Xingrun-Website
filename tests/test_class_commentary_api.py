@@ -18,7 +18,7 @@ import config_runtime
 import lesson_manager
 import class_commentary_batch_context
 from class_commentary import (
-    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     build_class_commentary_chat_request,
 )
@@ -1076,13 +1076,13 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertTrue(payload["eligible_student_scope_hash"])
         self.assertEqual(
             payload["student_mention_matcher_version"],
-            "class_commentary.attending_roster_scope.v1",
+            "class_commentary.student_evidence_fail_closed.v2",
         )
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual(payload["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
             payload["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
         )
 
         saved = lesson_manager.get_class_commentary_generation(payload["generation_id"])
@@ -1092,11 +1092,11 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(saved["attending_roster_explicit"], 1)
         self.assertEqual(
             saved["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
         )
         self.assertEqual(
             json.loads(saved["prompt_payload_snapshot_json"])["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
         )
         self.assertEqual(json.loads(saved["eligible_student_ids_json"]), eligible_ids)
         saved_roster = json.loads(saved["attending_roster_snapshot_json"])
@@ -1443,7 +1443,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(saved["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
             saved["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
         )
 
     def test_batch_charge_retry_reuses_persisted_response_without_provider_recall(self):
