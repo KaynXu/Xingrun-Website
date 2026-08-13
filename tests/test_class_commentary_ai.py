@@ -172,6 +172,92 @@ class ClassCommentaryAiTest(unittest.TestCase):
 
         self.assertIn("Valid sample", loaded["content"])
 
+    def test_skill_loader_ignores_oversized_macos_appledouble_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-safe"
+            knowledge = package / "knowledge"
+            knowledge.mkdir(parents=True)
+            (package / "SKILL.md").write_text("Safe", encoding="utf-8")
+            (knowledge / "sample.md").write_text("Valid", encoding="utf-8")
+            (knowledge / "._sample.md").write_bytes(b"x" * 9)
+
+            with patch.object(
+                class_commentary,
+                "CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES",
+                8,
+            ), patch.object(
+                class_commentary,
+                "CLASS_COMMENTARY_SKILL_PACKAGE_MAX_MARKDOWN_FILES",
+                2,
+            ):
+                loaded = class_commentary.load_colleague_skill(
+                    str(root), "teacher-safe"
+                )
+
+        self.assertIn("Valid", loaded["content"])
+
+    def test_skill_loader_rejects_skill_file_swapped_to_symlink_after_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-race"
+            package.mkdir()
+            skill_path = package / "SKILL.md"
+            skill_path.write_text("Safe skill", encoding="utf-8")
+            outside = root / "outside.md"
+            outside.write_text("OUTSIDE_SECRET", encoding="utf-8")
+            original_scan = (
+                class_commentary._class_commentary_skill_package_relative_markdown_paths
+            )
+
+            def swap_after_scan(package_fd):
+                relative_paths = original_scan(package_fd)
+                skill_path.unlink()
+                skill_path.symlink_to(outside)
+                return relative_paths
+
+            with patch.object(
+                class_commentary,
+                "_class_commentary_skill_package_relative_markdown_paths",
+                side_effect=swap_after_scan,
+            ):
+                with self.assertRaisesRegex(ValueError, "unsafe or unavailable"):
+                    class_commentary.read_class_commentary_skill_package_content(
+                        package
+                    )
+
+    def test_skill_loader_rejects_nested_directory_swapped_to_symlink_after_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-race"
+            messages = package / "knowledge" / "messages"
+            messages.mkdir(parents=True)
+            (package / "SKILL.md").write_text("Safe skill", encoding="utf-8")
+            (messages / "sample.md").write_text("Safe sample", encoding="utf-8")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "sample.md").write_text("OUTSIDE_SECRET", encoding="utf-8")
+            original_messages = package / "knowledge" / "messages-original"
+            original_scan = (
+                class_commentary._class_commentary_skill_package_relative_markdown_paths
+            )
+
+            def swap_after_scan(package_fd):
+                relative_paths = original_scan(package_fd)
+                messages.rename(original_messages)
+                messages.symlink_to(outside, target_is_directory=True)
+                return relative_paths
+
+            with patch.object(
+                class_commentary,
+                "_class_commentary_skill_package_relative_markdown_paths",
+                side_effect=swap_after_scan,
+            ):
+                with self.assertRaisesRegex(ValueError, "unsafe or unavailable"):
+                    class_commentary.read_class_commentary_skill_package_content(
+                        package
+                    )
+
     def test_skill_scanner_and_loader_ignore_symlinked_packages(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside_tmp:
             root = Path(tmp)
@@ -219,6 +305,39 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertEqual(skills[0]["name"], "teacher-safe-meta")
         self.assertEqual(loaded["name"], "teacher-safe-meta")
 
+    def test_skill_scanner_does_not_read_meta_json_swapped_to_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-safe-meta"
+            package.mkdir()
+            (package / "SKILL.md").write_text("safe content", encoding="utf-8")
+            meta_path = package / "meta.json"
+            meta_path.write_text('{"name": "Safe name"}', encoding="utf-8")
+            outside_meta = root / "outside-meta.json"
+            outside_meta.write_text('{"name": "OUTSIDE_SECRET"}', encoding="utf-8")
+            original_stat = (
+                class_commentary._stat_class_commentary_skill_file_if_regular
+            )
+            swapped = False
+
+            def swap_after_stat(directory_fd, filename):
+                nonlocal swapped
+                result = original_stat(directory_fd, filename)
+                if filename == "meta.json" and not swapped:
+                    swapped = True
+                    meta_path.unlink()
+                    meta_path.symlink_to(outside_meta)
+                return result
+
+            with patch.object(
+                class_commentary,
+                "_stat_class_commentary_skill_file_if_regular",
+                side_effect=swap_after_stat,
+            ):
+                skills = class_commentary.list_colleague_skills(str(root))
+
+        self.assertEqual(skills[0]["name"], "teacher-safe-meta")
+
     def test_skill_scanner_ignores_symlinked_colleagues_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -239,42 +358,229 @@ class ClassCommentaryAiTest(unittest.TestCase):
 
         self.assertEqual(skills, [])
 
-    def test_skill_scanner_uses_deterministic_case_tie_order(self):
+    def test_skill_scanner_rejects_colleagues_root_swapped_to_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            class FakeSkillPath:
-                def __init__(self, skill_id):
-                    self.name = f"{skill_id}.skill"
-                    self.stem = skill_id
-                    self.suffix = ".skill"
+            colleagues = root / "colleagues"
+            colleagues.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "OUTSIDE_SECRET.skill").write_text(
+                "secret", encoding="utf-8"
+            )
+            original_open = class_commentary._open_class_commentary_skill_directory
+            swapped = False
 
-                def is_dir(self):
-                    return False
-
-                def is_file(self):
-                    return True
-
-                def is_symlink(self):
-                    return False
-
-                def stat(self):
-                    return type("Stat", (), {"st_mtime": 1})()
-
-            class FakeScanRoot:
-                @staticmethod
-                def iterdir():
-                    return [FakeSkillPath("teacher-a"), FakeSkillPath("Teacher-A")]
+            def swap_before_open(path, *, dir_fd=None):
+                nonlocal swapped
+                if path == "colleagues" and dir_fd is not None and not swapped:
+                    swapped = True
+                    colleagues.rmdir()
+                    colleagues.symlink_to(outside, target_is_directory=True)
+                return original_open(path, dir_fd=dir_fd)
 
             with patch.object(
                 class_commentary,
-                "_colleague_skill_roots",
-                return_value=[FakeScanRoot()],
+                "_open_class_commentary_skill_directory",
+                side_effect=swap_before_open,
             ):
                 skills = class_commentary.list_colleague_skills(str(root))
 
+        self.assertEqual(skills, [])
+
+    def test_skill_scanner_stays_on_open_colleagues_fd_after_path_swap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            colleagues = root / "colleagues"
+            colleagues.mkdir()
+            (colleagues / "safe.skill").write_text("safe", encoding="utf-8")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "OUTSIDE_SECRET.skill").write_text(
+                "secret", encoding="utf-8"
+            )
+            moved_colleagues = root / "colleagues-original"
+            original_open = class_commentary._open_class_commentary_skill_directory
+            swapped = False
+
+            def swap_after_open(path, *, dir_fd=None):
+                nonlocal swapped
+                opened_fd = original_open(path, dir_fd=dir_fd)
+                if path == "colleagues" and dir_fd is not None and not swapped:
+                    swapped = True
+                    colleagues.rename(moved_colleagues)
+                    colleagues.symlink_to(outside, target_is_directory=True)
+                return opened_fd
+
+            with patch.object(
+                class_commentary,
+                "_open_class_commentary_skill_directory",
+                side_effect=swap_after_open,
+            ):
+                skills = class_commentary.list_colleague_skills(str(root))
+
+        self.assertEqual([item["id"] for item in skills], ["safe"])
+
+    def test_skill_scanner_uses_deterministic_case_tie_order(self):
         self.assertEqual(
-            [item["id"] for item in skills], ["Teacher-A", "teacher-a"]
+            sorted(
+                ["teacher-a", "Teacher-A"],
+                key=class_commentary._colleague_skill_sort_key,
+            ),
+            ["Teacher-A", "teacher-a"],
         )
+
+    def test_skill_loader_rejects_too_many_markdown_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-too-many-files"
+            knowledge = package / "knowledge"
+            knowledge.mkdir(parents=True)
+            (package / "SKILL.md").write_text("Skill", encoding="utf-8")
+            (knowledge / "one.md").write_text("One", encoding="utf-8")
+            (knowledge / "two.md").write_text("Two", encoding="utf-8")
+
+            with patch.object(
+                class_commentary,
+                "CLASS_COMMENTARY_SKILL_PACKAGE_MAX_MARKDOWN_FILES",
+                2,
+            ):
+                with self.assertRaisesRegex(ValueError, "file count exceeds limit"):
+                    class_commentary.load_colleague_skill(
+                        str(root), "teacher-too-many-files"
+                    )
+
+    def test_skill_loader_accepts_64_markdown_files_and_rejects_65(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-file-boundary"
+            knowledge = package / "knowledge"
+            knowledge.mkdir(parents=True)
+            (package / "SKILL.md").write_text("Skill", encoding="utf-8")
+            for index in range(63):
+                (knowledge / f"{index:02d}.md").write_text(
+                    f"Example {index}", encoding="utf-8"
+                )
+
+            loaded = class_commentary.load_colleague_skill(
+                str(root), "teacher-file-boundary"
+            )
+            self.assertIn("Example 62", loaded["content"])
+
+            (knowledge / "overflow.md").write_text("Overflow", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "file count exceeds limit"):
+                class_commentary.load_colleague_skill(
+                    str(root), "teacher-file-boundary"
+                )
+
+    def test_skill_loader_rejects_oversized_markdown_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-large-file"
+            package.mkdir()
+            (package / "SKILL.md").write_text("123456789", encoding="utf-8")
+
+            with patch.object(
+                class_commentary,
+                "CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES",
+                8,
+            ):
+                with self.assertRaisesRegex(ValueError, "file size exceeds limit"):
+                    class_commentary.load_colleague_skill(
+                        str(root), "teacher-large-file"
+                    )
+
+    def test_skill_loader_accepts_256_kib_file_and_rejects_one_byte_more(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-file-size-boundary"
+            package.mkdir()
+            skill_path = package / "SKILL.md"
+            skill_path.write_bytes(
+                b"x" * class_commentary.CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES
+            )
+
+            loaded = class_commentary.load_colleague_skill(
+                str(root), "teacher-file-size-boundary"
+            )
+            self.assertEqual(
+                len(loaded["content"].split("\n", 1)[1].encode("utf-8")),
+                class_commentary.CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES,
+            )
+
+            skill_path.write_bytes(
+                b"x"
+                * (class_commentary.CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES + 1)
+            )
+            with self.assertRaisesRegex(ValueError, "file size exceeds limit"):
+                class_commentary.load_colleague_skill(
+                    str(root), "teacher-file-size-boundary"
+                )
+
+    def test_skill_loader_rejects_oversized_legacy_skill_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "teacher-large-legacy.skill").write_text(
+                "123456789", encoding="utf-8"
+            )
+
+            with patch.object(
+                class_commentary,
+                "CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES",
+                8,
+            ):
+                with self.assertRaisesRegex(ValueError, "file size exceeds limit"):
+                    class_commentary.load_colleague_skill(
+                        str(root), "teacher-large-legacy"
+                    )
+
+    def test_skill_loader_rejects_oversized_markdown_total(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-large-total"
+            package.mkdir()
+            (package / "SKILL.md").write_text("123456", encoding="utf-8")
+            (package / "work.md").write_text("1234567", encoding="utf-8")
+
+            with patch.object(
+                class_commentary,
+                "CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES",
+                16,
+            ), patch.object(
+                class_commentary,
+                "CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES",
+                12,
+            ):
+                with self.assertRaisesRegex(ValueError, "total size exceeds limit"):
+                    class_commentary.load_colleague_skill(
+                        str(root), "teacher-large-total"
+                    )
+
+    def test_skill_loader_accepts_one_mib_total_and_rejects_one_byte_more(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-total-boundary"
+            knowledge = package / "knowledge"
+            knowledge.mkdir(parents=True)
+            per_file = class_commentary.CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES
+            for path in (
+                package / "SKILL.md",
+                package / "work.md",
+                package / "persona.md",
+                knowledge / "sample.md",
+            ):
+                path.write_bytes(b"x" * per_file)
+
+            loaded = class_commentary.load_colleague_skill(
+                str(root), "teacher-total-boundary"
+            )
+            self.assertTrue(loaded["content"])
+
+            (knowledge / "overflow.md").write_bytes(b"x")
+            with self.assertRaisesRegex(ValueError, "total size exceeds limit"):
+                class_commentary.load_colleague_skill(
+                    str(root), "teacher-total-boundary"
+                )
 
     def test_skill_loader_skips_package_files_already_embedded_in_skill_md(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -3,8 +3,13 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import lesson_manager
+from class_commentary import (
+    CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES,
+    CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES,
+)
 
 
 class ClassCommentarySkillRegistryTest(unittest.TestCase):
@@ -133,6 +138,137 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         self.assertTrue(event["activation_request_id"])
         self.assertTrue(event["activation_payload_hash"])
 
+    def test_legacy_skill_import_rejects_oversized_source(self):
+        source_path = Path(self.tmp.name) / "teacher-large.skill"
+        source_path.write_bytes(
+            b"x" * (CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES + 1)
+        )
+
+        with self.assertRaisesRegex(ValueError, "file size exceeds limit"):
+            lesson_manager.import_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-large",
+                actor_user_id=self.teacher_one_id,
+                source_path=str(source_path),
+            )
+
+        self.assertEqual(self._row_counts(), {
+            "class_commentary_skills": 0,
+            "class_commentary_skill_versions": 0,
+            "class_commentary_skill_activation_events": 0,
+        })
+
+    def test_direct_content_import_rejects_oversized_source_without_writes(self):
+        with self.assertRaisesRegex(ValueError, "total size exceeds limit"):
+            lesson_manager.import_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-large-content",
+                actor_user_id=self.teacher_one_id,
+                source_path="/not/read/when/content/is/provided.skill",
+                content="x" * (CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES + 1),
+            )
+
+        self.assertEqual(self._row_counts(), {
+            "class_commentary_skills": 0,
+            "class_commentary_skill_versions": 0,
+            "class_commentary_skill_activation_events": 0,
+        })
+
+    def test_legacy_skill_import_rejects_symlink_without_writes(self):
+        outside_source = self._source_path("outside.txt", "OUTSIDE_SECRET")
+        source_path = Path(self.tmp.name) / "teacher-linked.skill"
+        source_path.symlink_to(outside_source)
+
+        with self.assertRaisesRegex(ValueError, "unsafe or unavailable"):
+            lesson_manager.import_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-linked",
+                actor_user_id=self.teacher_one_id,
+                source_path=str(source_path),
+            )
+
+        self.assertEqual(self._row_counts(), {
+            "class_commentary_skills": 0,
+            "class_commentary_skill_versions": 0,
+            "class_commentary_skill_activation_events": 0,
+        })
+
+    def test_package_import_rejects_symlinked_root_without_writes(self):
+        outside_package = Path(self.tmp.name) / "outside-package"
+        outside_package.mkdir()
+        (outside_package / "SKILL.md").write_text(
+            "OUTSIDE_SECRET", encoding="utf-8"
+        )
+        source_path = Path(self.tmp.name) / "teacher-linked"
+        source_path.symlink_to(outside_package, target_is_directory=True)
+
+        with self.assertRaisesRegex(ValueError, "unsafe or unavailable"):
+            lesson_manager.import_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-linked",
+                actor_user_id=self.teacher_one_id,
+                source_path=str(source_path),
+            )
+
+        self.assertEqual(self._row_counts(), {
+            "class_commentary_skills": 0,
+            "class_commentary_skill_versions": 0,
+            "class_commentary_skill_activation_events": 0,
+        })
+
+    def test_package_import_rejects_symlinked_ancestor_without_writes(self):
+        outside_parent = Path(self.tmp.name) / "outside-parent"
+        outside_package = outside_parent / "teacher-linked"
+        outside_package.mkdir(parents=True)
+        (outside_package / "SKILL.md").write_text(
+            "OUTSIDE_SECRET", encoding="utf-8"
+        )
+        linked_parent = Path(self.tmp.name) / "linked-parent"
+        linked_parent.symlink_to(outside_parent, target_is_directory=True)
+        source_path = linked_parent / "teacher-linked"
+
+        with self.assertRaisesRegex(ValueError, "unsafe or unavailable"):
+            lesson_manager.import_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-linked-ancestor",
+                actor_user_id=self.teacher_one_id,
+                source_path=str(source_path),
+            )
+
+        self.assertEqual(self._row_counts(), {
+            "class_commentary_skills": 0,
+            "class_commentary_skill_versions": 0,
+            "class_commentary_skill_activation_events": 0,
+        })
+
+    def test_legacy_skill_refresh_rejects_oversized_source_without_mutation(self):
+        source_path = self._source_path("teacher-refresh-large.skill", "Original")
+        imported = lesson_manager.import_class_commentary_skill_manifest(
+            organization_id=self.org_one_id,
+            skill_id="teacher-refresh-large",
+            actor_user_id=self.teacher_one_id,
+            source_path=str(source_path),
+        )
+        counts_before = self._row_counts()
+        source_path.write_bytes(
+            b"x" * (CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES + 1)
+        )
+
+        with self.assertRaisesRegex(ValueError, "file size exceeds limit"):
+            lesson_manager.refresh_class_commentary_skill_manifest(
+                organization_id=self.org_one_id,
+                skill_id="teacher-refresh-large",
+                actor_user_id=self.teacher_one_id,
+                activation_request_id="refresh-large-source",
+                expected_active_version_id=int(imported["active_version_id"]),
+            )
+
+        self.assertEqual(self._row_counts(), counts_before)
+        fetched = lesson_manager.get_class_commentary_skill_for_organization(
+            self.org_one_id, "teacher-refresh-large"
+        )
+        self.assertEqual(fetched["content"], "Original")
+
     def test_package_import_skips_companion_files_embedded_in_skill_md(self):
         package = Path(self.tmp.name) / "teacher-package"
         package.mkdir()
@@ -202,6 +338,41 @@ class ClassCommentarySkillRegistryTest(unittest.TestCase):
         display_name = lesson_manager._class_commentary_skill_display_name(
             "teacher-safe-meta", str(skill_path)
         )
+
+        self.assertEqual(display_name, "teacher-safe-meta")
+
+    def test_skill_display_name_does_not_read_meta_json_swapped_to_symlink(self):
+        package = Path(self.tmp.name) / "teacher-safe-meta"
+        package.mkdir()
+        skill_path = package / "SKILL.md"
+        skill_path.write_text("Safe skill content", encoding="utf-8")
+        meta_path = package / "meta.json"
+        meta_path.write_text('{"name": "Safe name"}', encoding="utf-8")
+        outside_meta = Path(self.tmp.name) / "outside-meta.json"
+        outside_meta.write_text('{"name": "OUTSIDE_SECRET"}', encoding="utf-8")
+        original_stat = (
+            lesson_manager.read_class_commentary_skill_package_name.__globals__[
+                "_stat_class_commentary_skill_file_if_regular"
+            ]
+        )
+        swapped = False
+
+        def swap_after_stat(directory_fd, filename):
+            nonlocal swapped
+            result = original_stat(directory_fd, filename)
+            if filename == "meta.json" and not swapped:
+                swapped = True
+                meta_path.unlink()
+                meta_path.symlink_to(outside_meta)
+            return result
+
+        with patch(
+            "class_commentary._stat_class_commentary_skill_file_if_regular",
+            side_effect=swap_after_stat,
+        ):
+            display_name = lesson_manager._class_commentary_skill_display_name(
+                "teacher-safe-meta", str(skill_path)
+            )
 
         self.assertEqual(display_name, "teacher-safe-meta")
 
