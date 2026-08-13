@@ -240,7 +240,9 @@ def _class_commentary_skill_package_markdown_files(path: Path) -> list[Path]:
     files = [
         file_path
         for file_path in (path / "SKILL.md", path / "work.md", path / "persona.md")
-        if file_path.is_file() and not file_path.is_symlink()
+        if file_path.is_file()
+        and not file_path.is_symlink()
+        and not file_path.name.startswith("._")
     ]
     knowledge_path = path / "knowledge"
     if knowledge_path.is_dir():
@@ -260,6 +262,7 @@ def _class_commentary_skill_package_markdown_files(path: Path) -> list[Path]:
                     for file_path in knowledge_path.rglob("*.md")
                     if file_path.is_file()
                     and not file_path.is_symlink()
+                    and not file_path.name.startswith("._")
                     and not has_symlinked_package_parent(file_path)
                 ),
                 key=lambda file_path: (

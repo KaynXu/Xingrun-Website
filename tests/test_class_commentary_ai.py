@@ -156,6 +156,22 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("Safe skill", loaded["content"])
         self.assertNotIn("secret outside content", loaded["content"])
 
+    def test_skill_loader_ignores_macos_appledouble_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "teacher-safe"
+            knowledge = package / "knowledge"
+            knowledge.mkdir(parents=True)
+            (package / "SKILL.md").write_text("Safe skill", encoding="utf-8")
+            (knowledge / "sample.md").write_text("Valid sample", encoding="utf-8")
+            (knowledge / "._sample.md").write_bytes(b"\x00\x05\x16\x07\xa3")
+
+            loaded = class_commentary.load_colleague_skill(
+                str(root), "teacher-safe"
+            )
+
+        self.assertIn("Valid sample", loaded["content"])
+
     def test_skill_scanner_and_loader_ignore_symlinked_packages(self):
         with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as outside_tmp:
             root = Path(tmp)
