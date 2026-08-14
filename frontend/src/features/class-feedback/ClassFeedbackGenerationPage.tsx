@@ -188,6 +188,7 @@ const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
 };
 
 const CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS = 8000;
+const CLASS_COMMENTARY_CAPABILITIES_LOAD_TIMEOUT_MS = 30000;
 
 function createClassCommentaryRequestId(prefix: string): string {
   const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -767,7 +768,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     const abortController = new AbortController();
     const timeoutId = window.setTimeout(
       () => abortController.abort(),
-      CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS,
+      CLASS_COMMENTARY_CAPABILITIES_LOAD_TIMEOUT_MS,
     );
     setCapabilitiesState('loading');
     loadClassCommentaryCapabilities(abortController.signal)

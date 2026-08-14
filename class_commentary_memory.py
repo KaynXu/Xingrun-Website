@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -12,8 +13,33 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 import config_runtime
 
 
+logger = logging.getLogger(__name__)
+
 MemoryType = Literal["teacher_style", "student_fact"]
 SupportText = Annotated[str, Field(min_length=1, max_length=500)]
+
+
+def _prepare_local_bm25_encoder(client: object) -> None:
+    vector_store = getattr(client, "vector_store", None)
+    if vector_store is None or not bool(
+        getattr(vector_store, "_has_bm25_slot", False)
+    ):
+        return
+    try:
+        from fastembed import SparseTextEmbedding
+
+        vector_store._bm25_encoder = SparseTextEmbedding(
+            model_name="Qdrant/bm25",
+            local_files_only=True,
+        )
+    except Exception as exc:
+        # Request handling must never wait for a model download. Mem0 already
+        # treats this sentinel as semantic-only search when BM25 is unavailable.
+        vector_store._bm25_encoder = False
+        logger.warning(
+            "Local BM25 encoder unavailable; using semantic-only memory search: %s",
+            type(exc).__name__,
+        )
 
 
 def _normalize_support(value: List[str]) -> List[str]:
@@ -399,7 +425,7 @@ class ClassCommentaryMemoryService:
                 "mem0ai is required when class commentary memory is enabled"
             ) from exc
 
-        return Memory.from_config(
+        memory = Memory.from_config(
             {
                 "vector_store": {
                     "provider": self.settings.vector_provider,
@@ -419,6 +445,8 @@ class ClassCommentaryMemoryService:
                 },
             }
         )
+        _prepare_local_bm25_encoder(memory)
+        return memory
 
     def _require_client(self) -> object:
         if not self.enabled:
