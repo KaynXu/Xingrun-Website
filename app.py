@@ -154,6 +154,7 @@ from lesson_manager import (
     find_active_wrong_question_practice_pack_job,
     fail_review_plan_version,
     get_class,
+    get_class_commentary_batch_provider_failure,
     get_class_commentary_task,
     get_class_commentary_feedback_draft,
     get_class_commentary_generation,
@@ -3471,6 +3472,9 @@ def _serialize_class_commentary_generation_for_response(
     student_run_progress = get_class_commentary_student_generation_progress(
         int(generation["id"])
     )
+    provider_failure = (
+        get_class_commentary_batch_provider_failure(int(generation["id"])) or {}
+    )
     item = {
         "id": int(generation["id"]),
         "generation_id": int(generation["id"]),
@@ -3523,6 +3527,7 @@ def _serialize_class_commentary_generation_for_response(
         ),
         "status": str(generation.get("status") or ""),
         "error_code": generation.get("error_code"),
+        "provider_failure": provider_failure,
         "created_at": str(generation.get("created_at") or ""),
         "completed_at": str(generation.get("completed_at") or ""),
         "is_latest": bool(generation.get("is_latest")),

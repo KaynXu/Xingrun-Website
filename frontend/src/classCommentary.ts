@@ -113,6 +113,19 @@ export type ClassCommentaryTask = {
 
 export type ClassCommentaryGenerationStatus = 'generating' | 'succeeded' | 'failed';
 
+export type ClassCommentaryProviderFailure = {
+  schema_version: 'class_commentary.provider_failure.v1';
+  error_code: string;
+  result_state: 'not_dispatched' | 'rejected' | 'unknown' | 'invalid_response';
+  exception_type: string;
+  http_status: number;
+  upstream_error_code: string;
+  provider_request_id: string;
+  local_request_id: string;
+  retryable: boolean;
+  retry_after_seconds: number;
+};
+
 export type ClassCommentaryStudentGenerationRunStatus =
   | 'queued'
   | 'retry_wait'
@@ -216,6 +229,7 @@ export type ClassCommentaryGeneration = ClassCommentaryFeedbackReadEnvelope & {
   memory_context_snapshot: Record<string, unknown>;
   used_graph_evidence_refs: string[];
   error_code: string;
+  provider_failure: ClassCommentaryProviderFailure | null;
   created_at: string;
   completed_at: string;
   is_latest: boolean;
@@ -987,6 +1001,31 @@ function normalizeClassCommentarySkill(item: unknown): ClassCommentarySkill {
   };
 }
 
+function normalizeClassCommentaryProviderFailure(
+  value: unknown,
+): ClassCommentaryProviderFailure | null {
+  const source = recordValue(value);
+  if (stringValue(source.schema_version) !== 'class_commentary.provider_failure.v1') {
+    return null;
+  }
+  const resultState = stringValue(source.result_state);
+  if (!['not_dispatched', 'rejected', 'unknown', 'invalid_response'].includes(resultState)) {
+    return null;
+  }
+  return {
+    schema_version: 'class_commentary.provider_failure.v1',
+    error_code: stringValue(source.error_code),
+    result_state: resultState as ClassCommentaryProviderFailure['result_state'],
+    exception_type: stringValue(source.exception_type),
+    http_status: numberValue(source.http_status),
+    upstream_error_code: stringValue(source.upstream_error_code),
+    provider_request_id: stringValue(source.provider_request_id),
+    local_request_id: stringValue(source.local_request_id),
+    retryable: booleanValue(source.retryable),
+    retry_after_seconds: numberValue(source.retry_after_seconds),
+  };
+}
+
 export function normalizeClassCommentaryGeneration(source: Record<string, unknown>): ClassCommentaryGeneration {
   const rawStatus = stringValue(source.status);
   const status: ClassCommentaryGenerationStatus = rawStatus === 'succeeded' || rawStatus === 'failed'
@@ -1031,6 +1070,7 @@ export function normalizeClassCommentaryGeneration(source: Record<string, unknow
     memory_context_snapshot: recordValue(source.memory_context_snapshot),
     used_graph_evidence_refs: stringArrayValue(source.used_graph_evidence_refs),
     error_code: stringValue(source.error_code),
+    provider_failure: normalizeClassCommentaryProviderFailure(source.provider_failure),
     created_at: stringValue(source.created_at),
     completed_at: stringValue(source.completed_at),
     is_latest: booleanValue(source.is_latest),

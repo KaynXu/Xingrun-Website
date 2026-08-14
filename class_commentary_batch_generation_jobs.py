@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import socket
 from collections.abc import Mapping
@@ -16,7 +17,14 @@ from class_commentary_batch_context import (
     build_batch_generation_execution_snapshot,
 )
 from class_commentary_memory import ClassCommentaryMemoryService
+from class_commentary_provider_errors import (
+    build_provider_dispatch_interruption_snapshot,
+    build_provider_failure_snapshot,
+)
 from credit_manager import CreditBalanceError, finalize_ai_charge
+
+
+logger = logging.getLogger(__name__)
 
 
 def _runtime_config(runtime_config: Optional[Mapping[str, object]] = None) -> dict:
@@ -221,6 +229,10 @@ def process_class_commentary_batch_generation(
         if response is None:
             if str(claimed.get("execution_snapshot_status") or "") != "ready":
                 raise ValueError("batch generation execution snapshot is not ready")
+            chat_request = _frozen_chat_request(claimed)
+            local_request_id = (
+                f"class-commentary-generation-{int(generation_id)}"
+            )
             dispatch_status = str(
                 claimed.get("batch_provider_dispatch_status") or "legacy_unknown"
             )
@@ -231,33 +243,57 @@ def process_class_commentary_batch_generation(
                     )
                 )
             elif dispatch_status in {"started", "legacy_unknown"}:
+                provider_failure = build_provider_dispatch_interruption_snapshot(
+                    local_request_id=local_request_id,
+                    legacy=dispatch_status == "legacy_unknown",
+                )
+                error_code = str(provider_failure["error_code"])
                 failed = target_store.fail_class_commentary_batch_generation_terminal(
                     int(generation_id),
                     claim_token=claim_token,
-                    error_code="provider_result_unknown",
+                    error_code=error_code,
+                    provider_failure=provider_failure,
                 )
                 return {
                     "status": str(failed.get("status") or "failed"),
                     "generation_id": int(generation_id),
-                    "error_code": "provider_result_unknown",
+                    "error_code": error_code,
+                    "provider_failure": provider_failure,
                 }
             else:
                 raise ValueError("batch provider dispatch status is invalid")
-            chat_request = _frozen_chat_request(claimed)
             try:
                 provider_result = _call_generator(
                     generator, claimed, chat_request, config
                 )
-            except Exception:
+            except Exception as exc:
+                provider_failure = build_provider_failure_snapshot(
+                    exc,
+                    local_request_id=local_request_id,
+                )
+                error_code = str(provider_failure["error_code"])
+                logger.warning(
+                    "class commentary provider call failed "
+                    "generation_id=%s error_code=%s exception_type=%s "
+                    "http_status=%s provider_request_id=%s result_state=%s",
+                    int(generation_id),
+                    error_code,
+                    provider_failure["exception_type"],
+                    provider_failure["http_status"],
+                    provider_failure["provider_request_id"],
+                    provider_failure["result_state"],
+                )
                 failed = target_store.fail_class_commentary_batch_generation_terminal(
                     int(generation_id),
                     claim_token=claim_token,
-                    error_code="provider_result_unknown",
+                    error_code=error_code,
+                    provider_failure=provider_failure,
                 )
                 return {
                     "status": str(failed.get("status") or "failed"),
                     "generation_id": int(generation_id),
-                    "error_code": "provider_result_unknown",
+                    "error_code": error_code,
+                    "provider_failure": provider_failure,
                 }
             feedback_text, usage = _split_result(
                 provider_result,

@@ -3038,7 +3038,19 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
             int(payload["generation_id"])
         )
         self.assertEqual(saved["batch_attempt_count"], 1)
-        self.assertEqual(saved["error_code"], "provider_result_unknown")
+        self.assertEqual(saved["error_code"], "provider_timeout")
+        provider_failure = lesson_manager.get_class_commentary_batch_provider_failure(
+            int(payload["generation_id"])
+        )
+        self.assertEqual(
+            provider_failure["exception_type"],
+            "builtins.RuntimeError",
+        )
+        self.assertEqual(provider_failure["result_state"], "unknown")
+        self.assertEqual(
+            payload["generation"]["provider_failure"],
+            provider_failure,
+        )
         hold = lesson_manager.get_class_commentary_generation_credit_hold(
             int(payload["generation_id"])
         )

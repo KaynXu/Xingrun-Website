@@ -14,6 +14,9 @@ from class_commentary_feedback_schema import (
     ClassCommentaryStructuredFeedbackValidationError,
 )
 from class_commentary_memory import ClassCommentaryMemoryService
+from class_commentary_provider_errors import (
+    classify_provider_error as _provider_error,
+)
 from class_commentary_memory_retrieval import (
     ClassCommentaryStudentMemoryRetrievalError,
     retrieve_isolated_student_memory_context,
@@ -171,41 +174,6 @@ def _split_result(result: object, *, provider: str, model: str) -> tuple[str, di
             result[1], provider=provider, model=model
         )
     return str(result or ""), _usage_payload({}, provider=provider, model=model)
-
-
-def _retry_after_seconds(exc: Exception, default: int = 30) -> int:
-    response = getattr(exc, "response", None)
-    headers = getattr(response, "headers", None) or getattr(exc, "headers", None)
-    value = None
-    if isinstance(headers, Mapping):
-        value = headers.get("retry-after") or headers.get("Retry-After")
-    try:
-        parsed = int(float(str(value))) if value is not None else int(default)
-    except (TypeError, ValueError):
-        parsed = int(default)
-    return max(1, min(parsed, 600))
-
-
-def _provider_error(exc: Exception) -> tuple[str, bool, int]:
-    name = exc.__class__.__name__.lower()
-    message = str(exc).lower()
-    response = getattr(exc, "response", None)
-    raw_status = getattr(exc, "status_code", None) or getattr(
-        response, "status_code", None
-    )
-    try:
-        status_code = int(raw_status) if raw_status is not None else 0
-    except (TypeError, ValueError):
-        status_code = 0
-    if "ratelimit" in name or "rate limit" in message or "429" in message:
-        return "provider_rate_limited", True, _retry_after_seconds(exc, 60)
-    if "timeout" in name or "timed out" in message or "timeout" in message:
-        return "provider_timeout", True, _retry_after_seconds(exc, 30)
-    if "connection" in name or "connection" in message or "temporar" in message:
-        return "provider_unavailable", True, _retry_after_seconds(exc, 30)
-    if 400 <= status_code < 500 and status_code not in {408, 409, 425, 429}:
-        return "provider_request_rejected", False, 0
-    return "provider_request_failed", True, _retry_after_seconds(exc, 30)
 
 
 def _openai_api_key(config: Mapping[str, object]) -> str:

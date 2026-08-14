@@ -196,6 +196,8 @@ class ClassCommentaryStoreTest(unittest.TestCase):
                 "batch_charge_usage_id",
                 "batch_provider_dispatch_status",
                 "batch_provider_dispatch_started_at",
+                "batch_provider_failure_snapshot_json",
+                "batch_provider_failure_hash",
                 "batch_claim_token",
                 "batch_claim_owner",
                 "batch_claim_expires_at",
