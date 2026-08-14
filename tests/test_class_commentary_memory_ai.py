@@ -187,10 +187,9 @@ class ClassCommentaryMemoryAiTest(unittest.TestCase):
         self.assertEqual(usage["output_tokens"], 8)
         self.assertEqual(captured["temperature"], 0)
         self.assertEqual(captured["response_format"], {"type": "json_object"})
-        self.assertEqual(
-            json.loads(captured["messages"][1]["content"]),
-            frozen_input,
-        )
+        outbound_input = json.loads(captured["messages"][1]["content"])
+        self.assertEqual(outbound_input.pop("_response_format"), "json_object")
+        self.assertEqual(outbound_input, frozen_input)
         self.assertIn("Do not choose or invent organization", captured["messages"][0]["content"])
 
     def test_extractor_rejects_unknown_signal_types_and_extra_scope_fields(self):
@@ -252,7 +251,9 @@ class ClassCommentaryMemoryAiTest(unittest.TestCase):
             )
 
         self.assertEqual(payload["incorporated_memory_record_ids"], [7])
-        self.assertEqual(json.loads(captured["messages"][1]["content"]), frozen_input)
+        outbound_input = json.loads(captured["messages"][1]["content"])
+        self.assertEqual(outbound_input.pop("_response_format"), "json_object")
+        self.assertEqual(outbound_input, frozen_input)
         self.assertEqual(captured["temperature"], 0)
         self.assertEqual(captured["response_format"], {"type": "json_object"})
         self.assertEqual(usage["input_tokens"], 12)
@@ -302,7 +303,9 @@ class ClassCommentaryMemoryAiTest(unittest.TestCase):
 
         self.assertEqual(payload["candidate_skill_student_fact_count"], 0)
         self.assertEqual(payload["samples"][0]["candidate_unsupported_fact_count"], 0)
-        self.assertEqual(json.loads(captured["messages"][1]["content"]), evaluation_input)
+        outbound_input = json.loads(captured["messages"][1]["content"])
+        self.assertEqual(outbound_input.pop("_response_format"), "json_object")
+        self.assertEqual(outbound_input, evaluation_input)
         self.assertEqual(captured["temperature"], 0)
         self.assertEqual(captured["response_format"], {"type": "json_object"})
 
