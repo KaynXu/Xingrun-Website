@@ -438,6 +438,26 @@ class ClassCommentaryMemoryWorkerTests(unittest.TestCase):
         worker_factory.assert_called_once_with([queue], connection=connection)
         worker.work.assert_called_once_with(with_scheduler=True)
 
+    @patch("class_commentary_memory_worker.ensure_class_commentary_memory_reconciliation_scheduled")
+    @patch("class_commentary_memory_worker.get_class_commentary_memory_queue")
+    def test_worker_survives_reconciliation_scheduling_failures(self, get_queue, ensure_scheduled):
+        connection = object()
+        queue = object()
+        get_queue.return_value = queue
+        ensure_scheduled.side_effect = ConnectionError("redis down")
+        worker = Mock()
+        worker_factory = Mock(return_value=worker)
+
+        result = run_worker(
+            runtime_config=ENABLED_CONFIG,
+            connection=connection,
+            worker_factory=worker_factory,
+        )
+
+        self.assertEqual(result, 0)
+        worker_factory.assert_called_once_with([queue], connection=connection)
+        worker.work.assert_called_once_with(with_scheduler=True)
+
 
 if __name__ == "__main__":
     unittest.main()
