@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import socket
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Mapping, Optional
 
 import ai_processor
@@ -219,11 +218,13 @@ def _adapter(config: Mapping[str, object], adapter=None):
         return adapter
     raw_path = str(config.get("class_commentary_graph_store_path") or "").strip()
     if not raw_path:
-        base_dir = Path(__file__).resolve().parent
-        raw_path = str(base_dir / "data" / "class_commentary_semantica_graph.json")
+        raw_path = str(config_runtime.DEFAULTS["class_commentary_graph_store_path"])
     return SemanticaGraphAdapter(
         raw_path,
-        timeout_seconds=int(config.get("class_commentary_graph_timeout") or 10),
+        timeout_seconds=int(
+            config.get("class_commentary_graph_timeout")
+            or config_runtime.DEFAULTS["class_commentary_graph_timeout"]
+        ),
     )
 
 

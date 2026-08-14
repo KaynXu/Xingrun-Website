@@ -352,8 +352,8 @@ def retrieve_isolated_student_memory_context(
     accepted_student = []
     used_chars = 0
     char_limit = int(service.settings.context_char_limit)
-    style_limit = max(1, int(getattr(service.settings, "style_limit", 5) or 5))
-    student_limit = max(1, int(getattr(service.settings, "student_limit", 5) or 5))
+    style_limit = max(1, int(service.settings.style_limit))
+    student_limit = max(1, int(service.settings.student_limit))
 
     def accept(candidate: Mapping[str, object], *, memory_type: str) -> None:
         nonlocal used_chars

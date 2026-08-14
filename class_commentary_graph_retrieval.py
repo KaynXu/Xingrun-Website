@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Callable, Optional
 
 import config_runtime
@@ -56,14 +55,13 @@ def empty_isolated_student_graph_context(
 def _adapter(config: Mapping[str, object]):
     store_path = str(config.get("class_commentary_graph_store_path") or "").strip()
     if not store_path:
-        store_path = str(
-            Path(__file__).resolve().parent
-            / "data"
-            / "class_commentary_semantica_graph.json"
-        )
+        store_path = str(config_runtime.DEFAULTS["class_commentary_graph_store_path"])
     return SemanticaGraphAdapter(
         store_path,
-        timeout_seconds=int(config.get("class_commentary_graph_timeout") or 10),
+        timeout_seconds=int(
+            config.get("class_commentary_graph_timeout")
+            or config_runtime.DEFAULTS["class_commentary_graph_timeout"]
+        ),
     )
 
 
@@ -310,9 +308,18 @@ def retrieve_isolated_student_graph_context(
         summary,
         scope=scope,
         semantica_hash=str(semantica_snapshot.get("hash") or ""),
-        event_limit=int(config.get("class_commentary_graph_retrieval_event_limit") or 12),
-        char_limit=int(config.get("class_commentary_graph_retrieval_char_limit") or 4000),
-        token_limit=int(config.get("class_commentary_graph_retrieval_token_limit") or 8000),
+        event_limit=int(
+            config.get("class_commentary_graph_retrieval_event_limit")
+            or config_runtime.DEFAULTS["class_commentary_graph_retrieval_event_limit"]
+        ),
+        char_limit=int(
+            config.get("class_commentary_graph_retrieval_char_limit")
+            or config_runtime.DEFAULTS["class_commentary_graph_retrieval_char_limit"]
+        ),
+        token_limit=int(
+            config.get("class_commentary_graph_retrieval_token_limit")
+            or config_runtime.DEFAULTS["class_commentary_graph_retrieval_token_limit"]
+        ),
     )
 
 
