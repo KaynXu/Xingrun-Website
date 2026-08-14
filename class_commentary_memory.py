@@ -335,33 +335,36 @@ def load_class_commentary_memory_settings(
     runtime_config: Optional[Mapping[str, object]] = None,
 ) -> ClassCommentaryMemorySettings:
     config = dict(runtime_config if runtime_config is not None else config_runtime.get_runtime_config())
+    defaults = config_runtime.DEFAULTS
+
+    def numeric(key: str) -> int:
+        default = int(defaults[key])
+        return _positive_setting(config.get(key, default), default=default)
+
     return ClassCommentaryMemorySettings(
         enabled=config_runtime.normalize_bool_flag(
-            _setting(config, "class_commentary_memory_enabled", False)
+            config.get("class_commentary_memory_enabled", defaults["class_commentary_memory_enabled"])
         ),
         vector_provider=str(
-            _setting(config, "mem0_vector_provider", "qdrant") or "qdrant"
+            config.get("mem0_vector_provider", defaults["mem0_vector_provider"])
+            or defaults["mem0_vector_provider"]
         ).strip(),
-        qdrant_url=str(_setting(config, "mem0_qdrant_url")).strip(),
-        qdrant_api_key=str(_setting(config, "mem0_qdrant_api_key")).strip(),
+        qdrant_url=str(config.get("mem0_qdrant_url", defaults["mem0_qdrant_url"])).strip(),
+        qdrant_api_key=str(config.get("mem0_qdrant_api_key", defaults["mem0_qdrant_api_key"])).strip(),
         collection_name=str(
-            _setting(config, "mem0_collection_name", "xingrun_class_commentary_memory")
-            or "xingrun_class_commentary_memory"
+            config.get("mem0_collection_name", defaults["mem0_collection_name"])
+            or defaults["mem0_collection_name"]
         ).strip(),
         embedder_provider=str(
-            _setting(config, "mem0_embedder_provider")
+            config.get("mem0_embedder_provider", defaults["mem0_embedder_provider"])
         ).strip(),
-        embedder_model=str(_setting(config, "mem0_embedder_model")).strip(),
-        embedding_dims=_positive_setting(
-            _setting(config, "mem0_embedding_dims", 0), default=0
-        ),
-        style_limit=_positive_setting(_setting(config, "mem0_style_limit", 8), default=8),
-        student_limit=_positive_setting(
-            _setting(config, "mem0_student_limit", 5), default=5
-        ),
-        context_char_limit=_positive_setting(
-            _setting(config, "mem0_context_char_limit", 3000), default=3000
-        ),
+        embedder_model=str(
+            config.get("mem0_embedder_model", defaults["mem0_embedder_model"])
+        ).strip(),
+        embedding_dims=numeric("mem0_embedding_dims"),
+        style_limit=numeric("mem0_style_limit"),
+        student_limit=numeric("mem0_student_limit"),
+        context_char_limit=numeric("mem0_context_char_limit"),
     )
 
 
