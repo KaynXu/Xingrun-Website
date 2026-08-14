@@ -27,7 +27,6 @@ yarn-debug.log*
 yarn-error.log*
 
 # local agent artifacts
-.superpowers/
 
 # local design scratch
 designs/
