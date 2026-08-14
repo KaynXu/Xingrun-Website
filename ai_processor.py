@@ -2602,6 +2602,7 @@ def extract_class_commentary_learning_events(
         "registry": extraction_input.get("registry") or [],
         "schema": {
             "schema_version": "student_learning_event.v1",
+            "response_format": "json_object",
             "item_fields": [
                 "knowledge_point_key",
                 "unmapped_candidate",
