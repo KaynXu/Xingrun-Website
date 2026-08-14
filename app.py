@@ -10875,7 +10875,7 @@ def api_class_commentary_student_learning_graph(task_id: int, student_id: int):
     user, error = _require_auth()
     if error:
         return error
-    task, task_error = _get_owned_class_commentary_task_or_error(user, task_id)
+    task, task_error = _get_readable_class_commentary_task_or_error(user, task_id)
     if task_error:
         return task_error
     if not bool(get_config().get("class_commentary_graph_enabled")):

@@ -571,6 +571,30 @@ class CurriculumRegistryApiTest(unittest.TestCase):
             ["math_9a_rjb", "math_9b_rjb"],
         )
 
+    def test_super_owner_can_read_other_teacher_learning_graph(self):
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.organization_id,
+            class_id=self.class_id,
+            teacher_user_id=self.member_id,
+            audio_path="",
+            audio_filename="Manual input",
+        )
+        expected_summary = {"student_id": int(self.student["id"]), "events": []}
+
+        with patch.object(
+            self.app_module,
+            "get_student_learning_graph_summary",
+            return_value=expected_summary,
+        ):
+            response = self.client.get(
+                f"/api/class-commentary/tasks/{task['id']}/students/"
+                f"{self.student['id']}/learning-graph",
+                headers=self.owner_headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["learning_graph"], expected_summary)
+
     def test_org_admin_cannot_cross_organization_boundaries(self):
         self._activate_registry()
         first_book, _, _, _ = self._book_pair_with_private_targets()
