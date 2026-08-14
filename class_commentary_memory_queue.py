@@ -311,7 +311,9 @@ def dispatch_class_commentary_memory_work(
             )
             result["extractions"] += int(created)
         except Exception as exc:
-            result["errors"].append(f"extraction:{int(job['id'])}:{exc}")
+            result["errors"].append(
+                f"extraction:{int(job['id'])}:{exc.__class__.__name__}"
+            )
 
     for operation in operations:
         try:
@@ -364,7 +366,7 @@ def ensure_class_commentary_memory_reconciliation_scheduled(
     interval = max(60, int(config.get("class_commentary_memory_reconcile_interval") or 600))
     current = now or datetime.now(timezone.utc)
     bucket = _next_reconciliation_bucket(current, interval)
-    rq_job_id = f"cc-memory-reconcile-{bucket.strftime('%Y%m%d%H%M')}"
+    rq_job_id = f"cc-memory-reconcile-{bucket.strftime('%Y%m%d%H%M%S')}"
     existing = target_queue.fetch_job(rq_job_id)
     if existing is not None and _job_status(existing) in ACTIVE_RQ_STATUSES:
         return {"enabled": True, "scheduled": False, "job_id": rq_job_id}
@@ -378,7 +380,10 @@ def ensure_class_commentary_memory_reconciliation_scheduled(
         max(bucket - current.astimezone(timezone.utc), timedelta(seconds=1)),
         run_class_commentary_memory_reconciliation,
         job_id=rq_job_id,
-        job_timeout=int(config.get("class_commentary_memory_extraction_timeout") or 300),
+        job_timeout=int(
+            config.get("class_commentary_memory_reconcile_timeout") or 300
+        ),
+        retry=Retry(max=5, interval=[60, 120, 300, 600, 1200]),
         result_ttl=RESULT_TTL_SECONDS,
         failure_ttl=FAILURE_TTL_SECONDS,
     )

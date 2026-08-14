@@ -49,6 +49,7 @@ ENV_VAR_MAP = {
     "class_commentary_memory_extraction_timeout": "XR_CLASS_COMMENTARY_MEMORY_EXTRACTION_TIMEOUT",
     "class_commentary_memory_operation_timeout": "XR_CLASS_COMMENTARY_MEMORY_OPERATION_TIMEOUT",
     "class_commentary_memory_reconcile_interval": "XR_CLASS_COMMENTARY_MEMORY_RECONCILE_INTERVAL",
+    "class_commentary_memory_reconcile_timeout": "XR_CLASS_COMMENTARY_MEMORY_RECONCILE_TIMEOUT",
     "mem0_vector_provider": "XR_MEM0_VECTOR_PROVIDER",
     "mem0_qdrant_url": "XR_MEM0_QDRANT_URL",
     "mem0_qdrant_api_key": "XR_MEM0_QDRANT_API_KEY",
@@ -133,6 +134,7 @@ DEFAULTS = {
     "class_commentary_memory_extraction_timeout": 300,
     "class_commentary_memory_operation_timeout": 120,
     "class_commentary_memory_reconcile_interval": 600,
+    "class_commentary_memory_reconcile_timeout": 300,
     "mem0_vector_provider": "qdrant",
     "mem0_qdrant_url": "",
     "mem0_qdrant_api_key": "",
@@ -349,6 +351,9 @@ def get_runtime_config() -> dict:
     )
     cfg["class_commentary_memory_reconcile_interval"] = normalize_positive_int(
         cfg.get("class_commentary_memory_reconcile_interval"), 600
+    )
+    cfg["class_commentary_memory_reconcile_timeout"] = normalize_positive_int(
+        cfg.get("class_commentary_memory_reconcile_timeout"), 300
     )
     cfg["mem0_vector_provider"] = str(cfg.get("mem0_vector_provider") or "qdrant").strip() or "qdrant"
     cfg["mem0_qdrant_url"] = str(cfg.get("mem0_qdrant_url") or "").strip()

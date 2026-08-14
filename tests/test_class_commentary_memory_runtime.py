@@ -21,6 +21,7 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
         self.assertEqual(cfg["class_commentary_memory_extraction_timeout"], 300)
         self.assertEqual(cfg["class_commentary_memory_operation_timeout"], 120)
         self.assertEqual(cfg["class_commentary_memory_reconcile_interval"], 600)
+        self.assertEqual(cfg["class_commentary_memory_reconcile_timeout"], 300)
         self.assertEqual(cfg["mem0_style_limit"], 8)
         self.assertEqual(cfg["mem0_student_limit"], 5)
         self.assertEqual(cfg["mem0_context_char_limit"], 3000)
@@ -33,6 +34,7 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
             "XR_CLASS_COMMENTARY_MEMORY_EXTRACTION_TIMEOUT": "420",
             "XR_CLASS_COMMENTARY_MEMORY_OPERATION_TIMEOUT": "150",
             "XR_CLASS_COMMENTARY_MEMORY_RECONCILE_INTERVAL": "900",
+            "XR_CLASS_COMMENTARY_MEMORY_RECONCILE_TIMEOUT": "240",
             "XR_MEM0_VECTOR_PROVIDER": "qdrant",
             "XR_MEM0_QDRANT_URL": "http://qdrant.test:6333",
             "XR_MEM0_QDRANT_API_KEY": "qdrant-secret",
@@ -62,6 +64,7 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
         self.assertEqual(cfg["class_commentary_memory_extraction_timeout"], 420)
         self.assertEqual(cfg["class_commentary_memory_operation_timeout"], 150)
         self.assertEqual(cfg["class_commentary_memory_reconcile_interval"], 900)
+        self.assertEqual(cfg["class_commentary_memory_reconcile_timeout"], 240)
         self.assertEqual(cfg["mem0_qdrant_url"], "http://qdrant.test:6333")
         self.assertEqual(cfg["mem0_qdrant_api_key"], "qdrant-secret")
         self.assertEqual(cfg["mem0_collection_name"], "commentary-test")

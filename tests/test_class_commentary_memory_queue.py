@@ -204,8 +204,13 @@ class ClassCommentaryMemoryQueueTests(unittest.TestCase):
 
         self.assertTrue(first["scheduled"])
         self.assertFalse(second["scheduled"])
-        self.assertEqual(first["job_id"], "cc-memory-reconcile-202607141510")
+        self.assertEqual(first["job_id"], "cc-memory-reconcile-20260714151000")
         self.assertEqual(len(queue.enqueue_in_calls), 1)
+        delay, _, args, _, kwargs = queue.enqueue_in_calls[0]
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs["job_timeout"], 300)
+        self.assertEqual(kwargs["retry"].max, 5)
+        self.assertEqual(kwargs["retry"].intervals, [60, 120, 300, 600, 1200])
 
     def test_queue_healthcheck_requires_redis_and_a_worker(self):
         ready = class_commentary_memory_queue_healthcheck(
