@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Mapping, Optional
 
@@ -8,6 +9,8 @@ from redis import Redis
 from rq import Queue, Retry, Worker
 
 import config_runtime
+
+logger = logging.getLogger(__name__)
 
 
 RESULT_TTL_SECONDS = 86400
@@ -302,6 +305,11 @@ def dispatch_class_commentary_memory_work(
             )
             result["student_generations"] += int(created)
         except Exception as exc:
+            logger.warning(
+                "class commentary student generation run %s could not be enqueued: %s",
+                run["id"],
+                type(exc).__name__,
+            )
             result["errors"].append(
                 f"student_generation:{int(run['id'])}:{exc.__class__.__name__}"
             )
@@ -318,6 +326,11 @@ def dispatch_class_commentary_memory_work(
             )
             result["extractions"] += int(created)
         except Exception as exc:
+            logger.warning(
+                "class commentary memory extraction job %s could not be enqueued: %s",
+                job["id"],
+                type(exc).__name__,
+            )
             result["errors"].append(
                 f"extraction:{int(job['id'])}:{exc.__class__.__name__}"
             )
@@ -334,7 +347,14 @@ def dispatch_class_commentary_memory_work(
             )
             result["operations"] += int(created)
         except Exception as exc:
-            result["errors"].append(f"operation:{int(operation['id'])}:{exc}")
+            logger.warning(
+                "class commentary memory operation %s could not be enqueued: %s",
+                operation["id"],
+                type(exc).__name__,
+            )
+            result["errors"].append(
+                f"operation:{int(operation['id'])}:{exc.__class__.__name__}"
+            )
     for build in candidates:
         try:
             _, created = enqueue_class_commentary_skill_candidate_build(
@@ -344,6 +364,11 @@ def dispatch_class_commentary_memory_work(
             )
             result["candidates"] += int(created)
         except Exception as exc:
+            logger.warning(
+                "class commentary skill candidate build %s could not be enqueued: %s",
+                build["id"],
+                type(exc).__name__,
+            )
             result["errors"].append(
                 f"candidate:{int(build['id'])}:{exc.__class__.__name__}"
             )
