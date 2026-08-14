@@ -96,6 +96,7 @@ test('optional class feedback requests cannot hold the page skeleton open', () =
   assert.match(source, /fetchClassCommentaryTasks\(abortController\.signal\)/);
   assert.match(source, /loadClassCommentaryCapabilities\(abortController\.signal\)/);
   assert.match(source, /CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS = 8000/);
+  assert.match(source, /CLASS_COMMENTARY_CAPABILITIES_LOAD_TIMEOUT_MS = 30000/);
   assert.match(source, /\{loadingHistory \? \(/);
   assert.doesNotMatch(
     source,
