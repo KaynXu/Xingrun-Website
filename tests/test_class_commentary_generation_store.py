@@ -24,6 +24,7 @@ from class_commentary_batch_context import (
 )
 from class_commentary_graph_retrieval import empty_isolated_student_graph_context
 from class_commentary_memory_retrieval import empty_class_commentary_memory_context
+from class_commentary_provider_errors import build_provider_failure_snapshot
 from class_commentary_student_memory_v2 import (
     build_safe_class_context,
     build_student_current_evidence,
@@ -1391,6 +1392,49 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
         self.assertEqual(failed["error_code"], "provider_timeout")
         self.assertIsNone(failed["batch_claim_token"])
         self.assertEqual(released_hold["status"], "released")
+
+    def test_batch_provider_failure_snapshot_is_hashed_and_readable(self):
+        generation = self._reserve_structured(
+            "batch-provider-failure-snapshot"
+        )
+        claimed = lesson_manager.claim_class_commentary_batch_generation(
+            generation["id"],
+            claim_owner="provider-failure-worker",
+        )
+        lesson_manager.mark_class_commentary_batch_provider_dispatch_started(
+            generation["id"],
+            claim_token=str(claimed["batch_claim_token"]),
+        )
+        secret = "sk-do-not-persist"
+        snapshot = build_provider_failure_snapshot(
+            TimeoutError(f"provider timed out with {secret}"),
+            local_request_id=(
+                f"class-commentary-generation-{generation['id']}"
+            ),
+        )
+
+        failed = lesson_manager.fail_class_commentary_batch_generation_terminal(
+            generation["id"],
+            claim_token=str(claimed["batch_claim_token"]),
+            error_code="provider_timeout",
+            provider_failure=snapshot,
+        )
+        stored = lesson_manager.get_class_commentary_batch_provider_failure(
+            generation["id"]
+        )
+
+        self.assertEqual(stored, snapshot)
+        self.assertTrue(failed["batch_provider_failure_hash"])
+        self.assertEqual(
+            hashlib.sha256(
+                failed["batch_provider_failure_snapshot_json"].encode("utf-8")
+            ).hexdigest(),
+            failed["batch_provider_failure_hash"],
+        )
+        self.assertNotIn(
+            secret,
+            failed["batch_provider_failure_snapshot_json"],
+        )
 
     def test_generic_failure_cannot_discard_ready_batch_snapshot(self):
         ready_generation = self._reserve_structured(

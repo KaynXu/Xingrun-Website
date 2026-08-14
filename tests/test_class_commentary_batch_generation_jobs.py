@@ -81,6 +81,7 @@ class FakeBatchGenerationStore:
         self.complete_calls: list[dict] = []
         self.release_calls: list[str] = []
         self.terminal_failure_calls: list[str] = []
+        self.terminal_failure_snapshots: list[dict | None] = []
         self.validation_failure_calls: list[str] = []
         self.persist_raises_after_write = False
         self.charge_raises_after_settlement = False
@@ -245,11 +246,13 @@ class FakeBatchGenerationStore:
         *,
         claim_token: str,
         error_code: str,
+        provider_failure: object = None,
     ) -> dict:
         self._assert_current_claim(generation_id, claim_token)
         if self.hold["status"] == "settled":
             raise AssertionError("settled hold must be published")
         self.terminal_failure_calls.append(error_code)
+        self.terminal_failure_snapshots.append(copy.deepcopy(provider_failure))
         self.hold["status"] = "released"
         self.generation["status"] = "failed"
         self.generation["error_code"] = error_code
@@ -465,14 +468,22 @@ class ClassCommentaryBatchGenerationJobsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["error_code"], "provider_result_unknown")
+        self.assertEqual(result["error_code"], "provider_timeout")
         self.assertEqual(provider_calls, 1)
         self.assertEqual(store.generation["status"], "failed")
         self.assertIsNone(store.generation["batch_claim_token"])
         self.assertEqual(store.hold["status"], "released")
         self.assertEqual(
             store.terminal_failure_calls,
-            ["provider_result_unknown"],
+            ["provider_timeout"],
+        )
+        self.assertEqual(
+            store.terminal_failure_snapshots[0]["result_state"],
+            "unknown",
+        )
+        self.assertEqual(
+            store.terminal_failure_snapshots[0]["exception_type"],
+            "builtins.TimeoutError",
         )
         self.assertEqual(store.release_calls, [])
 
@@ -492,18 +503,22 @@ class ClassCommentaryBatchGenerationJobsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["error_code"], "provider_result_unknown")
+        self.assertEqual(result["error_code"], "provider_dispatch_interrupted")
         self.assertEqual(provider_calls, 0)
         self.assertEqual(store.generation["status"], "failed")
         self.assertEqual(
             store.generation["error_code"],
-            "provider_result_unknown",
+            "provider_dispatch_interrupted",
         )
         self.assertIsNone(store.generation["batch_claim_token"])
         self.assertEqual(store.hold["status"], "released")
         self.assertEqual(
             store.terminal_failure_calls,
-            ["provider_result_unknown"],
+            ["provider_dispatch_interrupted"],
+        )
+        self.assertEqual(
+            store.terminal_failure_snapshots[0]["result_state"],
+            "unknown",
         )
         self.assertEqual(store.release_calls, [])
 
@@ -523,7 +538,10 @@ class ClassCommentaryBatchGenerationJobsTest(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["error_code"], "provider_result_unknown")
+        self.assertEqual(
+            result["error_code"],
+            "provider_dispatch_legacy_unknown",
+        )
         self.assertEqual(provider_calls, 0)
         self.assertEqual(store.hold["status"], "released")
 

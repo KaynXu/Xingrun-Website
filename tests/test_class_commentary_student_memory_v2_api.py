@@ -586,7 +586,15 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
             payload["generation_id"]
         )
         self.assertEqual(generation["status"], "failed")
-        self.assertEqual(generation["error_code"], "provider_result_unknown")
+        self.assertEqual(generation["error_code"], "provider_timeout")
+        provider_failure = lesson_manager.get_class_commentary_batch_provider_failure(
+            payload["generation_id"]
+        )
+        self.assertEqual(provider_failure["result_state"], "unknown")
+        self.assertEqual(
+            provider_failure["exception_type"],
+            "builtins.TimeoutError",
+        )
         self.assertEqual(generation["batch_attempt_count"], 1)
         self.assertIsNone(generation["batch_claim_token"])
         self.assertEqual(hold["status"], "released")
