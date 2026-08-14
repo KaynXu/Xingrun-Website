@@ -2564,6 +2564,8 @@ def extract_class_commentary_learning_events(
     openai_api_key: str = "",
     openai_base_url: str = "",
     openai_headers: str = "",
+    request_timeout: float | None = None,
+    max_retries: int | None = None,
     include_usage: bool = False,
 ):
     """Extract untrusted learning-event candidates for one server-scoped student."""
@@ -2575,6 +2577,7 @@ def extract_class_commentary_learning_events(
         openai_api_key,
         openai_base_url,
         openai_headers,
+        max_retries=max_retries,
     )
     system_prompt = (
         "You extract candidate learning observations from one teacher-confirmed feedback item. "
@@ -2615,15 +2618,18 @@ def extract_class_commentary_learning_events(
             ],
         },
     }
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
+    completion_kwargs = {
+        "model": model,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(safe_input, ensure_ascii=False, sort_keys=True)},
         ],
-        temperature=0,
-        response_format={"type": "json_object"},
-    )
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+    if request_timeout is not None:
+        completion_kwargs["timeout"] = max(1.0, float(request_timeout))
+    response = client.chat.completions.create(**completion_kwargs)
     payload = _loads_class_commentary_learning_event_json(
         response.choices[0].message.content
     )
