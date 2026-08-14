@@ -8,14 +8,18 @@ from pydantic import ValidationError
 import ai_processor
 
 
-def _response(payload: dict):
+def _response(payload: dict | str):
     return types.SimpleNamespace(
         model="memory-model",
         usage=types.SimpleNamespace(prompt_tokens=12, completion_tokens=8),
         choices=[
             types.SimpleNamespace(
                 message=types.SimpleNamespace(
-                    content=json.dumps(payload, ensure_ascii=False),
+                    content=(
+                        payload
+                        if isinstance(payload, str)
+                        else json.dumps(payload, ensure_ascii=False)
+                    ),
                 )
             )
         ],
@@ -52,6 +56,67 @@ class ClassCommentaryMemoryAiTest(unittest.TestCase):
         self.assertEqual(payload["items"], [])
         self.assertIn("valid json object", captured["messages"][0]["content"])
         self.assertEqual(captured["response_format"], {"type": "json_object"})
+
+    def test_learning_graph_extractor_selects_unique_envelope_from_json_sequence(self):
+        response_text = "\n".join(
+            [
+                json.dumps({"feedback_analysis": "provider echo"}),
+                json.dumps(
+                    {
+                        "schema_version": "student_learning_event.v1",
+                        "items": [],
+                    }
+                ),
+            ]
+        )
+        client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=lambda **kwargs: _response(response_text)
+                )
+            )
+        )
+
+        with patch.object(
+            ai_processor,
+            "_get_class_commentary_client",
+            return_value=client,
+        ):
+            payload = ai_processor.extract_class_commentary_learning_events(
+                extraction_input={"feedback_text": "小王今天计算稳定."},
+                provider="openai",
+                model="memory-model",
+            )
+
+        self.assertEqual(payload["schema_version"], "student_learning_event.v1")
+        self.assertEqual(payload["items"], [])
+
+    def test_learning_graph_extractor_rejects_multiple_valid_envelopes(self):
+        envelope = json.dumps(
+            {
+                "schema_version": "student_learning_event.v1",
+                "items": [],
+            }
+        )
+        client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=lambda **kwargs: _response(f"{envelope}\n{envelope}")
+                )
+            )
+        )
+
+        with patch.object(
+            ai_processor,
+            "_get_class_commentary_client",
+            return_value=client,
+        ):
+            with self.assertRaises(json.JSONDecodeError):
+                ai_processor.extract_class_commentary_learning_events(
+                    extraction_input={"feedback_text": "小王今天计算稳定."},
+                    provider="openai",
+                    model="memory-model",
+                )
 
     def test_extractor_uses_frozen_input_and_returns_validated_signals(self):
         captured = {}

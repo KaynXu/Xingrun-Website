@@ -235,6 +235,54 @@ def _loads_model_json(raw: str | None, default: str = "{}"):
         return json.loads(_escape_bare_backslashes_in_json_strings(content))
 
 
+def _loads_model_json_sequence(raw: str | None) -> list[object]:
+    content = str(raw or "")
+    candidates = [content]
+    escaped = _escape_bare_backslashes_in_json_strings(content)
+    if escaped != content:
+        candidates.append(escaped)
+    last_error = None
+    for candidate in candidates:
+        decoder = json.JSONDecoder()
+        values = []
+        position = 0
+        try:
+            while position < len(candidate):
+                while position < len(candidate) and candidate[position].isspace():
+                    position += 1
+                if position >= len(candidate):
+                    break
+                value, position = decoder.raw_decode(candidate, position)
+                values.append(value)
+            return values
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    return []
+
+
+def _loads_class_commentary_learning_event_json(raw: str | None) -> object:
+    try:
+        return _loads_model_json(raw)
+    except json.JSONDecodeError as original_error:
+        try:
+            values = _loads_model_json_sequence(raw)
+        except json.JSONDecodeError:
+            raise original_error
+        envelopes = [
+            value
+            for value in values
+            if isinstance(value, dict)
+            and set(value) == {"schema_version", "items"}
+            and value.get("schema_version") == "student_learning_event.v1"
+            and isinstance(value.get("items"), list)
+        ]
+        if len(envelopes) != 1:
+            raise original_error
+        return envelopes[0]
+
+
 _LOCAL_WHISPER_MODEL = None
 _LOCAL_WHISPER_MODEL_LOCK = threading.Lock()
 _LOCAL_WHISPER_MODEL_NAME = "base"
@@ -2576,7 +2624,9 @@ def extract_class_commentary_learning_events(
         temperature=0,
         response_format={"type": "json_object"},
     )
-    payload = _loads_model_json(response.choices[0].message.content)
+    payload = _loads_class_commentary_learning_event_json(
+        response.choices[0].message.content
+    )
     if include_usage:
         return payload, _usage_dict(response, provider=provider, model_fallback=model)
     return payload
