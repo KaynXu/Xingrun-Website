@@ -297,6 +297,7 @@ test('student growth entry stays inside each student editor and uses one shared 
   const accordionSource = source.slice(accordionStart, accordionEnd);
 
   assertSourceMatches(source, /StudentLearningGraphDialog/, 'the shared student growth dialog must be mounted once');
+  assertSourceMatches(source, /subjectKey=\{task\?\.subject_key \|\| ''\}/, 'the growth dialog must receive the server-owned class subject scope');
   assertSourceMatches(accordionSource, /<AccordionContent[\s\S]*学生成长轨迹[\s\S]*<\/AccordionContent>/, 'the growth entry must stay in the expanded student content');
   assertSourceExcludes(accordionSource.match(/<AccordionTrigger>[\s\S]*?<\/AccordionTrigger>/)?.[0] || '', /<Button/, 'the accordion trigger must not contain a nested button');
   assertSourceMatches(accordionSource, /handleOpenStudentLearningGraph\(item\)/, 'the entry must use the server-owned student item');
