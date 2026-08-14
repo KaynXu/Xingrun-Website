@@ -346,7 +346,7 @@ class ClassCommentaryLearningGraphApiTest(unittest.TestCase):
 
     def test_graph_capabilities_and_no_public_explorer(self):
         adapter = Mock()
-        adapter.health.return_value = {"healthy": True}
+        adapter.readiness.return_value = {"healthy": True}
         with patch.object(
             self.app_module,
             "SemanticaGraphAdapter",
@@ -357,7 +357,9 @@ class ClassCommentaryLearningGraphApiTest(unittest.TestCase):
             return_value={"healthy": True},
         ):
             healthy = self.app_module._class_commentary_graph_capabilities()
-        adapter.health.return_value = {"healthy": False}
+        adapter.readiness.assert_called_once_with()
+        adapter.health.assert_not_called()
+        adapter.readiness.return_value = {"healthy": False}
         with patch.object(
             self.app_module,
             "SemanticaGraphAdapter",
@@ -368,6 +370,17 @@ class ClassCommentaryLearningGraphApiTest(unittest.TestCase):
             return_value={"healthy": True},
         ):
             degraded = self.app_module._class_commentary_graph_capabilities()
+        adapter.health.return_value = {"healthy": True}
+        with patch.object(
+            self.app_module,
+            "SemanticaGraphAdapter",
+            return_value=adapter,
+        ), patch.object(
+            self.app_module,
+            "class_commentary_memory_queue_healthcheck",
+            return_value={"healthy": True},
+        ):
+            forced = self.app_module._class_commentary_graph_capabilities(force=True)
 
         self.assertEqual(
             healthy,
@@ -377,6 +390,11 @@ class ClassCommentaryLearningGraphApiTest(unittest.TestCase):
             degraded,
             {"graph_enabled": True, "graph_healthy": False, "graph_degraded": True},
         )
+        self.assertEqual(
+            forced,
+            {"graph_enabled": True, "graph_healthy": True, "graph_degraded": False},
+        )
+        adapter.health.assert_called_once_with()
         explorer = self.client.get(
             "/api/class-commentary/graph-explorer",
             headers=self.headers,

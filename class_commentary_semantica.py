@@ -65,7 +65,7 @@ class SemanticaGraphAdapter:
         self.timeout_seconds = max(1, int(timeout_seconds))
 
     @staticmethod
-    def _context_graph_class():
+    def _installed_version() -> str:
         try:
             installed = importlib.metadata.version("semantica")
         except importlib.metadata.PackageNotFoundError as exc:
@@ -74,6 +74,11 @@ class SemanticaGraphAdapter:
             raise SemanticaGraphUnavailableError(
                 f"semantica version mismatch: expected {SEMANTICA_REQUIRED_VERSION}, got {installed}"
             )
+        return installed
+
+    @classmethod
+    def _context_graph_class(cls):
+        cls._installed_version()
         from semantica.context import ContextGraph
 
         return ContextGraph
@@ -793,6 +798,27 @@ class SemanticaGraphAdapter:
         }
         snapshot["hash"] = hashlib.sha256(_canonical_json(snapshot).encode()).hexdigest()
         return snapshot
+
+    def readiness(self) -> dict:
+        if not self.store_path.is_file():
+            return {"healthy": False, "error": "store_missing"}
+        try:
+            store_size = self.store_path.stat().st_size
+            with self.store_path.open("rb") as handle:
+                prefix = handle.read(64).lstrip()
+        except OSError:
+            return {"healthy": False, "error": "store_unreadable"}
+        if store_size <= 0 or not prefix.startswith(b"{"):
+            return {"healthy": False, "error": "store_unreadable"}
+        try:
+            installed = self._installed_version()
+        except SemanticaGraphUnavailableError:
+            return {"healthy": False, "error": "semantica_unavailable"}
+        return {
+            "healthy": True,
+            "semantica_version": installed,
+            "store_size": store_size,
+        }
 
     def health(self) -> dict:
         if not self.store_path.exists():
