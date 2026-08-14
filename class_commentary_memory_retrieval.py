@@ -122,16 +122,18 @@ def retrieve_class_commentary_memory_context(
 
     style_candidates = []
     student_candidates: list[tuple[dict, dict]] = []
+    query_char_limit = max(1, int(getattr(service.settings, "search_query_char_limit", 2000) or 2000))
+    search_query = transcript[:query_char_limit]
     try:
         style_candidates = service.search_style(
-            transcript[:2000],
+            search_query,
             organization_id=organization_id,
             scope_skill_registry_id=skill_registry_id,
         )
         if subject_key and not student_history_disabled:
             for student in mentioned_roster:
                 candidates = service.search_student(
-                    transcript[:2000],
+                    search_query,
                     organization_id=organization_id,
                     student_id=student["student_id"],
                     subject_key=subject_key,

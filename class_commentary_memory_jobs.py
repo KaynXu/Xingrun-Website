@@ -12,7 +12,11 @@ from typing import Mapping, Optional
 
 import ai_processor
 import config_runtime
-from class_commentary_memory import ClassCommentaryMemoryService
+from class_commentary_memory import (
+    ClassCommentaryMemoryConfigError,
+    ClassCommentaryMemoryDisabledError,
+    ClassCommentaryMemoryService,
+)
 from class_commentary_memory_privacy import (
     contains_class_commentary_private_information,
     contains_class_commentary_roster_name,
@@ -994,6 +998,15 @@ def process_class_commentary_memory_operation(
         service = memory_service or ClassCommentaryMemoryService(runtime_config=config)
         mem0_memory_id, applied_status = _apply_operation(service, claimed)
     except Exception as exc:
+        if isinstance(
+            exc,
+            (ClassCommentaryMemoryConfigError, ClassCommentaryMemoryDisabledError),
+        ):
+            logger.error(
+                "class commentary memory operation %s hit a deterministic configuration error (retries will not help): %s",
+                operation_id,
+                type(exc).__name__,
+            )
         try:
             target_store.fail_class_commentary_memory_operation(
                 int(operation_id), lease_token=lease_token, error=str(exc)

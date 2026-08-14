@@ -250,6 +250,7 @@ class ClassCommentaryMemorySettings:
     style_limit: int
     student_limit: int
     context_char_limit: int
+    search_query_char_limit: int
 
 
 _CANONICAL_SUBJECT_KEY = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -365,6 +366,7 @@ def load_class_commentary_memory_settings(
         style_limit=numeric("mem0_style_limit"),
         student_limit=numeric("mem0_student_limit"),
         context_char_limit=numeric("mem0_context_char_limit"),
+        search_query_char_limit=numeric("mem0_search_query_char_limit"),
     )
 
 
@@ -395,6 +397,7 @@ class ClassCommentaryMemoryService:
                 style_limit=settings.style_limit,
                 student_limit=settings.student_limit,
                 context_char_limit=settings.context_char_limit,
+                search_query_char_limit=settings.search_query_char_limit,
             )
         self.settings = settings
         self._client = client
@@ -538,6 +541,19 @@ class ClassCommentaryMemoryService:
             raise ClassCommentaryMemoryDisabledError("Class commentary memory is disabled")
         if self._client is None:
             self._client = self._build_client()
+            request_timeout = _positive_setting(
+                _setting(self._runtime_config, "mem0_request_timeout_seconds", 30),
+                default=30,
+            )
+            logger.info(
+                "class commentary mem0 client initialized: vector=%s collection=%s embedder=%s model=%s dims=%s request_timeout=%ss",
+                self.settings.vector_provider,
+                self.settings.collection_name,
+                self.settings.embedder_provider,
+                self.settings.embedder_model,
+                self.settings.embedding_dims,
+                request_timeout,
+            )
         return self._client
 
     @staticmethod
