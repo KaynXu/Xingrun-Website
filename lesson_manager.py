@@ -18461,7 +18461,7 @@ def reconcile_class_commentary_memory_store(
 
 def _class_commentary_task_select_sql() -> str:
     return """
-        SELECT t.*, c.name AS class_name
+        SELECT t.*, c.name AS class_name, c.subject_key AS subject_key
         FROM class_commentary_tasks t
         JOIN classes c ON c.id = t.class_id
     """
@@ -18495,6 +18495,7 @@ def _serialize_class_commentary_task_row(row: sqlite3.Row) -> dict:
         "created_at",
         "updated_at",
         "class_name",
+        "subject_key",
     )
     for field_name in string_fields:
         item[field_name] = item.get(field_name) or ""

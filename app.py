@@ -3381,6 +3381,7 @@ def _serialize_class_commentary_task_for_response(
         "organization_id": int(task["organization_id"]),
         "class_id": int(task["class_id"]),
         "class_name": str(task.get("class_name") or ""),
+        "subject_key": str(task.get("subject_key") or ""),
         "teacher_user_id": int(task["teacher_user_id"]),
         "status": str(task.get("status") or ""),
         "final_feedback_text": str(task.get("final_feedback_text") or ""),
