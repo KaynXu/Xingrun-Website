@@ -31,7 +31,14 @@ def get_class_commentary_memory_redis_connection(
     runtime_config: Optional[Mapping[str, object]] = None,
 ) -> Redis:
     config = _runtime_config(runtime_config)
-    return Redis.from_url(str(config.get("redis_url") or "redis://127.0.0.1:6379/0"))
+    try:
+        connect_timeout = max(1, int(config.get("redis_connect_timeout") or 5))
+    except (TypeError, ValueError):
+        connect_timeout = 5
+    return Redis.from_url(
+        str(config.get("redis_url") or "redis://127.0.0.1:6379/0"),
+        socket_connect_timeout=connect_timeout,
+    )
 
 
 def get_class_commentary_memory_queue(

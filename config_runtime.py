@@ -45,6 +45,7 @@ ENV_VAR_MAP = {
     "class_commentary_graph_reconcile_limit": "XR_CLASS_COMMENTARY_GRAPH_RECONCILE_LIMIT",
     "class_commentary_graph_explorer_enabled": "XR_CLASS_COMMENTARY_GRAPH_EXPLORER_ENABLED",
     "redis_url": "XR_REDIS_URL",
+    "redis_connect_timeout": "XR_REDIS_CONNECT_TIMEOUT",
     "class_commentary_memory_queue": "XR_CLASS_COMMENTARY_MEMORY_QUEUE",
     "class_commentary_memory_extraction_timeout": "XR_CLASS_COMMENTARY_MEMORY_EXTRACTION_TIMEOUT",
     "class_commentary_memory_operation_timeout": "XR_CLASS_COMMENTARY_MEMORY_OPERATION_TIMEOUT",
@@ -131,6 +132,7 @@ DEFAULTS = {
     "class_commentary_graph_reconcile_limit": 100,
     "class_commentary_graph_explorer_enabled": False,
     "redis_url": "redis://127.0.0.1:6379/0",
+    "redis_connect_timeout": 5,
     "class_commentary_memory_queue": "class_commentary_memory",
     "class_commentary_memory_extraction_timeout": 300,
     "class_commentary_memory_operation_timeout": 120,
@@ -341,6 +343,9 @@ def get_runtime_config() -> dict:
         cfg.get("class_commentary_graph_explorer_enabled")
     )
     cfg["redis_url"] = str(cfg.get("redis_url") or "redis://127.0.0.1:6379/0").strip()
+    cfg["redis_connect_timeout"] = normalize_positive_int(
+        cfg.get("redis_connect_timeout"), 5
+    )
     cfg["class_commentary_memory_queue"] = (
         str(cfg.get("class_commentary_memory_queue") or "class_commentary_memory").strip()
         or "class_commentary_memory"

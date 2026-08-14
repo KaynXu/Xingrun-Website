@@ -26,11 +26,13 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
         self.assertEqual(cfg["mem0_student_limit"], 5)
         self.assertEqual(cfg["mem0_context_char_limit"], 3000)
         self.assertEqual(cfg["mem0_request_timeout_seconds"], 30)
+        self.assertEqual(cfg["redis_connect_timeout"], 5)
 
     def test_memory_runtime_uses_the_shared_environment_contract(self):
         environment = {
             "XR_CLASS_COMMENTARY_MEMORY_ENABLED": "true",
             "XR_REDIS_URL": "redis://memory.test:6380/3",
+            "XR_REDIS_CONNECT_TIMEOUT": "7",
             "XR_CLASS_COMMENTARY_MEMORY_QUEUE": "commentary-test",
             "XR_CLASS_COMMENTARY_MEMORY_EXTRACTION_TIMEOUT": "420",
             "XR_CLASS_COMMENTARY_MEMORY_OPERATION_TIMEOUT": "150",
@@ -62,6 +64,7 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
 
         self.assertTrue(cfg["class_commentary_memory_enabled"])
         self.assertEqual(cfg["redis_url"], "redis://memory.test:6380/3")
+        self.assertEqual(cfg["redis_connect_timeout"], 7)
         self.assertEqual(cfg["class_commentary_memory_queue"], "commentary-test")
         self.assertEqual(cfg["class_commentary_memory_extraction_timeout"], 420)
         self.assertEqual(cfg["class_commentary_memory_operation_timeout"], 150)

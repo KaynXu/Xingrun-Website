@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import unittest
+from unittest.mock import patch
 
 from class_commentary_graph_queue import (
     enqueue_class_commentary_graph_extraction_job,
@@ -12,6 +13,7 @@ from class_commentary_memory_queue import (
     enqueue_class_commentary_skill_candidate_build,
     enqueue_class_commentary_memory_extraction_job,
     ensure_class_commentary_memory_reconciliation_scheduled,
+    get_class_commentary_memory_redis_connection,
 )
 
 
@@ -242,6 +244,27 @@ class ClassCommentaryMemoryQueueTests(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertNotIn("secret", str(result))
         self.assertEqual(result["error_type"], "RuntimeError")
+
+    def test_redis_connection_bounds_connect_time(self):
+        with patch("class_commentary_memory_queue.Redis.from_url", return_value=object()) as from_url:
+            connection = get_class_commentary_memory_redis_connection(
+                runtime_config={"redis_url": "redis://queue.test:6390/2", "redis_connect_timeout": "9"}
+            )
+
+        from_url.assert_called_once_with(
+            "redis://queue.test:6390/2", socket_connect_timeout=9
+        )
+        self.assertIsNotNone(connection)
+
+    def test_redis_connection_connect_timeout_defaults_safely(self):
+        with patch("class_commentary_memory_queue.Redis.from_url", return_value=object()) as from_url:
+            get_class_commentary_memory_redis_connection(
+                runtime_config={"redis_url": "redis://queue.test:6390/2"}
+            )
+
+        from_url.assert_called_once_with(
+            "redis://queue.test:6390/2", socket_connect_timeout=5
+        )
 
 
 if __name__ == "__main__":
