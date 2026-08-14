@@ -1,6 +1,10 @@
 from datetime import datetime, timezone
 import unittest
 
+from class_commentary_graph_queue import (
+    enqueue_class_commentary_graph_extraction_job,
+    enqueue_class_commentary_graph_sync_operation,
+)
 from class_commentary_memory_queue import (
     class_commentary_memory_queue_healthcheck,
     dispatch_class_commentary_memory_work,
@@ -71,6 +75,24 @@ class ReadyRedis:
 
 
 class ClassCommentaryMemoryQueueTests(unittest.TestCase):
+    def test_graph_retries_wait_past_the_fractional_database_gate(self):
+        queue = FakeQueue()
+
+        enqueue_class_commentary_graph_extraction_job(
+            {"id": 7, "attempt_count": 0, "checkpoint_count": 2},
+            queue=queue,
+            runtime_config={"class_commentary_graph_extraction_timeout": 300},
+        )
+        enqueue_class_commentary_graph_sync_operation(
+            {"id": 9, "attempt_count": 0},
+            queue=queue,
+            runtime_config={"class_commentary_graph_sync_timeout": 120},
+        )
+
+        self.assertEqual(len(queue.enqueue_calls), 2)
+        self.assertEqual(queue.enqueue_calls[0][3]["retry"].intervals, [31, 121, 601])
+        self.assertEqual(queue.enqueue_calls[1][3]["retry"].intervals, [31, 121, 601])
+
     def test_duplicate_enqueue_keeps_one_rq_job_for_one_attempt(self):
         queue = FakeQueue()
         job = {"id": 17, "attempt_count": 1}
