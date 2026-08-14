@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import socket
@@ -21,6 +22,8 @@ from class_commentary_memory_privacy import (
 
 _MAX_SUPPORT_ITEMS = 12
 _MAX_SUPPORT_CHARS = 500
+
+logger = logging.getLogger(__name__)
 
 
 def _runtime_config(runtime_config: Optional[Mapping[str, object]] = None) -> dict:
@@ -980,13 +983,19 @@ def process_class_commentary_memory_operation(
         return {"enabled": True, "status": "not_claimed", "operation_id": int(operation_id)}
 
     lease_token = str(claimed["lease_token"])
-    service = memory_service or ClassCommentaryMemoryService(runtime_config=config)
     try:
+        service = memory_service or ClassCommentaryMemoryService(runtime_config=config)
         mem0_memory_id, applied_status = _apply_operation(service, claimed)
     except Exception as exc:
-        target_store.fail_class_commentary_memory_operation(
-            int(operation_id), lease_token=lease_token, error=str(exc)
-        )
+        try:
+            target_store.fail_class_commentary_memory_operation(
+                int(operation_id), lease_token=lease_token, error=str(exc)
+            )
+        except Exception:
+            logger.exception(
+                "memory operation %s failed and could not be marked failed",
+                operation_id,
+            )
         raise
 
     try:
