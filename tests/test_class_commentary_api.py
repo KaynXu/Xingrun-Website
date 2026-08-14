@@ -604,6 +604,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertIsNotNone(payload)
         self.assertEqual(payload["transcript_text"], "小王今天计算有进步")
+        self.assertEqual(payload["subject_key"], "math")
         self.assertPrivateTranscriptPolishFieldsHidden(payload)
 
     def test_task_list_returns_accessible_recent_history(self):
@@ -629,8 +630,35 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertIsNotNone(payload)
         self.assertEqual([item["id"] for item in payload["tasks"][:2]], [newer["id"], older["id"]])
         self.assertEqual(payload["tasks"][0]["class_name"], "数学·七年级·4班")
+        self.assertEqual(payload["tasks"][0]["subject_key"], "math")
         self.assertEqual(payload["tasks"][0]["transcript_text"], "")
         self.assertPrivateTranscriptPolishFieldsHidden(payload["tasks"][0])
+
+    def test_task_response_keeps_unknown_class_subject_scope_empty(self):
+        class_id = lesson_manager.save_class(
+            "机器人·七年级·4班",
+            subject="机器人",
+            grade="七年级",
+            organization_id=self.owner["organization_id"],
+            teacher_user_id=self.owner["id"],
+        )
+        task = lesson_manager.create_class_commentary_task(
+            organization_id=self.owner["organization_id"],
+            class_id=class_id,
+            teacher_user_id=self.owner["id"],
+            audio_path=str(self.base / "robotics.m4a"),
+            audio_filename="robotics.m4a",
+        )
+
+        response = self.client.get(
+            f"/api/class-commentary/tasks/{task['id']}",
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["subject_key"], "")
 
     def test_task_list_for_member_hides_unassigned_class_history(self):
         assigned_class_id = self._create_class_with_student()
@@ -703,6 +731,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertIsNotNone(payload)
         self.assertEqual(payload["status"], "transcribed")
+        self.assertEqual(payload["subject_key"], "math")
         self.assertEqual(payload["audio_filename"], "手动输入")
         self.assertEqual(payload["transcript_text"], "小王今天计算有进步, 课堂回答更主动。")
         self.assertEqual(payload["confirmed_transcript_text"], "小王今天计算有进步, 课堂回答更主动。")
