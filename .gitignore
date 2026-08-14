@@ -14,6 +14,11 @@ logs/
 .DS_Store
 **/.DS_Store
 
+# Python bytecode and test caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
 # Local runtime databases (not baseline data)
 data/database.db
 data/local.db
