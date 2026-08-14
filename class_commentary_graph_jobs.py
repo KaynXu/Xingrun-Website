@@ -22,8 +22,6 @@ _CANDIDATE_FIELDS = {
     "observed_state",
     "reported_trend",
     "evidence_quote",
-    "evidence_start_offset",
-    "evidence_end_offset",
     "teaching_methods",
     "next_steps",
     "teaching_method_causal_supported",
@@ -33,15 +31,61 @@ _CANDIDATE_FIELDS = {
 _CAUSAL_EVIDENCE_FIELDS = {
     "method_text",
     "evidence_quote",
-    "evidence_start_offset",
-    "evidence_end_offset",
 }
 
-_EVIDENCE_HASH_FIELD = "evidence_content_hash"
-_PERSISTED_CANDIDATE_FIELDS = _CANDIDATE_FIELDS | {_EVIDENCE_HASH_FIELD}
-_PERSISTED_CAUSAL_EVIDENCE_FIELDS = _CAUSAL_EVIDENCE_FIELDS | {
-    _EVIDENCE_HASH_FIELD
+_SERVER_EVIDENCE_FIELDS = {
+    "evidence_start_offset",
+    "evidence_end_offset",
+    "evidence_content_hash",
 }
+_PERSISTED_CANDIDATE_FIELDS = _CANDIDATE_FIELDS | _SERVER_EVIDENCE_FIELDS
+_PERSISTED_CAUSAL_EVIDENCE_FIELDS = (
+    _CAUSAL_EVIDENCE_FIELDS | _SERVER_EVIDENCE_FIELDS
+)
+_EVIDENCE_SENTENCE_BOUNDARIES = "\n\r。！？!?；;"
+_MIN_PRECISE_EVIDENCE_QUOTE_LENGTH = 4
+
+
+def _server_evidence_span(
+    evidence: Mapping[str, object], *, feedback_text: str
+) -> tuple[str, int, int, str]:
+    quote = str(evidence.get("evidence_quote") or "")
+    if not quote:
+        raise ValueError("learning graph evidence quote is empty")
+    positions = []
+    cursor = 0
+    while True:
+        position = feedback_text.find(quote, cursor)
+        if position < 0:
+            break
+        positions.append(position)
+        cursor = position + max(1, len(quote))
+    if not positions:
+        raise ValueError("learning graph evidence quote does not match confirmed feedback")
+    try:
+        supplied_start = int(evidence.get("evidence_start_offset"))
+    except (TypeError, ValueError):
+        supplied_start = positions[0]
+    start = min(positions, key=lambda position: (abs(position - supplied_start), position))
+    end = start + len(quote)
+    if len(quote.strip()) < _MIN_PRECISE_EVIDENCE_QUOTE_LENGTH:
+        start = max(
+            feedback_text.rfind(mark, 0, start)
+            for mark in _EVIDENCE_SENTENCE_BOUNDARIES
+        ) + 1
+        right_boundaries = [
+            position
+            for mark in _EVIDENCE_SENTENCE_BOUNDARIES
+            for position in [feedback_text.find(mark, end)]
+            if position >= 0
+        ]
+        end = min(right_boundaries) + 1 if right_boundaries else len(feedback_text)
+        while start < end and feedback_text[start].isspace():
+            start += 1
+        while end > start and feedback_text[end - 1].isspace():
+            end -= 1
+        quote = feedback_text[start:end]
+    return quote, start, end, content_hash(quote)
 
 
 def _runtime_config(runtime_config: Optional[Mapping[str, object]] = None) -> dict:
@@ -101,7 +145,7 @@ def _default_extractor(extraction_input: dict, config: Mapping[str, object]):
     )
 
 
-def _strict_candidates(payload: object) -> list[dict]:
+def _strict_candidates(payload: object, *, feedback_text: str) -> list[dict]:
     if hasattr(payload, "model_dump"):
         payload = payload.model_dump(mode="json")
     if not isinstance(payload, Mapping) or set(payload) != {"schema_version", "items"}:
@@ -115,10 +159,12 @@ def _strict_candidates(payload: object) -> list[dict]:
     for raw_item in raw_items:
         if hasattr(raw_item, "model_dump"):
             raw_item = raw_item.model_dump(mode="json")
-        if not isinstance(raw_item, Mapping) or frozenset(raw_item) not in {
-            frozenset(_CANDIDATE_FIELDS),
-            frozenset(_PERSISTED_CANDIDATE_FIELDS),
-        }:
+        raw_fields = set(raw_item) if isinstance(raw_item, Mapping) else set()
+        if (
+            not isinstance(raw_item, Mapping)
+            or not _CANDIDATE_FIELDS.issubset(raw_fields)
+            or not raw_fields.issubset(_PERSISTED_CANDIDATE_FIELDS)
+        ):
             raise ValueError("learning graph extractor item contract mismatch")
         knowledge_point_key = raw_item.get("knowledge_point_key")
         unmapped_candidate = raw_item.get("unmapped_candidate")
@@ -135,28 +181,32 @@ def _strict_candidates(payload: object) -> list[dict]:
         causal_evidence = raw_item.get("teaching_method_causal_evidence")
         if not isinstance(causal_evidence, list) or any(
             not isinstance(item, Mapping)
-            or frozenset(item)
-            not in {
-                frozenset(_CAUSAL_EVIDENCE_FIELDS),
-                frozenset(_PERSISTED_CAUSAL_EVIDENCE_FIELDS),
-            }
+            or not _CAUSAL_EVIDENCE_FIELDS.issubset(set(item))
+            or not set(item).issubset(_PERSISTED_CAUSAL_EVIDENCE_FIELDS)
             for item in causal_evidence
         ):
             raise ValueError("learning graph extractor causal evidence is invalid")
         if not raw_item.get("teaching_method_causal_supported") and causal_evidence:
             raise ValueError("learning graph extractor causal evidence is inconsistent")
         normalized_item = dict(raw_item)
-        normalized_item[_EVIDENCE_HASH_FIELD] = content_hash(
-            str(normalized_item.get("evidence_quote") or "")
+        quote, start, end, quote_hash = _server_evidence_span(
+            normalized_item,
+            feedback_text=feedback_text,
         )
+        normalized_item["evidence_quote"] = quote
+        normalized_item["evidence_start_offset"] = start
+        normalized_item["evidence_end_offset"] = end
+        normalized_item["evidence_content_hash"] = quote_hash
         normalized_item["teaching_method_causal_evidence"] = [
             {
                 **dict(item),
-                _EVIDENCE_HASH_FIELD: content_hash(
-                    str(item.get("evidence_quote") or "")
-                ),
+                "evidence_quote": span[0],
+                "evidence_start_offset": span[1],
+                "evidence_end_offset": span[2],
+                "evidence_content_hash": span[3],
             }
             for item in causal_evidence
+            for span in [_server_evidence_span(item, feedback_text=feedback_text)]
         ]
         candidates.append(normalized_item)
     return candidates
@@ -211,6 +261,10 @@ def process_class_commentary_graph_extraction_job(
         student_items = list(frozen.get("student_feedback_items") or [])
         student_ids = [int(item["student_id"]) for item in student_items]
         student_id_set = set(student_ids)
+        feedback_text_by_student = {
+            int(item["student_id"]): str(item["feedback_text"])
+            for item in student_items
+        }
         if len(student_ids) != len(student_id_set):
             raise LearningGraphSnapshotIntegrityError(
                 "graph extraction frozen student scope contains duplicates"
@@ -225,7 +279,10 @@ def process_class_commentary_graph_extraction_job(
                     "graph extraction checkpoint student is outside frozen scope"
                 )
             try:
-                checkpoint_candidates = _strict_candidates(checkpoint["payload"])
+                checkpoint_candidates = _strict_candidates(
+                    checkpoint["payload"],
+                    feedback_text=feedback_text_by_student[student_id],
+                )
             except ValueError as exc:
                 raise LearningGraphSnapshotIntegrityError(
                     "graph extraction checkpoint candidate contract is invalid"
@@ -257,7 +314,10 @@ def process_class_commentary_graph_extraction_job(
             result_usage = {}
             if isinstance(result, tuple) and len(result) == 2:
                 result, result_usage = result
-            checkpoint_candidates = _strict_candidates(result)
+            checkpoint_candidates = _strict_candidates(
+                result,
+                feedback_text=str(pending_student_item["feedback_text"]),
+            )
             normalized_usage = (
                 dict(result_usage) if isinstance(result_usage, Mapping) else {}
             )
