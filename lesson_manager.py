@@ -18358,12 +18358,14 @@ def reconcile_class_commentary_memory_store(
     active_rq_job_ids: Optional[set[str]] = None,
     now: Optional[datetime] = None,
     limit: int = 100,
+    timeout_seconds: int = 300,
 ) -> dict:
     current_dt = now or datetime.now(timezone.utc)
     current = _class_commentary_utc_timestamp(current_dt)
     recovered_jobs = recover_stale_class_commentary_memory_extraction_jobs(
         active_rq_job_ids=active_rq_job_ids,
         now=current_dt,
+        timeout_seconds=timeout_seconds,
     )
     recovered_operations = recover_stale_class_commentary_memory_operations(
         active_rq_job_ids=active_rq_job_ids,

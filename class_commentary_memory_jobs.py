@@ -1094,6 +1094,9 @@ def run_class_commentary_memory_reconciliation(
         active_rq_job_ids=active_rq_job_ids,
         now=now,
         limit=100,
+        timeout_seconds=int(
+            config.get("class_commentary_memory_extraction_timeout") or 300
+        ),
     )
     candidate_recoverer = getattr(
         target_store,
