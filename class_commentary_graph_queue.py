@@ -46,11 +46,12 @@ def enqueue_class_commentary_graph_extraction_job(
     config = _runtime_config(runtime_config)
     job_id = int(job["id"])
     attempt = int(job.get("attempt_count") or 0) + 1
+    checkpoint_count = int(job.get("checkpoint_count") or 0)
     return _enqueue_once(
         queue,
         process_class_commentary_graph_extraction_job,
         job_id,
-        job_id=f"cc-graph-extract-{job_id}-a{attempt}",
+        job_id=f"cc-graph-extract-{job_id}-p{checkpoint_count}-a{attempt}",
         job_timeout=int(config.get("class_commentary_graph_extraction_timeout") or 300),
         retry=Retry(max=3, interval=[30, 120, 600]),
         result_ttl=RESULT_TTL_SECONDS,

@@ -8,7 +8,10 @@ from typing import Mapping, Optional
 
 import ai_processor
 import config_runtime
-from class_commentary_learning_graph import GRAPH_EVENT_SCHEMA_VERSION
+from class_commentary_learning_graph import (
+    GRAPH_EVENT_SCHEMA_VERSION,
+    LearningGraphSnapshotIntegrityError,
+)
 from class_commentary_semantica import SemanticaGraphAdapter
 
 
@@ -65,6 +68,13 @@ def _rq_context() -> tuple[str, Optional[str]]:
 
 
 def _default_extractor(extraction_input: dict, config: Mapping[str, object]):
+    job_timeout = max(
+        60, int(config.get("class_commentary_graph_extraction_timeout") or 300)
+    )
+    request_timeout = float(
+        config.get("class_commentary_graph_provider_timeout")
+        or min(240, max(30, job_timeout - 30))
+    )
     return ai_processor.extract_class_commentary_learning_events(
         extraction_input=extraction_input,
         provider=str(config.get("class_commentary_provider") or config.get("provider") or ""),
@@ -80,6 +90,8 @@ def _default_extractor(extraction_input: dict, config: Mapping[str, object]):
             or ""
         ),
         openai_headers=str(config.get("class_commentary_openai_headers") or ""),
+        request_timeout=request_timeout,
+        max_retries=int(config.get("class_commentary_graph_provider_max_retries") or 0),
         include_usage=True,
     )
 
@@ -169,11 +181,45 @@ def process_class_commentary_graph_extraction_job(
             )
             return {"enabled": True, "status": "integrity_failed", "job_id": int(job_id)}
         extract = extractor or _default_extractor
-        candidates = []
-        usage = []
-        for student_item in frozen.get("student_feedback_items") or []:
+        extraction_input_hash = str(frozen.get("extraction_input_hash") or "")
+        student_items = list(frozen.get("student_feedback_items") or [])
+        student_ids = [int(item["student_id"]) for item in student_items]
+        student_id_set = set(student_ids)
+        if len(student_ids) != len(student_id_set):
+            raise LearningGraphSnapshotIntegrityError(
+                "graph extraction frozen student scope contains duplicates"
+            )
+        checkpoint_by_student = {}
+        for checkpoint in target_store.list_graph_extraction_student_checkpoints(
+            int(job_id), extraction_input_hash=extraction_input_hash
+        ):
+            student_id = int(checkpoint["student_id"])
+            if student_id not in student_id_set:
+                raise LearningGraphSnapshotIntegrityError(
+                    "graph extraction checkpoint student is outside frozen scope"
+                )
+            try:
+                checkpoint_candidates = _strict_candidates(checkpoint["payload"])
+            except ValueError as exc:
+                raise LearningGraphSnapshotIntegrityError(
+                    "graph extraction checkpoint candidate contract is invalid"
+                ) from exc
+            checkpoint_by_student[student_id] = {
+                "candidates": checkpoint_candidates,
+                "usage": dict(checkpoint.get("usage") or {}),
+            }
+
+        pending_student_item = next(
+            (
+                item
+                for item in student_items
+                if int(item["student_id"]) not in checkpoint_by_student
+            ),
+            None,
+        )
+        if pending_student_item is not None:
             per_student_input = {
-                "feedback_text": str(student_item["feedback_text"]),
+                "feedback_text": str(pending_student_item["feedback_text"]),
                 "subject_key": str(frozen.get("subject_key") or ""),
                 "registry": (
                     frozen["model_registry"]
@@ -185,11 +231,63 @@ def process_class_commentary_graph_extraction_job(
             result_usage = {}
             if isinstance(result, tuple) and len(result) == 2:
                 result, result_usage = result
-            for candidate in _strict_candidates(result):
-                candidate["student_id"] = int(student_item["student_id"])
-                candidates.append(candidate)
-            if isinstance(result_usage, Mapping):
-                usage.append(dict(result_usage))
+            checkpoint_candidates = _strict_candidates(result)
+            normalized_usage = (
+                dict(result_usage) if isinstance(result_usage, Mapping) else {}
+            )
+            student_id = int(pending_student_item["student_id"])
+            target_store.save_graph_extraction_student_checkpoint(
+                int(job_id),
+                claim_token=token,
+                student_id=student_id,
+                extraction_input_hash=extraction_input_hash,
+                payload={
+                    "schema_version": GRAPH_EVENT_SCHEMA_VERSION,
+                    "items": checkpoint_candidates,
+                },
+                usage=normalized_usage,
+            )
+            checkpoint_by_student[student_id] = {
+                "candidates": checkpoint_candidates,
+                "usage": normalized_usage,
+            }
+
+        if len(checkpoint_by_student) < len(student_items):
+            continued = target_store.continue_graph_extraction_job(
+                int(job_id),
+                claim_token=token,
+                completed_student_count=len(checkpoint_by_student),
+                total_student_count=len(student_items),
+            )
+            if dispatcher is None:
+                from class_commentary_graph_queue import (
+                    dispatch_class_commentary_graph_work,
+                )
+
+                dispatcher = dispatch_class_commentary_graph_work
+            try:
+                dispatch = dispatcher(store=target_store, runtime_config=config)
+            except Exception as exc:
+                dispatch = {"queued": False, "error_type": exc.__class__.__name__}
+            return {
+                "enabled": True,
+                "status": continued["status"],
+                "job_id": int(job_id),
+                "checkpointed_student_count": len(checkpoint_by_student),
+                "student_count": len(student_items),
+                "dispatch": dispatch,
+            }
+
+        candidates = []
+        usage = []
+        for student_item in student_items:
+            student_id = int(student_item["student_id"])
+            checkpoint = checkpoint_by_student[student_id]
+            for candidate in checkpoint["candidates"]:
+                scoped_candidate = dict(candidate)
+                scoped_candidate["student_id"] = student_id
+                candidates.append(scoped_candidate)
+            usage.append(dict(checkpoint["usage"]))
         committed = target_store.commit_graph_extraction(
             int(job_id),
             claim_token=token,
@@ -198,6 +296,11 @@ def process_class_commentary_graph_extraction_job(
             extractor_model=str(config.get("class_commentary_model") or ""),
             usage={"calls": usage},
         )
+    except LearningGraphSnapshotIntegrityError as exc:
+        target_store.mark_graph_extraction_integrity_failed(
+            int(job_id), claim_token=token, error=str(exc)
+        )
+        return {"enabled": True, "status": "integrity_failed", "job_id": int(job_id)}
     except Exception as exc:
         try:
             target_store.fail_graph_extraction_job(
