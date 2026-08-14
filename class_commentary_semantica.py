@@ -70,9 +70,18 @@ class SemanticaGraphAdapter:
             installed = importlib.metadata.version("semantica")
         except importlib.metadata.PackageNotFoundError as exc:
             raise SemanticaGraphUnavailableError("semantica is not installed") from exc
-        if installed != SEMANTICA_REQUIRED_VERSION:
+        required_series = tuple(
+            int(part) for part in SEMANTICA_REQUIRED_VERSION.split(".")[:2]
+        )
+        try:
+            installed_series = tuple(int(part) for part in installed.split(".")[:2])
+        except (TypeError, ValueError) as exc:
             raise SemanticaGraphUnavailableError(
-                f"semantica version mismatch: expected {SEMANTICA_REQUIRED_VERSION}, got {installed}"
+                f"semantica version mismatch: expected {SEMANTICA_REQUIRED_VERSION}.x, got {installed}"
+            ) from exc
+        if installed_series != required_series:
+            raise SemanticaGraphUnavailableError(
+                f"semantica version mismatch: expected {SEMANTICA_REQUIRED_VERSION}.x, got {installed}"
             )
         return installed
 
@@ -826,7 +835,9 @@ class SemanticaGraphAdapter:
         try:
             self._context_graph_class()
         except SemanticaGraphUnavailableError:
-            raise
+            # Align with readiness(): a missing or incompatible semantica is a
+            # degradation, not a crash, for the force=True capability checks.
+            return {"healthy": False, "error": "semantica_unavailable"}
         try:
             payload = self._read_payload()
             event_ids = self._trusted_learning_event_ids_from_payload(payload)
