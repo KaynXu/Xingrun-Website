@@ -260,6 +260,21 @@ function classCommentaryProviderFailureMessage(errorCode: string): string {
   return messages[errorCode] || '';
 }
 
+function classCommentaryGenerationValidationMessage(errorCode: string): string {
+  const messages: Record<string, string> = {
+    structured_feedback_invalid: '反馈结构校验失败, 本次额度占用已释放. 请重新生成.',
+    feedback_schema_mismatch: '模型返回的反馈格式版本不匹配, 本次额度占用已释放. 请重新生成.',
+    student_feedback_coverage_mismatch: '模型没有完整返回全部到课学生的反馈, 本次额度占用已释放. 请核对到课名单后重新生成.',
+    student_feedback_missing_skill_emoji: '至少一名学生的反馈没有遵循所选同事的表情风格, 本次额度占用已释放. 请重新生成.',
+    batch_feedback_missing_skill_emoji: '整班反馈没有遵循所选同事的表情风格, 本次额度占用已释放. 请重新生成.',
+    student_feedback_paragraph_count_invalid: '至少一名学生的反馈段落结构不符合质量要求, 本次额度占用已释放. 请重新生成.',
+    student_feedback_too_short: '至少一名学生的反馈过短, 本次额度占用已释放. 请重新生成.',
+    student_feedback_missing_next_action: '至少一名学生的反馈缺少可执行的下一步建议, 本次额度占用已释放. 请重新生成.',
+    student_feedback_generic: '至少一名学生的反馈过于笼统, 本次额度占用已释放. 请重新生成.',
+  };
+  return messages[errorCode] || '';
+}
+
 function getTaskErrorMessage(task: ClassCommentaryTask | null, errorMessage: string): string {
   if (errorMessage) {
     return errorMessage;
@@ -271,10 +286,8 @@ function getTaskErrorMessage(task: ClassCommentaryTask | null, errorMessage: str
     return task.transcription_error || '转写失败';
   }
   if (task.failure_stage === 'generation') {
-    if (task.generation_error === 'structured_feedback_invalid') {
-      return '反馈结构校验失败, 请重新生成';
-    }
-    return classCommentaryProviderFailureMessage(task.generation_error)
+    return classCommentaryGenerationValidationMessage(task.generation_error)
+      || classCommentaryProviderFailureMessage(task.generation_error)
       || task.generation_error
       || '生成失败';
   }
@@ -283,8 +296,11 @@ function getTaskErrorMessage(task: ClassCommentaryTask | null, errorMessage: str
 
 function getClassCommentaryGenerationErrorMessage(error: unknown): string {
   if (error instanceof ApiFetchError) {
-    if (error.payload?.error === 'structured_feedback_invalid') {
-      return '反馈结构校验失败, 请重新生成';
+    const validationMessage = classCommentaryGenerationValidationMessage(
+      error.payload?.error || '',
+    );
+    if (validationMessage) {
+      return validationMessage;
     }
     if (error.payload?.error === 'attending_student_ids is required') {
       return '请至少选择一名到课学生后重新生成';

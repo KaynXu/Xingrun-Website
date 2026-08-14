@@ -214,7 +214,7 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         self.assertEqual(payload["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
             payload["prompt_version"],
-            "class-commentary-student-feedback-batch-isolated-v5",
+            "class-commentary-student-feedback-batch-isolated-v6",
         )
         self.assertEqual(payload["student_run_progress"]["total"], 0)
         self.assertEqual(
@@ -466,7 +466,7 @@ class ClassCommentaryStudentMemoryV2ApiTest(unittest.TestCase):
         chat_request = generate.call_args.kwargs["chat_request"]
         self.assertEqual(
             chat_request["prompt_version"],
-            "class-commentary-student-feedback-batch-isolated-v5",
+            "class-commentary-student-feedback-batch-isolated-v6",
         )
         user_prompt = chat_request["messages"][1]["content"]
         current_facts = json.loads(
