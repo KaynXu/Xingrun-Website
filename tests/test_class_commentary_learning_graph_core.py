@@ -568,7 +568,13 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
         )
         result = self._run(
             server_hash_job,
-            self._extractor_for(extra_fields={"evidence_content_hash": ""}),
+            self._extractor_for(
+                extra_fields={
+                    "evidence_start_offset": 99,
+                    "evidence_end_offset": 100,
+                    "evidence_content_hash": "",
+                }
+            ),
         )
         self.assertEqual(result["status"], "extracted")
         with lesson_manager.get_conn() as conn:
