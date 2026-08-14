@@ -801,6 +801,11 @@ class ClassCommentaryMemoryService:
             client.delete(memory_id)
             memory_id = ""
         except Exception as exc:
+            logger.warning(
+                "class commentary memory healthcheck unavailable: %s",
+                type(exc).__name__,
+                exc_info=True,
+            )
             return {
                 "enabled": True,
                 "healthy": False,
@@ -812,5 +817,8 @@ class ClassCommentaryMemoryService:
                 try:
                     client.delete(memory_id)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "class commentary memory healthcheck probe cleanup failed",
+                        exc_info=True,
+                    )
         return {"enabled": True, "healthy": True, "status": "ready"}

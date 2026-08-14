@@ -328,7 +328,18 @@ def process_class_commentary_memory_extraction_job(
     try:
         dispatch_result = dispatcher(store=target_store, runtime_config=config)
     except Exception as exc:
+        logger.warning(
+            "class commentary memory dispatch failed after extraction job %s: %s",
+            job_id,
+            type(exc).__name__,
+        )
         dispatch_result = {"queued": False, "error_type": exc.__class__.__name__}
+    logger.info(
+        "class commentary memory extraction job %s finished: status=%s operations=%d",
+        job_id,
+        result["job"]["status"],
+        len(result.get("operations") or []),
+    )
     return {
         "enabled": True,
         "status": str(result["job"]["status"]),
@@ -896,6 +907,11 @@ def process_class_commentary_skill_candidate_build(
         except Exception:
             pass
         raise
+    logger.info(
+        "class commentary skill candidate build %s finished: status=%s",
+        build_id,
+        str((completed or {}).get("status") or "succeeded"),
+    )
     return {
         "enabled": True,
         "status": str((completed or {}).get("status") or "succeeded"),
@@ -1018,6 +1034,12 @@ def process_class_commentary_memory_operation(
         except Exception:
             pass
         raise
+    logger.info(
+        "class commentary memory operation %s applied: status=%s mem0_memory_id=%s",
+        operation_id,
+        str((completed or {}).get("status") or "applied"),
+        mem0_memory_id or "-",
+    )
     return {
         "enabled": True,
         "status": str((completed or {}).get("status") or "applied"),
@@ -1071,6 +1093,10 @@ def run_class_commentary_memory_reconciliation(
             now=now or datetime.now(timezone.utc),
         )
     except Exception as exc:
+        logger.warning(
+            "class commentary memory reconciliation could not schedule the next bucket: %s",
+            type(exc).__name__,
+        )
         scheduled = {"scheduled": False, "error_type": exc.__class__.__name__}
     active_rq_job_ids = _active_rq_job_ids(target_queue)
     reconciled = target_store.reconcile_class_commentary_memory_store(
@@ -1132,6 +1158,11 @@ def run_class_commentary_memory_reconciliation(
                 }
             )
         except Exception as exc:
+            logger.warning(
+                "class commentary batch generation %s resume failed: %s",
+                generation["id"],
+                type(exc).__name__,
+            )
             recovered_batch_generations.append(
                 {
                     "generation_id": int(generation["id"]),
@@ -1146,7 +1177,18 @@ def run_class_commentary_memory_reconciliation(
             runtime_config=config,
         )
     except Exception as exc:
+        logger.warning(
+            "class commentary memory dispatch failed during reconciliation: %s",
+            type(exc).__name__,
+        )
         dispatched = {"queued": False, "error_type": exc.__class__.__name__}
+    logger.info(
+        "class commentary memory reconciliation completed: recovered_candidates=%d recovered_student_runs=%d recovered_batch_generations=%d dispatch_errors=%d",
+        len(recovered_candidates),
+        len(recovered_student_runs),
+        len(recovered_batch_generations),
+        len(dispatched.get("errors") or []),
+    )
     return {
         "enabled": True,
         "status": "completed",

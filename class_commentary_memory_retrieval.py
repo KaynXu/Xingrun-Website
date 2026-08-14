@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Callable, Iterable, Mapping, Optional
 
 from class_commentary_memory import ClassCommentaryMemoryService
 from class_commentary_student_memory_v2 import build_student_memory_query
+
+logger = logging.getLogger(__name__)
 
 
 CLASS_COMMENTARY_MEMORY_MIN_CONFIDENCE = 0.7
@@ -107,6 +110,11 @@ def retrieve_class_commentary_memory_context(
             if item["student_id"] in live_ids and item["student_name"] in transcript
         ]
     if not organization_id or not skill_registry_id:
+        logger.warning(
+            "class commentary memory retrieval degraded: generation_scope_unavailable (org=%s skill=%s)",
+            organization_id,
+            skill_registry_id,
+        )
         return empty_class_commentary_memory_context(
             "generation_scope_unavailable",
             student_history_memory_mode=student_history_memory_mode,
@@ -130,6 +138,13 @@ def retrieve_class_commentary_memory_context(
                 )
                 student_candidates.extend((candidate, student) for candidate in candidates)
     except Exception as exc:
+        logger.warning(
+            "class commentary memory retrieval degraded (org=%s skill=%s): %s",
+            organization_id,
+            skill_registry_id,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return empty_class_commentary_memory_context(
             f"mem0_{type(exc).__name__}",
             student_history_memory_mode=student_history_memory_mode,
@@ -311,6 +326,14 @@ def retrieve_isolated_student_memory_context(
             subject_key=subject_key,
         )
     except Exception as exc:
+        logger.warning(
+            "class commentary isolated memory retrieval failed (org=%s skill=%s student=%s): %s",
+            organization_id,
+            skill_registry_id,
+            target_student_id,
+            type(exc).__name__,
+            exc_info=True,
+        )
         raise ClassCommentaryStudentMemoryRetrievalError(
             f"mem0_{type(exc).__name__}"
         ) from exc
