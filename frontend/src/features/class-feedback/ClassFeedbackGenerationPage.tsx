@@ -243,6 +243,23 @@ function getTaskProgress(task: ClassCommentaryTask | null, uploadProgress: numbe
   return 100;
 }
 
+function classCommentaryProviderFailureMessage(errorCode: string): string {
+  const messages: Record<string, string> = {
+    provider_configuration_invalid: '模型服务配置无效, 本次请求未发送. 请联系管理员检查配置.',
+    provider_rate_limited: '模型服务当前限流, 本次额度占用已释放. 请稍后重新生成.',
+    provider_timeout: '模型服务响应超时. 系统未自动重复调用, 本次额度占用已释放. 请重新生成.',
+    provider_unavailable: '模型服务连接暂不可用. 系统未自动重复调用, 本次额度占用已释放. 请重新生成.',
+    provider_request_rejected: '模型服务拒绝了本次请求. 本次额度占用已释放, 请联系管理员检查模型配置.',
+    provider_upstream_error: '模型服务上游异常. 系统未自动重复调用, 本次额度占用已释放. 请重新生成.',
+    provider_response_invalid: '模型服务返回了无法读取的响应. 本次额度占用已释放, 请重新生成.',
+    provider_request_failed: '模型服务调用失败. 系统未自动重复调用, 本次额度占用已释放. 请重新生成.',
+    provider_dispatch_interrupted: '模型调用期间任务中断. 为避免重复扣费, 系统未自动重发. 请重新生成.',
+    provider_dispatch_legacy_unknown: '旧版模型调用记录不完整. 为避免重复扣费, 系统未自动重发. 请重新生成.',
+    provider_result_unknown: '模型调用结果无法确认. 为避免重复扣费, 系统未自动重发. 请重新生成.',
+  };
+  return messages[errorCode] || '';
+}
+
 function getTaskErrorMessage(task: ClassCommentaryTask | null, errorMessage: string): string {
   if (errorMessage) {
     return errorMessage;
@@ -257,7 +274,9 @@ function getTaskErrorMessage(task: ClassCommentaryTask | null, errorMessage: str
     if (task.generation_error === 'structured_feedback_invalid') {
       return '反馈结构校验失败, 请重新生成';
     }
-    return task.generation_error || '生成失败';
+    return classCommentaryProviderFailureMessage(task.generation_error)
+      || task.generation_error
+      || '生成失败';
   }
   return '任务失败';
 }
@@ -284,7 +303,9 @@ function classCommentaryStudentGenerationFailureMessage(errorCode: string): stri
   if (errorCode === 'student_run_failed') {
     return '部分学生反馈生成失败, 已完成内容不会作为完整结果发布. 可安全重试失败项.';
   }
-  return errorCode || '学生反馈生成失败, 已完成内容不会作为完整结果发布.';
+  return classCommentaryProviderFailureMessage(errorCode)
+    || errorCode
+    || '学生反馈生成失败, 已完成内容不会作为完整结果发布.';
 }
 
 function formatClassCommentaryTime(value: string): string {
@@ -1443,6 +1464,18 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setSelectedGenerationId(String(nextGeneration.id));
       setFeedbackDraft(null);
       setLoadingGenerationId(null);
+      if (nextGeneration.status === 'failed') {
+        setFeedbackEditorText('');
+        setGenerationProgressError(
+          classCommentaryStudentGenerationFailureMessage(nextGeneration.error_code),
+        );
+        setRevisionPreview(null);
+        setExpandedStudentIds([]);
+        setCopiedStudentId(null);
+        setCopyNotice('');
+        setStudentFeedbackErrors({});
+        return;
+      }
       const nextEditor = createGenerationEditorState(
         savedTask.id,
         nextGeneration,

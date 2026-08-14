@@ -68,6 +68,7 @@ from class_commentary_batch_context import (
     build_batch_isolated_teacher_style_memories,
 )
 from class_commentary_memory_privacy import validate_class_commentary_memory_privacy
+from class_commentary_provider_errors import normalize_provider_failure_snapshot
 from class_commentary_student_memory_v2 import (
     build_student_evidence_assignment,
     canonical_hash as class_commentary_student_canonical_hash,
@@ -2462,6 +2463,8 @@ def _ensure_class_commentary_structured_feedback_schema(conn: sqlite3.Connection
                 "TEXT NOT NULL DEFAULT 'legacy_unknown'"
             ),
             "batch_provider_dispatch_started_at": "TEXT",
+            "batch_provider_failure_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+            "batch_provider_failure_hash": "TEXT NOT NULL DEFAULT ''",
             "batch_validation_snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
             "batch_validation_hash": "TEXT NOT NULL DEFAULT ''",
             "batch_charge_status": "TEXT NOT NULL DEFAULT 'pending'",
@@ -2733,6 +2736,8 @@ def _ensure_class_commentary_evolution_schema(conn: sqlite3.Connection) -> None:
             batch_response_hash TEXT NOT NULL DEFAULT '',
             batch_provider_dispatch_status TEXT NOT NULL DEFAULT 'legacy_unknown',
             batch_provider_dispatch_started_at TEXT,
+            batch_provider_failure_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            batch_provider_failure_hash TEXT NOT NULL DEFAULT '',
             batch_validation_snapshot_json TEXT NOT NULL DEFAULT '{}',
             batch_validation_hash TEXT NOT NULL DEFAULT '',
             batch_charge_status TEXT NOT NULL DEFAULT 'pending',
@@ -13585,6 +13590,30 @@ def get_class_commentary_batch_generation_response(generation_id: int) -> Option
     return response_snapshot
 
 
+def get_class_commentary_batch_provider_failure(
+    generation_id: int,
+) -> Optional[dict]:
+    with get_conn() as conn:
+        generation = conn.execute(
+            "SELECT * FROM class_commentary_generations WHERE id=?",
+            (int(generation_id),),
+        ).fetchone()
+    if not generation or not str(generation["batch_provider_failure_hash"] or ""):
+        return None
+    snapshot_json = str(
+        generation["batch_provider_failure_snapshot_json"] or ""
+    )
+    if _class_commentary_content_hash(snapshot_json) != str(
+        generation["batch_provider_failure_hash"] or ""
+    ):
+        raise ValueError("batch provider failure snapshot hash is invalid")
+    try:
+        snapshot = json.loads(snapshot_json)
+    except (TypeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError("batch provider failure snapshot is invalid") from exc
+    return normalize_provider_failure_snapshot(snapshot)
+
+
 def get_class_commentary_generation_credit_hold(generation_id: int) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute(
@@ -14232,8 +14261,23 @@ def fail_class_commentary_batch_generation_terminal(
     *,
     claim_token: str,
     error_code: str,
+    provider_failure: object = None,
 ) -> dict:
     normalized_error = str(error_code or "batch_generation_failed").strip()
+    provider_failure_json = "{}"
+    provider_failure_hash = ""
+    if provider_failure is not None:
+        normalized_provider_failure = normalize_provider_failure_snapshot(
+            provider_failure
+        )
+        if normalized_provider_failure["error_code"] != normalized_error:
+            raise ValueError("provider failure error code mismatch")
+        provider_failure_json = _class_commentary_canonical_json(
+            normalized_provider_failure
+        )
+        provider_failure_hash = _class_commentary_content_hash(
+            provider_failure_json
+        )
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         generation = conn.execute(
@@ -14275,12 +14319,20 @@ def fail_class_commentary_batch_generation_terminal(
             """
             UPDATE class_commentary_generations
             SET status='failed', error_code=?, completed_at=datetime('now','localtime'),
+                batch_provider_failure_snapshot_json=?,
+                batch_provider_failure_hash=?,
                 batch_claim_token=NULL, batch_claim_owner=NULL,
                 batch_claim_expires_at=NULL
             WHERE id=? AND status='generating'
               AND batch_claim_token=?
             """,
-            (normalized_error, int(generation_id), str(claim_token)),
+            (
+                normalized_error,
+                provider_failure_json,
+                provider_failure_hash,
+                int(generation_id),
+                str(claim_token),
+            ),
         )
         if conn.total_changes < 2:
             raise ClassCommentaryGenerationRequestConflict(

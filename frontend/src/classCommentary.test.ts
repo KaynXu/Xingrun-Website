@@ -830,6 +830,18 @@ test('fetchClassCommentaryGeneration normalizes the generation detail', async ()
     snapshot_completeness: 'complete',
     skill_id: 'teacher-style',
     generated_feedback_text: '第三版反馈',
+    provider_failure: {
+      schema_version: 'class_commentary.provider_failure.v1',
+      error_code: 'provider_timeout',
+      result_state: 'unknown',
+      exception_type: 'openai.APITimeoutError',
+      http_status: 0,
+      upstream_error_code: '',
+      provider_request_id: '',
+      local_request_id: 'class-commentary-generation-31',
+      retryable: true,
+      retry_after_seconds: 30,
+    },
   });
 
   const generation = await fetchClassCommentaryGeneration(9, 31);
@@ -841,6 +853,12 @@ test('fetchClassCommentaryGeneration normalizes the generation detail', async ()
   assert.equal(generation.status, 'succeeded');
   assert.equal(generation.skill_id, 'teacher-style');
   assert.equal(generation.generated_feedback_text, '第三版反馈');
+  assert.equal(generation.provider_failure?.error_code, 'provider_timeout');
+  assert.equal(generation.provider_failure?.result_state, 'unknown');
+  assert.equal(
+    generation.provider_failure?.local_request_id,
+    'class-commentary-generation-31',
+  );
 });
 
 test('fetchClassCommentaryFeedbackDraft unwraps and normalizes the saved draft', async () => {

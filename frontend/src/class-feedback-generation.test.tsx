@@ -226,15 +226,19 @@ test('supported structured feedback is editable while unsupported and invalid sc
 
 test('generation failures consume the complete envelope and localize reservation errors', () => {
   const generationErrorHelper = functionSource('getClassCommentaryGenerationErrorMessage', 'formatClassCommentaryTime');
+  const providerErrorHelper = functionSource('classCommentaryProviderFailureMessage', 'getTaskErrorMessage');
   const generationHandler = functionSource('handleGenerate', 'handleCopy');
 
   assertSourceMatches(generationHandler, /normalizeClassCommentaryTask\([\s\S]*normalizeClassCommentaryGeneration\(/, 'failed generation responses must normalize both task and generation records');
   assertSourceMatches(generationHandler, /setTask\(failedTask\);[\s\S]*setGenerations\([\s\S]*failedGeneration/, 'the complete failed envelope must replace the visible task and generation state');
+  assertSourceMatches(generationHandler, /nextGeneration\.status === 'failed'[\s\S]*setFeedbackEditorText\(''\)[\s\S]*setGenerationProgressError\([\s\S]*classCommentaryStudentGenerationFailureMessage/, 'HTTP 200 terminal failures must show the localized provider failure instead of opening an empty editor');
   assertSourceMatches(generationHandler, /setErrorMessage\(getClassCommentaryGenerationErrorMessage\(error\)\);/, 'generation errors must use the localized mapper');
   assertSourceMatches(generationErrorHelper, /structured_feedback_invalid[\s\S]*反馈结构校验失败, 请重新生成/, 'invalid structured output must keep its stable actionable message');
   assertSourceMatches(generationErrorHelper, /attending_student_ids is required[\s\S]*请至少选择一名到课学生后重新生成/, 'an empty explicit attendance request must stay localized');
   assertSourceMatches(generationErrorHelper, /student_feedback_no_eligible_students[\s\S]*没有可生成的到课学生, 请检查到课名单后重新生成/, 'an empty eligible scope must explain how to correct the attendance roster');
   assertSourceMatches(generationErrorHelper, /student_roster_name_ambiguous[\s\S]*到课名单存在无法区分的重名, 请调整到课名单后重新生成/, 'ambiguous roster names must explain how to correct the attendance scope');
+  assertSourceMatches(providerErrorHelper, /provider_timeout[\s\S]*系统未自动重复调用[\s\S]*本次额度占用已释放/, 'provider timeouts must explain the no-replay and released-hold safety behavior');
+  assertSourceMatches(providerErrorHelper, /provider_dispatch_interrupted[\s\S]*避免重复扣费[\s\S]*系统未自动重发/, 'interrupted provider dispatches must explain why automatic replay is blocked');
 });
 
 test('isolated generation polling publishes only terminal complete output and safely retries failed runs', () => {
