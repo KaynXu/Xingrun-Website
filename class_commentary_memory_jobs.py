@@ -58,16 +58,7 @@ def _rq_context() -> tuple[str, Optional[str]]:
 def _default_extractor(extraction_input: dict, config: Mapping[str, object]):
     return ai_processor.extract_class_commentary_memory_signals(
         extraction_input=extraction_input,
-        provider=str(config.get("class_commentary_provider") or config.get("provider") or ""),
-        model=str(config.get("class_commentary_model") or ""),
-        openai_api_key=str(
-            config.get("class_commentary_openai_api_key") or config.get("openai_api_key") or ""
-        ),
-        openai_base_url=str(
-            config.get("class_commentary_openai_base_url") or config.get("openai_base_url") or ""
-        ),
-        openai_headers=str(config.get("class_commentary_openai_headers") or ""),
-        include_usage=True,
+        **_class_commentary_ai_kwargs(config),
     )
 
 
