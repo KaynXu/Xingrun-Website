@@ -34,6 +34,7 @@ from config_runtime import get_runtime_config
 from class_commentary import (
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
     CLASS_COMMENTARY_SKILL_PACKAGE_MAX_TOTAL_BYTES,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
@@ -12737,7 +12738,10 @@ def _validate_class_commentary_generation_execution_contract(
             "eligible_student_ids",
             "official_course_roster",
         }
-        if prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+        if prompt_version in {
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+        }
         else {"class", "students", "transcript", "eligible_student_ids"}
     )
     expected_output_rules = "\n".join(
@@ -13005,6 +13009,7 @@ def reserve_class_commentary_generation(
             not in {
                 CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
                 CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
             }
         ):
             raise ValueError(
@@ -13115,6 +13120,7 @@ def reserve_class_commentary_generation(
                 if normalized_prompt_version not in {
                     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
                     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
                 }:
                     raise ValueError("batch isolated memory prompt version is invalid")
                 if not attending_roster_explicit:
@@ -13124,7 +13130,10 @@ def reserve_class_commentary_generation(
                 student_mention_matcher_version = (
                     CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
                     if normalized_prompt_version
-                    == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+                    in {
+                        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+                    }
                     else CLASS_COMMENTARY_ATTENDING_ROSTER_SCOPE_V1
                 )
                 eligible_student_ids = (
@@ -13855,8 +13864,33 @@ def fail_class_commentary_batch_generation_validation(
     *,
     claim_token: str,
     error_code: str = "structured_feedback_invalid",
+    validation_failure: object = None,
 ) -> dict:
     normalized_error = str(error_code or "structured_feedback_invalid").strip()
+    failure_payload = (
+        dict(validation_failure)
+        if isinstance(validation_failure, dict)
+        else {}
+    )
+    failure_snapshot = {
+        "status": "failed",
+        "error_code": normalized_error,
+        "student_id": (
+            int(failure_payload["student_id"])
+            if type(failure_payload.get("student_id")) is int
+            and int(failure_payload["student_id"]) > 0
+            else None
+        ),
+        "field": str(failure_payload.get("field") or ""),
+        "limit": (
+            int(failure_payload["limit"])
+            if type(failure_payload.get("limit")) is int
+            and int(failure_payload["limit"]) > 0
+            else None
+        ),
+    }
+    failure_json = _class_commentary_canonical_json(failure_snapshot)
+    failure_hash = _class_commentary_content_hash(failure_json)
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         generation = conn.execute(
@@ -13892,11 +13926,18 @@ def fail_class_commentary_batch_generation_validation(
             """
             UPDATE class_commentary_generations
             SET status='failed', error_code=?, completed_at=datetime('now','localtime'),
+                batch_validation_snapshot_json=?, batch_validation_hash=?,
                 batch_claim_token=NULL, batch_claim_owner=NULL,
                 batch_claim_expires_at=NULL
             WHERE id=? AND status='generating' AND batch_claim_token=?
             """,
-            (normalized_error, int(generation_id), str(claim_token)),
+            (
+                normalized_error,
+                failure_json,
+                failure_hash,
+                int(generation_id),
+                str(claim_token),
+            ),
         )
         conn.execute(
             """

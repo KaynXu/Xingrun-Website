@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, ValidationErro
 from class_commentary import (
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
     CLASS_COMMENTARY_ISOLATED_PROMPT_VERSION_V2,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION_V2,
@@ -631,6 +632,10 @@ def validate_class_commentary_structured_generation_contract(
             CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
             CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
         ),
+        (
+            CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+        ),
     }:
         if eligible_ids != list(names_by_id):
             raise ValueError("batch isolated feedback attending roster scope is invalid")
@@ -638,7 +643,10 @@ def validate_class_commentary_structured_generation_contract(
             raise ValueError(
                 "batch isolated feedback attending roster scope must be explicit"
             )
-        if prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5:
+        if prompt_version in {
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+        }:
             _parse_frozen_privacy_roster_names(
                 generation,
                 attending_names_by_id=names_by_id,
@@ -656,6 +664,7 @@ def validate_class_commentary_structured_generation_contract(
         in {
             CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
             CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
         }
         else CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_DISABLED_V1
     )
@@ -1202,7 +1211,10 @@ def canonicalize_class_commentary_structured_feedback(
                 attending_names_by_id=names_by_id,
             )
             if str(generation.get("prompt_version") or "")
-            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+            in {
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+            }
             else names_by_id
         )
     except (TypeError, ValueError, json.JSONDecodeError, RecursionError) as exc:

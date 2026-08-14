@@ -7,6 +7,7 @@ from typing import Optional
 from class_commentary import (
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
     CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
     CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3,
     build_class_commentary_chat_request,
 )
@@ -446,7 +447,10 @@ def build_batch_generation_execution_snapshot(
                 for item in frozen["privacy_roster"]
             ]
             if prompt_version
-            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+            in {
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+            }
             else None
         ),
     )
@@ -483,11 +487,13 @@ def build_batch_isolated_memory_context(
     if prompt_version and prompt_version not in {
         CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
         CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
     }:
         raise ClassCommentaryBatchContextError("batch_context_snapshot_invalid")
-    use_model_attribution = (
-        prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
-    )
+    use_model_attribution = prompt_version in {
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+    }
     assignment = None
     if not use_model_attribution:
         assignment = (
@@ -595,7 +601,10 @@ def _validate_current_evidence_snapshot(
     prompt_version = str(generation.get("prompt_version") or "")
     expected_matcher_version = (
         CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V2
-        if prompt_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+        if prompt_version in {
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+        }
         else CLASS_COMMENTARY_STUDENT_EVIDENCE_MATCHER_V3
     )
     expected_attribution = (

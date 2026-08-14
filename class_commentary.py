@@ -35,6 +35,9 @@ CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4 = (
 CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5 = (
     "class-commentary-student-feedback-batch-isolated-v5"
 )
+CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6 = (
+    "class-commentary-student-feedback-batch-isolated-v6"
+)
 CLASS_COMMENTARY_STUDENT_HISTORY_MEMORY_BATCH_ISOLATED_V3 = "batch_isolated_v3"
 CLASS_COMMENTARY_SKILL_PACKAGE_MAX_MARKDOWN_FILES = 64
 CLASS_COMMENTARY_SKILL_PACKAGE_MAX_FILE_BYTES = 256 * 1024
@@ -226,6 +229,15 @@ CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V5 = (
     "For each output item, use only the matching student_id partition in STUDENT_CONTEXTS_BY_ID for historical memory and learning graph; never use another student's history or learning graph.",
     "Treat student_history_memories and learning_graph only as historical reference. Do not describe them as observed today unless the uniquely mapped transcript segment independently supports it.",
 )
+CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V6 = (
+    CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V5
+    + " When ACTIVE_SKILL uses emojis as a normal or frequent part of its voice, preserving that emoji system in every feedback item is a mandatory output constraint, including corrective feedback. Before returning JSON, privately check every item and repair any item that has no exact matching emoji token from ACTIVE_SKILL."
+)
+CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V6 = (
+    *CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V5,
+    "When ACTIVE_SKILL uses emojis normally or frequently, every feedback_text must contain at least one exact emoji token from ACTIVE_SKILL, including feedback that is mainly corrective; choose a token whose meaning fits the sentence.",
+    "Before returning JSON, privately verify every eligible student item against the emoji rule and repair every zero-token item. This final per-item check is mandatory and must not be skipped because the response is long or structured.",
+)
 
 
 def get_class_commentary_structured_prompt_contract(
@@ -256,6 +268,11 @@ def get_class_commentary_structured_prompt_contract(
         return (
             CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V5,
             CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V5,
+        )
+    if normalized_version == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6:
+        return (
+            CLASS_COMMENTARY_BATCH_ISOLATED_SYSTEM_PROMPT_V6,
+            CLASS_COMMENTARY_BATCH_ISOLATED_OUTPUT_RULES_V6,
         )
     raise ValueError("structured class commentary prompt version is invalid")
 
@@ -886,6 +903,7 @@ def build_class_commentary_chat_request(
         batch_prompt_versions = {
             CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V4,
             CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
         }
         batch_context_mode = (
             student_history_memory_mode
@@ -905,12 +923,18 @@ def build_class_commentary_chat_request(
             or (not batch_context_mode and student_contexts_by_id)
             or (
                 normalized_prompt_version
-                == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+                in {
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+                }
                 and not official_course_roster
             )
             or (
                 normalized_prompt_version
-                != CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+                not in {
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+                }
                 and official_course_roster
             )
             or (
@@ -944,7 +968,10 @@ def build_class_commentary_chat_request(
             current_task_facts.pop("transcript", None)
         if (
             normalized_prompt_version
-            == CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+            in {
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+                CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+            }
         ):
             normalized_course_roster = sanitize_class_commentary_roster(
                 official_course_roster or []
