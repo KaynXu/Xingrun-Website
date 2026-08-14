@@ -535,7 +535,7 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
             )
         self.assertEqual(counts, (1, 0, 0))
 
-    def test_server_identity_and_exact_evidence_fail_closed(self):
+    def test_server_identity_exact_evidence_and_hash_ownership(self):
         text = "二次函数图像目前较薄弱."
         malicious_job = self._job(
             revision_id=51,
@@ -560,20 +560,23 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
                 mismatch_job,
                 self._extractor_for(quote_override="伪造的证据"),
             )
-        missing_hash_job = self._job(
+        server_hash_job = self._job(
             revision_id=53,
             revision_no=3,
             feedback_text=text,
             confirmed_at="2026-08-11T12:00:00Z",
         )
-        with self.assertRaisesRegex(ValueError, "evidence content hash mismatch"):
-            self._run(
-                missing_hash_job,
-                self._extractor_for(extra_fields={"evidence_content_hash": ""}),
-            )
+        result = self._run(
+            server_hash_job,
+            self._extractor_for(extra_fields={"evidence_content_hash": ""}),
+        )
+        self.assertEqual(result["status"], "extracted")
         with lesson_manager.get_conn() as conn:
             event_count = conn.execute(
                 "SELECT COUNT(*) FROM class_commentary_student_learning_events"
+            ).fetchone()[0]
+            evidence_hash = conn.execute(
+                "SELECT content_hash FROM class_commentary_learning_evidence"
             ).fetchone()[0]
             statuses = [
                 row["status"]
@@ -581,8 +584,9 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
                     "SELECT status FROM class_commentary_graph_extraction_jobs ORDER BY id"
                 )
             ]
-        self.assertEqual(event_count, 0)
-        self.assertEqual(statuses, ["retry_wait", "retry_wait", "retry_wait"])
+        self.assertEqual(event_count, 1)
+        self.assertEqual(evidence_hash, hashlib.sha256(text.encode()).hexdigest())
+        self.assertEqual(statuses, ["retry_wait", "retry_wait", "extracted"])
 
     def test_temporal_projection_supersession_causality_and_idempotent_sync(self):
         with lesson_manager.get_conn() as conn:

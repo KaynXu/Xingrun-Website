@@ -11,6 +11,7 @@ import config_runtime
 from class_commentary_learning_graph import (
     GRAPH_EVENT_SCHEMA_VERSION,
     LearningGraphSnapshotIntegrityError,
+    content_hash,
 )
 from class_commentary_semantica import SemanticaGraphAdapter
 
@@ -23,7 +24,6 @@ _CANDIDATE_FIELDS = {
     "evidence_quote",
     "evidence_start_offset",
     "evidence_end_offset",
-    "evidence_content_hash",
     "teaching_methods",
     "next_steps",
     "teaching_method_causal_supported",
@@ -35,7 +35,12 @@ _CAUSAL_EVIDENCE_FIELDS = {
     "evidence_quote",
     "evidence_start_offset",
     "evidence_end_offset",
-    "evidence_content_hash",
+}
+
+_EVIDENCE_HASH_FIELD = "evidence_content_hash"
+_PERSISTED_CANDIDATE_FIELDS = _CANDIDATE_FIELDS | {_EVIDENCE_HASH_FIELD}
+_PERSISTED_CAUSAL_EVIDENCE_FIELDS = _CAUSAL_EVIDENCE_FIELDS | {
+    _EVIDENCE_HASH_FIELD
 }
 
 
@@ -110,7 +115,10 @@ def _strict_candidates(payload: object) -> list[dict]:
     for raw_item in raw_items:
         if hasattr(raw_item, "model_dump"):
             raw_item = raw_item.model_dump(mode="json")
-        if not isinstance(raw_item, Mapping) or set(raw_item) != _CANDIDATE_FIELDS:
+        if not isinstance(raw_item, Mapping) or frozenset(raw_item) not in {
+            frozenset(_CANDIDATE_FIELDS),
+            frozenset(_PERSISTED_CANDIDATE_FIELDS),
+        }:
             raise ValueError("learning graph extractor item contract mismatch")
         knowledge_point_key = raw_item.get("knowledge_point_key")
         unmapped_candidate = raw_item.get("unmapped_candidate")
@@ -126,13 +134,31 @@ def _strict_candidates(payload: object) -> list[dict]:
             raise ValueError("learning graph extractor causal flag is invalid")
         causal_evidence = raw_item.get("teaching_method_causal_evidence")
         if not isinstance(causal_evidence, list) or any(
-            not isinstance(item, Mapping) or set(item) != _CAUSAL_EVIDENCE_FIELDS
+            not isinstance(item, Mapping)
+            or frozenset(item)
+            not in {
+                frozenset(_CAUSAL_EVIDENCE_FIELDS),
+                frozenset(_PERSISTED_CAUSAL_EVIDENCE_FIELDS),
+            }
             for item in causal_evidence
         ):
             raise ValueError("learning graph extractor causal evidence is invalid")
         if not raw_item.get("teaching_method_causal_supported") and causal_evidence:
             raise ValueError("learning graph extractor causal evidence is inconsistent")
-        candidates.append(dict(raw_item))
+        normalized_item = dict(raw_item)
+        normalized_item[_EVIDENCE_HASH_FIELD] = content_hash(
+            str(normalized_item.get("evidence_quote") or "")
+        )
+        normalized_item["teaching_method_causal_evidence"] = [
+            {
+                **dict(item),
+                _EVIDENCE_HASH_FIELD: content_hash(
+                    str(item.get("evidence_quote") or "")
+                ),
+            }
+            for item in causal_evidence
+        ]
+        candidates.append(normalized_item)
     return candidates
 
 
