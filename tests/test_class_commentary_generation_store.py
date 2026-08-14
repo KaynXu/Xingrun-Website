@@ -1436,6 +1436,58 @@ class ClassCommentaryGenerationStoreTest(unittest.TestCase):
             failed["batch_provider_failure_snapshot_json"],
         )
 
+    def test_batch_validation_failure_snapshot_is_specific_hashed_and_safe(self):
+        generation = self._reserve_structured(
+            "batch-validation-failure-snapshot"
+        )
+        claimed = lesson_manager.claim_class_commentary_batch_generation(
+            generation["id"],
+            claim_owner="validation-failure-worker",
+        )
+
+        failed = lesson_manager.fail_class_commentary_batch_generation_validation(
+            generation["id"],
+            claim_token=str(claimed["batch_claim_token"]),
+            error_code="student_feedback_missing_skill_emoji",
+            validation_failure={
+                "error_code": "student_feedback_missing_skill_emoji",
+                "student_id": self.roster[0]["student_id"],
+                "field": "feedback_text",
+                "limit": 1,
+                "reason": "must not be persisted",
+            },
+        )
+        snapshot = json.loads(failed["batch_validation_snapshot_json"])
+        hold = lesson_manager.get_class_commentary_generation_credit_hold(
+            generation["id"]
+        )
+
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(
+            failed["error_code"], "student_feedback_missing_skill_emoji"
+        )
+        self.assertEqual(hold["status"], "released")
+        self.assertEqual(
+            snapshot,
+            {
+                "status": "failed",
+                "error_code": "student_feedback_missing_skill_emoji",
+                "student_id": self.roster[0]["student_id"],
+                "field": "feedback_text",
+                "limit": 1,
+            },
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                failed["batch_validation_snapshot_json"].encode("utf-8")
+            ).hexdigest(),
+            failed["batch_validation_hash"],
+        )
+        self.assertNotIn(
+            "must not be persisted",
+            failed["batch_validation_snapshot_json"],
+        )
+
     def test_generic_failure_cannot_discard_ready_batch_snapshot(self):
         ready_generation = self._reserve_structured(
             "generic-fail-ready-batch-snapshot"

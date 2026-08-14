@@ -348,15 +348,33 @@ def process_class_commentary_batch_generation(
             "generation": completed,
         }
     except ClassCommentaryStructuredFeedbackValidationError as exc:
+        error_code = str(exc.code or "structured_feedback_invalid")
+        validation_failure = {
+            "error_code": error_code,
+            "student_id": exc.student_id,
+            "field": str(exc.field or ""),
+            "limit": exc.limit,
+        }
+        logger.warning(
+            "class commentary batch validation failed "
+            "generation_id=%s error_code=%s student_id=%s field=%s limit=%s",
+            int(generation_id),
+            error_code,
+            exc.student_id,
+            str(exc.field or ""),
+            exc.limit,
+        )
         failed = target_store.fail_class_commentary_batch_generation_validation(
             int(generation_id),
             claim_token=claim_token,
-            error_code="structured_feedback_invalid",
+            error_code=error_code,
+            validation_failure=validation_failure,
         )
         return {
             "status": str(failed.get("status") or "failed"),
             "generation_id": int(generation_id),
-            "error_code": "structured_feedback_invalid",
+            "error_code": error_code,
+            "validation_failure": validation_failure,
         }
     except CreditBalanceError:
         target_store.release_class_commentary_batch_generation_claim(

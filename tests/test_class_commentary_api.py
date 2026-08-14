@@ -18,7 +18,7 @@ import config_runtime
 import lesson_manager
 import class_commentary_batch_context
 from class_commentary import (
-    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
     CLASS_COMMENTARY_STRUCTURED_PROMPT_VERSION,
     build_class_commentary_chat_request,
 )
@@ -1082,7 +1082,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
             payload["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
         )
 
         saved = lesson_manager.get_class_commentary_generation(payload["generation_id"])
@@ -1092,11 +1092,11 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(saved["attending_roster_explicit"], 1)
         self.assertEqual(
             saved["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
         )
         self.assertEqual(
             json.loads(saved["prompt_payload_snapshot_json"])["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
         )
         self.assertEqual(json.loads(saved["eligible_student_ids_json"]), eligible_ids)
         saved_roster = json.loads(saved["attending_roster_snapshot_json"])
@@ -1327,9 +1327,12 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
         payload = response.get_json()
-        self.assertEqual(payload["error"], "structured_feedback_invalid")
+        self.assertEqual(payload["error"], "student_feedback_coverage_mismatch")
         self.assertEqual(payload["generation_status"], "failed")
-        self.assertEqual(payload["generation"]["error_code"], "structured_feedback_invalid")
+        self.assertEqual(
+            payload["generation"]["error_code"],
+            "student_feedback_coverage_mismatch",
+        )
         self.assertEqual(payload["generation"]["generated_feedback_text"], "")
         self.assertEqual(payload["generation"]["student_feedback_items"], [])
         self.assertEqual(payload["generation"]["derived_feedback_text"], "")
@@ -1337,13 +1340,16 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
 
         saved = lesson_manager.get_class_commentary_generation(payload["generation_id"])
         self.assertEqual(saved["status"], "failed")
-        self.assertEqual(saved["error_code"], "structured_feedback_invalid")
+        self.assertEqual(saved["error_code"], "student_feedback_coverage_mismatch")
         self.assertEqual(saved["structured_feedback_json"], "")
         self.assertEqual(saved["structured_feedback_hash"], "")
         self.assertEqual(saved["generated_feedback_text"], "")
         self.assertNotIn(raw_model_output, json.dumps(saved, ensure_ascii=False))
         failed_task = lesson_manager.get_class_commentary_task(task["id"])
-        self.assertEqual(failed_task["generation_error"], "structured_feedback_invalid")
+        self.assertEqual(
+            failed_task["generation_error"],
+            "student_feedback_coverage_mismatch",
+        )
         self.assertNotIn(raw_model_output, json.dumps(failed_task, ensure_ascii=False))
 
     def test_generate_requires_request_id_and_is_idempotent_from_registry_snapshot(self):
@@ -1443,7 +1449,7 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(saved["student_history_memory_mode"], "batch_isolated_v3")
         self.assertEqual(
             saved["prompt_version"],
-            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+            CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
         )
 
     def test_batch_charge_retry_reuses_persisted_response_without_provider_recall(self):

@@ -323,7 +323,7 @@ from lesson_manager import (
 )
 from ai_processor import generate_class_commentary_feedback, parse_consultation_batch_text, polish_class_commentary_transcript, polish_review_plan_transcript, transcribe_audio
 from class_commentary import (
-    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5,
+    CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
     CLASS_COMMENTARY_PROMPT_VERSION,
     CLASS_COMMENTARY_TEMPERATURE,
     list_colleague_skills,
@@ -1181,8 +1181,10 @@ def _resume_class_commentary_batch_generation(
     if refreshed is None:
         raise ValueError("generation not found")
     error_code = str(result.get("error_code") or "")
-    if error_code == "structured_feedback_invalid" or error_code.startswith(
-        "student_feedback_"
+    if (
+        error_code in {"structured_feedback_invalid", "feedback_schema_mismatch"}
+        or error_code.startswith("student_feedback_")
+        or error_code.startswith("batch_feedback_")
     ):
         raise ClassCommentaryStructuredFeedbackValidationError(error_code)
     return refreshed
@@ -11271,7 +11273,7 @@ def api_class_commentary_task_generate(task_id: int):
     chat_provider = _class_commentary_ai_provider_name(fallback=_default_ai_provider_name())
     chat_model = _class_commentary_chat_model_name(chat_provider, fallback_model=_default_chat_model_name())
     prompt_version = (
-        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V5
+        CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6
         if structured_feedback_enabled
         else CLASS_COMMENTARY_PROMPT_VERSION
     )
@@ -11404,7 +11406,7 @@ def api_class_commentary_task_generate(task_id: int):
         failed_generation = get_class_commentary_generation(int(generation["id"]))
         failed_task = get_class_commentary_task(int(task["id"]))
         return jsonify({
-            "error": "structured_feedback_invalid",
+            "error": str(exc.code or "structured_feedback_invalid"),
             "task": _serialize_class_commentary_task_for_response(
                 failed_task,
                 include_private=True,

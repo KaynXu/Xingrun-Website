@@ -986,6 +986,44 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("[STUDENT_CONTEXTS_BY_ID]", user_prompt)
         self.assertIn('"verified_fragments": []', user_prompt)
 
+    def test_batch_v6_prompt_requires_a_final_per_student_emoji_check(self):
+        request_payload = class_commentary.build_class_commentary_chat_request(
+            class_record={"id": 7, "name": "数学七年级四班"},
+            students=[{"id": 1, "name": "刘鹏鹏"}],
+            official_course_roster=[{"id": 1, "name": "刘鹏鹏"}],
+            transcript_text="刘鹏鹏今天移项步骤更清楚.",
+            skill={
+                "id": "teacher-a",
+                "name": "Teacher A",
+                "content": "常用表情: [强] [抱拳].",
+            },
+            teacher_style_memories=[],
+            student_history_memories=[],
+            feedback_schema_version="class_commentary.student_feedback.v1",
+            eligible_student_ids=[1],
+            prompt_version=(
+                class_commentary.CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6
+            ),
+            response_format={"type": "json_object"},
+            student_history_memory_mode="batch_isolated_v3",
+            student_contexts_by_id=[{"student_id": 1}],
+        )
+
+        system_prompt = request_payload["messages"][0]["content"]
+        output_rules = request_payload["messages"][1]["content"].split(
+            "[OUTPUT_RULES]\n", 1
+        )[1]
+
+        self.assertEqual(
+            request_payload["prompt_version"],
+            class_commentary.CLASS_COMMENTARY_BATCH_ISOLATED_PROMPT_VERSION_V6,
+        )
+        self.assertIn("mandatory output constraint", system_prompt)
+        self.assertIn("every feedback_text", output_rules)
+        self.assertIn("exact emoji token from ACTIVE_SKILL", output_rules)
+        self.assertIn("privately verify every eligible student item", output_rules)
+        self.assertIn("repair every zero-token item", output_rules)
+
     def test_structured_prompt_rejects_unknown_prompt_version(self):
         with self.assertRaisesRegex(ValueError, "prompt version is invalid"):
             class_commentary.build_class_commentary_chat_request(

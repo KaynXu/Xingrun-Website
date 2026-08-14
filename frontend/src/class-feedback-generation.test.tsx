@@ -221,19 +221,21 @@ test('supported structured feedback is editable while unsupported and invalid sc
   assertSourceMatches(feedbackCard, /readOnly=\{Boolean\(revisionPreview\) \|\| isTaskReadOnly \|\| feedbackSchemaReadOnly\}/, 'compatibility text must remain selectable without becoming editable');
   assertSourceMatches(source, /当前版本暂不支持编辑, 可查看和复制现有内容\./, 'unsupported feedback needs an actionable notice');
   assertSourceMatches(source, /!nextEditor\.feedbackText && !generationDetail\.feedback_schema_version/, 'structured nonterminal generations must not inherit another generation text');
-  assertSourceMatches(source, /反馈结构校验失败, 请重新生成/, 'invalid structured generation errors must be actionable');
+  assertSourceMatches(source, /反馈结构校验失败[\s\S]*本次额度占用已释放[\s\S]*请重新生成/, 'invalid structured generation errors must be actionable');
 });
 
 test('generation failures consume the complete envelope and localize reservation errors', () => {
   const generationErrorHelper = functionSource('getClassCommentaryGenerationErrorMessage', 'formatClassCommentaryTime');
-  const providerErrorHelper = functionSource('classCommentaryProviderFailureMessage', 'getTaskErrorMessage');
+  const providerErrorHelper = functionSource('classCommentaryProviderFailureMessage', 'classCommentaryGenerationValidationMessage');
+  const validationErrorHelper = functionSource('classCommentaryGenerationValidationMessage', 'getTaskErrorMessage');
   const generationHandler = functionSource('handleGenerate', 'handleCopy');
 
   assertSourceMatches(generationHandler, /normalizeClassCommentaryTask\([\s\S]*normalizeClassCommentaryGeneration\(/, 'failed generation responses must normalize both task and generation records');
   assertSourceMatches(generationHandler, /setTask\(failedTask\);[\s\S]*setGenerations\([\s\S]*failedGeneration/, 'the complete failed envelope must replace the visible task and generation state');
   assertSourceMatches(generationHandler, /nextGeneration\.status === 'failed'[\s\S]*setFeedbackEditorText\(''\)[\s\S]*setGenerationProgressError\([\s\S]*classCommentaryStudentGenerationFailureMessage/, 'HTTP 200 terminal failures must show the localized provider failure instead of opening an empty editor');
   assertSourceMatches(generationHandler, /setErrorMessage\(getClassCommentaryGenerationErrorMessage\(error\)\);/, 'generation errors must use the localized mapper');
-  assertSourceMatches(generationErrorHelper, /structured_feedback_invalid[\s\S]*反馈结构校验失败, 请重新生成/, 'invalid structured output must keep its stable actionable message');
+  assertSourceMatches(validationErrorHelper, /structured_feedback_invalid[\s\S]*反馈结构校验失败[\s\S]*本次额度占用已释放[\s\S]*请重新生成/, 'invalid structured output must keep its stable actionable message');
+  assertSourceMatches(validationErrorHelper, /student_feedback_missing_skill_emoji[\s\S]*没有遵循所选同事的表情风格[\s\S]*本次额度占用已释放/, 'Skill emoji failures must expose the real quality-gate reason');
   assertSourceMatches(generationErrorHelper, /attending_student_ids is required[\s\S]*请至少选择一名到课学生后重新生成/, 'an empty explicit attendance request must stay localized');
   assertSourceMatches(generationErrorHelper, /student_feedback_no_eligible_students[\s\S]*没有可生成的到课学生, 请检查到课名单后重新生成/, 'an empty eligible scope must explain how to correct the attendance roster');
   assertSourceMatches(generationErrorHelper, /student_roster_name_ambiguous[\s\S]*到课名单存在无法区分的重名, 请调整到课名单后重新生成/, 'ambiguous roster names must explain how to correct the attendance scope');

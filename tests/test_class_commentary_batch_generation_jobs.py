@@ -11,6 +11,9 @@ from class_commentary_batch_generation_jobs import (
     _default_generator,
     process_class_commentary_batch_generation,
 )
+from class_commentary_feedback_schema import (
+    ClassCommentaryStructuredFeedbackValidationError,
+)
 
 
 def _canonical_json(value: object) -> str:
@@ -83,6 +86,7 @@ class FakeBatchGenerationStore:
         self.terminal_failure_calls: list[str] = []
         self.terminal_failure_snapshots: list[dict | None] = []
         self.validation_failure_calls: list[str] = []
+        self.validation_failure_snapshots: list[dict | None] = []
         self.persist_raises_after_write = False
         self.charge_raises_after_settlement = False
         self.complete_failures = 0
@@ -266,9 +270,11 @@ class FakeBatchGenerationStore:
         *,
         claim_token: str,
         error_code: str,
+        validation_failure: object = None,
     ) -> dict:
         self._assert_current_claim(generation_id, claim_token)
         self.validation_failure_calls.append(error_code)
+        self.validation_failure_snapshots.append(copy.deepcopy(validation_failure))
         self.hold["status"] = "released"
         self.generation["status"] = "failed"
         self.generation["error_code"] = error_code
@@ -486,6 +492,43 @@ class ClassCommentaryBatchGenerationJobsTest(unittest.TestCase):
             "builtins.TimeoutError",
         )
         self.assertEqual(store.release_calls, [])
+
+    def test_validation_failure_preserves_specific_safe_diagnostics(self):
+        store = FakeBatchGenerationStore()
+
+        def reject_response(_generation_id: int, *, claim_token: str) -> dict:
+            store._assert_current_claim(store.generation["id"], claim_token)
+            raise ClassCommentaryStructuredFeedbackValidationError(
+                "student_feedback_missing_skill_emoji",
+                student_id=23,
+                field="feedback_text",
+                limit=1,
+            )
+
+        store.validate_class_commentary_batch_generation_response = reject_response
+        result = self._run(
+            store,
+            generator=lambda **_kwargs: self._provider_response(),
+            charge_finalizer=store.finalize_charge,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(
+            result["error_code"], "student_feedback_missing_skill_emoji"
+        )
+        self.assertEqual(store.hold["status"], "released")
+        self.assertEqual(store.charge_calls, [])
+        self.assertEqual(
+            store.validation_failure_snapshots,
+            [
+                {
+                    "error_code": "student_feedback_missing_skill_emoji",
+                    "student_id": 23,
+                    "field": "feedback_text",
+                    "limit": 1,
+                }
+            ],
+        )
 
     def test_started_dispatch_without_response_never_calls_provider_again(self):
         store = FakeBatchGenerationStore(dispatch_status="started")
