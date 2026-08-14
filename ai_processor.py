@@ -2597,12 +2597,13 @@ def extract_class_commentary_learning_events(
         "lesson, task, generation, revision, or teacher identity. observed_state must be one of unknown, weak, "
         "developing, secure, mastered. reported_trend must be new_observation, regressed, stable, or improved. "
         "Every item must include an exact non-empty evidence_quote copied from feedback_text, zero-based "
-        "evidence_start_offset, exclusive evidence_end_offset, and SHA-256 evidence_content_hash. "
+        "evidence_start_offset, and exclusive evidence_end_offset. Do not calculate or return evidence hashes; "
+        "the server derives them after validating the exact quote and offsets. "
         "teaching_methods and next_steps must contain only exact substrings explicitly stated in feedback_text. "
         "teaching_method_causal_supported may be true only when the feedback explicitly says that a named "
         "method caused the observed state or change. When true, teaching_method_causal_evidence must contain "
         "one object per supported method with method_text plus an exact non-empty evidence_quote, zero-based "
-        "offsets, and SHA-256 hash for that causal sentence. Otherwise return false and an empty causal evidence "
+        "offsets for that causal sentence. Otherwise return false and an empty causal evidence "
         "list. Do not infer causality from co-occurrence. Do not output "
         "state_before; the server derives prior state from canonical history."
     )
@@ -2621,7 +2622,6 @@ def extract_class_commentary_learning_events(
                 "evidence_quote",
                 "evidence_start_offset",
                 "evidence_end_offset",
-                "evidence_content_hash",
                 "teaching_methods",
                 "next_steps",
                 "teaching_method_causal_supported",
