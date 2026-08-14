@@ -283,6 +283,12 @@ def _loads_class_commentary_learning_event_json(raw: str | None) -> object:
         return envelopes[0]
 
 
+def _class_commentary_json_mode_input(payload: dict) -> dict:
+    outbound = dict(payload)
+    outbound["_response_format"] = "json_object"
+    return outbound
+
+
 _LOCAL_WHISPER_MODEL = None
 _LOCAL_WHISPER_MODEL_LOCK = threading.Lock()
 _LOCAL_WHISPER_MODEL_NAME = "base"
@@ -2541,7 +2547,11 @@ def extract_class_commentary_memory_signals(
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": json.dumps(extraction_input, ensure_ascii=False, sort_keys=True),
+                "content": json.dumps(
+                    _class_commentary_json_mode_input(extraction_input),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
             },
         ],
         temperature=0,
@@ -2676,7 +2686,11 @@ def generate_class_commentary_skill_candidate(
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": json.dumps(candidate_input, ensure_ascii=False, sort_keys=True),
+                "content": json.dumps(
+                    _class_commentary_json_mode_input(candidate_input),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
             },
         ],
         temperature=0,
@@ -2723,7 +2737,11 @@ def evaluate_class_commentary_skill_candidate_replays(
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": json.dumps(evaluation_input, ensure_ascii=False, sort_keys=True),
+                "content": json.dumps(
+                    _class_commentary_json_mode_input(evaluation_input),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
             },
         ],
         temperature=0,
