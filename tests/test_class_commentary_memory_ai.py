@@ -59,6 +59,10 @@ class ClassCommentaryMemoryAiTest(unittest.TestCase):
         self.assertIn("valid json object", captured["messages"][0]["content"])
         self.assertEqual(captured["response_format"], {"type": "json_object"})
         self.assertEqual(captured["timeout"], 45)
+        self.assertEqual(
+            json.loads(captured["messages"][1]["content"])["schema"]["response_format"],
+            "json_object",
+        )
         get_client.assert_called_once_with(
             "openai", "", "", "", max_retries=0
         )
