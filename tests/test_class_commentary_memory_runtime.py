@@ -25,6 +25,7 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
         self.assertEqual(cfg["mem0_style_limit"], 8)
         self.assertEqual(cfg["mem0_student_limit"], 5)
         self.assertEqual(cfg["mem0_context_char_limit"], 3000)
+        self.assertEqual(cfg["mem0_request_timeout_seconds"], 30)
 
     def test_memory_runtime_uses_the_shared_environment_contract(self):
         environment = {
@@ -47,6 +48,7 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
             "XR_MEM0_STYLE_LIMIT": "9",
             "XR_MEM0_STUDENT_LIMIT": "6",
             "XR_MEM0_CONTEXT_CHAR_LIMIT": "3600",
+            "XR_MEM0_REQUEST_TIMEOUT_SECONDS": "45",
             "XR_SKILL_EVOLUTION_MIN_EFFECTIVE_TASKS": "7",
             "XR_SKILL_EVOLUTION_MIN_SUPPORT_TASKS": "4",
             "XR_SKILL_EVOLUTION_BUILD_TIMEOUT": "360",
@@ -76,6 +78,7 @@ class ClassCommentaryMemoryRuntimeTest(unittest.TestCase):
         self.assertEqual(cfg["mem0_style_limit"], 9)
         self.assertEqual(cfg["mem0_student_limit"], 6)
         self.assertEqual(cfg["mem0_context_char_limit"], 3600)
+        self.assertEqual(cfg["mem0_request_timeout_seconds"], 45)
         self.assertEqual(cfg["skill_evolution_min_effective_tasks"], 7)
         self.assertEqual(cfg["skill_evolution_min_support_tasks"], 4)
         self.assertEqual(cfg["skill_evolution_build_timeout"], 360)

@@ -62,6 +62,7 @@ ENV_VAR_MAP = {
     "mem0_style_limit": "XR_MEM0_STYLE_LIMIT",
     "mem0_student_limit": "XR_MEM0_STUDENT_LIMIT",
     "mem0_context_char_limit": "XR_MEM0_CONTEXT_CHAR_LIMIT",
+    "mem0_request_timeout_seconds": "XR_MEM0_REQUEST_TIMEOUT_SECONDS",
     "skill_evolution_min_effective_tasks": "XR_SKILL_EVOLUTION_MIN_EFFECTIVE_TASKS",
     "skill_evolution_min_support_tasks": "XR_SKILL_EVOLUTION_MIN_SUPPORT_TASKS",
     "skill_evolution_build_timeout": "XR_SKILL_EVOLUTION_BUILD_TIMEOUT",
@@ -147,6 +148,7 @@ DEFAULTS = {
     "mem0_style_limit": 8,
     "mem0_student_limit": 5,
     "mem0_context_char_limit": 3000,
+    "mem0_request_timeout_seconds": 30,
     "skill_evolution_min_effective_tasks": 5,
     "skill_evolution_min_support_tasks": 3,
     "skill_evolution_build_timeout": 300,
@@ -373,6 +375,9 @@ def get_runtime_config() -> dict:
     cfg["mem0_student_limit"] = normalize_positive_int(cfg.get("mem0_student_limit"), 5)
     cfg["mem0_context_char_limit"] = normalize_positive_int(
         cfg.get("mem0_context_char_limit"), 3000
+    )
+    cfg["mem0_request_timeout_seconds"] = normalize_positive_int(
+        cfg.get("mem0_request_timeout_seconds"), 30
     )
     cfg["skill_evolution_min_effective_tasks"] = normalize_positive_int(
         cfg.get("skill_evolution_min_effective_tasks"), 5

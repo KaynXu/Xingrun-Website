@@ -42,6 +42,77 @@ def _prepare_local_bm25_encoder(client: object) -> None:
         )
 
 
+def _attach_timed_qdrant_client(
+    vector_config: Dict[str, object],
+    qdrant_url: str,
+    qdrant_api_key: str,
+    timeout_seconds: int,
+) -> None:
+    """Pass a project-built Qdrant client so vector calls carry a timeout.
+
+    mem0 2.x builds ``QdrantClient(url=..., api_key=...)`` with no timeout, and
+    its config validator rejects a bare URL without an api key (it requires
+    url+api_key, host+port, or path). Building the client here with an explicit
+    timeout keeps the self-hosted keyless deployment working; the client field
+    takes precedence inside mem0, and host/port only satisfy the validator.
+    """
+    try:
+        from qdrant_client import QdrantClient
+        from urllib.parse import urlsplit
+
+        parsed = urlsplit(qdrant_url)
+        host = parsed.hostname
+        if not host:
+            raise ValueError("qdrant url has no hostname")
+        kwargs: Dict[str, object] = {"url": qdrant_url, "timeout": timeout_seconds}
+        if qdrant_api_key:
+            kwargs["api_key"] = qdrant_api_key
+        vector_config["client"] = QdrantClient(**kwargs)
+        if not qdrant_api_key:
+            vector_config["host"] = host
+            vector_config["port"] = int(parsed.port or 6333)
+    except Exception as exc:
+        logger.warning(
+            "falling back to a mem0-managed Qdrant client without timeout: %s",
+            type(exc).__name__,
+        )
+
+
+def _apply_openai_http_timeouts(memory: object, timeout_seconds: int) -> None:
+    """mem0 2.x builds its OpenAI clients without a timeout (600s default);
+    replace them with identically configured clients that fail fast upstream."""
+    try:
+        import httpx
+        from openai import OpenAI
+    except ImportError:
+        return
+    request_timeout = httpx.Timeout(
+        timeout_seconds, connect=min(10.0, float(timeout_seconds))
+    )
+    for attribute_name in ("embedding_model", "llm"):
+        component = getattr(memory, attribute_name, None)
+        client = getattr(component, "client", None)
+        if not isinstance(client, OpenAI):
+            continue
+        try:
+            setattr(
+                component,
+                "client",
+                OpenAI(
+                    api_key=client.api_key,
+                    base_url=str(client.base_url),
+                    timeout=request_timeout,
+                    max_retries=2,
+                ),
+            )
+        except Exception as exc:
+            logger.warning(
+                "could not apply mem0 %s http timeout: %s",
+                attribute_name,
+                type(exc).__name__,
+            )
+
+
 def _normalize_support(value: List[str]) -> List[str]:
     support = [str(item or "").strip() for item in value]
     if not support or any(not item for item in support):
@@ -408,6 +479,16 @@ class ClassCommentaryMemoryService:
         }
         if self.settings.qdrant_api_key:
             vector_config["api_key"] = self.settings.qdrant_api_key
+        request_timeout = _positive_setting(
+            _setting(self._runtime_config, "mem0_request_timeout_seconds", 30),
+            default=30,
+        )
+        _attach_timed_qdrant_client(
+            vector_config,
+            self.settings.qdrant_url,
+            self.settings.qdrant_api_key,
+            request_timeout,
+        )
 
         embedder_config: Dict[str, object] = {
             "model": self.settings.embedder_model,
@@ -446,6 +527,7 @@ class ClassCommentaryMemoryService:
             }
         )
         _prepare_local_bm25_encoder(memory)
+        _apply_openai_http_timeouts(memory, request_timeout)
         return memory
 
     def _require_client(self) -> object:

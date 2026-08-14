@@ -708,5 +708,175 @@ class ClassCommentaryMemoryServiceTests(unittest.TestCase):
         self.assertEqual(client.calls[-1], ("delete", "memory-1"))
 
 
+class ClassCommentaryMemoryTimeoutTests(unittest.TestCase):
+    def _fake_memory_class(self, fake_client):
+        return type(
+            "FakeMemory",
+            (),
+            {
+                "configs": [],
+                "from_config": classmethod(
+                    lambda cls, config: cls.configs.append(config) or fake_client
+                ),
+            },
+        )
+
+    def _fake_qdrant_module(self):
+        calls = []
+
+        class FakeQdrantClient:
+            def __init__(self, **kwargs):
+                calls.append((self, kwargs))
+
+        fake_module = types.ModuleType("qdrant_client")
+        fake_module.QdrantClient = FakeQdrantClient
+        return fake_module, calls
+
+    def test_build_client_injects_a_timed_qdrant_client_with_an_api_key(self):
+        fake_client = FakeMem0Client()
+        fake_mem0_module = types.ModuleType("mem0")
+        fake_mem0_module.Memory = self._fake_memory_class(fake_client)
+        fake_qdrant_module, qdrant_calls = self._fake_qdrant_module()
+        runtime_config = {
+            "class_commentary_memory_enabled": True,
+            "class_commentary_provider": "openai",
+            "class_commentary_model": "gpt-class-commentary",
+            "mem0_qdrant_url": "http://qdrant:6333",
+            "mem0_qdrant_api_key": "qdrant-key",
+            "mem0_embedder_provider": "openai",
+            "mem0_embedder_model": "text-embedding-3-small",
+            "mem0_embedding_dims": 1536,
+            "openai_api_key": "embedder-key",
+            "mem0_request_timeout_seconds": 17,
+        }
+        with patch.dict(
+            sys.modules, {"mem0": fake_mem0_module, "qdrant_client": fake_qdrant_module}
+        ):
+            result = ClassCommentaryMemoryService(
+                runtime_config=runtime_config
+            ).healthcheck()
+
+        self.assertEqual(result["status"], "ready")
+        vector_config = fake_mem0_module.Memory.configs[0]["vector_store"]["config"]
+        self.assertIs(vector_config["client"], qdrant_calls[0][0])
+        self.assertEqual(len(qdrant_calls), 1)
+        self.assertEqual(
+            qdrant_calls[0][1],
+            {"url": "http://qdrant:6333", "timeout": 17, "api_key": "qdrant-key"},
+        )
+        self.assertNotIn("host", vector_config)
+        self.assertNotIn("port", vector_config)
+
+    def test_build_client_satisfies_keyless_qdrant_validation_with_host_and_port(self):
+        fake_client = FakeMem0Client()
+        fake_mem0_module = types.ModuleType("mem0")
+        fake_mem0_module.Memory = self._fake_memory_class(fake_client)
+        fake_qdrant_module, qdrant_calls = self._fake_qdrant_module()
+        runtime_config = {
+            "class_commentary_memory_enabled": True,
+            "class_commentary_provider": "openai",
+            "class_commentary_model": "gpt-class-commentary",
+            "mem0_qdrant_url": "http://127.0.0.1:6333",
+            "mem0_embedder_provider": "openai",
+            "mem0_embedder_model": "text-embedding-3-small",
+            "mem0_embedding_dims": 1536,
+            "openai_api_key": "embedder-key",
+        }
+        with patch.dict(
+            sys.modules, {"mem0": fake_mem0_module, "qdrant_client": fake_qdrant_module}
+        ):
+            result = ClassCommentaryMemoryService(
+                runtime_config=runtime_config
+            ).healthcheck()
+
+        self.assertEqual(result["status"], "ready")
+        vector_config = fake_mem0_module.Memory.configs[0]["vector_store"]["config"]
+        self.assertEqual(vector_config["host"], "127.0.0.1")
+        self.assertEqual(vector_config["port"], 6333)
+        self.assertEqual(qdrant_calls[0][1]["timeout"], 30)
+        self.assertNotIn("api_key", qdrant_calls[0][1])
+
+    def test_missing_qdrant_client_package_falls_back_to_mem0_defaults(self):
+        fake_client = FakeMem0Client()
+        fake_mem0_module = types.ModuleType("mem0")
+        fake_mem0_module.Memory = self._fake_memory_class(fake_client)
+        runtime_config = {
+            "class_commentary_memory_enabled": True,
+            "class_commentary_provider": "openai",
+            "class_commentary_model": "gpt-class-commentary",
+            "mem0_qdrant_url": "http://qdrant:6333",
+            "mem0_qdrant_api_key": "qdrant-key",
+            "mem0_embedder_provider": "openai",
+            "mem0_embedder_model": "text-embedding-3-small",
+            "mem0_embedding_dims": 1536,
+            "openai_api_key": "embedder-key",
+        }
+        with patch.dict(sys.modules, {"mem0": fake_mem0_module}):
+            result = ClassCommentaryMemoryService(
+                runtime_config=runtime_config
+            ).healthcheck()
+
+        self.assertEqual(result["status"], "ready")
+        vector_config = fake_mem0_module.Memory.configs[0]["vector_store"]["config"]
+        self.assertNotIn("client", vector_config)
+
+    def test_openai_clients_are_rebuilt_with_a_request_timeout(self):
+        calls = []
+        instances = []
+
+        class FakeOpenAI:
+            def __init__(self, api_key=None, base_url=None, timeout=None, max_retries=None):
+                self.api_key = api_key
+                self.base_url = base_url
+                self.timeout = timeout
+                self.max_retries = max_retries
+                calls.append(
+                    {
+                        "api_key": api_key,
+                        "base_url": base_url,
+                        "timeout": timeout,
+                        "max_retries": max_retries,
+                    }
+                )
+                instances.append(self)
+
+        fake_openai_module = types.ModuleType("openai")
+        fake_openai_module.OpenAI = FakeOpenAI
+
+        from class_commentary_memory import _apply_openai_http_timeouts
+
+        class FakeComponent:
+            pass
+
+        class FakeMemory:
+            def __init__(self):
+                self.embedding_model = FakeComponent()
+                self.embedding_model.client = FakeOpenAI(
+                    api_key="embedding-secret",
+                    base_url="https://embedding.example/v1",
+                )
+                self.llm = FakeComponent()
+                self.llm.client = FakeOpenAI(
+                    api_key="llm-secret", base_url="https://llm.example/v1"
+                )
+
+        memory = FakeMemory()
+        original_clients = (memory.embedding_model.client, memory.llm.client)
+        with patch.dict(sys.modules, {"openai": fake_openai_module}):
+            _apply_openai_http_timeouts(memory, 23)
+
+        self.assertEqual(len(calls), 4)  # two originals + two rebuilds
+        rebuilt = calls[2:]
+        self.assertEqual(rebuilt[0]["api_key"], "embedding-secret")
+        self.assertEqual(rebuilt[0]["base_url"], "https://embedding.example/v1")
+        self.assertEqual(rebuilt[0]["max_retries"], 2)
+        self.assertEqual(rebuilt[0]["timeout"].read, 23)
+        self.assertEqual(rebuilt[1]["api_key"], "llm-secret")
+        self.assertIs(memory.embedding_model.client, instances[2])
+        self.assertIs(memory.llm.client, instances[3])
+        self.assertNotIn(memory.embedding_model.client, original_clients)
+        self.assertNotIn(memory.llm.client, original_clients)
+
+
 if __name__ == "__main__":
     unittest.main()
