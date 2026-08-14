@@ -657,6 +657,53 @@ class ClassCommentaryMemoryServiceTests(unittest.TestCase):
                 scope_skill_registry_id=8,
             )
 
+    def test_find_by_operation_key_supports_student_scope(self):
+        client = FakeMem0Client()
+        metadata = projection_metadata(
+            memory_type="student_fact",
+            scope_skill_registry_id=None,
+            student_id=21,
+            subject_key="math",
+            operation_key="cc-memory-21-v1-student",
+        )
+        client.get_all_response = {
+            "results": [{"id": "student-1", "memory": "y", "metadata": metadata}]
+        }
+        service = self.make_service(client)
+
+        result = service.find_by_operation_key(
+            metadata["operation_key"],
+            organization_id=4,
+            memory_type="student_fact",
+            student_id=21,
+            subject_key="math",
+        )
+
+        self.assertEqual(result["id"], "student-1")
+        self.assertEqual(client.calls[0][1]["filters"]["student_id"], 21)
+        self.assertEqual(client.calls[0][1]["filters"]["subject_key"], "math")
+
+    def test_get_returns_none_for_unknown_memory(self):
+        client = FakeMem0Client()
+        client.get_response = None
+        service = self.make_service(client)
+
+        self.assertIsNone(service.get("missing-memory"))
+
+    def test_empty_search_queries_return_no_results_without_touching_mem0(self):
+        client = FakeMem0Client()
+        service = self.make_service(client)
+
+        self.assertEqual(
+            service.search_style("   ", organization_id=1, scope_skill_registry_id=2),
+            [],
+        )
+        self.assertEqual(
+            service.search_student("", organization_id=1, student_id=2, subject_key="math"),
+            [],
+        )
+        self.assertEqual(client.calls, [])
+
     def test_healthcheck_runs_an_isolated_add_get_search_delete_probe(self):
         client = FakeMem0Client()
         service = self.make_service(client)

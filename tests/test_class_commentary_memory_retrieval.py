@@ -5,8 +5,12 @@ from class_commentary_memory_retrieval import retrieve_class_commentary_memory_c
 
 
 class FakeMemoryService(ClassCommentaryMemoryService):
-    def __init__(self, *, style=None, students=None, failure=None):
-        super().__init__(runtime_config={"mem0_context_char_limit": 3000}, enabled=True, client=object())
+    def __init__(self, *, style=None, students=None, failure=None, runtime_config=None):
+        super().__init__(
+            runtime_config=runtime_config or {"mem0_context_char_limit": 3000},
+            enabled=True,
+            client=object(),
+        )
         self.style = style or []
         self.students = students or {}
         self.failure = failure
@@ -246,6 +250,27 @@ class ClassCommentaryMemoryRetrievalTest(unittest.TestCase):
         self.assertEqual(context["retrieval_status"], "degraded")
         self.assertEqual(context["degraded_reason"], "mem0_ConnectionError")
         self.assertEqual(context["records"], [])
+
+    def test_search_query_is_truncated_to_the_configured_limit(self):
+        service = FakeMemoryService(
+            runtime_config={
+                "mem0_context_char_limit": 3000,
+                "mem0_search_query_char_limit": 10,
+            }
+        )
+        generation = {**self.generation, "confirmed_transcript_snapshot": "长" * 50}
+
+        context = retrieve_class_commentary_memory_context(
+            generation=generation,
+            live_student_ids=[],
+            memory_service=service,
+            record_loader=lambda _: [],
+        )
+
+        self.assertEqual(context["retrieval_status"], "empty")
+        self.assertEqual(len(service.calls), 1)
+        self.assertEqual(service.calls[0][0], "style")
+        self.assertEqual(service.calls[0][1], "长" * 10)
 
 
 if __name__ == "__main__":
