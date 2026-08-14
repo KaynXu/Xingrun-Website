@@ -15,6 +15,12 @@ from class_commentary_memory_queue import (
 )
 
 
+# RQ schedules retries at whole-second precision, while the SQLite retry gate
+# records milliseconds. Keep the queue retry one second behind the audited DB
+# backoff so the worker never wakes just before next_attempt_at.
+GRAPH_RQ_RETRY_INTERVALS = [31, 121, 601]
+
+
 def _runtime_config(runtime_config: Optional[Mapping[str, object]] = None) -> dict:
     return dict(runtime_config if runtime_config is not None else config_runtime.get_runtime_config())
 
@@ -53,7 +59,7 @@ def enqueue_class_commentary_graph_extraction_job(
         job_id,
         job_id=f"cc-graph-extract-{job_id}-p{checkpoint_count}-a{attempt}",
         job_timeout=int(config.get("class_commentary_graph_extraction_timeout") or 300),
-        retry=Retry(max=3, interval=[30, 120, 600]),
+        retry=Retry(max=3, interval=GRAPH_RQ_RETRY_INTERVALS),
         result_ttl=RESULT_TTL_SECONDS,
         failure_ttl=FAILURE_TTL_SECONDS,
     )
@@ -73,7 +79,7 @@ def enqueue_class_commentary_graph_sync_operation(
         operation_id,
         job_id=f"cc-graph-sync-{operation_id}-a{attempt}",
         job_timeout=int(config.get("class_commentary_graph_sync_timeout") or 120),
-        retry=Retry(max=3, interval=[30, 120, 600]),
+        retry=Retry(max=3, interval=GRAPH_RQ_RETRY_INTERVALS),
         result_ttl=RESULT_TTL_SECONDS,
         failure_ttl=FAILURE_TTL_SECONDS,
     )
