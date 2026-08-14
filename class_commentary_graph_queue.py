@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Mapping, Optional
+from typing import Callable, Mapping, Optional
 
 from rq import Queue, Retry
 
 import config_runtime
+from class_commentary_learning_graph import (
+    GRAPH_EXTRACTION_MAX_ATTEMPTS,
+    GRAPH_SYNC_MAX_ATTEMPTS,
+    graph_extraction_retry_delay,
+    graph_sync_retry_delay,
+)
 from class_commentary_memory_queue import (
     ACTIVE_RQ_STATUSES,
     FAILURE_TTL_SECONDS,
@@ -16,9 +22,31 @@ from class_commentary_memory_queue import (
 
 
 # RQ schedules retries at whole-second precision, while the SQLite retry gate
-# records milliseconds. Keep the queue retry one second behind the audited DB
-# backoff so the worker never wakes just before next_attempt_at.
-GRAPH_RQ_RETRY_INTERVALS = [31, 121, 601]
+# records milliseconds. Keep each queue retry one second behind the audited DB
+# backoff and start at the job's next database attempt.
+GRAPH_RQ_RETRY_SAFETY_SECONDS = 1
+GRAPH_RQ_MAX_INLINE_RETRIES = 3
+
+
+def _graph_rq_retry_policy(
+    *,
+    attempt_count: int,
+    max_attempts: int,
+    delay_for_attempt: Callable[[int], int],
+) -> Optional[Retry]:
+    initial_attempt = int(attempt_count) + 1
+    retry_count = min(
+        GRAPH_RQ_MAX_INLINE_RETRIES,
+        max(0, int(max_attempts) - initial_attempt),
+    )
+    if retry_count == 0:
+        return None
+    intervals = [
+        int(delay_for_attempt(initial_attempt + offset))
+        + GRAPH_RQ_RETRY_SAFETY_SECONDS
+        for offset in range(retry_count)
+    ]
+    return Retry(max=retry_count, interval=intervals)
 
 
 def _runtime_config(runtime_config: Optional[Mapping[str, object]] = None) -> dict:
@@ -51,7 +79,8 @@ def enqueue_class_commentary_graph_extraction_job(
 
     config = _runtime_config(runtime_config)
     job_id = int(job["id"])
-    attempt = int(job.get("attempt_count") or 0) + 1
+    attempt_count = int(job.get("attempt_count") or 0)
+    attempt = attempt_count + 1
     checkpoint_count = int(job.get("checkpoint_count") or 0)
     return _enqueue_once(
         queue,
@@ -59,7 +88,11 @@ def enqueue_class_commentary_graph_extraction_job(
         job_id,
         job_id=f"cc-graph-extract-{job_id}-p{checkpoint_count}-a{attempt}",
         job_timeout=int(config.get("class_commentary_graph_extraction_timeout") or 300),
-        retry=Retry(max=3, interval=GRAPH_RQ_RETRY_INTERVALS),
+        retry=_graph_rq_retry_policy(
+            attempt_count=attempt_count,
+            max_attempts=GRAPH_EXTRACTION_MAX_ATTEMPTS,
+            delay_for_attempt=graph_extraction_retry_delay,
+        ),
         result_ttl=RESULT_TTL_SECONDS,
         failure_ttl=FAILURE_TTL_SECONDS,
     )
@@ -72,14 +105,19 @@ def enqueue_class_commentary_graph_sync_operation(
 
     config = _runtime_config(runtime_config)
     operation_id = int(operation["id"])
-    attempt = int(operation.get("attempt_count") or 0) + 1
+    attempt_count = int(operation.get("attempt_count") or 0)
+    attempt = attempt_count + 1
     return _enqueue_once(
         queue,
         process_class_commentary_graph_sync_operation,
         operation_id,
         job_id=f"cc-graph-sync-{operation_id}-a{attempt}",
         job_timeout=int(config.get("class_commentary_graph_sync_timeout") or 120),
-        retry=Retry(max=3, interval=GRAPH_RQ_RETRY_INTERVALS),
+        retry=_graph_rq_retry_policy(
+            attempt_count=attempt_count,
+            max_attempts=GRAPH_SYNC_MAX_ATTEMPTS,
+            delay_for_attempt=graph_sync_retry_delay,
+        ),
         result_ttl=RESULT_TTL_SECONDS,
         failure_ttl=FAILURE_TTL_SECONDS,
     )

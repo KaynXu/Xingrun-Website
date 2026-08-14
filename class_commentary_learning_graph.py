@@ -14,6 +14,9 @@ GRAPH_EVENT_SCHEMA_VERSION = "student_learning_event.v1"
 GRAPH_EXTRACTOR_VERSION = "class_commentary.learning_graph.extractor.v1"
 GRAPH_PROMPT_VERSION = "class_commentary.learning_graph.prompt.v2"
 GRAPH_REGISTRY_VERSION = 1
+GRAPH_EXTRACTION_MAX_ATTEMPTS = 4
+GRAPH_SYNC_MAX_ATTEMPTS = 8
+GRAPH_EXTRACTION_RETRY_DELAYS = (30, 120, 600, 1800)
 CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION = "class_curriculum_assignment.v2"
 LEARNING_STATES = ("unknown", "weak", "developing", "secure", "mastered")
 LEARNING_TRENDS = ("new_observation", "regressed", "stable", "improved")
@@ -83,6 +86,18 @@ def normalize_knowledge_point_alias(value: object) -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def graph_extraction_retry_delay(attempt_count: int) -> int:
+    attempt_index = min(
+        max(int(attempt_count) - 1, 0),
+        len(GRAPH_EXTRACTION_RETRY_DELAYS) - 1,
+    )
+    return GRAPH_EXTRACTION_RETRY_DELAYS[attempt_index]
+
+
+def graph_sync_retry_delay(attempt_count: int) -> int:
+    return min(3600, 30 * (2 ** max(int(attempt_count) - 1, 0)))
 
 
 def _conn():
@@ -1244,12 +1259,19 @@ def claim_graph_extraction_job(
                 lease_until=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?),
                 started_at=COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-            WHERE id=? AND attempt_count<4 AND (
+            WHERE id=? AND attempt_count<? AND (
                 status='queued' OR
                 (status='retry_wait' AND (next_attempt_at IS NULL OR next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
             )
             """,
-            (token, str(claim_owner), rq_job_id, f"+{max(1, int(lease_seconds))} seconds", int(job_id)),
+            (
+                token,
+                str(claim_owner),
+                rq_job_id,
+                f"+{max(1, int(lease_seconds))} seconds",
+                int(job_id),
+                GRAPH_EXTRACTION_MAX_ATTEMPTS,
+            ),
         )
         if updated.rowcount != 1:
             return None
@@ -1272,12 +1294,19 @@ def claim_graph_sync_operation(
                 claim_token=?, claim_owner=?, rq_job_id=COALESCE(?, rq_job_id),
                 lease_until=strftime('%Y-%m-%dT%H:%M:%fZ','now', ?),
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-            WHERE id=? AND attempt_count<8 AND (
+            WHERE id=? AND attempt_count<? AND (
                 status IN ('pending','reconcile_needed') OR
                 (status='retry_wait' AND (next_attempt_at IS NULL OR next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
             )
             """,
-            (token, str(claim_owner), rq_job_id, f"+{max(1, int(lease_seconds))} seconds", int(operation_id)),
+            (
+                token,
+                str(claim_owner),
+                rq_job_id,
+                f"+{max(1, int(lease_seconds))} seconds",
+                int(operation_id),
+                GRAPH_SYNC_MAX_ATTEMPTS,
+            ),
         )
         if updated.rowcount != 1:
             return None
@@ -2260,8 +2289,8 @@ def fail_graph_extraction_job(job_id: int, *, claim_token: str, error: str) -> d
         ).fetchone()
         if not job or str(job["claim_token"] or "") != str(claim_token):
             raise ValueError("graph extraction claim is stale")
-        retryable = int(job["attempt_count"]) < 4
-        delay = (30, 120, 600, 1800)[min(max(int(job["attempt_count"]) - 1, 0), 3)]
+        retryable = int(job["attempt_count"]) < GRAPH_EXTRACTION_MAX_ATTEMPTS
+        delay = graph_extraction_retry_delay(int(job["attempt_count"]))
         status = "retry_wait" if retryable else "failed"
         conn.execute(
             """
@@ -2445,8 +2474,8 @@ def fail_graph_sync_operation(operation_id: int, *, claim_token: str, error: str
         ).fetchone()
         if not operation or str(operation["claim_token"] or "") != str(claim_token):
             raise ValueError("graph sync claim is stale")
-        retryable = int(operation["attempt_count"]) < 8
-        delay = min(3600, 30 * (2 ** max(int(operation["attempt_count"]) - 1, 0)))
+        retryable = int(operation["attempt_count"]) < GRAPH_SYNC_MAX_ATTEMPTS
+        delay = graph_sync_retry_delay(int(operation["attempt_count"]))
         status = "retry_wait" if retryable else "failed"
         conn.execute(
             """
@@ -2708,26 +2737,32 @@ def reconcile_class_commentary_graph_store(*, limit: int = 100) -> dict:
         recovered_jobs = conn.execute(
             """
             UPDATE class_commentary_graph_extraction_jobs
-            SET status=CASE WHEN attempt_count<4 THEN 'retry_wait' ELSE 'failed' END,
+            SET status=CASE WHEN attempt_count<? THEN 'retry_wait' ELSE 'failed' END,
                 claim_token=NULL, claim_owner=NULL, lease_until=NULL,
-                next_attempt_at=CASE WHEN attempt_count<4
+                next_attempt_at=CASE WHEN attempt_count<?
                     THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END,
                 last_error='stale extraction lease recovered',
-                completed_at=CASE WHEN attempt_count>=4
+                completed_at=CASE WHEN attempt_count>=?
                     THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE completed_at END,
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
             WHERE status='running' AND lease_until<strftime('%Y-%m-%dT%H:%M:%fZ','now')
-            """
+            """,
+            (
+                GRAPH_EXTRACTION_MAX_ATTEMPTS,
+                GRAPH_EXTRACTION_MAX_ATTEMPTS,
+                GRAPH_EXTRACTION_MAX_ATTEMPTS,
+            ),
         ).rowcount
         recovered_sync = conn.execute(
             """
             UPDATE class_commentary_graph_sync_outbox
-            SET status=CASE WHEN attempt_count<8 THEN 'reconcile_needed' ELSE 'failed' END,
+            SET status=CASE WHEN attempt_count<? THEN 'reconcile_needed' ELSE 'failed' END,
                 claim_token=NULL, claim_owner=NULL, lease_until=NULL,
                 last_error='stale graph sync lease recovered',
                 updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
             WHERE status='running' AND lease_until<strftime('%Y-%m-%dT%H:%M:%fZ','now')
-            """
+            """,
+            (GRAPH_SYNC_MAX_ATTEMPTS,),
         ).rowcount
         conn.execute(
             """
