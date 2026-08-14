@@ -9863,12 +9863,13 @@ def api_class_commentary_skills():
     if error:
         return error
     skills = _sync_configured_class_commentary_skills(user)
-    capabilities = _class_commentary_capabilities()
-    return jsonify({
+    payload = {
         "skills": skills,
         "configured": bool(skills),
-        "capabilities": capabilities,
-    })
+    }
+    if request.args.get("include_capabilities", "1") != "0":
+        payload["capabilities"] = _class_commentary_capabilities()
+    return jsonify(payload)
 
 
 @app.route(

@@ -1523,14 +1523,20 @@ function normalizeClassCommentarySkillActivationEvent(source: Record<string, unk
   };
 }
 
-export async function fetchClassCommentarySkills(): Promise<ClassCommentarySkill[]> {
-  const payload = await apiFetch<{ skills?: unknown[] }>('/api/class-commentary/skills');
+export async function fetchClassCommentarySkills(signal?: AbortSignal): Promise<ClassCommentarySkill[]> {
+  const payload = await apiFetch<{ skills?: unknown[] }>(
+    '/api/class-commentary/skills?include_capabilities=0',
+    { signal },
+  );
   const skills = Array.isArray(payload.skills) ? payload.skills : [];
   return skills.map((item) => normalizeClassCommentarySkill(item));
 }
 
-export async function fetchClassCommentaryCapabilities(): Promise<ClassCommentaryCapabilities> {
-  const payload = await apiFetch<Partial<ClassCommentaryCapabilities>>('/api/class-commentary/capabilities');
+export async function fetchClassCommentaryCapabilities(signal?: AbortSignal): Promise<ClassCommentaryCapabilities> {
+  const payload = await apiFetch<Partial<ClassCommentaryCapabilities>>(
+    '/api/class-commentary/capabilities',
+    { signal },
+  );
   return {
     memory_learning_enabled: payload.memory_learning_enabled === true,
     skill_evolution_enabled: payload.skill_evolution_enabled === true,
@@ -1549,9 +1555,9 @@ export async function fetchClassCommentaryCapabilities(): Promise<ClassCommentar
   };
 }
 
-export async function loadClassCommentaryCapabilities(): Promise<ClassCommentaryCapabilitiesLoadResult> {
+export async function loadClassCommentaryCapabilities(signal?: AbortSignal): Promise<ClassCommentaryCapabilitiesLoadResult> {
   try {
-    return { state: 'ready', value: await fetchClassCommentaryCapabilities() };
+    return { state: 'ready', value: await fetchClassCommentaryCapabilities(signal) };
   } catch {
     return {
       state: 'unavailable',
@@ -1560,8 +1566,8 @@ export async function loadClassCommentaryCapabilities(): Promise<ClassCommentary
   }
 }
 
-export async function fetchClassCommentaryTasks(): Promise<ClassCommentaryTask[]> {
-  const payload = await apiFetch<{ tasks?: unknown[] }>('/api/class-commentary/tasks');
+export async function fetchClassCommentaryTasks(signal?: AbortSignal): Promise<ClassCommentaryTask[]> {
+  const payload = await apiFetch<{ tasks?: unknown[] }>('/api/class-commentary/tasks', { signal });
   const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   return tasks.map((item) => normalizeClassCommentaryTask(item && typeof item === 'object' ? item as Record<string, unknown> : {}));
 }

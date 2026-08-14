@@ -814,6 +814,24 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(polish_charge["usage"]["provider"], "deepseek")
         self.assertEqual(polish_charge["usage"]["model"], "deepseek-v4-pro")
 
+    def test_skill_list_can_skip_capabilities_probe(self):
+        self._register_skill("fast-style", "Fast style content")
+
+        with patch.object(
+            self.app_module,
+            "_class_commentary_capabilities",
+            side_effect=AssertionError("capabilities probe must be skipped"),
+        ):
+            response = self.client.get(
+                "/api/class-commentary/skills?include_capabilities=0",
+                headers=self.headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([item["id"] for item in payload["skills"]], ["fast-style"])
+        self.assertNotIn("capabilities", payload)
+
     def test_skill_list_syncs_configured_packages_and_is_shared_within_organization(self):
         owner_skill = self._register_skill(
             "owner-registry-style",

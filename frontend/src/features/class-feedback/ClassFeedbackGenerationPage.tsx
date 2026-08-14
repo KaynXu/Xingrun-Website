@@ -187,6 +187,8 @@ const disabledClassCommentaryCapabilities: ClassCommentaryCapabilities = {
   graph_degraded: false,
 };
 
+const CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS = 8000;
+
 function createClassCommentaryRequestId(prefix: string): string {
   const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${randomId}`;
@@ -515,6 +517,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [generationProgressError, setGenerationProgressError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingSkills, setLoadingSkills] = useState(true);
+  const [skillsLoadError, setSkillsLoadError] = useState('');
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyLoadError, setHistoryLoadError] = useState('');
+  const [historyRefreshVersion, setHistoryRefreshVersion] = useState(0);
   const [loadingClassStudents, setLoadingClassStudents] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -547,6 +554,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [loadingGenerationId, setLoadingGenerationId] = useState<number | null>(null);
   const [capabilities, setCapabilities] = useState<ClassCommentaryCapabilities>(disabledClassCommentaryCapabilities);
   const [capabilitiesState, setCapabilitiesState] = useState<ClassCommentaryCapabilitiesState>('loading');
+  const [capabilitiesRefreshVersion, setCapabilitiesRefreshVersion] = useState(0);
   const [uncertainStudentRetryGenerationId, setUncertainStudentRetryGenerationId] = useState<number | null>(null);
   const [draftConflict, setDraftConflict] = useState<StructuredDraftConflict | null>(null);
   const [revisionConflict, setRevisionConflict] = useState<{
@@ -640,40 +648,145 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
 
   useEffect(() => {
     let cancelled = false;
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => abortController.abort(),
+      CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS,
+    );
     setLoadingInitial(true);
-    setCapabilitiesState('loading');
-    Promise.all([
-      apiFetch<ClassItem[]>('/api/classes'),
-      fetchClassCommentarySkills(),
-      fetchClassCommentaryTasks(),
-      loadClassCommentaryCapabilities(),
-    ])
-      .then(([nextClasses, nextSkills, nextHistoryTasks, nextCapabilitiesResult]) => {
+    apiFetch<ClassItem[]>('/api/classes', { signal: abortController.signal })
+      .then((nextClasses) => {
         if (cancelled) {
           return;
         }
         setClasses(nextClasses);
-        setSkills(nextSkills);
-        setHistoryTasks(nextHistoryTasks);
-        setCapabilities(nextCapabilitiesResult.value);
-        setCapabilitiesState(nextCapabilitiesResult.state);
         setSelectedClassId((currentValue) => currentValue || (nextClasses[0] ? String(nextClasses[0].id) : ''));
-        setSelectedSkillId((currentValue) => currentValue || readClassCommentarySkillPreference(currentUser, nextSkills) || (nextSkills[0]?.id || ''));
       })
       .catch((error) => {
         if (!cancelled) {
-          setErrorMessage(error instanceof Error ? error.message : '加载失败');
+          setClasses([]);
+          setErrorMessage(
+            error instanceof DOMException && error.name === 'AbortError'
+              ? '加载班级超时, 请刷新后重试.'
+              : error instanceof Error ? error.message : '加载班级失败',
+          );
         }
       })
       .finally(() => {
+        window.clearTimeout(timeoutId);
         if (!cancelled) {
           setLoadingInitial(false);
         }
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      abortController.abort();
     };
   }, [currentUser.id, currentUser.organization_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => abortController.abort(),
+      CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS,
+    );
+    setLoadingSkills(true);
+    setSkillsLoadError('');
+    fetchClassCommentarySkills(abortController.signal)
+      .then((nextSkills) => {
+        if (cancelled) {
+          return;
+        }
+        setSkills(nextSkills);
+        setSelectedSkillId((currentValue) => currentValue || readClassCommentarySkillPreference(currentUser, nextSkills) || (nextSkills[0]?.id || ''));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setSkills([]);
+          setSkillsLoadError(
+            error instanceof DOMException && error.name === 'AbortError'
+              ? '同事测评风格加载超时.'
+              : error instanceof Error ? error.message : '同事测评风格加载失败',
+          );
+        }
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+        if (!cancelled) {
+          setLoadingSkills(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, [currentUser.id, currentUser.organization_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => abortController.abort(),
+      CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS,
+    );
+    setLoadingHistory(true);
+    setHistoryLoadError('');
+    fetchClassCommentaryTasks(abortController.signal)
+      .then((nextHistoryTasks) => {
+        if (!cancelled) {
+          setHistoryTasks(nextHistoryTasks);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setHistoryLoadError(
+            error instanceof DOMException && error.name === 'AbortError'
+              ? '生成历史加载超时.'
+              : error instanceof Error ? error.message : '生成历史加载失败',
+          );
+        }
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+        if (!cancelled) {
+          setLoadingHistory(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, [currentUser.id, currentUser.organization_id, historyRefreshVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => abortController.abort(),
+      CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS,
+    );
+    setCapabilitiesState('loading');
+    loadClassCommentaryCapabilities(abortController.signal)
+      .then((nextCapabilitiesResult) => {
+        if (cancelled) {
+          return;
+        }
+        setCapabilities(nextCapabilitiesResult.value);
+        setCapabilitiesState(nextCapabilitiesResult.state);
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, [currentUser.id, currentUser.organization_id, capabilitiesRefreshVersion]);
 
   useEffect(() => {
     skillEvolutionLoadRequestTokenRef.current += 1;
@@ -2818,11 +2931,18 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
               <DialogTitle>生成历史</DialogTitle>
               <DialogDescription>查看最近生成记录, 点击一条载入对应转写和反馈结果.</DialogDescription>
             </DialogHeader>
-            {loadingInitial ? (
+            {loadingHistory ? (
               <div className="flex flex-col gap-3">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
+              </div>
+            ) : historyLoadError ? (
+              <div className="flex flex-col items-start gap-3 rounded-lg border border-border/70 px-3 py-4">
+                <p className="text-sm text-muted-foreground">{historyLoadError}</p>
+                <Button type="button" size="sm" variant="outline" onClick={() => setHistoryRefreshVersion((version) => version + 1)}>
+                  重新加载
+                </Button>
               </div>
             ) : historyTasks.length ? (
               <ScrollArea className="h-[60vh] rounded-lg border border-border/70">
@@ -2880,12 +3000,12 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
         </Alert>
       ) : null}
 
-      {!loadingInitial && (!classes.length || !skills.length) ? (
+      {!loadingInitial && !loadingSkills && (!classes.length || !skills.length) ? (
         <Alert>
           <AlertCircle className="size-4" />
           <AlertTitle>配置未完成</AlertTitle>
           <AlertDescription>
-            {!classes.length ? '当前没有可用班级。' : '当前没有可用同事测评风格。'}
+            {!classes.length ? '当前没有可用班级.' : skillsLoadError || '当前没有可用同事测评风格.'}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -2974,9 +3094,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   </div>
                   <div className="flex flex-col gap-2">
                     <p className="text-sm font-medium text-foreground">同事测评风格</p>
-                    <Select value={selectedSkillId} onValueChange={handleSkillChange}>
+                    <Select value={selectedSkillId} onValueChange={handleSkillChange} disabled={loadingSkills}>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="请选择同事" />
+                        <SelectValue placeholder={loadingSkills ? '风格加载中' : '请选择同事'} />
                       </SelectTrigger>
                       <SelectContent position="popper" className="max-h-72">
                         <SelectGroup>
@@ -3078,14 +3198,26 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                           : '可直接输入文本生成反馈包; 已有录音任务时也可以先保存确认文本.'}
                       </p>
                       {!loadingInitial && selectedClassId ? (
-                        <p className="text-xs text-muted-foreground" data-testid="generation-cost-impact">
-                          {capabilitiesState === 'unavailable'
-                            ? '额度与调用次数暂不可用, 当前不能发起生成.'
-                            : capabilitiesState === 'loading'
-                              ? '正在读取额度与调用次数...'
-                              : batchGenerationUnavailableReason
-                                || `本次将发起 1 次整班生成, 一次返回全部到课学生点评, 最多使用 ${classGenerationMaxCredits} 点额度.`}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <p className="text-xs text-muted-foreground" data-testid="generation-cost-impact">
+                            {capabilitiesState === 'unavailable'
+                              ? '额度与调用次数暂不可用, 当前不能发起生成.'
+                              : capabilitiesState === 'loading'
+                                ? '正在读取额度与调用次数...'
+                                : batchGenerationUnavailableReason
+                                  || `本次将发起 1 次整班生成, 一次返回全部到课学生点评, 最多使用 ${classGenerationMaxCredits} 点额度.`}
+                          </p>
+                          {capabilitiesState === 'unavailable' ? (
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => setCapabilitiesRefreshVersion((version) => version + 1)}
+                            >
+                              重新检查
+                            </Button>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">

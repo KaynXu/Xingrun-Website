@@ -37,7 +37,7 @@ function assertSourceExcludes(value: string, pattern: RegExp, message: string): 
 
 test('class feedback generation page uses class-commentary api client', () => {
   assert.match(source, /from '..\/..\/classCommentary'/);
-  assert.match(source, /apiFetch<ClassItem\[]>\('\/api\/classes'\)/);
+  assert.match(source, /apiFetch<ClassItem\[]>\('\/api\/classes', \{ signal: abortController\.signal \}\)/);
   assert.match(source, /createClassCommentaryTask/);
   assert.match(source, /createClassCommentaryTextTask/);
   assert.match(source, /fetchClassCommentaryTasks/);
@@ -87,6 +87,20 @@ test('class feedback generation page exposes generated task history', () => {
   assert.match(source, /historyTasks\.map/);
   assert.match(source, /最近还没有生成记录/);
   assert.doesNotMatch(source, /<CardTitle>生成历史<\/CardTitle>/);
+});
+
+test('optional class feedback requests cannot hold the page skeleton open', () => {
+  assert.match(source, /const \[loadingSkills, setLoadingSkills\] = useState\(true\);/);
+  assert.match(source, /const \[loadingHistory, setLoadingHistory\] = useState\(true\);/);
+  assert.match(source, /fetchClassCommentarySkills\(abortController\.signal\)/);
+  assert.match(source, /fetchClassCommentaryTasks\(abortController\.signal\)/);
+  assert.match(source, /loadClassCommentaryCapabilities\(abortController\.signal\)/);
+  assert.match(source, /CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS = 8000/);
+  assert.match(source, /\{loadingHistory \? \(/);
+  assert.doesNotMatch(
+    source,
+    /Promise\.all\(\[\s*apiFetch<ClassItem\[]>[\s\S]*fetchClassCommentaryTasks\(\)[\s\S]*loadClassCommentaryCapabilities\(\)/,
+  );
 });
 
 test('class feedback generation page saves transcript before generation', () => {
@@ -167,9 +181,9 @@ test('class feedback generation page remembers selected coworker style for the c
   assert.match(source, /writeClassCommentarySkillPreference/);
   assert.match(source, /setSelectedSkillId\(\(currentValue\) => currentValue \|\| readClassCommentarySkillPreference\(currentUser, nextSkills\) \|\| \(nextSkills\[0\]\?\.id \|\| ''\)\);/);
   assert.match(source, /function handleSkillChange\(nextSkillId: string\) \{\s*setSelectedSkillId\(nextSkillId\);\s*writeClassCommentarySkillPreference\(currentUser, nextSkillId\);/);
-  assert.match(source, /<Select value=\{selectedSkillId\} onValueChange=\{handleSkillChange\}>/);
+  assert.match(source, /<Select value=\{selectedSkillId\} onValueChange=\{handleSkillChange\} disabled=\{loadingSkills\}>/);
   assert.match(source, /<p className="text-sm font-medium text-foreground">同事测评风格<\/p>/);
-  assert.match(source, /<SelectValue placeholder="请选择同事" \/>/);
+  assert.match(source, /<SelectValue placeholder=\{loadingSkills \? '风格加载中' : '请选择同事'\} \/>/);
   assert.match(source, /\{skills\.map\(\(item\) => \([\s\S]*\{item\.name\}[\s\S]*\)\)\}/);
 });
 
@@ -199,8 +213,8 @@ test('class feedback result actions use shadcn buttons and gate learning from se
 
   assertSourceMatches(source, /loadClassCommentaryCapabilities/, 'capability client is not imported');
   assertSourceMatches(source, /const \[capabilities, setCapabilities\] = useState/, 'server capability state is missing');
-  assertSourceMatches(source, /loadClassCommentaryCapabilities\(\)/, 'server capabilities are not fetched');
-  assertSourceMatches(source, /loadClassCommentaryCapabilities\(\)[\s\S]*setCapabilitiesState\(nextCapabilitiesResult\.state\)/, 'capability failure must remain distinguishable from a disabled server feature');
+  assertSourceMatches(source, /loadClassCommentaryCapabilities\(abortController\.signal\)/, 'server capabilities are not fetched');
+  assertSourceMatches(source, /loadClassCommentaryCapabilities\(abortController\.signal\)[\s\S]*setCapabilitiesState\(nextCapabilitiesResult\.state\)/, 'capability failure must remain distinguishable from a disabled server feature');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{handleSaveFeedbackDraft\} disabled=\{!canSaveFeedbackDraft\}>\s*保存草稿\s*<\/Button>/, 'save draft must be a shadcn Button');
   assertSourceMatches(feedbackCard, /<Button type="button" variant="outline" onClick=\{\(\) => handleConfirmFeedback\(false\)\} disabled=\{!canConfirmFeedback\}>\s*确认但不学习\s*<\/Button>/, 'confirm without learning must be a shadcn Button independent of memory capability');
   assertSourceMatches(feedbackCard, /disabled=\{!canConfirmFeedback \|\| !capabilities\.memory_learning_enabled\}[\s\S]*确认并让 AI 学习修改/, 'confirm and learn must keep the Mem0 learning prerequisite');
