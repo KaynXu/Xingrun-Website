@@ -50,7 +50,7 @@ def _server_evidence_span(
     evidence: Mapping[str, object], *, feedback_text: str
 ) -> tuple[str, int, int, str]:
     quote = str(evidence.get("evidence_quote") or "")
-    if not quote:
+    if not quote.strip():
         raise ValueError("learning graph evidence quote is empty")
     positions = []
     cursor = 0
@@ -166,6 +166,8 @@ def _strict_candidates(payload: object, *, feedback_text: str) -> list[dict]:
             or not raw_fields.issubset(_PERSISTED_CANDIDATE_FIELDS)
         ):
             raise ValueError("learning graph extractor item contract mismatch")
+        if not str(raw_item.get("evidence_quote") or "").strip():
+            continue
         knowledge_point_key = raw_item.get("knowledge_point_key")
         unmapped_candidate = raw_item.get("unmapped_candidate")
         if bool(str(knowledge_point_key or "").strip()) == bool(
