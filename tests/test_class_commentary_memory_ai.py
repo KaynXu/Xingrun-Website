@@ -46,16 +46,22 @@ class ClassCommentaryMemoryAiTest(unittest.TestCase):
             ai_processor,
             "_get_class_commentary_client",
             return_value=client,
-        ):
+        ) as get_client:
             payload = ai_processor.extract_class_commentary_learning_events(
                 extraction_input={"feedback_text": "小王今天计算稳定."},
                 provider="openai",
                 model="memory-model",
+                request_timeout=45,
+                max_retries=0,
             )
 
         self.assertEqual(payload["items"], [])
         self.assertIn("valid json object", captured["messages"][0]["content"])
         self.assertEqual(captured["response_format"], {"type": "json_object"})
+        self.assertEqual(captured["timeout"], 45)
+        get_client.assert_called_once_with(
+            "openai", "", "", "", max_retries=0
+        )
 
     def test_learning_graph_extractor_selects_unique_envelope_from_json_sequence(self):
         response_text = "\n".join(

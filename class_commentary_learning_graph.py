@@ -360,6 +360,22 @@ def ensure_class_commentary_graph_schema(conn: sqlite3.Connection) -> None:
             CHECK(source_revision_hash<>'')
         );
 
+        CREATE TABLE IF NOT EXISTS class_commentary_graph_extraction_student_checkpoints (
+            extraction_job_id INTEGER NOT NULL REFERENCES class_commentary_graph_extraction_jobs(id) ON DELETE CASCADE,
+            student_id INTEGER NOT NULL,
+            extraction_input_hash TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            usage_json TEXT NOT NULL DEFAULT '{}',
+            checkpoint_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            PRIMARY KEY(extraction_job_id, student_id),
+            CHECK(student_id > 0),
+            CHECK(extraction_input_hash<>''),
+            CHECK(payload_json<>''),
+            CHECK(checkpoint_hash<>'')
+        );
+
         CREATE TABLE IF NOT EXISTS class_commentary_graph_unmapped_candidates (
             candidate_id TEXT PRIMARY KEY,
             organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -934,14 +950,244 @@ def list_dispatchable_graph_extraction_jobs(limit: int = 100) -> list[dict]:
     with _conn() as conn:
         rows = conn.execute(
             """
-            SELECT * FROM class_commentary_graph_extraction_jobs
-            WHERE status='queued'
-               OR (status='retry_wait' AND (next_attempt_at IS NULL OR next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
-            ORDER BY created_at, id LIMIT ?
+            SELECT job.*,
+                   (
+                       SELECT COUNT(*)
+                       FROM class_commentary_graph_extraction_student_checkpoints checkpoint
+                       WHERE checkpoint.extraction_job_id=job.id
+                         AND checkpoint.extraction_input_hash=job.extraction_input_hash
+                   ) AS checkpoint_count
+            FROM class_commentary_graph_extraction_jobs job
+            WHERE job.status='queued'
+               OR (job.status='retry_wait' AND (job.next_attempt_at IS NULL OR job.next_attempt_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now')))
+            ORDER BY job.created_at, job.id LIMIT ?
             """,
             (max(1, min(int(limit), 500)),),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _graph_extraction_checkpoint_hash(
+    *,
+    job_id: int,
+    student_id: int,
+    extraction_input_hash: str,
+    payload: Mapping[str, object],
+    usage: Mapping[str, object],
+) -> str:
+    return content_hash(
+        {
+            "extraction_job_id": int(job_id),
+            "student_id": int(student_id),
+            "extraction_input_hash": str(extraction_input_hash),
+            "payload": dict(payload),
+            "usage": dict(usage),
+        }
+    )
+
+
+def list_graph_extraction_student_checkpoints(
+    job_id: int, *, extraction_input_hash: str
+) -> list[dict]:
+    expected_input_hash = str(extraction_input_hash or "")
+    if not expected_input_hash:
+        raise LearningGraphSnapshotIntegrityError(
+            "graph extraction checkpoint input hash is missing"
+        )
+    with _conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM class_commentary_graph_extraction_student_checkpoints
+            WHERE extraction_job_id=?
+            ORDER BY student_id
+            """,
+            (int(job_id),),
+        ).fetchall()
+    checkpoints = []
+    for row in rows:
+        snapshot = dict(row)
+        if str(snapshot.get("extraction_input_hash") or "") != expected_input_hash:
+            raise LearningGraphSnapshotIntegrityError(
+                "graph extraction checkpoint input hash mismatch"
+            )
+        try:
+            payload = json.loads(str(snapshot.get("payload_json") or ""))
+            usage = json.loads(str(snapshot.get("usage_json") or "{}"))
+        except json.JSONDecodeError as exc:
+            raise LearningGraphSnapshotIntegrityError(
+                "graph extraction checkpoint JSON is invalid"
+            ) from exc
+        if not isinstance(payload, Mapping) or not isinstance(usage, Mapping):
+            raise LearningGraphSnapshotIntegrityError(
+                "graph extraction checkpoint payload is invalid"
+            )
+        expected_checkpoint_hash = _graph_extraction_checkpoint_hash(
+            job_id=int(job_id),
+            student_id=int(snapshot["student_id"]),
+            extraction_input_hash=expected_input_hash,
+            payload=payload,
+            usage=usage,
+        )
+        if str(snapshot.get("checkpoint_hash") or "") != expected_checkpoint_hash:
+            raise LearningGraphSnapshotIntegrityError(
+                "graph extraction checkpoint hash mismatch"
+            )
+        checkpoints.append(
+            {
+                "student_id": int(snapshot["student_id"]),
+                "payload": dict(payload),
+                "usage": dict(usage),
+                "checkpoint_hash": expected_checkpoint_hash,
+            }
+        )
+    return checkpoints
+
+
+def save_graph_extraction_student_checkpoint(
+    job_id: int,
+    *,
+    claim_token: str,
+    student_id: int,
+    extraction_input_hash: str,
+    payload: Mapping[str, object],
+    usage: Optional[Mapping[str, object]] = None,
+) -> dict:
+    frozen = get_graph_extraction_input(int(job_id))
+    expected_input_hash = str(extraction_input_hash or "")
+    if (
+        not frozen
+        or frozen.get("integrity_valid") is not True
+        or str(frozen.get("extraction_input_hash") or "") != expected_input_hash
+    ):
+        raise LearningGraphSnapshotIntegrityError(
+            "graph extraction checkpoint input failed integrity"
+        )
+    frozen_student_ids = {
+        int(item["student_id"])
+        for item in frozen.get("student_feedback_items") or []
+    }
+    if int(student_id) not in frozen_student_ids:
+        raise LearningGraphSnapshotIntegrityError(
+            "graph extraction checkpoint student is outside frozen scope"
+        )
+    normalized_payload = dict(payload)
+    normalized_usage = dict(usage or {})
+    payload_json = canonical_json(normalized_payload)
+    usage_json = canonical_json(normalized_usage)
+    checkpoint_hash = _graph_extraction_checkpoint_hash(
+        job_id=int(job_id),
+        student_id=int(student_id),
+        extraction_input_hash=expected_input_hash,
+        payload=normalized_payload,
+        usage=normalized_usage,
+    )
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        job = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?",
+            (int(job_id),),
+        ).fetchone()
+        if (
+            not job
+            or str(job["status"] or "") != "running"
+            or str(job["claim_token"] or "") != str(claim_token)
+            or str(job["extraction_input_hash"] or "") != expected_input_hash
+        ):
+            raise ValueError("graph extraction checkpoint claim is stale")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO class_commentary_graph_extraction_student_checkpoints (
+                extraction_job_id, student_id, extraction_input_hash,
+                payload_json, usage_json, checkpoint_hash
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(job_id),
+                int(student_id),
+                expected_input_hash,
+                payload_json,
+                usage_json,
+                checkpoint_hash,
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT * FROM class_commentary_graph_extraction_student_checkpoints
+            WHERE extraction_job_id=? AND student_id=?
+            """,
+            (int(job_id), int(student_id)),
+        ).fetchone()
+        if not row or str(row["checkpoint_hash"] or "") != checkpoint_hash:
+            raise LearningGraphSnapshotIntegrityError(
+                "graph extraction checkpoint conflicts with persisted state"
+            )
+    return {
+        "student_id": int(student_id),
+        "payload": normalized_payload,
+        "usage": normalized_usage,
+        "checkpoint_hash": checkpoint_hash,
+    }
+
+
+def continue_graph_extraction_job(
+    job_id: int,
+    *,
+    claim_token: str,
+    completed_student_count: int,
+    total_student_count: int,
+) -> dict:
+    completed_count = int(completed_student_count)
+    total_count = int(total_student_count)
+    if completed_count <= 0 or completed_count >= total_count:
+        raise ValueError("graph extraction continuation progress is invalid")
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        job = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?",
+            (int(job_id),),
+        ).fetchone()
+        if (
+            not job
+            or str(job["status"] or "") != "running"
+            or str(job["claim_token"] or "") != str(claim_token)
+        ):
+            raise ValueError("graph extraction continuation claim is stale")
+        persisted_count = int(
+            conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM class_commentary_graph_extraction_student_checkpoints
+                WHERE extraction_job_id=? AND extraction_input_hash=?
+                """,
+                (int(job_id), str(job["extraction_input_hash"])),
+            ).fetchone()[0]
+        )
+        if persisted_count != completed_count:
+            raise LearningGraphSnapshotIntegrityError(
+                "graph extraction continuation checkpoint count mismatch"
+            )
+        result_summary = {
+            "checkpointed_student_count": completed_count,
+            "student_count": total_count,
+        }
+        conn.execute(
+            """
+            UPDATE class_commentary_graph_extraction_jobs
+            SET status='queued', attempt_count=0, claim_token=NULL,
+                claim_owner=NULL, lease_until=NULL, rq_job_id=NULL,
+                enqueued_at=NULL, next_attempt_at=NULL, last_error=NULL,
+                result_summary_json=?, completed_at=NULL,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=? AND claim_token=? AND status='running'
+            """,
+            (canonical_json(result_summary), int(job_id), str(claim_token)),
+        )
+        row = conn.execute(
+            "SELECT * FROM class_commentary_graph_extraction_jobs WHERE id=?",
+            (int(job_id),),
+        ).fetchone()
+    return dict(row)
 
 
 def list_dispatchable_graph_sync_operations(limit: int = 100) -> list[dict]:

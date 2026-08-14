@@ -10,6 +10,7 @@ from class_commentary_graph_jobs import (
     process_class_commentary_graph_sync_operation,
     run_class_commentary_graph_reconciliation,
 )
+from class_commentary_graph_queue import enqueue_class_commentary_graph_extraction_job
 from class_commentary_graph_retrieval import (
     ClassCommentaryStudentGraphRetrievalError,
     retrieve_isolated_student_graph_context,
@@ -23,12 +24,14 @@ from class_commentary_learning_graph import (
     claim_graph_sync_operation,
     commit_graph_extraction,
     complete_graph_sync_operation,
+    create_graph_extraction_job_conn,
     ensure_builtin_knowledge_points,
     fail_graph_sync_operation,
     get_graph_extraction_input,
     get_graph_sync_payload,
     get_student_learning_graph_summary,
     list_dispatchable_graph_sync_operations,
+    list_dispatchable_graph_extraction_jobs,
     list_trusted_graph_events,
     normalize_knowledge_point_alias,
     prepare_graph_cleanup_for_scope_conn,
@@ -205,6 +208,134 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
                 conn, version_id, actor_user_id=11
             )
         return version_id
+
+    def test_extraction_checkpoints_each_student_before_continuing(self):
+        feedback_items = [
+            {"student_id": 101, "feedback_text": "二次函数图像目前较薄弱."},
+            {"student_id": 202, "feedback_text": "二次函数图像正在发展中."},
+        ]
+        structured_json = canonical_json(
+            {
+                "schema_version": "class_commentary.student_feedback.v1",
+                "items": feedback_items,
+            }
+        )
+        with lesson_manager.get_conn() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO students(id, organization_id, status) VALUES (?, 1, 'active')",
+                [(101,), (202,)],
+            )
+            conn.execute(
+                """
+                INSERT INTO class_commentary_revisions (
+                    id, organization_id, task_id, generation_id, teacher_user_id,
+                    revision_no, confirmed_at, feedback_schema_version,
+                    structured_feedback_json, structured_feedback_hash,
+                    final_feedback_text
+                ) VALUES (51, 1, 31, 41, 11, 1, '2026-08-11T10:00:00Z',
+                          'class_commentary.student_feedback.v1', ?, ?, ?)
+                """,
+                (
+                    structured_json,
+                    content_hash(structured_json),
+                    "\n".join(item["feedback_text"] for item in feedback_items),
+                ),
+            )
+            generation = dict(
+                conn.execute(
+                    "SELECT * FROM class_commentary_generations WHERE id=41"
+                ).fetchone()
+            )
+            revision = dict(
+                conn.execute(
+                    "SELECT * FROM class_commentary_revisions WHERE id=51"
+                ).fetchone()
+            )
+            job_id = int(
+                create_graph_extraction_job_conn(conn, generation, revision)["id"]
+            )
+
+        calls = []
+        base_extractor = self._extractor_for()
+        fail_second_once = {"value": True}
+
+        def extractor(student_input, config):
+            calls.append(student_input["feedback_text"])
+            if (
+                student_input["feedback_text"] == feedback_items[1]["feedback_text"]
+                and fail_second_once["value"]
+            ):
+                fail_second_once["value"] = False
+                raise RuntimeError("temporary provider failure")
+            return base_extractor(student_input, config)
+
+        first = self._run(job_id, extractor)
+        self.assertEqual(first["status"], "queued")
+        self.assertEqual(first["checkpointed_student_count"], 1)
+        with lesson_manager.get_conn() as conn:
+            job = conn.execute(
+                "SELECT status, attempt_count FROM class_commentary_graph_extraction_jobs WHERE id=?",
+                (job_id,),
+            ).fetchone()
+            checkpoint_count = conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_graph_extraction_student_checkpoints WHERE extraction_job_id=?",
+                (job_id,),
+            ).fetchone()[0]
+        self.assertEqual(dict(job), {"status": "queued", "attempt_count": 0})
+        self.assertEqual(checkpoint_count, 1)
+
+        dispatchable = list_dispatchable_graph_extraction_jobs(limit=10)
+        queued_job = next(item for item in dispatchable if int(item["id"]) == job_id)
+        self.assertEqual(int(queued_job["checkpoint_count"]), 1)
+
+        class FakeJob:
+            def __init__(self, job_id):
+                self.id = job_id
+
+        class FakeQueue:
+            def fetch_job(self, _job_id):
+                return None
+
+            def enqueue(self, *_args, **kwargs):
+                return FakeJob(kwargs["job_id"])
+
+        rq_job, created = enqueue_class_commentary_graph_extraction_job(
+            queued_job,
+            queue=FakeQueue(),
+            runtime_config=self.config,
+        )
+        self.assertTrue(created)
+        self.assertEqual(rq_job.id, f"cc-graph-extract-{job_id}-p1-a1")
+
+        with self.assertRaisesRegex(RuntimeError, "temporary provider failure"):
+            self._run(job_id, extractor)
+        with lesson_manager.get_conn() as conn:
+            conn.execute(
+                "UPDATE class_commentary_graph_extraction_jobs SET next_attempt_at='2000-01-01T00:00:00.000Z' WHERE id=?",
+                (job_id,),
+            )
+            checkpoint_count = conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_graph_extraction_student_checkpoints WHERE extraction_job_id=?",
+                (job_id,),
+            ).fetchone()[0]
+        self.assertEqual(checkpoint_count, 1)
+
+        third = self._run(job_id, extractor)
+        self.assertEqual(third["status"], "extracted")
+        self.assertEqual(
+            calls,
+            [
+                feedback_items[0]["feedback_text"],
+                feedback_items[1]["feedback_text"],
+                feedback_items[1]["feedback_text"],
+            ],
+        )
+        with lesson_manager.get_conn() as conn:
+            checkpoint_count = conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_graph_extraction_student_checkpoints WHERE extraction_job_id=?",
+                (job_id,),
+            ).fetchone()[0]
+        self.assertEqual(checkpoint_count, 2)
 
     def test_registry_normalization_alias_and_subject_isolation(self):
         self.assertEqual(
