@@ -529,7 +529,7 @@ def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
 
 def _class_commentary_capabilities(*, force: bool = False) -> dict:
     memory_capabilities = _class_commentary_memory_capabilities(force=force)
-    graph_capabilities = _class_commentary_graph_capabilities()
+    graph_capabilities = _class_commentary_graph_capabilities(force=force)
     runtime = get_config()
     batch_isolated_v3_enabled = bool(
         runtime.get("class_commentary_student_memory_v2_enabled")
@@ -553,7 +553,7 @@ def _class_commentary_capabilities(*, force: bool = False) -> dict:
     }
 
 
-def _class_commentary_graph_capabilities() -> dict:
+def _class_commentary_graph_capabilities(*, force: bool = False) -> dict:
     runtime = get_config()
     enabled = bool(runtime.get("class_commentary_graph_enabled"))
     if not enabled:
@@ -566,7 +566,10 @@ def _class_commentary_graph_capabilities() -> dict:
         str(runtime.get("class_commentary_graph_store_path") or ""),
         timeout_seconds=int(runtime.get("class_commentary_graph_timeout") or 10),
     )
-    graph_health = adapter.health()
+    # Routine page capability checks only need deployment readiness. Generation
+    # still forces the full store parse and integrity traversal before any
+    # provider request, while deployment keeps its independent full graph gate.
+    graph_health = adapter.health() if force else adapter.readiness()
     queue_health = class_commentary_memory_queue_healthcheck(
         runtime_config={**runtime, "class_commentary_memory_enabled": True}
     )
