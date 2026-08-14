@@ -13,6 +13,7 @@ import {
   confirmClassCommentaryFeedback,
   createClassCommentarySkillCandidate,
   fetchClassCommentaryCapabilities,
+  fetchClassCommentarySkills,
   fetchClassCommentaryTasks,
   fetchClassCommentaryFeedbackDraft,
   fetchClassCommentaryFeedbackRevisions,
@@ -308,6 +309,14 @@ test('capabilities expose one batch-isolated class generation call and credit im
     graph_healthy: true,
     graph_degraded: false,
   });
+});
+
+test('skill loading skips the expensive capability probe', async () => {
+  const calls = mockJsonFetch({ skills: [] });
+
+  await fetchClassCommentarySkills();
+
+  assert.equal(calls[0].path, '/api/class-commentary/skills?include_capabilities=0');
 });
 
 test('capability transport failures return unavailable instead of a zero-cost mode', async () => {
