@@ -483,6 +483,7 @@ def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
         }
     config_key = _class_commentary_memory_config_key(runtime)
     now = monotonic()
+    queue_health = class_commentary_memory_queue_healthcheck(runtime_config=runtime)
     with _CLASS_COMMENTARY_MEMORY_HEALTH_LOCK:
         cached_payload = _CLASS_COMMENTARY_MEMORY_HEALTH_CACHE.get("payload")
         if (
@@ -491,9 +492,23 @@ def _class_commentary_memory_capabilities(*, force: bool = False) -> dict:
             and float(_CLASS_COMMENTARY_MEMORY_HEALTH_CACHE.get("expires_at") or 0) > now
             and isinstance(cached_payload, dict)
         ):
-            return dict(cached_payload)
+            cached_healthy = bool(cached_payload.get("memory_learning_enabled"))
+            healthy = cached_healthy and bool(queue_health.get("healthy"))
+            return {
+                "memory_learning_enabled": healthy,
+                "skill_evolution_enabled": healthy,
+            }
+
+    if not force:
+        # Page rendering must not initialize Mem0 or run its add/get/search/delete
+        # canary. Deployment and generation still force that exhaustive probe.
+        healthy = bool(queue_health.get("healthy"))
+        return {
+            "memory_learning_enabled": healthy,
+            "skill_evolution_enabled": healthy,
+        }
+
     memory_health = _get_class_commentary_memory_service(runtime).healthcheck()
-    queue_health = class_commentary_memory_queue_healthcheck(runtime_config=runtime)
     healthy = bool(memory_health.get("healthy")) and bool(
         queue_health.get("healthy")
     )

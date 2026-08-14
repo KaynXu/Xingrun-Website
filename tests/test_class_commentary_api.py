@@ -632,7 +632,17 @@ class ClassCommentaryApiTestCase(unittest.TestCase):
         self.assertEqual(payload["tasks"][0]["class_name"], "数学·七年级·4班")
         self.assertEqual(payload["tasks"][0]["subject_key"], "math")
         self.assertEqual(payload["tasks"][0]["transcript_text"], "")
+        self.assertEqual(payload["tasks"][1]["transcript_text"], "")
         self.assertPrivateTranscriptPolishFieldsHidden(payload["tasks"][0])
+        detail = self.client.get(
+            f"/api/class-commentary/tasks/{older['id']}",
+            headers=self.headers,
+        )
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(
+            detail.get_json()["confirmed_transcript_text"],
+            "小王今天计算有进步",
+        )
 
     def test_task_response_keeps_unknown_class_subject_scope_empty(self):
         class_id = lesson_manager.save_class(

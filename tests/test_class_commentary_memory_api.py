@@ -212,6 +212,25 @@ class ClassCommentaryMemoryApiTest(unittest.TestCase):
         ):
             yield retrieve_memory, retrieve_graph
 
+    def test_routine_capability_uses_worker_readiness_without_mem0_probe(self):
+        memory_service = Mock()
+        with patch.object(
+            self.app_module,
+            "_get_class_commentary_memory_service",
+            return_value=memory_service,
+        ), patch.object(
+            self.app_module,
+            "class_commentary_memory_queue_healthcheck",
+            return_value={"enabled": True, "healthy": True, "status": "ready"},
+        ):
+            ready = self.app_module._class_commentary_memory_capabilities()
+
+        self.assertEqual(
+            ready,
+            {"memory_learning_enabled": True, "skill_evolution_enabled": True},
+        )
+        memory_service.healthcheck.assert_not_called()
+
     def test_capability_requires_mem0_and_queue_health(self):
         memory_service = Mock()
         memory_service.healthcheck.return_value = {

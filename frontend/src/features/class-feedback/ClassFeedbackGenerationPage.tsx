@@ -520,9 +520,10 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingSkills, setLoadingSkills] = useState(true);
   const [skillsLoadError, setSkillsLoadError] = useState('');
-  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyLoadError, setHistoryLoadError] = useState('');
   const [historyRefreshVersion, setHistoryRefreshVersion] = useState(0);
+  const [historySelectionLoadingId, setHistorySelectionLoadingId] = useState<number | null>(null);
   const [loadingClassStudents, setLoadingClassStudents] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -727,6 +728,10 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   }, [currentUser.id, currentUser.organization_id]);
 
   useEffect(() => {
+    if (!historyDialogOpen) {
+      setLoadingHistory(false);
+      return;
+    }
     let cancelled = false;
     const abortController = new AbortController();
     const timeoutId = window.setTimeout(
@@ -761,7 +766,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       window.clearTimeout(timeoutId);
       abortController.abort();
     };
-  }, [currentUser.id, currentUser.organization_id, historyRefreshVersion]);
+  }, [currentUser.id, currentUser.organization_id, historyDialogOpen, historyRefreshVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2631,6 +2636,24 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
     setHistoryDialogOpen(false);
   }
 
+  async function loadHistoryTask(nextTask: ClassCommentaryTask) {
+    const nextTaskId = nextTask.id;
+    setHistorySelectionLoadingId(nextTaskId);
+    setHistoryLoadError('');
+    try {
+      const detailedTask = await fetchClassCommentaryTask(nextTaskId);
+      if (detailedTask.id !== nextTaskId) {
+        throw new Error('生成历史响应范围不一致');
+      }
+      setHistoryTasks((current) => mergeHistoryTask(current, detailedTask));
+      selectHistoryTask(detailedTask);
+    } catch (error) {
+      setHistoryLoadError(error instanceof Error ? error.message : '生成历史详情加载失败');
+    } finally {
+      setHistorySelectionLoadingId((current) => current === nextTaskId ? null : current);
+    }
+  }
+
   function handleSelectHistoryTask(nextTask: ClassCommentaryTask, skipDirtyGuard = false) {
     if (task?.id === nextTask.id) {
       setHistoryDialogOpen(false);
@@ -2641,7 +2664,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
       setPendingFeedbackTransition({ kind: 'task', task: nextTask });
       return;
     }
-    selectHistoryTask(nextTask);
+    void loadHistoryTask(nextTask);
   }
 
   function handleOpenRevisionPreview(
@@ -2932,7 +2955,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
               <DialogTitle>生成历史</DialogTitle>
               <DialogDescription>查看最近生成记录, 点击一条载入对应转写和反馈结果.</DialogDescription>
             </DialogHeader>
-            {loadingHistory ? (
+            {loadingHistory && historyTasks.length === 0 ? (
               <div className="flex flex-col gap-3">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
@@ -2955,7 +2978,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                         variant="ghost"
                         className="h-auto w-full flex-col items-stretch gap-2 whitespace-normal rounded-none px-3 py-3 text-left"
                         onClick={() => handleSelectHistoryTask(historyTask)}
-                        disabled={busy || generationLoading}
+                        disabled={busy || generationLoading || historySelectionLoadingId !== null}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex min-w-0 items-center gap-2">
@@ -2967,7 +2990,9 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                           <span className="text-xs text-muted-foreground">{formatClassCommentaryTime(historyTask.updated_at || historyTask.created_at)}</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span className="truncate">{historyTask.skill_name || '未选择风格'}</span>
+                          <span className="truncate">
+                            {historySelectionLoadingId === historyTask.id ? '正在载入...' : historyTask.skill_name || '未选择风格'}
+                          </span>
                           <span>{historyTask.audio_filename || '未记录文件名'}</span>
                         </div>
                       </Button>

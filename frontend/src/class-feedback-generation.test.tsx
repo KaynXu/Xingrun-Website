@@ -84,6 +84,7 @@ test('class feedback generation page exposes generated task history', () => {
   assert.match(source, /<DialogTitle>生成历史<\/DialogTitle>/);
   assert.match(source, /<DialogDescription>/);
   assert.match(source, /handleSelectHistoryTask/);
+  assert.match(source, /const detailedTask = await fetchClassCommentaryTask\(nextTaskId\);/);
   assert.match(source, /historyTasks\.map/);
   assert.match(source, /最近还没有生成记录/);
   assert.doesNotMatch(source, /<CardTitle>生成历史<\/CardTitle>/);
@@ -91,13 +92,14 @@ test('class feedback generation page exposes generated task history', () => {
 
 test('optional class feedback requests cannot hold the page skeleton open', () => {
   assert.match(source, /const \[loadingSkills, setLoadingSkills\] = useState\(true\);/);
-  assert.match(source, /const \[loadingHistory, setLoadingHistory\] = useState\(true\);/);
+  assert.match(source, /const \[loadingHistory, setLoadingHistory\] = useState\(false\);/);
   assert.match(source, /fetchClassCommentarySkills\(abortController\.signal\)/);
   assert.match(source, /fetchClassCommentaryTasks\(abortController\.signal\)/);
   assert.match(source, /loadClassCommentaryCapabilities\(abortController\.signal\)/);
   assert.match(source, /CLASS_COMMENTARY_INITIAL_LOAD_TIMEOUT_MS = 8000/);
   assert.match(source, /CLASS_COMMENTARY_CAPABILITIES_LOAD_TIMEOUT_MS = 30000/);
-  assert.match(source, /\{loadingHistory \? \(/);
+  assert.match(source, /if \(!historyDialogOpen\) \{\s*setLoadingHistory\(false\);\s*return;/);
+  assert.match(source, /\{loadingHistory && historyTasks\.length === 0 \? \(/);
   assert.doesNotMatch(
     source,
     /Promise\.all\(\[\s*apiFetch<ClassItem\[]>[\s\S]*fetchClassCommentaryTasks\(\)[\s\S]*loadClassCommentaryCapabilities\(\)/,
@@ -626,7 +628,7 @@ test('task switching invalidates requests but preserves scoped editors behind a 
   assertSourceExcludes(resetHandler, /setGenerationEditors\(\{\}\)/, 'task reset must not destroy other task generation editor snapshots');
   assertSourceMatches(source, /if \(feedbackDirty && !skipDirtyGuard\) \{\s*setHistoryDialogOpen\(false\);\s*setPendingFeedbackTransition\(\{ kind: 'task', task: nextTask \}\);/, 'dirty task navigation must be deferred');
   assertSourceMatches(source, /function selectHistoryTask\(nextTask: ClassCommentaryTask\) \{[\s\S]*resetFeedbackVersionState\(nextTask\.id, true\);[\s\S]*setTask\(nextTask\);/, 'confirmed task navigation must reset only visible version state');
-  assertSourceMatches(source, /onClick=\{\(\) => handleSelectHistoryTask\(historyTask\)\}\s*disabled=\{busy \|\| generationLoading\}/, 'history rows must be disabled while work is in flight');
+  assertSourceMatches(source, /onClick=\{\(\) => handleSelectHistoryTask\(historyTask\)\}\s*disabled=\{busy \|\| generationLoading \|\| historySelectionLoadingId !== null\}/, 'history rows must be disabled while work is in flight');
 });
 
 test('draft and confirmation mutations are scoped to their captured task and generation', () => {

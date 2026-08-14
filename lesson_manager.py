@@ -18467,6 +18467,18 @@ def _class_commentary_task_select_sql() -> str:
     """
 
 
+def _class_commentary_task_list_select_sql() -> str:
+    return """
+        SELECT t.id, t.organization_id, t.class_id, t.teacher_user_id,
+               t.status, t.failure_stage, t.audio_filename,
+               t.skill_id, t.skill_name, t.skill_path,
+               t.created_at, t.updated_at,
+               c.name AS class_name, c.subject_key AS subject_key
+        FROM class_commentary_tasks t
+        JOIN classes c ON c.id = t.class_id
+    """
+
+
 def _serialize_class_commentary_task_row(row: sqlite3.Row) -> dict:
     item = dict(row)
     string_fields = (
@@ -18521,7 +18533,7 @@ def list_class_commentary_tasks_for_organization(organization_id: int, limit: in
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            {_class_commentary_task_select_sql()}
+            {_class_commentary_task_list_select_sql()}
             JOIN users AS task_teacher ON task_teacher.id=t.teacher_user_id
             WHERE t.organization_id=?
               AND COALESCE(NULLIF(c.lifecycle_status, ''), 'active')='active'
@@ -18549,7 +18561,7 @@ def list_class_commentary_tasks_for_classes(class_ids: list[int], limit: int = 3
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            {_class_commentary_task_select_sql()}
+            {_class_commentary_task_list_select_sql()}
             JOIN users AS task_teacher ON task_teacher.id=t.teacher_user_id
             WHERE t.class_id IN ({placeholders})
               AND COALESCE(NULLIF(c.lifecycle_status, ''), 'active')='active'
