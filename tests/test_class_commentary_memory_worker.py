@@ -352,6 +352,38 @@ class ClassCommentaryMemoryWorkerTests(unittest.TestCase):
         self.assertEqual(result["status"], "applied")
         self.assertEqual(service.add_calls, 0)
 
+    @patch("class_commentary_memory_jobs.ClassCommentaryMemoryService")
+    def test_service_construction_failure_marks_operation_failed(self, service_class):
+        store = FakeOperationStore()
+        service_class.side_effect = RuntimeError("missing mem0 settings")
+
+        with self.assertRaisesRegex(RuntimeError, "missing mem0 settings"):
+            process_class_commentary_memory_operation(
+                9,
+                store=store,
+                runtime_config=ENABLED_CONFIG,
+            )
+
+        self.assertEqual(store.status, "retry_wait")
+
+    def test_fail_marking_failure_does_not_mask_the_original_error(self):
+        store = FakeOperationStore()
+        service = FakeMemoryService()
+        service.add_projection = Mock(side_effect=ConnectionError("mem0 down"))
+
+        def fail_operation(*args, **kwargs):
+            raise OSError("sqlite writeback unavailable")
+
+        store.fail_class_commentary_memory_operation = fail_operation
+
+        with self.assertRaisesRegex(ConnectionError, "mem0 down"):
+            process_class_commentary_memory_operation(
+                9,
+                store=store,
+                memory_service=service,
+                runtime_config=ENABLED_CONFIG,
+            )
+
     @patch("class_commentary_memory_queue.dispatch_class_commentary_memory_work")
     @patch("class_commentary_memory_queue.ensure_class_commentary_memory_reconciliation_scheduled")
     def test_reconciliation_schedules_next_bucket_before_dispatch(self, ensure, dispatch):
