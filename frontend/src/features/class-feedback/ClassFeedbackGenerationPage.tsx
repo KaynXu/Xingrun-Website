@@ -387,7 +387,7 @@ function classCommentarySkillEligibilityMessage(eligibility: ClassCommentarySkil
   if (eligibility.reason === 'active_version_missing') {
     return '当前同事测评风格暂时不可用.';
   }
-  return '继续确认并学习修改, AI 会在规律足够稳定后开放整理.';
+  return '继续确认并让 AI 学习修改, 修改规律积累足够后, AI 会自动开放整理.';
 }
 
 function classCommentarySkillStaleMessage(reason: string): string {
@@ -2922,6 +2922,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                   {copiedStudentId === item.student_id ? '已复制' : '复制该学生'}
                 </Button>
               </div>
+              {capabilities.graph_enabled && !revisionPreview && !currentContentConfirmed ? (
+                <p className="text-xs text-muted-foreground">
+                  当前内容尚未确认: 点击「确认并让 AI 学习修改」后, 才会生成或更新该学生的成长轨迹.
+                </p>
+              ) : null}
             </AccordionContent>
           </AccordionItem>
         );
@@ -3421,6 +3426,11 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                 ) : null}
                 {!revisionPreview && !capabilities.memory_learning_enabled ? (
                   <p className="text-xs text-muted-foreground">记忆学习功能尚未启用, 仍可正常保存草稿或确认终稿.</p>
+                ) : null}
+                {!revisionPreview && capabilities.graph_enabled ? (
+                  <p className="text-xs text-muted-foreground">
+                    确认终稿后, AI 会把确认内容写入学生成长轨迹; 无法自动匹配的全新知识点会进入「待审批知识点」, 映射确认后才会显示.
+                  </p>
                 ) : null}
                 {!revisionPreview && !isTaskReadOnly && capabilities.memory_learning_enabled && selectedRevision?.learn_requested ? (
                   <>
