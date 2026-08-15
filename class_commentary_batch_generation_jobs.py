@@ -43,6 +43,44 @@ def _store(store=None):
     return lesson_manager
 
 
+def _missing_students_in_feedback(
+    *,
+    feedback_text: str,
+    generation: Mapping[str, object],
+) -> list[int]:
+    """轻量覆盖预检：返回花名册里有、但反馈 items 里缺席的学生 id。
+
+    仅当 generation 带有 attending_roster_snapshot_json 时生效（生产行必有；
+    测试桩没有该字段时跳过，保持旧行为）。
+    """
+    try:
+        roster = json.loads(
+            str(generation.get("attending_roster_snapshot_json") or "[]")
+        )
+    except (TypeError, json.JSONDecodeError, RecursionError):
+        return []
+    roster_ids = {
+        int(item.get("student_id") or 0)
+        for item in roster
+        if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
+    }
+    if not roster_ids:
+        return []
+    try:
+        parsed = json.loads(feedback_text)
+    except (TypeError, json.JSONDecodeError, RecursionError):
+        return []
+    items = parsed.get("items") if isinstance(parsed, dict) else None
+    if not isinstance(items, list):
+        return []
+    present = {
+        int(item.get("student_id") or 0)
+        for item in items
+        if isinstance(item, dict) and int(item.get("student_id") or 0) > 0
+    }
+    return sorted(roster_ids - present)
+
+
 def _claim_owner() -> str:
     return f"class-commentary-batch:{socket.gethostname()}:{os.getpid()}"
 
@@ -300,6 +338,39 @@ def process_class_commentary_batch_generation(
                 provider=str(claimed.get("model_provider") or ""),
                 model=str(claimed.get("model_name") or ""),
             )
+            missing_students = _missing_students_in_feedback(
+                feedback_text=feedback_text,
+                generation=claimed,
+            )
+            if missing_students:
+                # 覆盖自纠：模型漏掉学生时，把缺失名单回喂一次整体重生成。
+                # 只多花一次调用（不重复同一请求），最终结果仍走完整校验。
+                corrected_request = _frozen_chat_request(claimed)
+                messages = corrected_request.get("messages") or []
+                if (
+                    isinstance(messages, list)
+                    and messages
+                    and isinstance(messages[-1], dict)
+                    and isinstance(messages[-1].get("content"), str)
+                ):
+                    messages = [dict(message) for message in messages]
+                    messages[-1]["content"] = str(messages[-1]["content"]) + (
+                        "\n\n你上一版回复遗漏了以下学生的 feedback_text: %s. "
+                        "请为每位学生都输出 feedback_text, 其余内容保持原样."
+                        % missing_students
+                    )
+                    corrected_request["messages"] = messages
+                    provider_result = _call_generator(
+                        generator,
+                        claimed,
+                        corrected_request,
+                        config,
+                    )
+                    feedback_text, usage = _split_result(
+                        provider_result,
+                        provider=str(claimed.get("model_provider") or ""),
+                        model=str(claimed.get("model_name") or ""),
+                    )
             target_store.persist_class_commentary_batch_generation_response(
                 int(generation_id),
                 response_text=feedback_text,

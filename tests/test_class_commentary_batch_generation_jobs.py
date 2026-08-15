@@ -703,6 +703,65 @@ class ClassCommentaryBatchGenerationJobsTest(unittest.TestCase):
         self.assertEqual(len(store.charge_calls), 1)
         self.assertEqual(len(store.complete_calls), 2)
 
+    def test_coverage_gap_triggers_one_correction_regeneration(self):
+        store = FakeBatchGenerationStore()
+        store.generation["attending_roster_snapshot_json"] = json.dumps(
+            [
+                {"student_id": 1, "student_name": "甲"},
+                {"student_id": 2, "student_name": "乙"},
+            ]
+        )
+        calls = []
+
+        def generator(**kwargs):
+            calls.append(copy.deepcopy(kwargs))
+            if len(calls) == 1:
+                return (
+                    '{"schema_version":"class_commentary.student_feedback.v1",'
+                    '"items":[{"student_id":1,"feedback_text":"甲不错"}]}',
+                    copy.deepcopy(self.usage),
+                )
+            return (
+                '{"schema_version":"class_commentary.student_feedback.v1",'
+                '"items":[{"student_id":1,"feedback_text":"甲不错"},'
+                '{"student_id":2,"feedback_text":"乙加油"}]}',
+                copy.deepcopy(self.usage),
+            )
+
+        result = self._run(
+            store,
+            generator=generator,
+            charge_finalizer=store.finalize_charge,
+        )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(len(calls), 2)
+        second_messages = str(
+            calls[1].get("chat_request", {}).get("messages") or ""
+        )
+        self.assertIn("遗漏", second_messages)
+        self.assertIn("2", second_messages)
+        self.assertEqual(len(store.persist_calls), 1)
+        self.assertIn("乙加油", str(store.persist_calls[0].get("response_text") or ""))
+
+    def test_coverage_gap_without_roster_snapshot_keeps_single_call(self):
+        store = FakeBatchGenerationStore()
+        provider_calls = 0
+
+        def generator(**_kwargs):
+            nonlocal provider_calls
+            provider_calls += 1
+            return self._provider_response()
+
+        result = self._run(
+            store,
+            generator=generator,
+            charge_finalizer=store.finalize_charge,
+        )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(provider_calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
