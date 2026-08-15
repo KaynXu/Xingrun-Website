@@ -98,6 +98,32 @@ class GatewayJsonWordProxyTest(unittest.TestCase):
         )
         self.assertIn("\n\njson", captured["messages"][-1]["content"])
 
+    def test_coerces_temperature_to_one_for_reasoning_models(self):
+        captured = {}
+        client = self._wrap(self._client(captured))
+        client.chat.completions.create(
+            model="m",
+            messages=[{"role": "user", "content": "hi"}],
+            temperature=0,
+        )
+        self.assertEqual(captured["temperature"], 1)
+        client.chat.completions.create(
+            model="m",
+            messages=[{"role": "user", "content": "hi"}],
+            temperature=0.23,
+        )
+        self.assertEqual(captured["temperature"], 1)
+
+    def test_leaves_temperature_untouched_when_already_one(self):
+        captured = {}
+        client = self._wrap(self._client(captured))
+        client.chat.completions.create(
+            model="m",
+            messages=[{"role": "user", "content": "hi"}],
+            temperature=1,
+        )
+        self.assertEqual(captured["temperature"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

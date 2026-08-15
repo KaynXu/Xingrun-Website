@@ -182,6 +182,10 @@ class _JsonObjectWordEnsuringCompletions:
                         last["content"] = patched_content
                         messages[-1] = last
                         kwargs["messages"] = messages
+        # 推理模型（Kimi K3 等）只接受 temperature=1；该客户端专职服务此类模型，
+        # 若未来切回非推理模型，把这里改为配置驱动。
+        if "temperature" in kwargs and kwargs.get("temperature") != 1:
+            kwargs["temperature"] = 1
         return self._completions.create(**kwargs)
 
 
