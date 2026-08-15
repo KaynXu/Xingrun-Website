@@ -3031,6 +3031,72 @@ def _resume_graph_mapping_action(
             "UPDATE curriculum_mapping_actions SET status='approved' WHERE id=?",
             (int(action_id),),
         )
+        existing_event = conn.execute(
+            """
+            SELECT 1 FROM class_commentary_student_learning_events
+            WHERE organization_id=? AND revision_id=? AND student_id=?
+              AND knowledge_point_key=? AND desired_status<>'deleted'
+            LIMIT 1
+            """,
+            (
+                int(organization_id),
+                int(row["revision_id"]),
+                int(raw_payload.get("student_id") or 0),
+                target_key,
+            ),
+        ).fetchone()
+        if existing_event:
+            # 幂等守卫：同一 (revision, student, kp) 观察已存在（如批量映射重复提交），
+            # 只标记候选已映射，不重复写入学习事件。
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_unmapped_candidates
+                SET status='mapped', resolved_at=?, resolved_knowledge_point_key=?
+                WHERE candidate_id=? AND status='pending'
+                """,
+                (_utc_now(), target_key, candidate_id),
+            )
+            conn.execute(
+                "UPDATE curriculum_mapping_actions SET status='applied' WHERE id=?",
+                (int(action_id),),
+            )
+            pending = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM class_commentary_graph_unmapped_candidates
+                    WHERE extraction_job_id=? AND status='pending'
+                    """,
+                    (job_id,),
+                ).fetchone()[0]
+            )
+            conn.execute(
+                """
+                UPDATE class_commentary_graph_extraction_jobs
+                SET status=?, claim_token=NULL, claim_owner=NULL, lease_until=NULL,
+                    completed_at=CASE WHEN ?=0 THEN COALESCE(completed_at, ?) ELSE completed_at END
+                WHERE id=? AND claim_owner='curriculum-mapping'
+                """,
+                (
+                    "extracted" if not pending else "needs_mapping",
+                    pending,
+                    _utc_now(),
+                    job_id,
+                ),
+            )
+            action = conn.execute(
+                "SELECT * FROM curriculum_mapping_actions WHERE id=?", (int(action_id),)
+            ).fetchone()
+            candidate = conn.execute(
+                "SELECT * FROM class_commentary_graph_unmapped_candidates WHERE candidate_id=?",
+                (candidate_id,),
+            ).fetchone()
+            return {
+                "action": dict(action),
+                "candidate": dict(candidate),
+                "reprocess": None,
+                "replayed": True,
+                "skipped_duplicate": True,
+            }
     try:
         committed = commit_graph_extraction(
             job_id,
