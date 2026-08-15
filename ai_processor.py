@@ -2679,7 +2679,10 @@ def extract_class_commentary_learning_events(
         "one object per supported method with method_text plus an exact, complete causal clause as evidence_quote. "
         "Do not return offsets or hashes. Otherwise return false and an empty causal evidence "
         "list. Do not infer causality from co-occurrence. Do not output "
-        "state_before; the server derives prior state from canonical history."
+        "state_before; the server derives prior state from canonical history. "
+        "If the input contains a correction object, your previous attempt failed server-side "
+        "validation: follow its instruction, fix only the listed violations, and keep valid "
+        "items unchanged."
     )
     safe_input = {
         "feedback_text": str(extraction_input.get("feedback_text") or ""),
@@ -2701,6 +2704,9 @@ def extract_class_commentary_learning_events(
             ],
         },
     }
+    correction = extraction_input.get("correction")
+    if isinstance(correction, dict) and correction:
+        safe_input["correction"] = correction
     completion_kwargs = {
         "model": model,
         "messages": [

@@ -228,6 +228,43 @@ def _adapter(config: Mapping[str, object], adapter=None):
     )
 
 
+def _extract_with_validation_correction(
+    extract,
+    per_student_input: dict,
+    config: Mapping[str, object],
+    *,
+    feedback_text: str,
+) -> tuple[list[dict], object, dict]:
+    """调用提取器并过严格校验；校验失败时把错误回喂模型自纠一次。
+
+    校验门禁保持 fail-closed 不变：自纠后的输出仍然必须完整通过校验。
+    """
+    result = extract(per_student_input, config)
+    result_usage = {}
+    if isinstance(result, tuple) and len(result) == 2:
+        result, result_usage = result
+    try:
+        candidates = _strict_candidates(result, feedback_text=feedback_text)
+        return candidates, result, result_usage
+    except ValueError as validation_error:
+        correction_input = dict(per_student_input)
+        correction_input["correction"] = {
+            "instruction": (
+                "Your previous output failed server-side validation. "
+                "Fix ONLY the violations described in validation_error and "
+                "keep valid items unchanged."
+            ),
+            "validation_error": str(validation_error),
+            "previous_output": result,
+        }
+        corrected = extract(correction_input, config)
+        corrected_usage = {}
+        if isinstance(corrected, tuple) and len(corrected) == 2:
+            corrected, corrected_usage = corrected
+        candidates = _strict_candidates(corrected, feedback_text=feedback_text)
+        return candidates, corrected, corrected_usage or result_usage
+
+
 def process_class_commentary_graph_extraction_job(
     job_id: int,
     *,
@@ -313,12 +350,10 @@ def process_class_commentary_graph_extraction_job(
                     else frozen.get("registry") or []
                 ),
             }
-            result = extract(per_student_input, config)
-            result_usage = {}
-            if isinstance(result, tuple) and len(result) == 2:
-                result, result_usage = result
-            checkpoint_candidates = _strict_candidates(
-                result,
+            checkpoint_candidates, _, result_usage = _extract_with_validation_correction(
+                extract,
+                per_student_input,
+                config,
                 feedback_text=str(pending_student_item["feedback_text"]),
             )
             normalized_usage = (
