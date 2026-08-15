@@ -1422,6 +1422,49 @@ def get_graph_extraction_input(job_id: int) -> Optional[dict]:
     result["model_registry"] = compact_registry
     frozen_assignment = _json_object(row["curriculum_assignment_snapshot_json"])
     result["curriculum_assignment"] = frozen_assignment or None
+    if isinstance(frozen_assignment, Mapping):
+        org_scope_book_ids = {
+            int(value)
+            for value in (frozen_assignment.get("book_node_ids") or [])
+            if value
+        } or {int(frozen_assignment.get("book_node_id") or 0)}
+        org_scope_book_ids.discard(0)
+        if org_scope_book_ids:
+            placeholders = ",".join("?" for _ in org_scope_book_ids)
+            try:
+                with _conn() as conn:
+                    org_rows = conn.execute(
+                        f"""
+                        SELECT knowledge_point_key, canonical_name
+                        FROM curriculum_organization_knowledge_points
+                        WHERE organization_id=? AND version_id=?
+                          AND book_node_id IN ({placeholders})
+                          AND subject_key=? AND status='active'
+                        ORDER BY knowledge_point_key
+                        """,
+                        (
+                            int(row["organization_id"] or 0),
+                            int(frozen_assignment.get("version_id") or 0),
+                            *sorted(org_scope_book_ids),
+                            str(frozen_assignment.get("subject_key") or ""),
+                        ),
+                    ).fetchall()
+            except sqlite3.OperationalError:
+                org_rows = []
+            existing_keys = {
+                str(item["knowledge_point_key"]) for item in result["model_registry"]
+            }
+            for item in org_rows:
+                key = str(item["knowledge_point_key"])
+                if key in existing_keys:
+                    continue
+                result["model_registry"].append(
+                    {
+                        "knowledge_point_key": key,
+                        "canonical_name": str(item["canonical_name"] or ""),
+                        "aliases": [],
+                    }
+                )
     result["lesson_id"] = int(row["task_id"])
     result["lesson_name"] = f"{str(row['class_name'] or '').strip()} 课堂反馈".strip()
     identity_scope_valid = (
@@ -1871,6 +1914,7 @@ def commit_graph_extraction(
     extractor_model: str,
     usage: Optional[Mapping[str, object]] = None,
     allow_active_organization_targets: bool = False,
+    require_model_eligible: Optional[bool] = None,
 ) -> dict:
     frozen = get_graph_extraction_input(int(job_id))
     if not frozen or not frozen.get("integrity_valid"):
@@ -1987,7 +2031,11 @@ def commit_graph_extraction(
                 frozen=frozen,
                 value=raw_kp or raw_unmapped,
                 allow_active_organization_target=allow_active_organization_targets,
-                require_model_eligible=not allow_active_organization_targets,
+                require_model_eligible=(
+                    require_model_eligible
+                    if require_model_eligible is not None
+                    else not allow_active_organization_targets
+                ),
             )
             if not resolved:
                 candidate_text = str(raw_unmapped or raw_kp or "").strip()

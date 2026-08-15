@@ -11,6 +11,7 @@ from class_commentary_learning_graph import (
     GRAPH_EVENT_SCHEMA_VERSION,
     LearningGraphSnapshotIntegrityError,
     content_hash,
+    normalize_knowledge_point_alias,
 )
 from class_commentary_semantica import SemanticaGraphAdapter
 
@@ -155,6 +156,7 @@ def _strict_candidates(payload: object, *, feedback_text: str) -> list[dict]:
     if not isinstance(raw_items, list):
         raise ValueError("learning graph extractor items must be a list")
     candidates = []
+    seen_item_keys = set()
     for raw_item in raw_items:
         if hasattr(raw_item, "model_dump"):
             raw_item = raw_item.model_dump(mode="json")
@@ -209,6 +211,16 @@ def _strict_candidates(payload: object, *, feedback_text: str) -> list[dict]:
             for item in causal_evidence
             for span in [_server_evidence_span(item, feedback_text=feedback_text)]
         ]
+        dedup_key = str(normalized_item.get("knowledge_point_key") or "").strip()
+        if not dedup_key:
+            dedup_key = "unmapped:" + normalize_knowledge_point_alias(
+                str(normalized_item.get("unmapped_candidate") or "")
+            )
+        if not dedup_key:
+            dedup_key = "quote:" + quote_hash
+        if dedup_key in seen_item_keys:
+            continue
+        seen_item_keys.add(dedup_key)
         candidates.append(normalized_item)
     return candidates
 
@@ -419,6 +431,8 @@ def process_class_commentary_graph_extraction_job(
             extractor_provider=str(config.get("class_commentary_provider") or config.get("provider") or ""),
             extractor_model=str(config.get("class_commentary_model") or ""),
             usage={"calls": usage},
+            allow_active_organization_targets=True,
+            require_model_eligible=True,
         )
     except LearningGraphSnapshotIntegrityError as exc:
         target_store.mark_graph_extraction_integrity_failed(

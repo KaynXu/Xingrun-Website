@@ -102,6 +102,52 @@ class ValidationCorrectionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             _strict_candidates(BAD_PAYLOAD, feedback_text=FEEDBACK)
 
+    def test_strict_candidates_dedups_duplicate_observations(self):
+        payload = {
+            "schema_version": "student_learning_event.v1",
+            "items": [
+                {
+                    "knowledge_point_key": None,
+                    "unmapped_candidate": "计算稳定性",
+                    "observed_state": "secure",
+                    "reported_trend": "stable",
+                    "evidence_quote": "小王今天计算稳定",
+                    "teaching_methods": [],
+                    "next_steps": [],
+                    "teaching_method_causal_supported": False,
+                    "teaching_method_causal_evidence": [],
+                },
+                {
+                    "knowledge_point_key": None,
+                    "unmapped_candidate": "计算稳定性",
+                    "observed_state": "secure",
+                    "reported_trend": "stable",
+                    "evidence_quote": "小王今天计算稳定",
+                    "teaching_methods": [],
+                    "next_steps": [],
+                    "teaching_method_causal_supported": False,
+                    "teaching_method_causal_evidence": [],
+                },
+                {
+                    "knowledge_point_key": None,
+                    "unmapped_candidate": "单位书写",
+                    "observed_state": "weak",
+                    "reported_trend": "new_observation",
+                    "evidence_quote": "需要注意单位",
+                    "teaching_methods": [],
+                    "next_steps": [],
+                    "teaching_method_causal_supported": False,
+                    "teaching_method_causal_evidence": [],
+                },
+            ],
+        }
+        candidates = _strict_candidates(payload, feedback_text=FEEDBACK)
+        self.assertEqual(len(candidates), 2)
+        self.assertEqual(
+            {c["unmapped_candidate"] for c in candidates},
+            {"计算稳定性", "单位书写"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
