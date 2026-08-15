@@ -143,6 +143,74 @@ def _class_commentary_openai_headers(raw_headers: str = "") -> dict:
     return {str(key): str(value) for key, value in parsed.items()}
 
 
+_JSON_OBJECT_WORD_RE = re.compile(r"\bjson\b", re.IGNORECASE)
+
+
+class _JsonObjectWordEnsuringCompletions:
+    """chat.completions 代理：json_object 请求的最后一条 user 消息必须带独立的
+    "json" 单词（部分上游网关强制校验，否则 502：missing the word 'json'）。"""
+
+    def __init__(self, completions):
+        self._completions = completions
+
+    def create(self, **kwargs):
+        if kwargs.get("response_format") == {"type": "json_object"}:
+            messages = kwargs.get("messages")
+            if isinstance(messages, (list, tuple)) and messages:
+                last = messages[-1]
+                if isinstance(last, dict):
+                    content = last.get("content")
+                    patched_content = None
+                    if isinstance(content, str) and not _JSON_OBJECT_WORD_RE.search(content):
+                        patched_content = content.rstrip() + "\n\njson"
+                    elif isinstance(content, list):
+                        text_parts = [
+                            part
+                            for part in content
+                            if isinstance(part, dict) and part.get("type") == "text"
+                        ]
+                        if text_parts and not any(
+                            _JSON_OBJECT_WORD_RE.search(str(part.get("text") or ""))
+                            for part in text_parts
+                        ):
+                            patched_content = list(content) + [
+                                {"type": "text", "text": "\n\njson"}
+                            ]
+                    if patched_content is not None:
+                        messages = list(messages)
+                        last = dict(last)
+                        last["content"] = patched_content
+                        messages[-1] = last
+                        kwargs["messages"] = messages
+        return self._completions.create(**kwargs)
+
+
+class _JsonObjectWordEnsuringChat:
+    def __init__(self, chat):
+        self._chat = chat
+
+    def __getattr__(self, name):
+        return getattr(self._chat, name)
+
+    @property
+    def completions(self):
+        return _JsonObjectWordEnsuringCompletions(self._chat.completions)
+
+
+class _JsonObjectWordEnsuringClient:
+    def __init__(self, inner):
+        object.__setattr__(self, "_inner", inner)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_inner"), name)
+
+    @property
+    def chat(self):
+        return _JsonObjectWordEnsuringChat(
+            object.__getattribute__(self, "_inner").chat
+        )
+
+
 def _get_class_commentary_client(
     provider: str,
     openai_api_key: str = "",
@@ -151,12 +219,14 @@ def _get_class_commentary_client(
     *,
     max_retries: int | None = None,
 ):
-    return _get_client(
-        provider,
-        openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url,
-        openai_headers=_class_commentary_openai_headers(openai_headers),
-        max_retries=max_retries,
+    return _JsonObjectWordEnsuringClient(
+        _get_client(
+            provider,
+            openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
+            openai_headers=_class_commentary_openai_headers(openai_headers),
+            max_retries=max_retries,
+        )
     )
 
 

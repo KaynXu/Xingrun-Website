@@ -1232,7 +1232,7 @@ class ClassCommentaryAiTest(unittest.TestCase):
             "prompt_version": "class-commentary-student-feedback-v1",
             "messages": [
                 {"role": "system", "content": "Return the frozen structured contract."},
-                {"role": "user", "content": "Generate feedback for student 21."},
+                {"role": "user", "content": "Generate feedback for student 21. Output JSON."},
             ],
             "temperature": 0.23,
             "response_format": response_format,
