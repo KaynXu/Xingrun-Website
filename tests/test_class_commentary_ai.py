@@ -1136,7 +1136,7 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertNotIn("[呲牙]", messages[1]["content"])
         self.assertNotIn("[破涕为笑]", messages[1]["content"])
         self.assertNotIn("only as expression style and feedback framing", messages[1]["content"])
-        self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 0.55)
+        self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 1)  # reasoning model coercion
         self.assertNotIn("response_format", fake_client.chat.completions.kwargs)
 
     def test_generate_class_commentary_feedback_sends_prebuilt_chat_request_unchanged(self):
@@ -1188,14 +1188,18 @@ class ClassCommentaryAiTest(unittest.TestCase):
         call_payload = fake_client.chat.completions.kwargs
         self.assertEqual(text, "Student Wang:\nArithmetic checks improved.")
         self.assertIs(call_payload["messages"], chat_request["messages"])
-        self.assertEqual(call_payload["temperature"], chat_request["temperature"])
+        self.assertEqual(call_payload["temperature"], 1)  # reasoning model coercion
         self.assertEqual(
             {
                 "prompt_version": chat_request["prompt_version"],
                 "messages": call_payload["messages"],
-                "temperature": call_payload["temperature"],
+                "temperature": 1,  # reasoning model coercion
             },
-            chat_request,
+            {
+                "prompt_version": chat_request["prompt_version"],
+                "messages": chat_request["messages"],
+                "temperature": 1,
+            },
         )
 
     def test_generate_class_commentary_feedback_forwards_frozen_response_format(self):
@@ -1254,7 +1258,7 @@ class ClassCommentaryAiTest(unittest.TestCase):
         call_payload = fake_client.chat.completions.kwargs
         self.assertEqual(text, model_content)
         self.assertIs(call_payload["messages"], chat_request["messages"])
-        self.assertEqual(call_payload["temperature"], chat_request["temperature"])
+        self.assertEqual(call_payload["temperature"], 1)  # reasoning model coercion
         self.assertIs(call_payload["response_format"], response_format)
 
     def test_generate_class_commentary_feedback_uses_class_commentary_openai_override(self):
@@ -1361,7 +1365,7 @@ class ClassCommentaryAiTest(unittest.TestCase):
         self.assertIn("绝对值", user_payload)
         for forbidden in ["parent_contact", "source", "status", "archived_at", "created_at", "extra_metadata"]:
             self.assertNotIn(forbidden, user_payload)
-        self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 0.1)
+        self.assertEqual(fake_client.chat.completions.kwargs["temperature"], 1)  # reasoning model coercion
 
     def test_runtime_config_reads_colleague_skill_dir_from_env(self):
         with patch.dict("os.environ", {"XR_COLLEAGUE_SKILL_DIR": "/srv/skills"}, clear=False):
