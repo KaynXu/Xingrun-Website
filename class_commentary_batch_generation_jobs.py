@@ -392,6 +392,11 @@ def process_class_commentary_batch_generation(
             if missing_students:
                 # 覆盖自纠：模型漏掉学生时，把缺失名单回喂一次整体重生成。
                 # 只多花一次调用（不重复同一请求），最终结果仍走完整校验。
+                logger.warning(
+                    "class commentary coverage self-correction generation_id=%s missing=%s",
+                    int(generation_id),
+                    missing_students,
+                )
                 corrected_request = _frozen_chat_request(claimed)
                 messages = corrected_request.get("messages") or []
                 if (
@@ -424,6 +429,50 @@ def process_class_commentary_batch_generation(
                         fallback_text=corrected_text,
                     )
                     usage = corrected_usage or usage
+            still_missing = _missing_students_in_feedback(
+                feedback_text=feedback_text,
+                generation=claimed,
+            )
+            if still_missing:
+                # 定向补全：只要求模型输出缺失学生的条目，再合并。
+                logger.warning(
+                    "class commentary targeted completion generation_id=%s missing=%s",
+                    int(generation_id),
+                    still_missing,
+                )
+                targeted_request = _frozen_chat_request(claimed)
+                messages = targeted_request.get("messages") or []
+                if (
+                    isinstance(messages, list)
+                    and messages
+                    and isinstance(messages[-1], dict)
+                    and isinstance(messages[-1].get("content"), str)
+                ):
+                    messages = [dict(message) for message in messages]
+                    messages[-1]["content"] = str(messages[-1]["content"]) + (
+                        "\n\n请只输出以下学生的 feedback_text 条目: %s. "
+                        "这些学生必须出现在 items 里: 即使没有任何新的观察记录, "
+                        "也要基于课堂记录为每位学生写一条 feedback_text."
+                        % still_missing
+                    )
+                    targeted_request["messages"] = messages
+                    provider_result = _call_generator(
+                        generator,
+                        claimed,
+                        targeted_request,
+                        config,
+                    )
+                    targeted_text, targeted_usage = _split_result(
+                        provider_result,
+                        provider=str(claimed.get("model_provider") or ""),
+                        model=str(claimed.get("model_name") or ""),
+                    )
+                    feedback_text = _merge_feedback_responses(
+                        first_text=feedback_text,
+                        second_text=targeted_text,
+                        fallback_text=targeted_text,
+                    )
+                    usage = targeted_usage or usage
             target_store.persist_class_commentary_batch_generation_response(
                 int(generation_id),
                 response_text=feedback_text,

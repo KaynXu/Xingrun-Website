@@ -826,6 +826,52 @@ class ClassCommentaryBatchGenerationJobsTest(unittest.TestCase):
             {1, 2},
         )
 
+    def test_targeted_completion_recovers_students_missed_by_both_full_versions(self):
+        store = FakeBatchGenerationStore()
+        store.generation["attending_roster_snapshot_json"] = json.dumps(
+            [
+                {"student_id": 1, "student_name": "甲"},
+                {"student_id": 2, "student_name": "乙"},
+            ]
+        )
+        calls = []
+
+        def generator(**kwargs):
+            calls.append(copy.deepcopy(kwargs))
+            index = len(calls)
+            if index == 1:
+                return (
+                    '{"schema_version":"class_commentary.student_feedback.v1",'
+                    '"items":[{"student_id":1,"feedback_text":"甲不错"}]}',
+                    copy.deepcopy(self.usage),
+                )
+            if index == 2:
+                return (
+                    '{"schema_version":"class_commentary.student_feedback.v1",'
+                    '"items":[{"student_id":1,"feedback_text":"甲不错"}]}',
+                    copy.deepcopy(self.usage),
+                )
+            return (
+                '{"schema_version":"class_commentary.student_feedback.v1",'
+                '"items":[{"student_id":2,"feedback_text":"乙加油"}]}',
+                copy.deepcopy(self.usage),
+            )
+
+        result = self._run(
+            store,
+            generator=generator,
+            charge_finalizer=store.finalize_charge,
+        )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(len(calls), 3)
+        self.assertIn("只输出以下学生", str(calls[2].get("chat_request", {}).get("messages") or ""))
+        persisted = json.loads(store.persist_calls[0]["response_text"])
+        self.assertEqual(
+            {int(item["student_id"]) for item in persisted["items"]},
+            {1, 2},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
