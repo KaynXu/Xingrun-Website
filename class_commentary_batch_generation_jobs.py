@@ -81,6 +81,53 @@ def _missing_students_in_feedback(
     return sorted(roster_ids - present)
 
 
+def _merge_feedback_responses(
+    *,
+    first_text: str,
+    second_text: str,
+    fallback_text: str,
+) -> str:
+    """把两版反馈按学生合并：第二版优先，第一版补缺。
+
+    自纠重生成后，若第二版仍漏学生，而第一版恰好覆盖了那些学生，
+    就拼成一份完整名单；两版都漏的仍会交给完整校验拦截。
+    任一侧解析失败时直接退回第二版文本。
+    """
+    try:
+        first = json.loads(first_text)
+        second = json.loads(second_text)
+        if not isinstance(first, dict) or not isinstance(second, dict):
+            return fallback_text
+        first_items = first.get("items")
+        second_items = second.get("items")
+        if not isinstance(first_items, list) or not isinstance(second_items, list):
+            return fallback_text
+        by_id: dict[int, dict] = {}
+        for item in second_items:
+            if isinstance(item, dict) and int(item.get("student_id") or 0) > 0:
+                by_id[int(item.get("student_id"))] = dict(item)
+        for item in first_items:
+            if isinstance(item, dict) and int(item.get("student_id") or 0) > 0:
+                student_id = int(item.get("student_id"))
+                if student_id not in by_id:
+                    by_id[student_id] = dict(item)
+        merged = dict(second)
+        merged["items"] = [by_id[student_id] for student_id in sorted(by_id)]
+        refs: dict[int, dict] = {}
+        for source in (first.get("used_graph_evidence_refs_by_student"), second.get("used_graph_evidence_refs_by_student")):
+            if isinstance(source, list):
+                for entry in source:
+                    if isinstance(entry, dict) and int(entry.get("student_id") or 0) > 0:
+                        refs[int(entry.get("student_id"))] = dict(entry)
+        if refs or "used_graph_evidence_refs_by_student" in second:
+            merged["used_graph_evidence_refs_by_student"] = [
+                refs[student_id] for student_id in sorted(refs)
+            ]
+        return json.dumps(merged, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError, json.JSONDecodeError, RecursionError):
+        return fallback_text
+
+
 def _claim_owner() -> str:
     return f"class-commentary-batch:{socket.gethostname()}:{os.getpid()}"
 
@@ -366,11 +413,17 @@ def process_class_commentary_batch_generation(
                         corrected_request,
                         config,
                     )
-                    feedback_text, usage = _split_result(
+                    corrected_text, corrected_usage = _split_result(
                         provider_result,
                         provider=str(claimed.get("model_provider") or ""),
                         model=str(claimed.get("model_name") or ""),
                     )
+                    feedback_text = _merge_feedback_responses(
+                        first_text=feedback_text,
+                        second_text=corrected_text,
+                        fallback_text=corrected_text,
+                    )
+                    usage = corrected_usage or usage
             target_store.persist_class_commentary_batch_generation_response(
                 int(generation_id),
                 response_text=feedback_text,
