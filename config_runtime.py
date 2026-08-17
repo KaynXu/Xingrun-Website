@@ -26,6 +26,11 @@ ENV_VAR_MAP = {
     "class_commentary_openai_api_key": "XR_CLASS_COMMENTARY_OPENAI_API_KEY",
     "class_commentary_openai_base_url": "XR_CLASS_COMMENTARY_OPENAI_BASE_URL",
     "class_commentary_openai_headers": "XR_CLASS_COMMENTARY_OPENAI_HEADERS",
+    "class_commentary_fallback_provider": "XR_CLASS_COMMENTARY_FALLBACK_PROVIDER",
+    "class_commentary_fallback_model": "XR_CLASS_COMMENTARY_FALLBACK_MODEL",
+    "class_commentary_fallback_openai_api_key": "XR_CLASS_COMMENTARY_FALLBACK_OPENAI_API_KEY",
+    "class_commentary_fallback_openai_base_url": "XR_CLASS_COMMENTARY_FALLBACK_OPENAI_BASE_URL",
+    "class_commentary_fallback_openai_headers": "XR_CLASS_COMMENTARY_FALLBACK_OPENAI_HEADERS",
     "class_commentary_memory_enabled": "XR_CLASS_COMMENTARY_MEMORY_ENABLED",
     "class_commentary_structured_feedback_enabled": "XR_CLASS_COMMENTARY_STRUCTURED_FEEDBACK_ENABLED",
     "class_commentary_student_memory_v2_enabled": "XR_CLASS_COMMENTARY_STUDENT_MEMORY_V2_ENABLED",
@@ -112,6 +117,11 @@ DEFAULTS = {
     "class_commentary_openai_api_key": "",
     "class_commentary_openai_base_url": "",
     "class_commentary_openai_headers": "",
+    "class_commentary_fallback_provider": "",
+    "class_commentary_fallback_model": "",
+    "class_commentary_fallback_openai_api_key": "",
+    "class_commentary_fallback_openai_base_url": "",
+    "class_commentary_fallback_openai_headers": "",
     "class_commentary_memory_enabled": False,
     "class_commentary_structured_feedback_enabled": False,
     "class_commentary_student_memory_v2_enabled": False,
@@ -289,6 +299,21 @@ def get_runtime_config() -> dict:
     cfg["class_commentary_openai_api_key"] = str(cfg.get("class_commentary_openai_api_key") or "").strip()
     cfg["class_commentary_openai_base_url"] = str(cfg.get("class_commentary_openai_base_url") or "").strip()
     cfg["class_commentary_openai_headers"] = str(cfg.get("class_commentary_openai_headers") or "").strip()
+    cfg["class_commentary_fallback_provider"] = normalize_optional_chat_provider(
+        cfg.get("class_commentary_fallback_provider")
+    )
+    cfg["class_commentary_fallback_model"] = str(
+        cfg.get("class_commentary_fallback_model") or ""
+    ).strip()
+    cfg["class_commentary_fallback_openai_api_key"] = str(
+        cfg.get("class_commentary_fallback_openai_api_key") or ""
+    ).strip()
+    cfg["class_commentary_fallback_openai_base_url"] = str(
+        cfg.get("class_commentary_fallback_openai_base_url") or ""
+    ).strip()
+    cfg["class_commentary_fallback_openai_headers"] = str(
+        cfg.get("class_commentary_fallback_openai_headers") or ""
+    ).strip()
     cfg["class_commentary_memory_enabled"] = normalize_bool_flag(
         cfg.get("class_commentary_memory_enabled")
     )

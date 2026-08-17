@@ -221,6 +221,72 @@ def _call_generator(generator, generation: Mapping[str, object], chat_request: d
     )
 
 
+def _fallback_generation_request(
+    generation: Mapping[str, object],
+    config: Mapping[str, object],
+) -> Optional[tuple[str, str, str, str, str]]:
+    """读取备用模型配置 (provider, model, api_key, base_url, headers)。
+
+    未配置 fallback model 时返回 None; key/base_url 未单独配置时复用主模型凭据,
+    这样也能支持同网关换模型 (例如 kimi 主模型切到同网关的高速模型)。
+    """
+    model = str(config.get("class_commentary_fallback_model") or "").strip()
+    if not model:
+        return None
+    provider = str(
+        config.get("class_commentary_fallback_provider")
+        or generation.get("model_provider")
+        or "openai"
+    ).strip() or "openai"
+    api_key = str(
+        config.get("class_commentary_fallback_openai_api_key")
+        or config.get("class_commentary_openai_api_key")
+        or ""
+    ).strip()
+    base_url = str(
+        config.get("class_commentary_fallback_openai_base_url")
+        or config.get("class_commentary_openai_base_url")
+        or ""
+    ).strip()
+    if not api_key or not base_url:
+        return None
+    headers = str(
+        config.get("class_commentary_fallback_openai_headers")
+        or config.get("class_commentary_openai_headers")
+        or ""
+    ).strip()
+    return provider, model, api_key, base_url, headers
+
+
+def _call_fallback_generator(
+    generation: Mapping[str, object],
+    chat_request: dict,
+    config: Mapping[str, object],
+):
+    fallback = _fallback_generation_request(generation, config)
+    if fallback is None:
+        raise ValueError("class commentary fallback model is not configured")
+    provider, model, api_key, base_url, headers = fallback
+    return ai_processor.generate_class_commentary_feedback(
+        class_record={},
+        students=[],
+        transcript_text="",
+        skill={},
+        provider=provider,
+        model=model,
+        openai_api_key=api_key,
+        openai_base_url=base_url,
+        openai_headers=headers,
+        chat_request=chat_request,
+        request_id=f"class-commentary-generation-{int(generation['id'])}",
+        request_timeout=float(
+            config.get("class_commentary_batch_generation_timeout") or 300
+        ),
+        max_retries=0,
+        include_usage=True,
+    )
+
+
 def _prepare_execution_snapshot(
     *,
     generation: Mapping[str, object],
@@ -352,34 +418,55 @@ def process_class_commentary_batch_generation(
                     generator, claimed, chat_request, config
                 )
             except Exception as exc:
-                provider_failure = build_provider_failure_snapshot(
-                    exc,
-                    local_request_id=local_request_id,
-                )
-                error_code = str(provider_failure["error_code"])
-                logger.warning(
-                    "class commentary provider call failed "
-                    "generation_id=%s error_code=%s exception_type=%s "
-                    "http_status=%s provider_request_id=%s result_state=%s",
-                    int(generation_id),
-                    error_code,
-                    provider_failure["exception_type"],
-                    provider_failure["http_status"],
-                    provider_failure["provider_request_id"],
-                    provider_failure["result_state"],
-                )
-                failed = target_store.fail_class_commentary_batch_generation_terminal(
-                    int(generation_id),
-                    claim_token=claim_token,
-                    error_code=error_code,
-                    provider_failure=provider_failure,
-                )
-                return {
-                    "status": str(failed.get("status") or "failed"),
-                    "generation_id": int(generation_id),
-                    "error_code": error_code,
-                    "provider_failure": provider_failure,
-                }
+                fallback_result = None
+                if _fallback_generation_request(claimed, config) is not None:
+                    try:
+                        fallback_result = _call_fallback_generator(
+                            claimed, chat_request, config
+                        )
+                        logger.warning(
+                            "class commentary provider fallback "
+                            "generation_id=%s model=%s",
+                            int(generation_id),
+                            str(config.get("class_commentary_fallback_model") or ""),
+                        )
+                    except Exception as fallback_exc:
+                        logger.warning(
+                            "class commentary provider fallback failed "
+                            "generation_id=%s exception_type=%s",
+                            int(generation_id),
+                            type(fallback_exc).__name__,
+                        )
+                if fallback_result is None:
+                    provider_failure = build_provider_failure_snapshot(
+                        exc,
+                        local_request_id=local_request_id,
+                    )
+                    error_code = str(provider_failure["error_code"])
+                    logger.warning(
+                        "class commentary provider call failed "
+                        "generation_id=%s error_code=%s exception_type=%s "
+                        "http_status=%s provider_request_id=%s result_state=%s",
+                        int(generation_id),
+                        error_code,
+                        provider_failure["exception_type"],
+                        provider_failure["http_status"],
+                        provider_failure["provider_request_id"],
+                        provider_failure["result_state"],
+                    )
+                    failed = target_store.fail_class_commentary_batch_generation_terminal(
+                        int(generation_id),
+                        claim_token=claim_token,
+                        error_code=error_code,
+                        provider_failure=provider_failure,
+                    )
+                    return {
+                        "status": str(failed.get("status") or "failed"),
+                        "generation_id": int(generation_id),
+                        "error_code": error_code,
+                        "provider_failure": provider_failure,
+                    }
+                provider_result = fallback_result
             feedback_text, usage = _split_result(
                 provider_result,
                 provider=str(claimed.get("model_provider") or ""),
@@ -473,6 +560,60 @@ def process_class_commentary_batch_generation(
                         fallback_text=targeted_text,
                     )
                     usage = targeted_usage or usage
+            final_missing = _missing_students_in_feedback(
+                feedback_text=feedback_text,
+                generation=claimed,
+            )
+            if final_missing and _fallback_generation_request(claimed, config) is not None:
+                # 备用模型兜底：主模型自纠链仍然漏人时，换备用模型定向补全。
+                fallback = _fallback_generation_request(claimed, config)
+                logger.warning(
+                    "class commentary model fallback completion "
+                    "generation_id=%s missing=%s model=%s",
+                    int(generation_id),
+                    final_missing,
+                    fallback[1],
+                )
+                fb_request = _frozen_chat_request(claimed)
+                messages = fb_request.get("messages") or []
+                if (
+                    isinstance(messages, list)
+                    and messages
+                    and isinstance(messages[-1], dict)
+                    and isinstance(messages[-1].get("content"), str)
+                ):
+                    messages = [dict(message) for message in messages]
+                    messages[-1]["content"] = str(messages[-1]["content"]) + (
+                        "\n\n请只输出以下学生的 feedback_text 条目: %s. "
+                        "这些学生必须出现在 items 里: 即使没有任何新的观察记录, "
+                        "也要基于课堂记录为每位学生写一条 feedback_text."
+                        % final_missing
+                    )
+                    fb_request["messages"] = messages
+                    try:
+                        fb_result = _call_fallback_generator(
+                            claimed,
+                            fb_request,
+                            config,
+                        )
+                        fb_text, fb_usage = _split_result(
+                            fb_result,
+                            provider=str(fallback[0]),
+                            model=str(fallback[1]),
+                        )
+                        feedback_text = _merge_feedback_responses(
+                            first_text=feedback_text,
+                            second_text=fb_text,
+                            fallback_text=fb_text,
+                        )
+                        usage = fb_usage or usage
+                    except Exception as fb_exc:
+                        logger.warning(
+                            "class commentary model fallback completion failed "
+                            "generation_id=%s exception_type=%s",
+                            int(generation_id),
+                            type(fb_exc).__name__,
+                        )
             target_store.persist_class_commentary_batch_generation_response(
                 int(generation_id),
                 response_text=feedback_text,

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from class_commentary_batch_generation_jobs import (
     _default_generator,
+    _fallback_generation_request,
     _merge_feedback_responses,
     process_class_commentary_batch_generation,
 )
@@ -871,6 +872,168 @@ class ClassCommentaryBatchGenerationJobsTest(unittest.TestCase):
             {int(item["student_id"]) for item in persisted["items"]},
             {1, 2},
         )
+
+    def test_fallback_request_uses_main_credentials_when_only_model_set(self):
+        config = {
+            "class_commentary_fallback_model": "fb-model",
+            "class_commentary_openai_api_key": "main-key",
+            "class_commentary_openai_base_url": "https://main.example",
+            "class_commentary_openai_headers": "",
+        }
+        fallback = _fallback_generation_request(
+            {"model_provider": "openai"},
+            config,
+        )
+        self.assertEqual(
+            fallback,
+            ("openai", "fb-model", "main-key", "https://main.example", ""),
+        )
+        self.assertIsNone(
+            _fallback_generation_request(
+                {"model_provider": "openai"},
+                {"class_commentary_fallback_model": "fb-model"},
+            )
+        )
+        self.assertIsNone(
+            _fallback_generation_request(
+                {"model_provider": "openai"},
+                {
+                    "class_commentary_fallback_model": "",
+                    "class_commentary_openai_api_key": "k",
+                    "class_commentary_openai_base_url": "b",
+                },
+            )
+        )
+
+    def test_model_fallback_recovers_coverage_after_chain_exhausts(self):
+        store = FakeBatchGenerationStore()
+        store.generation["attending_roster_snapshot_json"] = json.dumps(
+            [
+                {"student_id": 1, "student_name": "甲"},
+                {"student_id": 2, "student_name": "乙"},
+            ]
+        )
+        main_calls = []
+
+        def generator(**kwargs):
+            main_calls.append(copy.deepcopy(kwargs))
+            return (
+                '{"schema_version":"class_commentary.student_feedback.v1",'
+                '"items":[{"student_id":1,"feedback_text":"甲不错"}]}',
+                copy.deepcopy(self.usage),
+            )
+
+        fallback_calls = []
+
+        def fake_fallback(*_args, **_kwargs):
+            fallback_calls.append(copy.deepcopy(_kwargs))
+            return (
+                '{"schema_version":"class_commentary.student_feedback.v1",'
+                '"items":[{"student_id":2,"feedback_text":"乙由备用模型补上"}]}',
+                {
+                    "provider": "openai",
+                    "model": "fb-model",
+                    "input_tokens": 10,
+                    "output_tokens": 10,
+                },
+            )
+
+        runtime_config = {
+            "class_commentary_batch_generation_timeout": 120,
+            "class_commentary_fallback_provider": "openai",
+            "class_commentary_fallback_model": "fb-model",
+            "class_commentary_fallback_openai_api_key": "fb-key",
+            "class_commentary_fallback_openai_base_url": "https://fb.example",
+            "class_commentary_fallback_openai_headers": "",
+        }
+        with patch(
+            "class_commentary_batch_generation_jobs.ai_processor."
+            "generate_class_commentary_feedback",
+            side_effect=fake_fallback,
+        ) as fallback_generate:
+            result = process_class_commentary_batch_generation(
+                store.generation["id"],
+                store=store,
+                runtime_config=runtime_config,
+                claim_owner="worker-a",
+                generator=generator,
+                charge_finalizer=store.finalize_charge,
+            )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(len(main_calls), 3)
+        self.assertEqual(len(fallback_calls), 1)
+        self.assertEqual(fallback_calls[0]["model"], "fb-model")
+        self.assertEqual(fallback_calls[0]["openai_api_key"], "fb-key")
+        self.assertEqual(fallback_calls[0]["openai_base_url"], "https://fb.example")
+        fallback_messages = str(
+            fallback_calls[0].get("chat_request", {}).get("messages") or ""
+        )
+        self.assertIn("只输出以下学生", fallback_messages)
+        self.assertIn("2", fallback_messages)
+        persisted = json.loads(store.persist_calls[0]["response_text"])
+        self.assertEqual(
+            {int(item["student_id"]) for item in persisted["items"]},
+            {1, 2},
+        )
+        self.assertIn(
+            "乙由备用模型补上",
+            store.persist_calls[0]["response_text"],
+        )
+
+    def test_provider_failure_retries_once_with_fallback_model(self):
+        store = FakeBatchGenerationStore()
+
+        def failing_generator(**_kwargs):
+            raise ValueError("boom")
+
+        fallback_calls = []
+
+        def fake_fallback(*_args, **_kwargs):
+            fallback_calls.append(copy.deepcopy(_kwargs))
+            return self._provider_response()
+
+        runtime_config = {
+            "class_commentary_batch_generation_timeout": 120,
+            "class_commentary_fallback_provider": "openai",
+            "class_commentary_fallback_model": "fb-model",
+            "class_commentary_fallback_openai_api_key": "fb-key",
+            "class_commentary_fallback_openai_base_url": "https://fb.example",
+            "class_commentary_fallback_openai_headers": "",
+        }
+        with patch(
+            "class_commentary_batch_generation_jobs.ai_processor."
+            "generate_class_commentary_feedback",
+            side_effect=fake_fallback,
+        ):
+            result = process_class_commentary_batch_generation(
+                store.generation["id"],
+                store=store,
+                runtime_config=runtime_config,
+                claim_owner="worker-a",
+                generator=failing_generator,
+                charge_finalizer=store.finalize_charge,
+            )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(len(fallback_calls), 1)
+        self.assertEqual(fallback_calls[0]["model"], "fb-model")
+        self.assertEqual(store.terminal_failure_calls, [])
+
+    def test_provider_failure_without_fallback_still_fails_closed(self):
+        store = FakeBatchGenerationStore()
+
+        def failing_generator(**_kwargs):
+            raise ValueError("boom")
+
+        result = self._run(
+            store,
+            generator=failing_generator,
+            charge_finalizer=store.finalize_charge,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(store.terminal_failure_calls, ["provider_request_failed"])
 
 
 if __name__ == "__main__":
