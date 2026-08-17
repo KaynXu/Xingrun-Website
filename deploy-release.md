@@ -60,6 +60,16 @@ XR_SKIP_GIT_SYNC=1 XR_PYTHON_BIN=python3.12 XR_REQUIRE_BATCH_ISOLATED_V3=1 ./scr
 
 生产机 `origin` 应为 `git@github-xingrun-website:KaynXu/Xingrun-Website.git`. 如果 GitHub 暂时不可达, 使用一次性 `git bundle` 传输 `master`, 只做 fast-forward, 发布成功后删除 bundle.
 
+## 手动热更新的坑（2026-08-17 事故记录）
+
+课堂反馈的**批量生成请求在 Flask Web 进程内同步执行**（不是 RQ 队列），所以任何涉及以下路径的改动，只 `git pull` + 重启 `xingrun-class-commentary-memory-worker` / `xingrun-rq-worker` 是**不够的**——旧代码会继续留在没重启的 Flask 进程里跑：
+
+- `class_commentary_batch_generation_jobs.py`（覆盖自纠 / 合并 / 定向补全链）
+- `ai_processor.py`（json_object 网关兼容、temperature 校正）
+- `app.py`、`lesson_manager.py` 中 Flask 请求路径触达的函数
+
+手动部署时**必须一并执行 `pm2 restart xingrun`**，否则改动等于没上。用 `scripts/deploy_backend.sh` 发布则无此问题（脚本会重启 Web 进程）。
+
 ## 为什么保留部署脚本
 
 `scripts/deploy_backend.sh` 负责不可省略的确定性步骤:
