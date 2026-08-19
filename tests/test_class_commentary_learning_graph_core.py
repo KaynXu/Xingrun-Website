@@ -550,6 +550,62 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
             )
         self.assertEqual(counts, (1, 0, 0))
 
+    def test_reconcile_auto_maps_pending_candidates_idempotently(self):
+        text = "全新的自定义知识点需要映射."
+        job_id = self._job(
+            revision_id=61,
+            revision_no=1,
+            feedback_text=text,
+            confirmed_at="2026-08-15T09:00:00Z",
+        )
+        result = self._run(
+            job_id,
+            self._extractor_for(
+                knowledge_point_key=None,
+                unmapped_candidate="全新的自定义知识点",
+            ),
+        )
+        self.assertEqual(result["status"], "needs_mapping")
+        candidate_id = result["unmapped_candidate_ids"][0]
+
+        reconciliation = reconcile_class_commentary_graph_store(auto_map_enabled=True)
+        self.assertEqual(reconciliation["auto_mapped_count"], 1)
+        self.assertEqual(reconciliation["auto_mapping_failure_count"], 0)
+
+        with lesson_manager.get_conn() as conn:
+            job = conn.execute(
+                "SELECT status FROM class_commentary_graph_extraction_jobs WHERE id=?",
+                (job_id,),
+            ).fetchone()
+            candidate = conn.execute(
+                "SELECT status, resolved_knowledge_point_key "
+                "FROM class_commentary_graph_unmapped_candidates WHERE candidate_id=?",
+                (candidate_id,),
+            ).fetchone()
+            org_kp = conn.execute(
+                "SELECT status, canonical_name, book_node_id "
+                "FROM curriculum_organization_knowledge_points "
+                "WHERE canonical_name=?",
+                ("全新的自定义知识点",),
+            ).fetchone()
+            event_count = conn.execute(
+                "SELECT COUNT(*) FROM class_commentary_student_learning_events"
+            ).fetchone()[0]
+        self.assertEqual(job["status"], "extracted")
+        self.assertEqual(candidate["status"], "mapped")
+        self.assertEqual(org_kp["status"], "active")
+        self.assertIsNotNone(candidate["resolved_knowledge_point_key"])
+
+        second = reconcile_class_commentary_graph_store(auto_map_enabled=True)
+        self.assertEqual(second["auto_mapped_count"], 0)
+        with lesson_manager.get_conn() as conn:
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM class_commentary_student_learning_events"
+                ).fetchone()[0],
+                event_count,
+            )
+
     def test_server_identity_exact_evidence_and_hash_ownership(self):
         text = "二次函数图像目前较薄弱."
         malicious_job = self._job(

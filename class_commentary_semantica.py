@@ -204,24 +204,27 @@ class SemanticaGraphAdapter:
             raise SemanticaGraphIntegrityError("cannot merge different graph nodes")
         if str(existing.get("type") or "") != str(incoming.get("type") or ""):
             raise SemanticaGraphIntegrityError("graph node type changed for a stable identity")
-        # 机构自定义知识点 (org.1.custom.*) 会随老师补别名/改名/合并而演进,
-        # 历史事件各自携带抽取时刻的溯源属性, 严格相等检查会让整图重建失败.
-        # 这些字段是来源溯源而非节点身份, 事件按 confirmed_at 升序合并,
-        # 因此冲突时以较新事件的值覆盖.
-        provenance_last_write_wins = {
-            "curriculum_node_content_hash",
-            "organization_knowledge_point_id",
+        # 图是 SQLite 事件的派生投影, 可随时重建. 同一 id 的节点合并时,
+        # 只有身份/作用域字段必须严格一致 (它们参与节点 id 计算, 变了就是真冲突);
+        # 其余溯源/描述字段 (内容 hash、机构知识点 id、注册表版本等) 会随
+        # 老师改名/合并知识点而演进, 历史事件携带的值自然漂移,
+        # 冲突时以较新事件的值覆盖 (事件按 confirmed_at 升序合并).
+        identity_properties = {
+            "organization_id",
+            "student_id",
+            "subject_key",
+            "knowledge_point_key",
         }
         properties = dict(existing.get("properties") or existing.get("metadata") or {})
         for key, value in dict(incoming.get("properties") or {}).items():
             previous = properties.get(key)
             if previous not in (None, "", 0) and value not in (None, "", 0) and previous != value:
-                if key in provenance_last_write_wins:
-                    properties[key] = value
-                    continue
-                raise SemanticaGraphIntegrityError(
-                    f"graph node property changed for a stable identity: {key}"
-                )
+                if key in identity_properties:
+                    raise SemanticaGraphIntegrityError(
+                        f"graph node property changed for a stable identity: {key}"
+                    )
+                properties[key] = value
+                continue
             if value not in (None, "", 0) or key not in properties:
                 properties[key] = value
         return {

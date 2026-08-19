@@ -63,6 +63,7 @@ class SemanticaAvailabilityTests(unittest.TestCase):
             "properties": {
                 "curriculum_node_content_hash": "old-hash",
                 "organization_knowledge_point_id": 21,
+                "registry_version": 1,
                 "knowledge_point_key": "org.1.custom.abc",
             },
         }
@@ -72,6 +73,7 @@ class SemanticaAvailabilityTests(unittest.TestCase):
             "properties": {
                 "curriculum_node_content_hash": "new-hash",
                 "organization_knowledge_point_id": 2,
+                "registry_version": 3,
                 "knowledge_point_key": "org.1.custom.abc",
             },
         }
@@ -80,6 +82,7 @@ class SemanticaAvailabilityTests(unittest.TestCase):
             merged["properties"]["curriculum_node_content_hash"], "new-hash"
         )
         self.assertEqual(merged["properties"]["organization_knowledge_point_id"], 2)
+        self.assertEqual(merged["properties"]["registry_version"], 3)
         self.assertEqual(
             merged["properties"]["knowledge_point_key"], "org.1.custom.abc"
         )

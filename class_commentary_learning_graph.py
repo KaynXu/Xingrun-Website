@@ -2745,11 +2745,23 @@ def prepare_graph_cleanup_for_scope_conn(
     }
 
 
-def reconcile_class_commentary_graph_store(*, limit: int = 100) -> dict:
+def reconcile_class_commentary_graph_store(
+    *,
+    limit: int = 100,
+    auto_map_enabled: Optional[bool] = None,
+    actor_user_id: int = 1,
+) -> dict:
     recovered_jobs = 0
     recovered_sync = 0
     created_sync = 0
     created_extraction = 0
+    if auto_map_enabled is None:
+        from config_runtime import get_runtime_config
+
+        auto_map_enabled = bool(
+            get_runtime_config().get("class_commentary_graph_auto_map_enabled", True)
+        )
+    auto_map_candidates: list[tuple[str, int]] = []
     with _conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         missing_extractions = conn.execute(
@@ -2859,6 +2871,31 @@ def reconcile_class_commentary_graph_store(*, limit: int = 100) -> dict:
                 ),
             )
             created_sync += 1
+        if auto_map_enabled:
+            auto_map_candidates = [
+                (str(row["candidate_id"]), int(row["organization_id"]))
+                for row in conn.execute(
+                    "SELECT candidate_id, organization_id "
+                    "FROM class_commentary_graph_unmapped_candidates "
+                    "WHERE status='pending' ORDER BY created_at, candidate_id LIMIT ?",
+                    (max(1, min(int(limit), 500)),),
+                ).fetchall()
+            ]
+    auto_mapped: list[dict] = []
+    auto_mapping_failures: list[dict] = []
+    for pending_id, pending_org_id in auto_map_candidates:
+        try:
+            auto_mapped.append(
+                auto_resolve_graph_unmapped_candidate(
+                    pending_id,
+                    organization_id=pending_org_id,
+                    actor_user_id=int(actor_user_id),
+                )
+            )
+        except Exception as exc:
+            auto_mapping_failures.append(
+                {"candidate_id": pending_id, "error": exc.__class__.__name__}
+            )
     return {
         "created_missing_extraction_jobs": created_extraction,
         "recovered_extraction_jobs": recovered_jobs,
@@ -2866,6 +2903,9 @@ def reconcile_class_commentary_graph_store(*, limit: int = 100) -> dict:
         "created_missing_sync_operations": created_sync,
         "dispatchable_extraction_jobs": list_dispatchable_graph_extraction_jobs(limit),
         "dispatchable_sync_operations": list_dispatchable_graph_sync_operations(limit),
+        "auto_mapped_candidate_ids": [item.get("candidate_id") or item.get("action", {}).get("candidate_id") or "" for item in auto_mapped],
+        "auto_mapped_count": len(auto_mapped),
+        "auto_mapping_failure_count": len(auto_mapping_failures),
     }
 
 
@@ -3498,6 +3538,110 @@ def resolve_graph_unmapped_candidate(
         "reprocess": committed,
         "replayed": False,
     }
+
+
+def auto_resolve_graph_unmapped_candidate(
+    candidate_id: str,
+    *,
+    organization_id: int,
+    actor_user_id: int,
+    note: str = "自动映射",
+) -> dict:
+    """确定性自动清积压: 优先映射到同机构同名活跃机构知识点, 否则按候选名
+    自动提案机构知识点并激活 (归属任务主教材), 再完成映射.
+    全程写入 curriculum_mapping_actions 审计, request_id 由候选 id 派生, 幂等可重放.
+    """
+    candidate_id = str(candidate_id or "").strip()
+    if not candidate_id:
+        raise LearningGraphValidationError("candidate_id is required")
+    with _conn() as conn:
+        candidate = conn.execute(
+            "SELECT * FROM class_commentary_graph_unmapped_candidates "
+            "WHERE candidate_id=? AND organization_id=?",
+            (candidate_id, int(organization_id)),
+        ).fetchone()
+    if not candidate:
+        raise LookupError("unmapped candidate not found")
+    if str(candidate["status"]) != "pending":
+        return {"status": "skipped", "candidate_id": candidate_id, "reason": "not_pending"}
+    name = str(candidate["candidate_text"] or "").strip()
+    if not name:
+        raise LearningGraphValidationError("candidate has no text")
+    base_request_id = f"auto-map:{content_hash([organization_id, candidate_id])[:24]}"
+
+    with _conn() as conn:
+        match = conn.execute(
+            "SELECT knowledge_point_key FROM curriculum_organization_knowledge_points "
+            "WHERE organization_id=? AND status='active' AND canonical_name=? LIMIT 1",
+            (int(organization_id), name),
+        ).fetchone()
+    if match:
+        try:
+            return resolve_graph_unmapped_candidate(
+                candidate_id,
+                organization_id=int(organization_id),
+                actor_user_id=int(actor_user_id),
+                request_id=base_request_id,
+                action="map",
+                target_knowledge_point_key=str(match["knowledge_point_key"]),
+                note=note,
+            )
+        except LearningGraphValidationError:
+            pass  # 同名知识点不在本次冻结范围, 落回自动提案
+
+    try:
+        resolve_graph_unmapped_candidate(
+            candidate_id,
+            organization_id=int(organization_id),
+            actor_user_id=int(actor_user_id),
+            request_id=base_request_id + "-p",
+            action="propose_new",
+            proposed_name=name,
+            note=note,
+        )
+    except LearningGraphRetryConflict:
+        pass  # 重放: 提案动作已存在
+    with _conn() as conn:
+        action = conn.execute(
+            "SELECT * FROM curriculum_mapping_actions WHERE organization_id=? AND request_id=?",
+            (int(organization_id), base_request_id + "-p"),
+        ).fetchone()
+        if not action:
+            raise LearningGraphValidationError("auto proposal action is missing")
+        key = str(_json_object(action["payload_json"]).get("proposal_key") or "").strip()
+        if not key:
+            raise LearningGraphValidationError("auto proposal key is missing")
+        proposal = conn.execute(
+            "SELECT * FROM curriculum_organization_knowledge_points WHERE knowledge_point_key=?",
+            (key,),
+        ).fetchone()
+        if not proposal:
+            raise LearningGraphValidationError("auto proposal row is missing")
+        if str(proposal["status"]) == "proposed":
+            from curriculum_registry import review_organization_knowledge_point_proposal
+
+            review_organization_knowledge_point_proposal(
+                conn,
+                organization_id=int(organization_id),
+                proposal_id=int(proposal["id"]),
+                actor_user_id=int(actor_user_id),
+                request_id=base_request_id + "-r",
+                approve=True,
+                note=note,
+            )
+        elif str(proposal["status"]) != "active":
+            raise LearningGraphValidationError(
+                f"auto proposal has unexpected status {proposal['status']}"
+            )
+    return resolve_graph_unmapped_candidate(
+        candidate_id,
+        organization_id=int(organization_id),
+        actor_user_id=int(actor_user_id),
+        request_id=base_request_id + "-m",
+        action="map",
+        target_knowledge_point_key=key,
+        note=note,
+    )
 
 
 def list_graph_unmapped_candidates(
