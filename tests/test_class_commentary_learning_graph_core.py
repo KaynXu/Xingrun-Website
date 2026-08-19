@@ -569,7 +569,9 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
         self.assertEqual(result["status"], "needs_mapping")
         candidate_id = result["unmapped_candidate_ids"][0]
 
-        reconciliation = reconcile_class_commentary_graph_store(auto_map_enabled=True)
+        reconciliation = reconcile_class_commentary_graph_store(
+            auto_map_enabled=True, actor_user_id=11
+        )
         self.assertEqual(
             reconciliation["auto_mapped_count"],
             1,
@@ -601,7 +603,9 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
         self.assertEqual(org_kp["status"], "active")
         self.assertIsNotNone(candidate["resolved_knowledge_point_key"])
 
-        second = reconcile_class_commentary_graph_store(auto_map_enabled=True)
+        second = reconcile_class_commentary_graph_store(
+            auto_map_enabled=True, actor_user_id=11
+        )
         self.assertEqual(second["auto_mapped_count"], 0)
         with lesson_manager.get_conn() as conn:
             self.assertEqual(
