@@ -2894,7 +2894,11 @@ def reconcile_class_commentary_graph_store(
             )
         except Exception as exc:
             auto_mapping_failures.append(
-                {"candidate_id": pending_id, "error": exc.__class__.__name__}
+                {
+                    "candidate_id": pending_id,
+                    "error": exc.__class__.__name__,
+                    "message": str(exc)[:300],
+                }
             )
     return {
         "created_missing_extraction_jobs": created_extraction,
@@ -2906,6 +2910,7 @@ def reconcile_class_commentary_graph_store(
         "auto_mapped_candidate_ids": [item.get("candidate_id") or item.get("action", {}).get("candidate_id") or "" for item in auto_mapped],
         "auto_mapped_count": len(auto_mapped),
         "auto_mapping_failure_count": len(auto_mapping_failures),
+        "auto_mapping_failures": auto_mapping_failures,
     }
 
 
