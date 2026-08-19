@@ -570,7 +570,11 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
         candidate_id = result["unmapped_candidate_ids"][0]
 
         reconciliation = reconcile_class_commentary_graph_store(auto_map_enabled=True)
-        self.assertEqual(reconciliation["auto_mapped_count"], 1)
+        self.assertEqual(
+            reconciliation["auto_mapped_count"],
+            1,
+            msg=str(reconciliation.get("auto_mapping_failures") or ""),
+        )
         self.assertEqual(reconciliation["auto_mapping_failure_count"], 0)
 
         with lesson_manager.get_conn() as conn:
