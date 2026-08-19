@@ -551,6 +551,7 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
         self.assertEqual(counts, (1, 0, 0))
 
     def test_reconcile_auto_maps_pending_candidates_idempotently(self):
+        self._install_multibook_registry("八年级")
         text = "全新的自定义知识点需要映射."
         job_id = self._job(
             revision_id=61,
