@@ -3361,9 +3361,14 @@ def resolve_graph_unmapped_candidate(
                 == CLASS_CURRICULUM_SCOPE_SCHEMA_VERSION
                 and (book_ids is None or len(book_ids) != 1)
             ):
-                raise LearningGraphValidationError(
-                    "proposal requires a single frozen curriculum book"
-                )
+                # 多教材班级: 冻结范围含多本书时, 用抽取任务自己选定的主教材
+                # 作为新建机构知识点的归属书, 不再要求人工指定.
+                job_book_id = int(candidate["curriculum_book_node_id"] or 0)
+                if job_book_id <= 0:
+                    raise LearningGraphValidationError(
+                        "proposal requires a single frozen curriculum book"
+                    )
+                book_ids = [job_book_id]
             proposal_book_id = (
                 book_ids[0]
                 if book_ids

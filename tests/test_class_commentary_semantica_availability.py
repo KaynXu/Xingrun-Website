@@ -56,12 +56,13 @@ class SemanticaAvailabilityTests(unittest.TestCase):
                     with self.assertRaises(SemanticaGraphUnavailableError):
                         self.adapter._installed_version()
 
-    def test_merge_node_allows_newer_curriculum_node_content_hash(self):
+    def test_merge_node_allows_newer_provenance_properties(self):
         existing = {
             "id": "kp-1",
             "type": "KnowledgePoint",
             "properties": {
                 "curriculum_node_content_hash": "old-hash",
+                "organization_knowledge_point_id": 21,
                 "knowledge_point_key": "org.1.custom.abc",
             },
         }
@@ -70,6 +71,7 @@ class SemanticaAvailabilityTests(unittest.TestCase):
             "type": "KnowledgePoint",
             "properties": {
                 "curriculum_node_content_hash": "new-hash",
+                "organization_knowledge_point_id": 2,
                 "knowledge_point_key": "org.1.custom.abc",
             },
         }
@@ -77,6 +79,7 @@ class SemanticaAvailabilityTests(unittest.TestCase):
         self.assertEqual(
             merged["properties"]["curriculum_node_content_hash"], "new-hash"
         )
+        self.assertEqual(merged["properties"]["organization_knowledge_point_id"], 2)
         self.assertEqual(
             merged["properties"]["knowledge_point_key"], "org.1.custom.abc"
         )

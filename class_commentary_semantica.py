@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
 
-SEMANTICA_REQUIRED_VERSION = "0.6.0"
+SEMANTICA_REQUIRED_VERSION = "0.6.5"
 GRAPH_FORMAT_VERSION = "xingrun.class_commentary.semantica.v1"
 
 
@@ -204,15 +204,19 @@ class SemanticaGraphAdapter:
             raise SemanticaGraphIntegrityError("cannot merge different graph nodes")
         if str(existing.get("type") or "") != str(incoming.get("type") or ""):
             raise SemanticaGraphIntegrityError("graph node type changed for a stable identity")
-        # 机构自定义知识点 (org.1.custom.*) 的内容会随老师补别名/改名而演进,
-        # 历史事件各自携带抽取时刻的 curriculum_node_content_hash,
-        # 严格相等检查会让整图重建失败. 该字段是来源溯源而非节点身份,
-        # 事件按 confirmed_at 升序合并, 因此冲突时以较新事件的值覆盖.
+        # 机构自定义知识点 (org.1.custom.*) 会随老师补别名/改名/合并而演进,
+        # 历史事件各自携带抽取时刻的溯源属性, 严格相等检查会让整图重建失败.
+        # 这些字段是来源溯源而非节点身份, 事件按 confirmed_at 升序合并,
+        # 因此冲突时以较新事件的值覆盖.
+        provenance_last_write_wins = {
+            "curriculum_node_content_hash",
+            "organization_knowledge_point_id",
+        }
         properties = dict(existing.get("properties") or existing.get("metadata") or {})
         for key, value in dict(incoming.get("properties") or {}).items():
             previous = properties.get(key)
             if previous not in (None, "", 0) and value not in (None, "", 0) and previous != value:
-                if key == "curriculum_node_content_hash":
+                if key in provenance_last_write_wins:
                     properties[key] = value
                     continue
                 raise SemanticaGraphIntegrityError(

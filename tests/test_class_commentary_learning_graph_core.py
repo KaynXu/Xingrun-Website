@@ -465,7 +465,7 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
             )
         self.assertFalse(get_graph_extraction_input(tamper_job_id)["integrity_valid"])
 
-    def test_multibook_ambiguous_exact_key_and_unscoped_proposal_fail_closed(self):
+    def test_multibook_unscoped_proposal_falls_back_to_job_primary_book(self):
         self._install_multibook_registry("一年级")
         text = "比较数量目前较薄弱."
         job_id = self._job(
@@ -496,17 +496,32 @@ class ClassCommentaryLearningGraphCoreTest(unittest.TestCase):
             ),
         )
         self.assertEqual(result["status"], "needs_mapping")
-        with self.assertRaisesRegex(
-            ValueError, "proposal requires a single frozen curriculum book"
-        ):
-            resolve_graph_unmapped_candidate(
-                result["unmapped_candidate_ids"][0],
-                organization_id=1,
-                actor_user_id=11,
-                request_id="ambiguous-proposal-without-book",
-                action="propose_new",
-                proposed_name="比较数量自定义观察点",
-            )
+        resolution = resolve_graph_unmapped_candidate(
+            result["unmapped_candidate_ids"][0],
+            organization_id=1,
+            actor_user_id=11,
+            request_id="ambiguous-proposal-with-job-book",
+            action="propose_new",
+            proposed_name="比较数量自定义观察点",
+        )
+        self.assertEqual(resolution["action"]["status"], "pending_review")
+        with lesson_manager.get_conn() as conn:
+            job_row = conn.execute(
+                "SELECT curriculum_book_node_id FROM class_commentary_graph_extraction_jobs WHERE id=?",
+                (job_id,),
+            ).fetchone()
+            proposal = conn.execute(
+                """
+                SELECT book_node_id, status FROM curriculum_organization_knowledge_points
+                WHERE organization_id=1 AND canonical_name=?
+                """,
+                ("比较数量自定义观察点",),
+            ).fetchone()
+        self.assertIsNotNone(proposal)
+        self.assertEqual(proposal["status"], "proposed")
+        self.assertEqual(
+            int(proposal["book_node_id"]), int(job_row["curriculum_book_node_id"])
+        )
 
     def test_unknown_knowledge_point_needs_mapping_and_never_enters_trusted_graph(self):
         text = "新的自定义知识点仍然薄弱."
