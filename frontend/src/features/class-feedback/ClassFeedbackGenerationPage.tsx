@@ -546,6 +546,7 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
   const [memoryActionKey, setMemoryActionKey] = useState('');
   const [learningGraphDialogOpen, setLearningGraphDialogOpen] = useState(false);
   const [learningGraphStudent, setLearningGraphStudent] = useState<StudentLearningGraphStudent | null>(null);
+  const [confirmLearn, setConfirmLearn] = useState(true);
   const [skillEvolutionDialogOpen, setSkillEvolutionDialogOpen] = useState(false);
   const [skillEvolution, setSkillEvolution] = useState<ClassCommentarySkillEvolution | null>(null);
   const [selectedSkillVersionId, setSelectedSkillVersionId] = useState('');
@@ -3412,15 +3413,20 @@ export function ClassFeedbackGenerationPage({ currentUser }: ClassFeedbackGenera
                     <Button type="button" variant="outline" onClick={handleSaveFeedbackDraft} disabled={!canSaveFeedbackDraft}>
                       保存草稿
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => handleConfirmFeedback(false)} disabled={!canConfirmFeedback}>
-                      确认但不学习
-                    </Button>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                      <Checkbox
+                        checked={confirmLearn && capabilities.memory_learning_enabled}
+                        disabled={!capabilities.memory_learning_enabled}
+                        onCheckedChange={(checked) => setConfirmLearn(Boolean(checked))}
+                      />
+                      确认后让 AI 学习这次修改
+                    </label>
                     <Button
                       type="button"
-                      onClick={() => handleConfirmFeedback(true)}
-                      disabled={!canConfirmFeedback || !capabilities.memory_learning_enabled}
+                      onClick={() => handleConfirmFeedback(confirmLearn && capabilities.memory_learning_enabled)}
+                      disabled={!canConfirmFeedback}
                     >
-                      确认并让 AI 学习修改
+                      确认反馈
                     </Button>
                   </div>
                 ) : null}

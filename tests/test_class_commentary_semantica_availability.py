@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from class_commentary_semantica import (
     SemanticaGraphAdapter,
+    SemanticaGraphIntegrityError,
     SemanticaGraphUnavailableError,
 )
 
@@ -54,6 +55,45 @@ class SemanticaAvailabilityTests(unittest.TestCase):
                 with patch.object(importlib.metadata, "version", return_value=bad):
                     with self.assertRaises(SemanticaGraphUnavailableError):
                         self.adapter._installed_version()
+
+    def test_merge_node_allows_newer_curriculum_node_content_hash(self):
+        existing = {
+            "id": "kp-1",
+            "type": "KnowledgePoint",
+            "properties": {
+                "curriculum_node_content_hash": "old-hash",
+                "knowledge_point_key": "org.1.custom.abc",
+            },
+        }
+        incoming = {
+            "id": "kp-1",
+            "type": "KnowledgePoint",
+            "properties": {
+                "curriculum_node_content_hash": "new-hash",
+                "knowledge_point_key": "org.1.custom.abc",
+            },
+        }
+        merged = SemanticaGraphAdapter._merge_node(existing, incoming)
+        self.assertEqual(
+            merged["properties"]["curriculum_node_content_hash"], "new-hash"
+        )
+        self.assertEqual(
+            merged["properties"]["knowledge_point_key"], "org.1.custom.abc"
+        )
+
+    def test_merge_node_still_rejects_other_property_changes(self):
+        existing = {
+            "id": "kp-1",
+            "type": "KnowledgePoint",
+            "properties": {"knowledge_point_key": "kp-a"},
+        }
+        incoming = {
+            "id": "kp-1",
+            "type": "KnowledgePoint",
+            "properties": {"knowledge_point_key": "kp-b"},
+        }
+        with self.assertRaises(SemanticaGraphIntegrityError):
+            SemanticaGraphAdapter._merge_node(existing, incoming)
 
 
 if __name__ == "__main__":
