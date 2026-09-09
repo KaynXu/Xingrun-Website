@@ -6,11 +6,25 @@ id = "inline-ssh-password"
 description = "Inline SSH and sudo passwords"
 regex = '''(?i)(?:SSH|SUDO)_PASSWORD[ \t]*=[ \t]*['"]([^'"\r\n]+)['"]'''
 secretGroup = 1
-keywords = ["SSH_PASSWORD", "SUDO_PASSWORD"]
+keywords = ["SSH_PASSWORD", "SUDO_PASSWORD", "ssh_password", "sudo_password"]
 
     [[rules.allowlists]]
     regexes = [
       '''^\*\*\*REMOVED-ROTATED-SSH-PASSWORD\*\*\*$''',
+      '''^<[^>\r\n]+>$''',
+      '''^your-password$''',
+    ]
+
+[[rules]]
+id = "inline-ssh-password-unquoted"
+description = "Unquoted inline SSH and sudo passwords"
+regex = '''(?i)(?:SSH|SUDO)_PASSWORD[ \t]*=[ \t]*([^'" \t\r\n#;]+)'''
+secretGroup = 1
+keywords = ["SSH_PASSWORD", "SUDO_PASSWORD", "ssh_password", "sudo_password"]
+
+    [[rules.allowlists]]
+    regexes = [
+      '''^\$\{?[A-Za-z_][A-Za-z0-9_]*(?::[^}]*)?\}?$''',
       '''^<[^>\r\n]+>$''',
       '''^your-password$''',
     ]
