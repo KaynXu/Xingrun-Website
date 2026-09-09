@@ -278,7 +278,10 @@ class ClassCommentaryMemoryDeployContractTests(unittest.TestCase):
     def test_deploy_runbook_covers_dual_process_health_and_rollback(self):
         runbook = (ROOT / "deploy-release.md").read_text(encoding="utf-8")
 
-        self.assertNotIn("***REMOVED-ROTATED-SSH-PASSWORD***", runbook)
+        self.assertNotRegex(
+            runbook,
+            r'''(?i)\b(?:ssh|sudo)_password\s*=\s*['"][^'"\n]+['"]''',
+        )
         self.assertIn("Python 3.12", runbook)
         self.assertIn("scripts/deploy_backend.sh", runbook)
         self.assertIn("xingrun-class-commentary-memory-worker", runbook)

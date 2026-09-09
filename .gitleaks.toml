@@ -1,6 +1,20 @@
 [extend]
 useDefault = true
 
+[[rules]]
+id = "inline-ssh-password"
+description = "Inline SSH and sudo passwords"
+regex = '''(?i)(?:SSH|SUDO)_PASSWORD[ \t]*=[ \t]*['"]([^'"\r\n]+)['"]'''
+secretGroup = 1
+keywords = ["SSH_PASSWORD", "SUDO_PASSWORD"]
+
+    [[rules.allowlists]]
+    regexes = [
+      '''^\*\*\*REMOVED-ROTATED-SSH-PASSWORD\*\*\*$''',
+      '''^<[^>\r\n]+>$''',
+      '''^your-password$''',
+    ]
+
 [[allowlists]]
 description = "Known non-production credentials used only by automated tests"
 targetRules = ["generic-api-key"]
