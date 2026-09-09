@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVER_HOST="${SERVER_HOST:-49.234.185.86}"
 SERVER_USER="${SERVER_USER:-ubuntu}"
 SERVER_PORT="${SERVER_PORT:-22}"
+SSH_IDENTITY_FILE="${SSH_IDENTITY_FILE:-}"
 REMOTE_REPO_PATH="${REMOTE_REPO_PATH:-/home/ubuntu/Xingrun-Website}"
 REMOTE_DB_PATH="${REMOTE_DB_PATH:-}"
 LOCAL_DB_PATH="${LOCAL_DB_PATH:-$ROOT_DIR/data/xingrun.db}"
@@ -18,12 +19,13 @@ usage() {
   cat <<'EOF'
 Usage:
   ./scripts/sync_remote_db.sh
+  ./scripts/sync_remote_db.sh --check-connection
 
 Environment:
-  SSH_PASSWORD        SSH password for the remote server.
   SERVER_HOST         Defaults to 49.234.185.86
   SERVER_USER         Defaults to ubuntu
   SERVER_PORT         Defaults to 22
+  SSH_IDENTITY_FILE   Optional private-key path. Defaults to SSH config.
   REMOTE_REPO_PATH    Defaults to /home/ubuntu/Xingrun-Website
   REMOTE_DB_PATH      Optional explicit remote SQLite path override.
   LOCAL_DB_PATH       Defaults to ./data/xingrun.db
@@ -32,8 +34,8 @@ Environment:
                       Set to 1 to keep the remote temp snapshot file.
 
 Examples:
-  SSH_PASSWORD='your-password' ./scripts/sync_remote_db.sh
-  SSH_PASSWORD='your-password' LOCAL_DB_PATH=/tmp/xingrun.db ./scripts/sync_remote_db.sh
+  ./scripts/sync_remote_db.sh
+  SSH_IDENTITY_FILE=/path/to/private-key LOCAL_DB_PATH=/tmp/xingrun.db ./scripts/sync_remote_db.sh
 EOF
 }
 
@@ -45,31 +47,42 @@ require_local_tool() {
   fi
 }
 
-ensure_password() {
-  if [ -z "${SSH_PASSWORD:-}" ]; then
-    read -r -s -p "SSH password for ${SERVER_USER}@${SERVER_HOST}: " SSH_PASSWORD
-    echo
-  fi
-}
-
 remote() {
-  SSHPASS="$SSH_PASSWORD" sshpass -e ssh \
-    -o PubkeyAuthentication=no \
-    -o PreferredAuthentications=password,keyboard-interactive \
-    -o StrictHostKeyChecking=accept-new \
-    -p "$SERVER_PORT" \
-    "${SERVER_USER}@${SERVER_HOST}" \
-    "$@"
+  local -a ssh_args=(
+    -o BatchMode=yes
+    -o PasswordAuthentication=no
+    -o KbdInteractiveAuthentication=no
+    -o PreferredAuthentications=publickey
+    -o StrictHostKeyChecking=yes
+    -p "$SERVER_PORT"
+  )
+  if [ -n "$SSH_IDENTITY_FILE" ]; then
+    ssh_args+=(
+      -o IdentitiesOnly=yes
+      -i "$SSH_IDENTITY_FILE"
+    )
+  fi
+  ssh "${ssh_args[@]}" "${SERVER_USER}@${SERVER_HOST}" "$@"
 }
 
 copy_from_remote() {
   local remote_path="$1"
   local local_path="$2"
-  SSHPASS="$SSH_PASSWORD" sshpass -e scp \
-    -o PubkeyAuthentication=no \
-    -o PreferredAuthentications=password,keyboard-interactive \
-    -o StrictHostKeyChecking=accept-new \
-    -P "$SERVER_PORT" \
+  local -a scp_args=(
+    -o BatchMode=yes
+    -o PasswordAuthentication=no
+    -o KbdInteractiveAuthentication=no
+    -o PreferredAuthentications=publickey
+    -o StrictHostKeyChecking=yes
+    -P "$SERVER_PORT"
+  )
+  if [ -n "$SSH_IDENTITY_FILE" ]; then
+    scp_args+=(
+      -o IdentitiesOnly=yes
+      -i "$SSH_IDENTITY_FILE"
+    )
+  fi
+  scp "${scp_args[@]}" \
     "${SERVER_USER}@${SERVER_HOST}:${remote_path}" \
     "$local_path"
 }
@@ -126,6 +139,11 @@ main() {
       usage
       exit 0
       ;;
+    --check-connection)
+      require_local_tool ssh
+      remote 'printf "SSH_CONNECTION=ok\n"'
+      exit 0
+      ;;
     "")
       ;;
     *)
@@ -135,11 +153,9 @@ main() {
       ;;
   esac
 
-  require_local_tool sshpass
   require_local_tool ssh
   require_local_tool scp
   require_local_tool python3
-  ensure_password
 
   local timestamp
   timestamp="$(date +%Y%m%d-%H%M%S)"

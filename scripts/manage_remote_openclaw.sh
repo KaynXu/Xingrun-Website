@@ -4,6 +4,7 @@ set -euo pipefail
 SERVER_HOST="${SERVER_HOST:-49.234.185.86}"
 SERVER_USER="${SERVER_USER:-ubuntu}"
 SERVER_PORT="${SERVER_PORT:-22}"
+SSH_IDENTITY_FILE="${SSH_IDENTITY_FILE:-}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-18789}"
 OPENCLAW_PROCESS_NAME="${OPENCLAW_PROCESS_NAME:-openclaw}"
 OPENCLAW_CWD="${OPENCLAW_CWD:-/home/ubuntu}"
@@ -18,11 +19,12 @@ Usage:
   ./scripts/manage_remote_openclaw.sh update [version]
 
 Environment:
-  SSH_PASSWORD     SSH password for the remote server.
-  SUDO_PASSWORD    Optional sudo password. Defaults to SSH_PASSWORD.
+  SUDO_PASSWORD    Sudo password. Prompted only for update.
   SERVER_HOST      Defaults to 49.234.185.86
   SERVER_USER      Defaults to ubuntu
   SERVER_PORT      Defaults to 22
+  SSH_IDENTITY_FILE
+                   Optional private-key path. Defaults to SSH config.
   OPENCLAW_CWD     Defaults to /home/ubuntu
   OPENCLAW_GATEWAY_COMMAND
                   Defaults to "openclaw gateway --port 18789"
@@ -38,23 +40,29 @@ require_local_tool() {
   fi
 }
 
-ensure_passwords() {
-  if [ -z "${SSH_PASSWORD:-}" ]; then
-    read -r -s -p "SSH password for ${SERVER_USER}@${SERVER_HOST}: " SSH_PASSWORD
-    echo
-  fi
-
+ensure_sudo_password() {
   if [ -z "${SUDO_PASSWORD:-}" ]; then
-    SUDO_PASSWORD="$SSH_PASSWORD"
+    read -r -s -p "Sudo password for ${SERVER_USER}@${SERVER_HOST}: " SUDO_PASSWORD
+    echo
   fi
 }
 
 remote() {
-  sshpass -p "$SSH_PASSWORD" ssh \
-    -o StrictHostKeyChecking=accept-new \
-    -p "$SERVER_PORT" \
-    "${SERVER_USER}@${SERVER_HOST}" \
-    "$@"
+  local -a ssh_args=(
+    -o BatchMode=yes
+    -o PasswordAuthentication=no
+    -o KbdInteractiveAuthentication=no
+    -o PreferredAuthentications=publickey
+    -o StrictHostKeyChecking=yes
+    -p "$SERVER_PORT"
+  )
+  if [ -n "$SSH_IDENTITY_FILE" ]; then
+    ssh_args+=(
+      -o IdentitiesOnly=yes
+      -i "$SSH_IDENTITY_FILE"
+    )
+  fi
+  ssh "${ssh_args[@]}" "${SERVER_USER}@${SERVER_HOST}" "$@"
 }
 
 show_status() {
@@ -102,6 +110,8 @@ update_openclaw() {
   local version="${1:-$TARGET_VERSION}"
   local remote_version
 
+  ensure_sudo_password
+
   if [ "$version" = "latest" ]; then
     remote_version="$(remote "npm view openclaw version")"
     version="$(printf '%s' "$remote_version" | tail -n 1 | tr -d '\r')"
@@ -112,9 +122,9 @@ update_openclaw() {
   backup_path="$(backup_config)"
   echo "Backup created at ${backup_path}"
 
-  remote "
+  printf '%s\n' "$SUDO_PASSWORD" | remote "
 set -euo pipefail
-printf '%s\n' '${SUDO_PASSWORD}' | sudo -S npm install -g openclaw@${version}
+sudo -S -p '' npm install -g openclaw@${version}
 openclaw --version
 "
   recreate_pm2_process
@@ -126,9 +136,8 @@ ss -ltnp | grep ${OPENCLAW_PORT} || true
 }
 
 main() {
-  require_local_tool sshpass
+  require_local_tool ssh
   require_local_tool jq
-  ensure_passwords
 
   case "${1:-}" in
     status)

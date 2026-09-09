@@ -10,6 +10,20 @@ frontend/public/.DS_Store
 .run/
 logs/
 
+# SSH client state and private-key formats
+.ssh/
+id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
+*.pem
+*.key
+*.ppk
+*.p12
+*.pfx
+authorized_keys
+known_hosts
+
 # macOS system files
 .DS_Store
 **/.DS_Store

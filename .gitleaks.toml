@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known non-production credentials used only by automated tests"
+targetRules = ["generic-api-key"]
+regexes = [
+  '''^curriculum-pass-123$''',
+  '''^teacherbind123$''',
+]
